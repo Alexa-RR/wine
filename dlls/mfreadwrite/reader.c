@@ -44,6 +44,10 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(mfplat);
 
+#ifndef __WINE_RETADDR
+#define __WINE_RETADDR __builtin_extract_return_addr(__builtin_return_address(0))
+#endif
+
 struct stream_response
 {
     struct list entry;
@@ -2037,6 +2041,211 @@ static HRESULT WINAPI src_reader_Flush(IMFSourceReader *iface, DWORD index)
     return hr;
 }
 
+static HRESULT WINAPI fake_transform_QueryInterface(IMFTransform *iface, REFIID riid, void **out) {
+    FIXME("%p, %s, %p\n", iface, debugstr_guid(riid), out);
+    return E_NOINTERFACE;
+}
+
+static ULONG WINAPI fake_transform_AddRef(IMFTransform *iface) {
+    FIXME("%p\n", iface);
+    return 2;
+}
+
+static ULONG WINAPI fake_transform_Release(IMFTransform *iface) {
+    FIXME("%p\n", iface);
+    return 1;
+}
+
+static HRESULT WINAPI fake_transform_GetStreamLimits(IMFTransform *iface,
+        DWORD *input_minimum,
+        DWORD *input_maximum,
+        DWORD *output_minimum,
+        DWORD *output_maximum) {
+    FIXME("%p\n", iface);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetStreamCount(
+        IMFTransform *This,
+        DWORD *inputs,
+        DWORD *outputs) {
+    FIXME("%p %p %p\n", This, inputs, outputs);
+    *inputs = 1;
+    *outputs = 1;
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetStreamIDs(
+        IMFTransform *This,
+        DWORD input_size,
+        DWORD *inputs,
+        DWORD output_size,
+        DWORD *outputs) {
+    FIXME("%p %d %p %d %p\n", This, input_size, inputs, output_size, outputs);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetInputStreamInfo(
+        IMFTransform *This,
+        DWORD id,
+        MFT_INPUT_STREAM_INFO *info) {
+    FIXME("%p\n", This);
+    return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetOutputStreamInfo(
+        IMFTransform *This,
+        DWORD id,
+        MFT_OUTPUT_STREAM_INFO *info){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetAttributes(
+        IMFTransform *This,
+        IMFAttributes **attributes){
+    FIXME("%p %p\n", This, attributes);
+    MFCreateAttributes(attributes, 10);
+    //IMFAttributes_SetUINT32(*attributes, &MF_SA_MINIMUM_OUTPUT_SAMPLE_COUNT, 6);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetInputStreamAttributes(
+        IMFTransform *This,
+        DWORD id,
+        IMFAttributes **attributes){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetOutputStreamAttributes(
+        IMFTransform *This,
+        DWORD id,
+        IMFAttributes **attributes){
+    FIXME("%p %d %p\n", This, id, attributes);
+    MFCreateAttributes(attributes, 10);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_DeleteInputStream(
+        IMFTransform *This,
+        DWORD id){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_AddInputStreams(
+        IMFTransform *This,
+        DWORD streams,
+        DWORD *ids){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetInputAvailableType(
+        IMFTransform *This,
+        DWORD id,
+        DWORD index,
+        IMFMediaType **type){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetOutputAvailableType(
+        IMFTransform *This,
+        DWORD id,
+        DWORD index,
+        IMFMediaType **type){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_SetInputType(
+        IMFTransform *This,
+        DWORD id,
+        IMFMediaType *type,
+        DWORD flags){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_SetOutputType(
+        IMFTransform *This,
+        DWORD id,
+        IMFMediaType *type,
+        DWORD flags){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetInputCurrentType(
+        IMFTransform *This,
+        DWORD id,
+        IMFMediaType **type){
+    UINT64 size = 1920;
+    size <<= 32;
+    size |= 1080;
+    FIXME("%p %d %p\n", This, id, type);
+    MFCreateMediaType(type);
+    IMFMediaType_SetUINT64(*type, &MF_MT_FRAME_SIZE, size);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetOutputCurrentType(
+        IMFTransform *This,
+        DWORD id,
+        IMFMediaType **type){
+    UINT64 size = 1920;
+    size <<= 32;
+    size |= 1080;
+    FIXME("%p %d %p\n", This, id, type);
+    MFCreateMediaType(type);
+    IMFMediaType_SetUINT64(*type, &MF_MT_FRAME_SIZE, size);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetInputStatus(
+        IMFTransform *This,
+        DWORD id,
+        DWORD *flags){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_GetOutputStatus(
+        IMFTransform *This,
+        DWORD *flags){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_SetOutputBounds(
+        IMFTransform *This,
+        LONGLONG lower,
+        LONGLONG upper){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_ProcessEvent(
+        IMFTransform *This,
+        DWORD id,
+        IMFMediaEvent *event){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_ProcessMessage(
+        IMFTransform *This,
+        MFT_MESSAGE_TYPE message,
+        ULONG_PTR param){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_ProcessInput(
+        IMFTransform *This,
+        DWORD id,
+        IMFSample *sample,
+        DWORD flags){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static HRESULT STDMETHODCALLTYPE fake_transform_ProcessOutput(
+        IMFTransform *This,
+        DWORD flags,
+        DWORD count,
+        MFT_OUTPUT_DATA_BUFFER *samples,
+        DWORD *status){ FIXME("%p\n", This); return E_NOTIMPL; }
+
+static const IMFTransformVtbl fake_transform_vtbl = {
+    fake_transform_QueryInterface,
+    fake_transform_AddRef,
+    fake_transform_Release,
+    fake_transform_GetStreamLimits,
+    fake_transform_GetStreamCount,
+    fake_transform_GetStreamIDs,
+    fake_transform_GetInputStreamInfo,
+    fake_transform_GetOutputStreamInfo,
+    fake_transform_GetAttributes,
+    fake_transform_GetInputStreamAttributes,
+    fake_transform_GetOutputStreamAttributes,
+    fake_transform_DeleteInputStream,
+    fake_transform_AddInputStreams,
+    fake_transform_GetInputAvailableType,
+    fake_transform_GetOutputAvailableType,
+    fake_transform_SetInputType,
+    fake_transform_SetOutputType,
+    fake_transform_GetInputCurrentType,
+    fake_transform_GetOutputCurrentType,
+    fake_transform_GetInputStatus,
+    fake_transform_GetOutputStatus,
+    fake_transform_SetOutputBounds,
+    fake_transform_ProcessEvent,
+    fake_transform_ProcessMessage,
+    fake_transform_ProcessInput,
+    fake_transform_ProcessOutput,
+};
+
 static HRESULT WINAPI src_reader_GetServiceForStream(IMFSourceReader *iface, DWORD index, REFGUID service,
         REFIID riid, void **object)
 {
@@ -2045,6 +2254,17 @@ static HRESULT WINAPI src_reader_GetServiceForStream(IMFSourceReader *iface, DWO
     HRESULT hr = S_OK;
 
     TRACE("%p, %#x, %s, %s, %p\n", iface, index, debugstr_guid(service), debugstr_guid(riid), object);
+
+    if (IsEqualGUID(riid, &IID_IMFTransform) && (__WINE_RETADDR == /*0x180be35ba*/ /*0x180be0536*/ 0x180bdf18a || __WINE_RETADDR == 0x180c606ca)) {
+        static const struct {
+            IMFTransform IMFTransform_iface;
+        } singleton = {
+            { &fake_transform_vtbl },
+        };
+        *object = (void*)&singleton;
+        FIXME("returning fake object\n");
+        return S_OK;
+    }
 
     EnterCriticalSection(&reader->cs);
 
