@@ -1610,6 +1610,7 @@ static HRESULT source_reader_setup_sample_allocator(struct source_reader *reader
 {
     struct media_stream *stream = &reader->streams[index];
     IMFVideoSampleAllocatorCallback *callback;
+    IMFAttributes *attributes;
     GUID major = { 0 };
     HRESULT hr;
 
@@ -1636,8 +1637,13 @@ static HRESULT source_reader_setup_sample_allocator(struct source_reader *reader
         return hr;
     }
 
-    if (FAILED(hr = IMFVideoSampleAllocatorEx_InitializeSampleAllocatorEx(stream->allocator, 2, 8, NULL, stream->current)))
+    MFCreateAttributes(&attributes, 1);
+    IMFAttributes_SetUINT32(attributes, &MF_SA_D3D11_SHARED_WITHOUT_MUTEX, 1);
+
+    if (FAILED(hr = IMFVideoSampleAllocatorEx_InitializeSampleAllocatorEx(stream->allocator, 2, 8, attributes, stream->current)))
         WARN("Failed to initialize sample allocator, hr %#x.\n", hr);
+
+    IMFAttributes_Release(attributes);
 
     if (SUCCEEDED(IMFVideoSampleAllocatorEx_QueryInterface(stream->allocator, &IID_IMFVideoSampleAllocatorCallback, (void **)&callback)))
     {
