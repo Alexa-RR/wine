@@ -618,7 +618,7 @@ static NTSTATUS wg_parser_stream_enable(void *args)
             case WG_VIDEO_FORMAT_BGR:
             case WG_VIDEO_FORMAT_RGB15:
             case WG_VIDEO_FORMAT_RGB16:
-                gst_util_set_object_arg(G_OBJECT(stream->flip), "method", "vertical-flip");
+                gst_util_set_object_arg(G_OBJECT(stream->flip), "method", /*"vertical-flip"*/"none");
                 break;
 
             case WG_VIDEO_FORMAT_AYUV:
