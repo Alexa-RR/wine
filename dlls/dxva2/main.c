@@ -377,28 +377,48 @@ static HRESULT WINAPI device_manager_processor_service_RegisterVideoProcessorSof
     return E_NOTIMPL;
 }
 
-static BOOL dxva_is_supported_stream_format(const DXVA2_VideoDesc *video_desc)
+DEFINE_GUID(WINE_DXVA2_VideoProcHardwareDevice, 0x986666c3,0x32ac,0x4788,0xab,0x2a,0xd5,0x74,0x5f,0xf9,0x52,0xd8);
+
+static BOOL dxva_is_supported_stream_format(const DXVA2_VideoDesc *video_desc, const GUID *guid)
 {
-    return video_desc->Format == D3DFMT_A8R8G8B8 ||
-            video_desc->Format == D3DFMT_X8R8G8B8 ||
-            video_desc->Format == D3DFMT_YUY2;
+    if (IsEqualGUID(guid, &DXVA2_VideoProcSoftwareDevice))
+    {
+        return video_desc->Format == D3DFMT_A8R8G8B8 ||
+                video_desc->Format == D3DFMT_X8R8G8B8 ||
+                video_desc->Format == D3DFMT_YUY2;
+    }
+    if (IsEqualGUID(guid, &WINE_DXVA2_VideoProcHardwareDevice))
+    {
+        return video_desc->Format == MAKEFOURCC('N','V','1','2');
+    }
+    FIXME("Unsupported device %s.\n", debugstr_guid(guid));
+    return FALSE;
 }
 
 static HRESULT WINAPI device_manager_processor_service_GetVideoProcessorDeviceGuids(
         IDirectXVideoProcessorService *iface, const DXVA2_VideoDesc *video_desc, UINT *count, GUID **guids)
 {
+    UINT size, i = 0;
+
     FIXME("%p, %p, %p, %p semi-stub.\n", iface, video_desc, count, guids);
 
     *count = 0;
 
-    if (!dxva_is_supported_stream_format(video_desc))
+    size = dxva_is_supported_stream_format(video_desc, &DXVA2_VideoProcSoftwareDevice) +
+           dxva_is_supported_stream_format(video_desc, &WINE_DXVA2_VideoProcHardwareDevice);
+
+    if (!size)
         return E_FAIL;
 
-    if (!(*guids = CoTaskMemAlloc(sizeof(**guids))))
+    if (!(*guids = CoTaskMemAlloc(sizeof(**guids) * size)))
         return E_OUTOFMEMORY;
 
-    memcpy(*guids, &DXVA2_VideoProcSoftwareDevice, sizeof(**guids));
-    *count = 1;
+    if (dxva_is_supported_stream_format(video_desc, &DXVA2_VideoProcSoftwareDevice))
+        memcpy(guids[i++], &DXVA2_VideoProcSoftwareDevice, sizeof(**guids));
+    if (dxva_is_supported_stream_format(video_desc, &WINE_DXVA2_VideoProcHardwareDevice))
+        memcpy(guids[i++], &WINE_DXVA2_VideoProcHardwareDevice, sizeof(**guids));
+
+    *count = size;
 
     return S_OK;
 }
@@ -409,27 +429,20 @@ static HRESULT WINAPI device_manager_processor_service_GetVideoProcessorRenderTa
 {
     TRACE("%p, %s, %p, %p, %p.\n", iface, debugstr_guid(deviceguid), video_desc, count, formats);
 
-    if (IsEqualGUID(deviceguid, &DXVA2_VideoProcSoftwareDevice))
+    if (!dxva_is_supported_stream_format(video_desc, deviceguid))
     {
-        if (!dxva_is_supported_stream_format(video_desc))
-        {
-            WARN("Unsupported content format %#x.\n", video_desc->Format);
-            return E_FAIL;
-        }
-
-        if (!(*formats = CoTaskMemAlloc(2 * sizeof(**formats))))
-            return E_OUTOFMEMORY;
-
-        *count = 2;
-        (*formats)[0] = D3DFMT_X8R8G8B8;
-        (*formats)[1] = D3DFMT_A8R8G8B8;
-
-        return S_OK;
+        WARN("Unsupported content format %#x.\n", video_desc->Format);
+        return E_FAIL;
     }
-    else
-        FIXME("Unsupported device %s.\n", debugstr_guid(deviceguid));
 
-    return E_NOTIMPL;
+    if (!(*formats = CoTaskMemAlloc(2 * sizeof(**formats))))
+        return E_OUTOFMEMORY;
+
+    *count = 2;
+    (*formats)[0] = D3DFMT_X8R8G8B8;
+    (*formats)[1] = D3DFMT_A8R8G8B8;
+
+    return S_OK;
 }
 
 static HRESULT WINAPI device_manager_processor_service_GetVideoProcessorSubStreamFormats(
