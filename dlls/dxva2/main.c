@@ -458,9 +458,26 @@ static HRESULT WINAPI device_manager_processor_service_GetVideoProcessorCaps(
         IDirectXVideoProcessorService *iface, REFGUID deviceguid, const DXVA2_VideoDesc *video_desc,
         D3DFORMAT rt_format, DXVA2_VideoProcessorCaps *caps)
 {
-    FIXME("%p, %s, %p, %u, %p.\n", iface, debugstr_guid(deviceguid), video_desc, rt_format, caps);
+    TRACE("%p, %s, %p, %u, %p.\n", iface, debugstr_guid(deviceguid), video_desc, rt_format, caps);
 
-    return E_NOTIMPL;
+    if (!dxva_is_supported_stream_format(video_desc, deviceguid))
+        return E_NOTIMPL;
+
+    if (IsEqualGUID(deviceguid, &DXVA2_VideoProcSoftwareDevice))
+        caps->DeviceCaps = DXVA2_VPDev_SoftwareDevice;
+    else
+        caps->DeviceCaps = DXVA2_VPDev_HardwareDevice;
+    caps->InputPool = D3DPOOL_DEFAULT;
+    caps->NumForwardRefSamples = 0;
+    caps->NumBackwardRefSamples = 0;
+    caps->Reserved = 0;
+    caps->DeinterlaceTechnology = DXVA2_DeinterlaceTech_Unknown;
+    caps->ProcAmpControlCaps = DXVA2_ProcAmp_None;
+    caps->VideoProcessorOperations = DXVA2_VideoProcess_YUV2RGB | DXVA2_VideoProcess_StretchX | DXVA2_VideoProcess_StretchY;
+    caps->NoiseFilterTechnology = DXVA2_NoiseFilterTech_Unsupported;
+    caps->DetailFilterTechnology = DXVA2_DetailFilterTech_Unsupported;
+
+    return S_OK;
 }
 
 static HRESULT WINAPI device_manager_processor_service_GetProcAmpRange(
