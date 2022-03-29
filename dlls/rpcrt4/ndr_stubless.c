@@ -184,7 +184,7 @@ static DWORD calc_arg_size(MIDL_STUB_MESSAGE *pStubMsg, PFORMAT_STRING pFormat)
         break;
     case FC_BOGUS_ARRAY:
         pFormat = ComputeConformance(pStubMsg, NULL, pFormat + 4, *(const WORD*)&pFormat[2]);
-        TRACE("conformance = %ld\n", pStubMsg->MaxCount);
+        TRACE("conformance = %Id\n", pStubMsg->MaxCount);
         pFormat = ComputeVariance(pStubMsg, NULL, pFormat, pStubMsg->MaxCount);
         size = ComplexStructSize(pStubMsg, pFormat);
         size *= pStubMsg->MaxCount;
@@ -210,6 +210,12 @@ static DWORD calc_arg_size(MIDL_STUB_MESSAGE *pStubMsg, PFORMAT_STRING pFormat)
             pStubMsg->MaxCount = 0;
         size *= pStubMsg->MaxCount;
         break;
+    case FC_NON_ENCAPSULATED_UNION:
+    {
+        DWORD offset = *(const WORD *)(pFormat + 6 + pStubMsg->CorrDespIncrement);
+        size = *(const WORD *)(pFormat + 8 + pStubMsg->CorrDespIncrement + offset);
+        break;
+    }
     default:
         FIXME("Unhandled type %02x\n", *pFormat);
         /* fallthrough */
@@ -867,7 +873,7 @@ LONG_PTR CDECL DECLSPEC_HIDDEN ndr_client_call( PMIDL_STUB_DESC pStubDesc, PFORM
 
     TRACE("pStubDesc %p, pFormat %p, ...\n", pStubDesc, pFormat);
 
-    TRACE("NDR Version: 0x%x\n", pStubDesc->Version);
+    TRACE("NDR Version: 0x%lx\n", pStubDesc->Version);
 
     if (pProcHeader->Oi_flags & Oi_HAS_RPCFLAGS)
     {
@@ -885,7 +891,7 @@ LONG_PTR CDECL DECLSPEC_HIDDEN ndr_client_call( PMIDL_STUB_DESC pStubDesc, PFORM
     TRACE("stack size: 0x%x\n", stack_size);
     TRACE("proc num: %d\n", procedure_number);
     TRACE("Oi_flags = 0x%02x\n", pProcHeader->Oi_flags);
-    TRACE("MIDL stub version = 0x%x\n", pStubDesc->MIDLVersion);
+    TRACE("MIDL stub version = 0x%lx\n", pStubDesc->MIDLVersion);
 
     pHandleFormat = pFormat;
 
@@ -992,7 +998,7 @@ LONG_PTR CDECL DECLSPEC_HIDDEN ndr_client_call( PMIDL_STUB_DESC pStubDesc, PFORM
                 number_of_params, Oif_flags, ext_flags, pProcHeader);
     }
 
-    TRACE("RetVal = 0x%lx\n", RetVal);
+    TRACE("RetVal = 0x%Ix\n", RetVal);
     return RetVal;
 }
 
@@ -1017,12 +1023,12 @@ __ASM_GLOBAL_FUNC( NdrClientCall2,
  */
 CLIENT_CALL_RETURN WINAPIV NdrClientCall2( PMIDL_STUB_DESC desc, PFORMAT_STRING format, ... )
 {
-    __ms_va_list args;
+    va_list args;
     LONG_PTR ret;
 
-    __ms_va_start( args, format );
+    va_start( args, format );
     ret = ndr_client_call( desc, format, va_arg( args, void ** ), NULL );
-    __ms_va_end( args );
+    va_end( args );
     return *(CLIENT_CALL_RETURN *)&ret;
 }
 
@@ -1138,7 +1144,6 @@ __ASM_GLOBAL_FUNC( call_server_func,
 #elif defined __arm__
 LONG_PTR __cdecl call_server_func(SERVER_ROUTINE func, unsigned char *args, unsigned int stack_size);
 __ASM_GLOBAL_FUNC( call_server_func,
-                   ".arm\n\t"
                    "push {r4, r5, LR}\n\t"
                    "mov r4, r0\n\t"
                    "mov r5, SP\n\t"
@@ -1147,6 +1152,7 @@ __ASM_GLOBAL_FUNC( call_server_func,
                    "beq 5f\n\t"
                    "sub SP, SP, r2\n\t"
                    "tst r3, #1\n\t"
+                   "it eq\n\t"
                    "subeq SP, SP, #4\n\t"
                    "1:\tsub r2, r2, #4\n\t"
                    "ldr r0, [r1, r2]\n\t"
@@ -1174,24 +1180,24 @@ LONG_PTR __cdecl call_server_func(SERVER_ROUTINE func, unsigned char *args, unsi
 __ASM_GLOBAL_FUNC( call_server_func,
                    "stp x29, x30, [sp, #-16]!\n\t"
                    "mov x29, sp\n\t"
-                   "add x3, x2, #15\n\t"
-                   "lsr x3, x3, #4\n\t"
-                   "sub sp, sp, x3, lsl #4\n\t"
+                   "add x9, x2, #15\n\t"
+                   "lsr x9, x9, #4\n\t"
+                   "sub sp, sp, x9, lsl #4\n\t"
                    "cbz x2, 2f\n"
                    "1:\tsub x2, x2, #8\n\t"
                    "ldr x4, [x1, x2]\n\t"
                    "str x4, [sp, x2]\n\t"
                    "cbnz x2, 1b\n"
                    "2:\tmov x8, x0\n\t"
-                   "cbz x3, 3f\n\t"
+                   "cbz x9, 3f\n\t"
                    "ldp x0, x1, [sp], #16\n\t"
-                   "cmp x3, #1\n\t"
+                   "cmp x9, #1\n\t"
                    "b.le 3f\n\t"
                    "ldp x2, x3, [sp], #16\n\t"
-                   "cmp x3, #2\n\t"
+                   "cmp x9, #2\n\t"
                    "b.le 3f\n\t"
                    "ldp x4, x5, [sp], #16\n\t"
-                   "cmp x3, #3\n\t"
+                   "cmp x9, #3\n\t"
                    "b.le 3f\n\t"
                    "ldp x6, x7, [sp], #16\n"
                    "3:\tblr x8\n\t"
@@ -1338,7 +1344,7 @@ LONG WINAPI NdrStubCall2(
     pFormat = pServerInfo->ProcString + pServerInfo->FmtStringOffset[pRpcMsg->ProcNum];
     pProcHeader = (const NDR_PROC_HEADER *)&pFormat[0];
 
-    TRACE("NDR Version: 0x%x\n", pStubDesc->Version);
+    TRACE("NDR Version: 0x%lx\n", pStubDesc->Version);
 
     if (pProcHeader->Oi_flags & Oi_HAS_RPCFLAGS)
     {
@@ -1490,7 +1496,7 @@ LONG WINAPI NdrStubCall2(
 
                 if (retval_ptr)
                 {
-                    TRACE("stub implementation returned 0x%lx\n", retval);
+                    TRACE("stub implementation returned 0x%Ix\n", retval);
                     *retval_ptr = retval;
                 }
                 else
@@ -1608,9 +1614,9 @@ static void do_ndr_async_client_call( const MIDL_STUB_DESC *pStubDesc, PFORMAT_S
     RPC_STATUS status;
 
     /* Later NDR language versions probably won't be backwards compatible */
-    if (pStubDesc->Version > 0x50002)
+    if (pStubDesc->Version > 0x60001)
     {
-        FIXME("Incompatible stub description version: 0x%x\n", pStubDesc->Version);
+        FIXME("Incompatible stub description version: 0x%lx\n", pStubDesc->Version);
         RpcRaiseException(RPC_X_WRONG_STUB_VERSION);
     }
 
@@ -1651,7 +1657,7 @@ static void do_ndr_async_client_call( const MIDL_STUB_DESC *pStubDesc, PFORMAT_S
     NdrClientInitializeNew(pRpcMsg, pStubMsg, pStubDesc, procedure_number);
 
     TRACE("Oi_flags = 0x%02x\n", pProcHeader->Oi_flags);
-    TRACE("MIDL stub version = 0x%x\n", pStubDesc->MIDLVersion);
+    TRACE("MIDL stub version = 0x%lx\n", pStubDesc->MIDLVersion);
 
     /* needed for conformance of top-level objects */
     pStubMsg->StackTop = I_RpcAllocate(async_call_data->stack_size);
@@ -1802,7 +1808,7 @@ LONG_PTR CDECL DECLSPEC_HIDDEN ndr_async_client_call( PMIDL_STUB_DESC pStubDesc,
         }
         __EXCEPT_ALL
         {
-            FIXME("exception %x during ndr_async_client_call()\n", GetExceptionCode());
+            FIXME("exception %lx during ndr_async_client_call()\n", GetExceptionCode());
             ret = GetExceptionCode();
         }
         __ENDTRY
@@ -1810,7 +1816,7 @@ LONG_PTR CDECL DECLSPEC_HIDDEN ndr_async_client_call( PMIDL_STUB_DESC pStubDesc,
     else
         do_ndr_async_client_call( pStubDesc, pFormat, stack_top);
 
-    TRACE("returning %ld\n", ret);
+    TRACE("returning %Id\n", ret);
     return ret;
 }
 
@@ -1891,7 +1897,7 @@ cleanup:
     I_RpcFree(pStubMsg->StackTop);
     I_RpcFree(async_call_data);
 
-    TRACE("-- 0x%x\n", status);
+    TRACE("-- 0x%lx\n", status);
     return status;
 }
 
@@ -1917,12 +1923,12 @@ __ASM_GLOBAL_FUNC( NdrAsyncClientCall,
  */
 CLIENT_CALL_RETURN WINAPIV NdrAsyncClientCall( PMIDL_STUB_DESC desc, PFORMAT_STRING format, ... )
 {
-    __ms_va_list args;
+    va_list args;
     LONG_PTR ret;
 
-    __ms_va_start( args, format );
+    va_start( args, format );
     ret = ndr_async_client_call( desc, format, va_arg( args, void ** ));
-    __ms_va_end( args );
+    va_end( args );
     return *(CLIENT_CALL_RETURN *)&ret;
 }
 
@@ -1957,7 +1963,7 @@ void RPC_ENTRY NdrAsyncServerCall(PRPC_MESSAGE pRpcMsg)
     pFormat = pServerInfo->ProcString + pServerInfo->FmtStringOffset[pRpcMsg->ProcNum];
     pProcHeader = (const NDR_PROC_HEADER *)&pFormat[0];
 
-    TRACE("NDR Version: 0x%x\n", pStubDesc->Version);
+    TRACE("NDR Version: 0x%lx\n", pStubDesc->Version);
 
     async_call_data = I_RpcAllocate(sizeof(*async_call_data) + sizeof(MIDL_STUB_MESSAGE) + sizeof(RPC_MESSAGE));
     if (!async_call_data) RpcRaiseException(RPC_X_NO_MEMORY);
@@ -2137,7 +2143,7 @@ RPC_STATUS NdrpCompleteAsyncServerCall(RPC_ASYNC_STATE *pAsync, void *Reply)
 
     if (async_call_data->retval_ptr)
     {
-        TRACE("stub implementation returned 0x%lx\n", *(LONG_PTR *)Reply);
+        TRACE("stub implementation returned 0x%Ix\n", *(LONG_PTR *)Reply);
         *async_call_data->retval_ptr = *(LONG_PTR *)Reply;
     }
     else
@@ -2204,3 +2210,126 @@ RPC_STATUS NdrpCompleteAsyncServerCall(RPC_ASYNC_STATE *pAsync, void *Reply)
 
     return S_OK;
 }
+
+static const RPC_SYNTAX_IDENTIFIER ndr_syntax_id =
+    {{0x8a885d04, 0x1ceb, 0x11c9, {0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60}}, {2, 0}};
+
+LONG_PTR CDECL DECLSPEC_HIDDEN ndr64_client_call( MIDL_STUBLESS_PROXY_INFO *info,
+        ULONG proc, void *retval, void **stack_top, void **fpu_stack )
+{
+    ULONG_PTR i;
+
+    TRACE("info %p, proc %lu, retval %p, stack_top %p, fpu_stack %p\n",
+            info, proc, retval, stack_top, fpu_stack);
+
+    for (i = 0; i < info->nCount; ++i)
+    {
+        const MIDL_SYNTAX_INFO *syntax_info = &info->pSyntaxInfo[i];
+        const RPC_SYNTAX_IDENTIFIER *id = &syntax_info->TransferSyntax;
+
+        TRACE("Found syntax %s, version %u.%u.\n", debugstr_guid(&id->SyntaxGUID),
+                id->SyntaxVersion.MajorVersion, id->SyntaxVersion.MinorVersion);
+        if (!memcmp(id, &ndr_syntax_id, sizeof(RPC_SYNTAX_IDENTIFIER)))
+        {
+            if (retval)
+                FIXME("Complex return types are not supported.\n");
+
+            return ndr_client_call( info->pStubDesc,
+                    syntax_info->ProcString + syntax_info->FmtStringOffset[proc], stack_top, fpu_stack );
+        }
+    }
+
+    FIXME("NDR64 syntax is not supported.\n");
+    return 0;
+}
+
+#ifdef __x86_64__
+
+__ASM_GLOBAL_FUNC( NdrClientCall3,
+                   "movq %r9,0x20(%rsp)\n\t"
+                   "leaq 0x20(%rsp),%r9\n\t"
+                   "pushq $0\n\t"
+                   "subq $0x20,%rsp\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset 0x28\n\t")
+                   "call " __ASM_NAME("ndr64_client_call") "\n\t"
+                   "addq $0x28,%rsp\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset -0x28\n\t")
+                   "ret" );
+
+#elif defined(_WIN64)
+
+/***********************************************************************
+ *            NdrClientCall3 [RPCRT4.@]
+ */
+CLIENT_CALL_RETURN WINAPIV NdrClientCall3( MIDL_STUBLESS_PROXY_INFO *info, ULONG proc, void *retval, ... )
+{
+    va_list args;
+    LONG_PTR ret;
+
+    va_start( args, retval );
+    ret = ndr64_client_call( info, proc, retval, va_arg( args, void ** ), NULL );
+    va_end( args );
+    return *(CLIENT_CALL_RETURN *)&ret;
+}
+
+#endif
+
+LONG_PTR CDECL DECLSPEC_HIDDEN ndr64_async_client_call( MIDL_STUBLESS_PROXY_INFO *info,
+        ULONG proc, void *retval, void **stack_top, void **fpu_stack )
+{
+    ULONG_PTR i;
+
+    TRACE("info %p, proc %lu, retval %p, stack_top %p, fpu_stack %p\n",
+            info, proc, retval, stack_top, fpu_stack);
+
+    for (i = 0; i < info->nCount; ++i)
+    {
+        const MIDL_SYNTAX_INFO *syntax_info = &info->pSyntaxInfo[i];
+        const RPC_SYNTAX_IDENTIFIER *id = &syntax_info->TransferSyntax;
+
+        TRACE("Found syntax %s, version %u.%u.\n", debugstr_guid(&id->SyntaxGUID),
+                id->SyntaxVersion.MajorVersion, id->SyntaxVersion.MinorVersion);
+        if (!memcmp(id, &ndr_syntax_id, sizeof(RPC_SYNTAX_IDENTIFIER)))
+        {
+            if (retval)
+                FIXME("Complex return types are not supported.\n");
+
+            return ndr_async_client_call( info->pStubDesc,
+                    syntax_info->ProcString + syntax_info->FmtStringOffset[proc], stack_top );
+        }
+    }
+
+    FIXME("NDR64 syntax is not supported.\n");
+    return 0;
+}
+
+#ifdef __x86_64__
+
+__ASM_GLOBAL_FUNC( Ndr64AsyncClientCall,
+                   "movq %r9,0x20(%rsp)\n\t"
+                   "leaq 0x20(%rsp),%r9\n\t"
+                   "pushq $0\n\t"
+                   "subq $0x20,%rsp\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset 0x28\n\t")
+                   "call " __ASM_NAME("ndr64_async_client_call") "\n\t"
+                   "addq $0x28,%rsp\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset -0x28\n\t")
+                   "ret" );
+
+#elif defined(_WIN64)
+
+/***********************************************************************
+ *            Ndr64AsyncClientCall [RPCRT4.@]
+ */
+CLIENT_CALL_RETURN WINAPIV Ndr64AsyncClientCall( MIDL_STUBLESS_PROXY_INFO *info, ULONG proc, void *retval, ... )
+{
+    va_list args;
+    LONG_PTR ret;
+
+    va_start( args, retval );
+    ret = ndr64_async_client_call( info, proc, retval, va_arg( args, void ** ), NULL );
+    va_end( args );
+    return *(CLIENT_CALL_RETURN *)&ret;
+}
+
+#endif

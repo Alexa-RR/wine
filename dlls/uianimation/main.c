@@ -36,24 +36,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(uianimation);
 
-static HINSTANCE hinstance;
-
-BOOL WINAPI DllMain( HINSTANCE dll, DWORD reason, LPVOID reserved )
-{
-    TRACE("(%p %d %p)\n", dll, reason, reserved);
-
-    switch (reason)
-    {
-    case DLL_WINE_PREATTACH:
-        return FALSE;  /* prefer native version */
-    case DLL_PROCESS_ATTACH:
-        hinstance = dll;
-        DisableThreadLibraryCalls( dll );
-        break;
-    }
-    return TRUE;
-}
-
 struct class_factory
 {
     IClassFactory IClassFactory_iface;
@@ -157,7 +139,7 @@ static ULONG WINAPI animation_storyboard_AddRef( IUIAnimationStoryboard *iface )
     struct animation_storyboard *This = impl_from_IUIAnimationStoryboard( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -166,7 +148,7 @@ static ULONG WINAPI animation_storyboard_Release( IUIAnimationStoryboard *iface 
     struct animation_storyboard *This = impl_from_IUIAnimationStoryboard( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
         heap_free( This );
@@ -377,7 +359,7 @@ static ULONG WINAPI animation_var_AddRef( IUIAnimationVariable *iface )
     struct animation_var *This = impl_from_IUIAnimationVariable( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -386,7 +368,7 @@ static ULONG WINAPI animation_var_Release( IUIAnimationVariable *iface )
     struct animation_var *This = impl_from_IUIAnimationVariable( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
         heap_free( This );
@@ -566,7 +548,7 @@ static ULONG WINAPI manager_AddRef( IUIAnimationManager *iface )
     struct manager *This = impl_from_IUIAnimationManager( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -575,7 +557,7 @@ static ULONG WINAPI manager_Release( IUIAnimationManager *iface )
     struct manager *This = impl_from_IUIAnimationManager( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
     {
@@ -799,7 +781,7 @@ static ULONG WINAPI timer_AddRef( IUIAnimationTimer *iface )
     struct timer *This = impl_from_IUIAnimationTimer( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -808,7 +790,7 @@ static ULONG WINAPI timer_Release( IUIAnimationTimer *iface )
     struct timer *This = impl_from_IUIAnimationTimer( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
         heap_free( This );
@@ -936,7 +918,7 @@ static ULONG WINAPI tr_factory_AddRef( IUIAnimationTransitionFactory *iface )
     struct tr_factory *This = impl_from_IUIAnimationTransitionFactory( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -945,7 +927,7 @@ static ULONG WINAPI tr_factory_Release( IUIAnimationTransitionFactory *iface )
     struct tr_factory *This = impl_from_IUIAnimationTransitionFactory( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
         heap_free( This );
@@ -1023,7 +1005,7 @@ static ULONG WINAPI tr_library_AddRef( IUIAnimationTransitionLibrary *iface )
     struct tr_library *This = impl_from_IUIAnimationTransitionLibrary( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
     return ref;
 }
 
@@ -1032,7 +1014,7 @@ static ULONG WINAPI tr_library_Release( IUIAnimationTransitionLibrary *iface )
     struct tr_library *This = impl_from_IUIAnimationTransitionLibrary( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p) ref = %u\n", This, ref );
+    TRACE( "(%p) ref = %lu\n", This, ref );
 
     if (!ref)
         heap_free( This );
@@ -1199,29 +1181,4 @@ HRESULT WINAPI DllGetClassObject( REFCLSID clsid, REFIID iid, void **obj )
         return CLASS_E_CLASSNOTAVAILABLE;
 
     return IClassFactory_QueryInterface( cf, iid, obj );
-}
-
-/******************************************************************
- *              DllCanUnloadNow
- */
-HRESULT WINAPI DllCanUnloadNow( void )
-{
-    TRACE( "()\n" );
-    return S_FALSE;
-}
-
-/***********************************************************************
- *          DllRegisterServer
- */
-HRESULT WINAPI DllRegisterServer( void )
-{
-    return __wine_register_resources( hinstance );
-}
-
-/***********************************************************************
- *          DllUnregisterServer
- */
-HRESULT WINAPI DllUnregisterServer( void )
-{
-    return __wine_unregister_resources( hinstance );
 }

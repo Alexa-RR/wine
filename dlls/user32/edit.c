@@ -28,8 +28,6 @@
  *
  */
 
-#include "config.h"
-
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
@@ -40,7 +38,6 @@
 #include "win.h"
 #include "imm.h"
 #include "usp10.h"
-#include "wine/unicode.h"
 #include "controls.h"
 #include "user_private.h"
 #include "wine/debug.h"
@@ -171,7 +168,7 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap);
  */
 static inline BOOL EDIT_EM_CanUndo(const EDITSTATE *es)
 {
-	return (es->undo_insert_count || strlenW(es->undo_text));
+	return (es->undo_insert_count || lstrlenW(es->undo_text));
 }
 
 
@@ -243,7 +240,7 @@ static HBRUSH EDIT_NotifyCtlColor(EDITSTATE *es, HDC hdc)
 static inline UINT get_text_length(EDITSTATE *es)
 {
     if(es->text_length == (UINT)-1)
-        es->text_length = strlenW(es->text);
+        es->text_length = lstrlenW(es->text);
     return es->text_length;
 }
 
@@ -415,7 +412,7 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData_linedef(EDITSTATE *es, HD
 		if (es->font)
 			SelectObject(udc, old_font);
 		if (udc != dc)
-			ReleaseDC(es->hwndSelf, udc);
+                    NtUserReleaseDC( es->hwndSelf, udc );
 	}
 
 	return line_def->ssa;
@@ -446,7 +443,7 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 			if (es->font)
 				SelectObject(udc, old_font);
 			if (udc != dc)
-				ReleaseDC(es->hwndSelf, udc);
+                            NtUserReleaseDC( es->hwndSelf, udc );
 		}
 		return es->ssa;
 	}
@@ -465,7 +462,7 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 
 static inline INT get_vertical_line_count(EDITSTATE *es)
 {
-	INT vlc = (es->format_rect.bottom - es->format_rect.top) / es->line_height;
+	INT vlc = es->line_height ? (es->format_rect.bottom - es->format_rect.top) / es->line_height : 0;
 	return max(1,vlc);
 }
 
@@ -576,7 +573,7 @@ static void EDIT_BuildLineDefs_ML(EDITSTATE *es, INT istart, INT iend, INT delta
 		/* Mark type of line termination */
 		if (!(*cp)) {
 			current_line->ending = END_0;
-			current_line->net_length = strlenW(current_position);
+			current_line->net_length = lstrlenW(current_position);
 		} else if ((cp > current_position) && (*(cp - 1) == '\r')) {
 			current_line->ending = END_SOFT;
 			current_line->net_length = cp - current_position - 1;
@@ -1638,7 +1635,7 @@ static void EDIT_UpdateScrollInfo(EDITSTATE *es)
 	si.fMask	= SIF_PAGE | SIF_POS | SIF_RANGE | SIF_DISABLENOSCROLL;
 	si.nMin		= 0;
 	si.nMax		= es->line_count - 1;
-	si.nPage	= (es->format_rect.bottom - es->format_rect.top) / es->line_height;
+	si.nPage	= es->line_height ? (es->format_rect.bottom - es->format_rect.top) / es->line_height : 0;
 	si.nPos		= es->y_offset;
 	TRACE("SB_VERT, nMin=%d, nMax=%d, nPage=%d, nPos=%d\n",
 		si.nMin, si.nMax, si.nPage, si.nPos);
@@ -1674,8 +1671,12 @@ static BOOL EDIT_EM_LineScroll_internal(EDITSTATE *es, INT dx, INT dy)
 {
 	INT nyoff;
 	INT x_offset_in_pixels;
-	INT lines_per_page = (es->format_rect.bottom - es->format_rect.top) /
-			      es->line_height;
+	INT lines_per_page;
+
+	if (!es->line_height || !es->char_width)
+		return TRUE;
+
+	lines_per_page = (es->format_rect.bottom - es->format_rect.top) / es->line_height;
 
 	if (es->style & ES_MULTILINE)
 	{
@@ -2595,7 +2596,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 		memcpy(buf, es->text + s, bufl * sizeof(WCHAR));
 		buf[bufl] = 0; /* ensure 0 termination */
 		/* now delete */
-		strcpyW(es->text + s, es->text + e);
+		lstrcpyW(es->text + s, es->text + e);
                 text_buffer_changed(es);
 	}
 	if (strl) {
@@ -2623,7 +2624,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 		/* if text is too long undo all changes */
 		if (honor_limit && !(es->style & ES_AUTOVSCROLL) && (es->line_count > vlc)) {
 			if (strl)
-				strcpyW(es->text + e, es->text + e + strl);
+				lstrcpyW(es->text + e, es->text + e + strl);
 			if (e != s)
 				for (i = 0 , p = es->text ; i < e - s ; i++)
 					p[i + s] = buf[i];
@@ -2632,7 +2633,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 				abs(es->selection_end - es->selection_start) - strl, hrgn);
 			strl = 0;
 			e = s;
-			hrgn = CreateRectRgn(0, 0, 0, 0);
+			SetRectRgn(hrgn, 0, 0, 0, 0);
 			EDIT_NOTIFY_PARENT(es, EN_MAXTEXT);
 		}
 	}
@@ -2643,7 +2644,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 		/* remove chars that don't fit */
 		if (honor_limit && !(es->style & ES_AUTOHSCROLL) && (es->text_width > fw)) {
 			while ((es->text_width > fw) && s + strl >= s) {
-				strcpyW(es->text + s + strl - 1, es->text + s + strl);
+				lstrcpyW(es->text + s + strl - 1, es->text + s + strl);
 				strl--;
 				es->text_length = -1;
 				EDIT_InvalidateUniscribeData(es);
@@ -2656,7 +2657,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 	
 	if (e != s) {
 		if (can_undo) {
-			utl = strlenW(es->undo_text);
+			utl = lstrlenW(es->undo_text);
 			if (!es->undo_insert_count && (*es->undo_text && (s == es->undo_position))) {
 				/* undo-buffer is extended to the right */
 				EDIT_MakeUndoFit(es, utl + e - s);
@@ -2922,7 +2923,7 @@ static void EDIT_EM_SetMargins(EDITSTATE *es, INT action,
                 }
             }
             SelectObject(dc, old_font);
-            ReleaseDC(es->hwndSelf, dc);
+            NtUserReleaseDC( es->hwndSelf, dc );
         }
 
 	if (action & EC_LEFTMARGIN) {
@@ -3037,11 +3038,11 @@ static BOOL EDIT_EM_Undo(EDITSTATE *es)
 	if( es->style & ES_READONLY )
             return !(es->style & ES_MULTILINE);
 
-	ulength = strlenW(es->undo_text);
+	ulength = lstrlenW(es->undo_text);
 
 	utext = HeapAlloc(GetProcessHeap(), 0, (ulength + 1) * sizeof(WCHAR));
 
-	strcpyW(utext, es->undo_text);
+	lstrcpyW(utext, es->undo_text);
 
 	TRACE("before UNDO:insertion length = %d, deletion buffer = %s\n",
 		     es->undo_insert_count, debugstr_w(utext));
@@ -3092,9 +3093,9 @@ static void EDIT_WM_Paste(EDITSTATE *es)
 	OpenClipboard(es->hwndSelf);
 	if ((hsrc = GetClipboardData(CF_UNICODETEXT))) {
 		src = GlobalLock(hsrc);
-                len = strlenW(src);
+                len = lstrlenW(src);
 		/* Protect single-line edit against pasting new line character */
-		if (!(es->style & ES_MULTILINE) && ((ptr = strchrW(src, '\n')))) {
+		if (!(es->style & ES_MULTILINE) && ((ptr = wcschr(src, '\n')))) {
 			len = ptr - src;
 			if (len && src[len - 1] == '\r')
 				--len;
@@ -3175,7 +3176,7 @@ static LRESULT EDIT_WM_Char(EDITSTATE *es, WCHAR c)
 {
         BOOL control;
 
-	control = GetKeyState(VK_CONTROL) & 0x8000;
+	control = NtUserGetKeyState(VK_CONTROL) & 0x8000;
 
 	switch (c) {
 	case '\r':
@@ -3192,18 +3193,16 @@ static LRESULT EDIT_WM_Char(EDITSTATE *es, WCHAR c)
 				EDIT_MoveHome(es, FALSE, FALSE);
 				EDIT_MoveDown_ML(es, FALSE);
 			} else {
-				static const WCHAR cr_lfW[] = {'\r','\n'};
-				EDIT_EM_ReplaceSel(es, TRUE, cr_lfW, 2, TRUE, TRUE);
+				EDIT_EM_ReplaceSel(es, TRUE, L"\r\n", 2, TRUE, TRUE);
 			}
 		}
 		break;
 	case '\t':
 		if ((es->style & ES_MULTILINE) && !(es->style & ES_READONLY))
 		{
-			static const WCHAR tabW[] = {'\t'};
                         if (EDIT_IsInsideDialog(es))
                             break;
-			EDIT_EM_ReplaceSel(es, TRUE, tabW, 1, TRUE, TRUE);
+			EDIT_EM_ReplaceSel(es, TRUE, L"\t", 1, TRUE, TRUE);
 		}
 		break;
 	case VK_BACK:
@@ -3314,7 +3313,7 @@ static void EDIT_WM_ContextMenu(EDITSTATE *es, INT x, INT y)
 	/* copy */
 	EnableMenuItem(popup, 3, MF_BYPOSITION | ((end - start) && !(es->style & ES_PASSWORD) ? MF_ENABLED : MF_GRAYED));
 	/* paste */
-	EnableMenuItem(popup, 4, MF_BYPOSITION | (IsClipboardFormatAvailable(CF_UNICODETEXT) && !(es->style & ES_READONLY) ? MF_ENABLED : MF_GRAYED));
+	EnableMenuItem(popup, 4, MF_BYPOSITION | (NtUserIsClipboardFormatAvailable(CF_UNICODETEXT) && !(es->style & ES_READONLY) ? MF_ENABLED : MF_GRAYED));
 	/* delete */
 	EnableMenuItem(popup, 5, MF_BYPOSITION | ((end - start) && !(es->style & ES_READONLY) ? MF_ENABLED : MF_GRAYED));
 	/* select all */
@@ -3330,7 +3329,7 @@ static void EDIT_WM_ContextMenu(EDITSTATE *es, INT x, INT y)
         }
 
 	if (!(es->flags & EF_FOCUSED))
-            SetFocus(es->hwndSelf);
+            NtUserSetFocus(es->hwndSelf);
 
 	cmd = TrackPopupMenu(popup, TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
 			     x, y, 0, es->hwndSelf, NULL);
@@ -3338,7 +3337,7 @@ static void EDIT_WM_ContextMenu(EDITSTATE *es, INT x, INT y)
 	if (cmd)
 	    EDIT_ContextMenuCommand(es, cmd);
 
-	DestroyMenu(menu);
+        NtUserDestroyMenu(menu);
 }
 
 
@@ -3354,7 +3353,7 @@ static INT EDIT_WM_GetText(const EDITSTATE *es, INT count, LPWSTR dst, BOOL unic
     if(unicode)
     {
 	lstrcpynW(dst, es->text, count);
-	return strlenW(dst);
+	return lstrlenW(dst);
     }
     else
     {
@@ -3437,11 +3436,11 @@ static LRESULT EDIT_WM_KeyDown(EDITSTATE *es, INT key)
 	BOOL shift;
 	BOOL control;
 
-	if (GetKeyState(VK_MENU) & 0x8000)
+	if (NtUserGetKeyState(VK_MENU) & 0x8000)
 		return 0;
 
-	shift = GetKeyState(VK_SHIFT) & 0x8000;
-	control = GetKeyState(VK_CONTROL) & 0x8000;
+	shift = NtUserGetKeyState(VK_SHIFT) & 0x8000;
+	control = NtUserGetKeyState(VK_CONTROL) & 0x8000;
 
 	switch (key) {
 	case VK_F4:
@@ -3585,7 +3584,7 @@ static LRESULT EDIT_WM_LButtonDblClk(EDITSTATE *es)
 	INT ll;
 
 	es->bCaptureState = TRUE;
-	SetCapture(es->hwndSelf);
+	NtUserSetCapture(es->hwndSelf);
 
 	l = EDIT_EM_LineFromChar(es, e);
 	li = EDIT_EM_LineIndex(es, l);
@@ -3611,7 +3610,7 @@ static LRESULT EDIT_WM_LButtonDown(EDITSTATE *es, DWORD keys, INT x, INT y)
 	BOOL after_wrap;
 
 	es->bCaptureState = TRUE;
-	SetCapture(es->hwndSelf);
+	NtUserSetCapture(es->hwndSelf);
 	EDIT_ConfinePoint(es, &x, &y);
 	e = EDIT_CharFromPos(es, x, y, &after_wrap);
 	EDIT_EM_SetSel(es, (keys & MK_SHIFT) ? es->selection_start : e, e, after_wrap);
@@ -3620,7 +3619,7 @@ static LRESULT EDIT_WM_LButtonDown(EDITSTATE *es, DWORD keys, INT x, INT y)
 	SetTimer(es->hwndSelf, 0, 100, NULL);
 
 	if (!(es->flags & EF_FOCUSED))
-            SetFocus(es->hwndSelf);
+            NtUserSetFocus(es->hwndSelf);
 
 	return 0;
 }
@@ -3634,7 +3633,7 @@ static LRESULT EDIT_WM_LButtonDown(EDITSTATE *es, DWORD keys, INT x, INT y)
 static LRESULT EDIT_WM_LButtonUp(EDITSTATE *es)
 {
 	if (es->bCaptureState) {
-		KillTimer(es->hwndSelf, 0);
+		NtUserKillTimer(es->hwndSelf, 0);
 		if (GetCapture() == es->hwndSelf) ReleaseCapture();
 	}
 	es->bCaptureState = FALSE;
@@ -3707,7 +3706,7 @@ static void EDIT_WM_Paint(EDITSTATE *es, HDC hdc)
 	BOOL rev = es->bEnableState &&
 				((es->flags & EF_FOCUSED) ||
 					(es->style & ES_NOHIDESEL));
-        dc = hdc ? hdc : BeginPaint(es->hwndSelf, &ps);
+        dc = hdc ? hdc : NtUserBeginPaint( es->hwndSelf, &ps );
 
 	/* The dc we use for calculating may not be the one we paint into.
 	   This is the safest action. */
@@ -3777,7 +3776,7 @@ static void EDIT_WM_Paint(EDITSTATE *es, HDC hdc)
 		SelectObject(dc, old_font);
 
         if (!hdc)
-            EndPaint(es->hwndSelf, &ps);
+            NtUserEndPaint( es->hwndSelf, &ps );
 }
 
 
@@ -3798,7 +3797,7 @@ static void EDIT_WM_SetFocus(EDITSTATE *es)
         {
             HDC hdc = GetDC(es->hwndSelf);
             EDIT_WM_Paint(es, hdc);
-            ReleaseDC(es->hwndSelf, hdc);
+            NtUserReleaseDC( es->hwndSelf, hdc );
         }
 
 	CreateCaret(es->hwndSelf, 0, 1, es->line_height);
@@ -3866,7 +3865,7 @@ static void EDIT_WM_SetFont(EDITSTATE *es, HFONT font, BOOL redraw)
 	margins = get_font_margins(dc, &tm, es->is_unicode);
 	if (font)
 		SelectObject(dc, old_font);
-	ReleaseDC(es->hwndSelf, dc);
+	NtUserReleaseDC( es->hwndSelf, dc );
 	
 	/* Reset the format rect and the margins */
 	GetClientRect(es->hwndSelf, &clientRect);
@@ -3926,7 +3925,7 @@ static void EDIT_WM_SetText(EDITSTATE *es, LPCWSTR text, BOOL unicode)
     if (text) 
     {
 	TRACE("%s\n", debugstr_w(text));
-	EDIT_EM_ReplaceSel(es, FALSE, text, strlenW(text), FALSE, FALSE);
+	EDIT_EM_ReplaceSel(es, FALSE, text, lstrlenW(text), FALSE, FALSE);
 	if(!unicode)
 	    HeapFree(GetProcessHeap(), 0, textW);
     } 
@@ -4607,7 +4606,7 @@ static LRESULT EDIT_WM_Create(EDITSTATE *es, LPCWSTR name)
         EDIT_SetRectNP(es, &clientRect);
 
        if (name && *name) {
-	   EDIT_EM_ReplaceSel(es, FALSE, name, strlenW(name), FALSE, FALSE);
+	   EDIT_EM_ReplaceSel(es, FALSE, name, lstrlenW(name), FALSE, FALSE);
 	   /* if we insert text to the editline, the text scrolls out
             * of the window, as the caret is placed after the insert
             * pos normally; thus we reset es->selection... to 0 and
@@ -4791,7 +4790,7 @@ LRESULT EditWndProc_common( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, B
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
 		}
 
-		EDIT_EM_ReplaceSel(es, (BOOL)wParam, textW, strlenW(textW), TRUE, TRUE);
+		EDIT_EM_ReplaceSel(es, (BOOL)wParam, textW, lstrlenW(textW), TRUE, TRUE);
 		result = 1;
 
 		if(!unicode)
@@ -5249,10 +5248,9 @@ LRESULT EditWndProc_common( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, B
 /*********************************************************************
  * edit class descriptor
  */
-static const WCHAR editW[] = {'E','d','i','t',0};
 const struct builtin_class_descr EDIT_builtin_class =
 {
-    editW,                /* name */
+    L"Edit",              /* name */
     CS_DBLCLKS | CS_PARENTDC,   /* style */
     WINPROC_EDIT,         /* proc */
 #ifdef __i386__

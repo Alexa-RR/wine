@@ -2589,10 +2589,26 @@ static void test_Light(void)
     color = IDirect3DRMLight_GetColor(light);
     ok(color == 0xff180587, "wrong color (%x)\n", color);
 
+    hr = IDirect3DRMLight_SetColor(light, 0x00c0c0c0);
+    ok(hr == D3DRM_OK, "Got unexpected hr %#x.\n", hr);
+    color = IDirect3DRMLight_GetColor(light);
+    ok(color == 0xffc0c0c0, "Got unexpected color 0x%08x.\n", color);
+
     hr = IDirect3DRMLight_SetColorRGB(light, 0.5, 0.5, 0.5);
     ok(hr == D3DRM_OK, "Cannot set color (hr = %x)\n", hr);
     color = IDirect3DRMLight_GetColor(light);
     ok(color == 0xff7f7f7f, "wrong color (%x)\n", color);
+
+    IDirect3DRMLight_Release(light);
+
+    hr = IDirect3DRM_CreateLight(d3drm, D3DRMLIGHT_SPOT, 0x00c0c0c0, &light);
+    ok(hr == D3DRM_OK, "Got unexpected hr %#x.\n", hr);
+
+    type = IDirect3DRMLight_GetType(light);
+    ok(type == D3DRMLIGHT_SPOT, "Got unexpected type %#x.\n", type);
+
+    color = IDirect3DRMLight_GetColor(light);
+    ok(color == 0xffc0c0c0, "Got unexpected color 0x%08x.\n", color);
 
     IDirect3DRMLight_Release(light);
 
@@ -4045,7 +4061,7 @@ static void test_create_device_from_clipper1(void)
     surface_desc.dwSize = sizeof(surface_desc);
     hr = IDirectDrawSurface_GetSurfaceDesc(surface, &surface_desc);
     ok(hr == DD_OK, "Cannot get surface desc structure (hr = %x).\n", hr);
-    todo_wine ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
+    ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
             surface_desc.ddpfPixelFormat.dwRGBBitCount);
 
     hr = IDirectDraw2_RestoreDisplayMode(ddraw);
@@ -4224,7 +4240,7 @@ static void test_create_device_from_clipper2(void)
     surface_desc.dwSize = sizeof(surface_desc);
     hr = IDirectDrawSurface_GetSurfaceDesc(surface, &surface_desc);
     ok(hr == DD_OK, "Cannot get surface desc structure (hr = %x).\n", hr);
-    todo_wine ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
+    ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
             surface_desc.ddpfPixelFormat.dwRGBBitCount);
 
     hr = IDirectDraw2_RestoreDisplayMode(ddraw);
@@ -4402,7 +4418,7 @@ static void test_create_device_from_clipper3(void)
     surface_desc.dwSize = sizeof(surface_desc);
     hr = IDirectDrawSurface_GetSurfaceDesc(surface, &surface_desc);
     ok(hr == DD_OK, "Cannot get surface desc structure (hr = %x).\n", hr);
-    todo_wine ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
+    ok(surface_desc.ddpfPixelFormat.dwRGBBitCount == 16, "Expected 16bpp, got %ubpp.\n",
             surface_desc.ddpfPixelFormat.dwRGBBitCount);
 
     hr = IDirectDraw2_RestoreDisplayMode(ddraw);
@@ -7270,13 +7286,23 @@ static void test_viewport_clear2(void)
     ret_color = get_surface_color(surface, 500, 400);
     todo_wine ok(compare_color(ret_color, 0x00bada55, 1), "Got unexpected color 0x%08x.\n", ret_color);
 
+    /* Remove old draw contents */
+    hr = IDirect3DRMFrame3_SetSceneBackgroundRGB(frame3, 0.0f, 1.0f, 0.0f);
+    ok(SUCCEEDED(hr), "Cannot set scene background RGB (hr = %#x)\n", hr);
+    hr = IDirect3DRMViewport2_Configure(viewport2, 0, 0, rc.right, rc.bottom);
+    todo_wine ok(SUCCEEDED(hr), "Cannot configure viewport (hr = %#x).\n", hr);
+    hr = IDirect3DRMViewport2_Clear(viewport2, D3DRMCLEAR_ALL);
+    ok(SUCCEEDED(hr), "Cannot clear viewport (hr = %#x).\n", hr);
+    hr = IDirect3DRMFrame3_SetSceneBackgroundRGB(frame3, 1.0f, 1.0f, 1.0f);
+    ok(SUCCEEDED(hr), "Cannot set scene background RGB (hr = %#x)\n", hr);
+
     /* Clear with no flags */
     hr = IDirect3DRMViewport2_Configure(viewport2, 0, 0, rc.right, rc.bottom);
     todo_wine ok(SUCCEEDED(hr), "Cannot configure viewport (hr = %#x).\n", hr);
     hr = IDirect3DRMViewport2_Clear(viewport2, 0);
     ok(SUCCEEDED(hr), "Cannot clear viewport (hr = %#x).\n", hr);
     ret_color = get_surface_color(surface, 320, 240);
-    todo_wine ok(compare_color(ret_color, 0x00bada55, 1), "Got unexpected color 0x%08x.\n", ret_color);
+    ok(compare_color(ret_color, 0x0000ff00, 1), "Got unexpected color 0x%08x.\n", ret_color);
 
     hr = IDirect3DRMViewport2_Configure(viewport2, 0, 0, rc.right, rc.bottom);
     todo_wine ok(SUCCEEDED(hr), "Cannot configure viewport (hr = %#x).\n", hr);

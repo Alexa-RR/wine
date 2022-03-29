@@ -22,25 +22,20 @@
 #pragma makedep implib
 #endif
 
-#ifdef __MINGW32__
-
-#if _MSVCR_VER >= 140
-#define _UCRT
-#endif
-
 #include <stdarg.h>
 #include <stdlib.h>
 #include <process.h>
 
 #include "windef.h"
 #include "winbase.h"
+#include "winternl.h"
 
 int __cdecl wmain(int argc, WCHAR **argv, WCHAR **env);
 
 static const IMAGE_NT_HEADERS *get_nt_header( void )
 {
-    extern IMAGE_DOS_HEADER __ImageBase;
-    return (const IMAGE_NT_HEADERS *)((char *)&__ImageBase + __ImageBase.e_lfanew);
+    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)NtCurrentTeb()->Peb->ImageBaseAddress;
+    return (const IMAGE_NT_HEADERS *)((char *)dos + dos->e_lfanew);
 }
 
 int __cdecl wmainCRTStartup(void)
@@ -65,5 +60,3 @@ int __cdecl wmainCRTStartup(void)
     exit(ret);
     return ret;
 }
-
-#endif

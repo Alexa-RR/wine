@@ -1,10 +1,8 @@
 EXTRADEFS = -D_SETUPAPI_
 MODULE    = setupapi.dll
 IMPORTLIB = setupapi
-IMPORTS   = uuid version advapi32 rpcrt4
-DELAYIMPORTS = shell32 wintrust ole32 winspool.drv comdlg32 user32
-
-EXTRADLLFLAGS = -mno-cygwin
+IMPORTS   = uuid version advapi32 rpcrt4 kernelbase
+DELAYIMPORTS = cabinet shell32 wintrust ole32 comdlg32 user32
 
 C_SRCS = \
 	devinst.c \

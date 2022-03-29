@@ -28,7 +28,7 @@
 
 #include "amstream_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(amstream);
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 struct multimedia_stream
 {
@@ -42,6 +42,7 @@ struct multimedia_stream
     BOOL initialized;
     STREAM_TYPE type;
     OAEVENT event;
+    STREAM_STATE state;
 };
 
 static inline struct multimedia_stream *impl_from_IAMMultiMediaStream(IAMMultiMediaStream *iface)
@@ -92,13 +93,14 @@ static ULONG WINAPI multimedia_stream_Release(IAMMultiMediaStream *iface)
         if (This->ipin)
             IPin_Release(This->ipin);
         IMediaStreamFilter_Release(This->filter);
+        IMediaStreamFilter_Release(This->filter);
         if (This->media_seeking)
             IMediaSeeking_Release(This->media_seeking);
         if (This->media_control)
             IMediaControl_Release(This->media_control);
         if (This->graph)
             IGraphBuilder_Release(This->graph);
-        HeapFree(GetProcessHeap(), 0, This);
+        free(This);
     }
 
     return ref;
@@ -130,18 +132,20 @@ static HRESULT WINAPI multimedia_stream_EnumMediaStreams(IAMMultiMediaStream *if
 {
     struct multimedia_stream *mmstream = impl_from_IAMMultiMediaStream(iface);
 
-    TRACE("mmstream %p, index %d, stream %p.\n", mmstream, index, stream);
+    TRACE("mmstream %p, index %ld, stream %p.\n", mmstream, index, stream);
 
     return IMediaStreamFilter_EnumMediaStreams(mmstream->filter, index, stream);
 }
 
-static HRESULT WINAPI multimedia_stream_GetState(IAMMultiMediaStream *iface, STREAM_STATE *pCurrentState)
+static HRESULT WINAPI multimedia_stream_GetState(IAMMultiMediaStream *iface, STREAM_STATE *state)
 {
-    struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
+    struct multimedia_stream *mmstream = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%p) stub!\n", This, iface, pCurrentState);
+    TRACE("mmstream %p, state %p.\n", mmstream, state);
 
-    return E_NOTIMPL;
+    *state = mmstream->state;
+
+    return S_OK;
 }
 
 static HRESULT WINAPI multimedia_stream_SetState(IAMMultiMediaStream *iface, STREAM_STATE new_state)
@@ -152,29 +156,46 @@ static HRESULT WINAPI multimedia_stream_SetState(IAMMultiMediaStream *iface, STR
     TRACE("(%p/%p)->(%u)\n", This, iface, new_state);
 
     if (new_state == STREAMSTATE_RUN)
+    {
         hr = IMediaControl_Run(This->media_control);
+        if (SUCCEEDED(hr))
+        {
+            FILTER_STATE state;
+            IMediaControl_GetState(This->media_control, INFINITE, (OAFilterState *)&state);
+            hr = S_OK;
+        }
+    }
     else if (new_state == STREAMSTATE_STOP)
         hr = IMediaControl_Stop(This->media_control);
+
+    if (SUCCEEDED(hr))
+        This->state = new_state;
 
     return hr;
 }
 
-static HRESULT WINAPI multimedia_stream_GetTime(IAMMultiMediaStream *iface, STREAM_TIME *pCurrentTime)
+static HRESULT WINAPI multimedia_stream_GetTime(IAMMultiMediaStream *iface, STREAM_TIME *time)
 {
-    struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
+    struct multimedia_stream *stream = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%p) stub!\n", This, iface, pCurrentTime);
+    TRACE("stream %p, time %p.\n", stream, time);
 
-    return E_NOTIMPL;
+    return IMediaStreamFilter_GetCurrentStreamTime(stream->filter, time);
 }
 
-static HRESULT WINAPI multimedia_stream_GetDuration(IAMMultiMediaStream *iface, STREAM_TIME *pDuration)
+static HRESULT WINAPI multimedia_stream_GetDuration(IAMMultiMediaStream *iface, STREAM_TIME *duration)
 {
-    struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
+    struct multimedia_stream *mmstream = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%p) stub!\n", This, iface, pDuration);
+    TRACE("mmstream %p, duration %p.\n", mmstream, duration);
 
-    return E_NOTIMPL;
+    if (!mmstream->media_seeking)
+        return E_NOINTERFACE;
+
+    if (IMediaSeeking_GetDuration(mmstream->media_seeking, duration) != S_OK)
+        return S_FALSE;
+
+    return S_OK;
 }
 
 static HRESULT WINAPI multimedia_stream_Seek(IAMMultiMediaStream *iface, STREAM_TIME seek_time)
@@ -186,13 +207,18 @@ static HRESULT WINAPI multimedia_stream_Seek(IAMMultiMediaStream *iface, STREAM_
     return IMediaSeeking_SetPositions(This->media_seeking, &seek_time, AM_SEEKING_AbsolutePositioning, NULL, AM_SEEKING_NoPositioning);
 }
 
-static HRESULT WINAPI multimedia_stream_GetEndOfStream(IAMMultiMediaStream *iface, HANDLE *phEOS)
+static HRESULT WINAPI multimedia_stream_GetEndOfStream(IAMMultiMediaStream *iface, HANDLE *eos)
 {
-    struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
+    struct multimedia_stream *mmstream = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%p) stub!\n", This, iface, phEOS);
+    TRACE("mmstream %p, eos %p.\n", mmstream, eos);
 
-    return E_NOTIMPL;
+    if (!eos)
+        return E_POINTER;
+
+    *eos = (HANDLE)mmstream->event;
+
+    return S_OK;
 }
 
 static HRESULT create_graph(struct multimedia_stream *mmstream, IGraphBuilder *graph)
@@ -243,7 +269,7 @@ static HRESULT WINAPI multimedia_stream_Initialize(IAMMultiMediaStream *iface,
     struct multimedia_stream *mmstream = impl_from_IAMMultiMediaStream(iface);
     HRESULT hr;
 
-    TRACE("mmstream %p, type %u, flags %#x, graph %p.\n", mmstream, type, flags, graph);
+    TRACE("mmstream %p, type %u, flags %#lx, graph %p.\n", mmstream, type, flags, graph);
 
     if (graph && mmstream->graph)
     {
@@ -301,6 +327,7 @@ static HRESULT WINAPI multimedia_stream_GetFilter(IAMMultiMediaStream *iface,
 static void add_stream(struct multimedia_stream *mmstream, IAMMediaStream *stream, IMediaStream **ret_stream)
 {
     IMediaStreamFilter_AddMediaStream(mmstream->filter, stream);
+    IAMMediaStream_JoinAMMultiMediaStream(stream, &mmstream->IAMMultiMediaStream_iface);
     if (ret_stream)
     {
         *ret_stream = (IMediaStream *)stream;
@@ -316,7 +343,7 @@ static HRESULT WINAPI multimedia_stream_AddMediaStream(IAMMultiMediaStream *ifac
     IAMMediaStream* pStream;
     IMediaStream *stream;
 
-    TRACE("mmstream %p, stream_object %p, id %s, flags %#x, ret_stream %p.\n",
+    TRACE("mmstream %p, stream_object %p, id %s, flags %#lx, ret_stream %p.\n",
             This, stream_object, debugstr_guid(PurposeId), dwFlags, ret_stream);
 
     if (IMediaStreamFilter_GetMediaStream(This->filter, PurposeId, &stream) == S_OK)
@@ -377,19 +404,26 @@ static HRESULT WINAPI multimedia_stream_AddMediaStream(IAMMultiMediaStream *ifac
     }
 
     if (IsEqualGUID(PurposeId, &MSPID_PrimaryVideo))
-        hr = ddraw_stream_create((IMultiMediaStream*)iface, PurposeId, stream_object, This->type, &pStream);
+        hr = ddraw_stream_create(NULL, (void **)&pStream);
     else if (IsEqualGUID(PurposeId, &MSPID_PrimaryAudio))
-        hr = audio_stream_create((IMultiMediaStream*)iface, PurposeId, stream_object, This->type, &pStream);
+        hr = audio_stream_create(NULL, (void **)&pStream);
     else
         return MS_E_PURPOSEID;
 
-    if (SUCCEEDED(hr))
+    if (FAILED(hr))
+        return hr;
+
+    hr = IAMMediaStream_Initialize(pStream, stream_object, dwFlags, PurposeId, This->type);
+    if (FAILED(hr))
     {
-        add_stream(This, pStream, ret_stream);
         IAMMediaStream_Release(pStream);
+        return hr;
     }
 
-    return hr;
+    add_stream(This, pStream, ret_stream);
+    IAMMediaStream_Release(pStream);
+
+    return S_OK;
 }
 
 static HRESULT WINAPI multimedia_stream_OpenFile(IAMMultiMediaStream *iface,
@@ -402,7 +436,7 @@ static HRESULT WINAPI multimedia_stream_OpenFile(IAMMultiMediaStream *iface,
     IPin *ipin;
     PIN_DIRECTION pin_direction;
 
-    TRACE("(%p/%p)->(%s,%x)\n", This, iface, debugstr_w(filename), flags);
+    TRACE("(%p/%p)->(%s,%lx)\n", This, iface, debugstr_w(filename), flags);
 
     if (!filename)
         return E_POINTER;
@@ -432,7 +466,41 @@ static HRESULT WINAPI multimedia_stream_OpenFile(IAMMultiMediaStream *iface,
     }
 
     if (SUCCEEDED(ret) && !(flags & AMMSF_NORENDER))
-        ret = IGraphBuilder_Render(This->graph, This->ipin);
+    {
+        IFilterGraph2 *graph;
+
+        if (SUCCEEDED(ret = IGraphBuilder_QueryInterface(This->graph, &IID_IFilterGraph2, (void **)&graph)))
+        {
+            DWORD renderflags = (flags & AMMSF_RENDERALLSTREAMS) ? 0 : AM_RENDEREX_RENDERTOEXISTINGRENDERERS;
+
+            ret = IFilterGraph2_RenderEx(graph, This->ipin, renderflags, NULL);
+            if (ret == VFW_E_CANNOT_RENDER) ret = VFW_E_CANNOT_CONNECT;
+            else if (ret == VFW_S_PARTIAL_RENDER) ret = S_OK;
+
+            IFilterGraph2_Release(graph);
+        }
+        else
+        {
+            FIXME("Failed to get IFilterGraph2 interface, hr %#lx.\n", ret);
+            ret = IGraphBuilder_Render(This->graph, This->ipin);
+        }
+    }
+
+    if (SUCCEEDED(ret) && (flags & AMMSF_NOCLOCK))
+    {
+        IMediaFilter *media_filter;
+
+        if (SUCCEEDED(ret = IGraphBuilder_QueryInterface(This->graph, &IID_IMediaFilter, (void **)&media_filter)))
+        {
+            ret = IMediaFilter_SetSyncSource(media_filter, NULL);
+            IMediaFilter_Release(media_filter);
+        }
+    }
+
+    IMediaStreamFilter_SupportSeeking(This->filter, This->type == STREAMTYPE_READ);
+
+    if (SUCCEEDED(ret) && (flags & AMMSF_RUN))
+        ret = IAMMultiMediaStream_SetState(iface, STREAMSTATE_RUN);
 
     if (EnumPins)
         IEnumPins_Release(EnumPins);
@@ -446,7 +514,7 @@ static HRESULT WINAPI multimedia_stream_OpenMoniker(IAMMultiMediaStream *iface,
 {
     struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%p,%p,%x) stub!\n", This, iface, pCtx, pMoniker, dwFlags);
+    FIXME("(%p/%p)->(%p,%p,%lx) stub!\n", This, iface, pCtx, pMoniker, dwFlags);
 
     return E_NOTIMPL;
 }
@@ -455,7 +523,7 @@ static HRESULT WINAPI multimedia_stream_Render(IAMMultiMediaStream *iface, DWORD
 {
     struct multimedia_stream *This = impl_from_IAMMultiMediaStream(iface);
 
-    FIXME("(%p/%p)->(%x) partial stub!\n", This, iface, dwFlags);
+    FIXME("(%p/%p)->(%lx) partial stub!\n", This, iface, dwFlags);
 
     if(dwFlags != AMMSF_NOCLOCK)
         return E_INVALIDARG;
@@ -494,7 +562,7 @@ HRESULT multimedia_stream_create(IUnknown *outer, void **out)
     if (outer)
         return CLASS_E_NOAGGREGATION;
 
-    if (!(object = heap_alloc_zero(sizeof(*object))))
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
 
     object->IAMMultiMediaStream_iface.lpVtbl = &multimedia_stream_vtbl;
@@ -503,10 +571,13 @@ HRESULT multimedia_stream_create(IUnknown *outer, void **out)
     if (FAILED(hr = CoCreateInstance(&CLSID_MediaStreamFilter, NULL,
             CLSCTX_INPROC_SERVER, &IID_IMediaStreamFilter, (void **)&object->filter)))
     {
-        ERR("Failed to create stream filter, hr %#x.\n", hr);
-        heap_free(object);
+        ERR("Failed to create stream filter, hr %#lx.\n", hr);
+        free(object);
         return hr;
     }
+
+    /* The stream takes an additional reference to the filter. */
+    IMediaStreamFilter_AddRef(object->filter);
 
     TRACE("Created multimedia stream %p.\n", object);
     *out = &object->IAMMultiMediaStream_iface;

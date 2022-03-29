@@ -95,7 +95,7 @@ static ULONG WINAPI IDirectMusicStyle8Impl_AddRef(IDirectMusicStyle8 *iface)
     IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -105,7 +105,7 @@ static ULONG WINAPI IDirectMusicStyle8Impl_Release(IDirectMusicStyle8 *iface)
     IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if (!ref) {
         struct style_band *band, *band2;
@@ -134,19 +134,46 @@ static ULONG WINAPI IDirectMusicStyle8Impl_Release(IDirectMusicStyle8 *iface)
 }
 
 /* IDirectMusicStyle8Impl IDirectMusicStyle(8) part: */
-static HRESULT WINAPI IDirectMusicStyle8Impl_GetBand(IDirectMusicStyle8 *iface, WCHAR *pwszName,
-        IDirectMusicBand **ppBand)
+static HRESULT WINAPI IDirectMusicStyle8Impl_GetBand(IDirectMusicStyle8 *iface, WCHAR *name,
+        IDirectMusicBand **band)
 {
-        IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %p, %p): stub\n", This, pwszName, ppBand);
-	return S_OK;
+    IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
+    struct style_band *sband;
+    HRESULT hr;
+
+    TRACE("(%p, %s, %p)\n", This, debugstr_w(name), band);
+
+    if (!name)
+        return E_POINTER;
+
+    LIST_FOR_EACH_ENTRY(sband, &This->bands, struct style_band, entry) {
+        IDirectMusicObject *obj;
+
+        hr = IDirectMusicBand_QueryInterface(sband->pBand, &IID_IDirectMusicObject, (void**)&obj);
+        if (SUCCEEDED(hr)) {
+            DMUS_OBJECTDESC desc;
+
+            if (IDirectMusicObject_GetDescriptor(obj, &desc) == S_OK) {
+                if (desc.dwValidData & DMUS_OBJ_NAME && !lstrcmpW(name, desc.wszName)) {
+                    IDirectMusicObject_Release(obj);
+                    IDirectMusicBand_AddRef(sband->pBand);
+                    *band = sband->pBand;
+                    return S_OK;
+                }
+            }
+
+            IDirectMusicObject_Release(obj);
+        }
+    }
+
+    return S_FALSE;
 }
 
 static HRESULT WINAPI IDirectMusicStyle8Impl_EnumBand(IDirectMusicStyle8 *iface, DWORD dwIndex,
         WCHAR *pwszName)
 {
         IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %d, %p): stub\n", This, dwIndex, pwszName);
+	FIXME("(%p, %ld, %p): stub\n", This, dwIndex, pwszName);
 	return S_OK;
 }
 
@@ -172,7 +199,7 @@ static HRESULT WINAPI IDirectMusicStyle8Impl_EnumMotif(IDirectMusicStyle8 *iface
     const struct list *cursor;
     unsigned int i = 0;
 
-    TRACE("(%p, %u, %p)\n", This, index, name);
+    TRACE("(%p, %lu, %p)\n", This, index, name);
 
     if (!name)
         return E_POINTER;
@@ -201,8 +228,8 @@ static HRESULT WINAPI IDirectMusicStyle8Impl_GetMotif(IDirectMusicStyle8 *iface,
         IDirectMusicSegment **ppSegment)
 {
         IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %p, %p): stub\n", This, pwszName, ppSegment);
-	return S_OK;
+        FIXME("(%p, %s, %p): stub\n", This, debugstr_w(pwszName), ppSegment);
+        return S_FALSE;
 }
 
 static HRESULT WINAPI IDirectMusicStyle8Impl_GetDefaultChordMap(IDirectMusicStyle8 *iface,
@@ -217,7 +244,7 @@ static HRESULT WINAPI IDirectMusicStyle8Impl_EnumChordMap(IDirectMusicStyle8 *if
         WCHAR *pwszName)
 {
         IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %d, %p): stub\n", This, dwIndex, pwszName);
+	FIXME("(%p, %ld, %p): stub\n", This, dwIndex, pwszName);
 	return S_OK;
 }
 
@@ -241,7 +268,7 @@ static HRESULT WINAPI IDirectMusicStyle8Impl_GetEmbellishmentLength(IDirectMusic
         DWORD dwType, DWORD dwLevel, DWORD *pdwMin, DWORD *pdwMax)
 {
         IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %d, %d, %p, %p): stub\n", This, dwType, dwLevel, pdwMin, pdwMax);
+	FIXME("(%p, %ld, %ld, %p, %p): stub\n", This, dwType, dwLevel, pdwMin, pdwMax);
 	return S_OK;
 }
 
@@ -256,7 +283,7 @@ static HRESULT WINAPI IDirectMusicStyle8Impl_EnumPattern(IDirectMusicStyle8 *ifa
         DWORD dwPatternType, WCHAR *pwszName)
 {
         IDirectMusicStyle8Impl *This = impl_from_IDirectMusicStyle8(iface);
-	FIXME("(%p, %d, %d, %p): stub\n", This, dwIndex, dwPatternType, pwszName);
+	FIXME("(%p, %ld, %ld, %p): stub\n", This, dwIndex, dwPatternType, pwszName);
 	return S_OK;
 }
 
@@ -375,7 +402,7 @@ static HRESULT parse_part_ref_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm,
   do {
     IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
     ListCount[0] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-    TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+    TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
     switch (Chunk.fccID) {
     case DMUS_FOURCC_PARTREF_CHUNK: {
       TRACE_(dmfile)(": PartRef chunk\n");
@@ -401,7 +428,7 @@ static HRESULT parse_part_ref_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm,
 	do {
 	  IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
 	  ListCount[1] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-          TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+          TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
 	  
           if (!pNewItem) {
 	    ERR(": pNewItem not yet allocated, chunk order bad?\n");
@@ -420,7 +447,7 @@ static HRESULT parse_part_ref_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm,
 	    }
 	    }
 	  }  
-          TRACE_(dmfile)(": ListCount[1] = %d < ListSize[1] = %d\n", ListCount[1], ListSize[1]);
+          TRACE_(dmfile)(": ListCount[1] = %ld < ListSize[1] = %ld\n", ListCount[1], ListSize[1]);
 	} while (ListCount[1] < ListSize[1]);
 	break;
       }
@@ -440,7 +467,7 @@ static HRESULT parse_part_ref_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm,
       break;						
     }
     }
-    TRACE_(dmfile)(": ListCount[0] = %d < ListSize[0] = %d\n", ListCount[0], ListSize[0]);
+    TRACE_(dmfile)(": ListCount[0] = %ld < ListSize[0] = %ld\n", ListCount[0], ListSize[0]);
   } while (ListCount[0] < ListSize[0]);
 
   return S_OK;
@@ -468,7 +495,7 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
   do {
     IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
     ListCount[0] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-    TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+    TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
     switch (Chunk.fccID) {
     case DMUS_FOURCC_PART_CHUNK: {
       TRACE_(dmfile)(": Part chunk (skipping for now)\n" );
@@ -480,8 +507,8 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
       TRACE_(dmfile)(": Note chunk (skipping for now)\n");
       IStream_Read (pStm, &dwSize, sizeof(DWORD), NULL);
       cnt = (Chunk.dwSize - sizeof(DWORD));
-      TRACE_(dmfile)(" - dwSize: %u\n", dwSize);
-      TRACE_(dmfile)(" - cnt: %u (%u / %u)\n", cnt / dwSize, (DWORD)(Chunk.dwSize - sizeof(DWORD)), dwSize);
+      TRACE_(dmfile)(" - dwSize: %lu\n", dwSize);
+      TRACE_(dmfile)(" - cnt: %lu (%lu / %lu)\n", cnt / dwSize, (DWORD)(Chunk.dwSize - sizeof(DWORD)), dwSize);
       if (cnt % dwSize != 0) {
 	ERR("Invalid Array Size\n");
 	return E_FAIL;
@@ -496,8 +523,8 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
       TRACE_(dmfile)(": Curve chunk (skipping for now)\n");
       IStream_Read (pStm, &dwSize, sizeof(DWORD), NULL);
       cnt = (Chunk.dwSize - sizeof(DWORD));
-      TRACE_(dmfile)(" - dwSize: %u\n", dwSize);
-      TRACE_(dmfile)(" - cnt: %u (%u / %u)\n", cnt / dwSize, (DWORD)(Chunk.dwSize - sizeof(DWORD)), dwSize);
+      TRACE_(dmfile)(" - dwSize: %lu\n", dwSize);
+      TRACE_(dmfile)(" - cnt: %lu (%lu / %lu)\n", cnt / dwSize, (DWORD)(Chunk.dwSize - sizeof(DWORD)), dwSize);
       if (cnt % dwSize != 0) {
 	ERR("Invalid Array Size\n");
 	return E_FAIL;
@@ -537,7 +564,7 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
 	do {
 	  IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
 	  ListCount[1] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-          TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+          TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
 	  
 	  hr = IDirectMusicUtils_IPersistStream_ParseUNFOGeneric(&Chunk, pStm, &desc);
 	  if (FAILED(hr)) return hr;
@@ -552,7 +579,7 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
 	    }
 	    }
 	  }  
-          TRACE_(dmfile)(": ListCount[1] = %d < ListSize[1] = %d\n", ListCount[1], ListSize[1]);
+          TRACE_(dmfile)(": ListCount[1] = %ld < ListSize[1] = %ld\n", ListCount[1], ListSize[1]);
 	} while (ListCount[1] < ListSize[1]);
 	break;
       }
@@ -572,7 +599,7 @@ static HRESULT parse_part_list(DMUS_PRIVATE_CHUNK *pChunk, IStream *pStm)
       break;						
     }
     }
-    TRACE_(dmfile)(": ListCount[0] = %d < ListSize[0] = %d\n", ListCount[0], ListSize[0]);
+    TRACE_(dmfile)(": ListCount[0] = %ld < ListSize[0] = %ld\n", ListCount[0], ListSize[0]);
   } while (ListCount[0] < ListSize[0]);
 
   return S_OK;
@@ -599,7 +626,7 @@ static HRESULT parse_pattern_list(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHU
   do {
     IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
     ListCount[0] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-    TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+    TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
     switch (Chunk.fccID) {
     case DMUS_FOURCC_PATTERN_CHUNK: {
       TRACE_(dmfile)(": Pattern chunk\n");
@@ -622,7 +649,7 @@ static HRESULT parse_pattern_list(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHU
     case DMUS_FOURCC_RHYTHM_CHUNK: { 
       TRACE_(dmfile)(": Rhythm chunk\n");
       IStream_Read (pStm, &pNewMotif->dwRhythm, sizeof(DWORD), NULL);
-      TRACE_(dmfile)(" - dwRhythm: %u\n", pNewMotif->dwRhythm);
+      TRACE_(dmfile)(" - dwRhythm: %lu\n", pNewMotif->dwRhythm);
       /** TODO understand why some Chunks have size > 4 */
       liMove.QuadPart = Chunk.dwSize - sizeof(DWORD);
       IStream_Seek (pStm, liMove, STREAM_SEEK_CUR, NULL);
@@ -692,7 +719,7 @@ static HRESULT parse_pattern_list(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHU
 	do {
 	  IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
 	  ListCount[1] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-          TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+          TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
 	  
 	  hr = IDirectMusicUtils_IPersistStream_ParseUNFOGeneric(&Chunk, pStm, &pNewMotif->desc);
 	  if (FAILED(hr)) return hr;
@@ -707,7 +734,7 @@ static HRESULT parse_pattern_list(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHU
 	    }
 	    }
 	  }  
-          TRACE_(dmfile)(": ListCount[1] = %d < ListSize[1] = %d\n", ListCount[1], ListSize[1]);
+          TRACE_(dmfile)(": ListCount[1] = %ld < ListSize[1] = %ld\n", ListCount[1], ListSize[1]);
 	} while (ListCount[1] < ListSize[1]);
 	break;
       }
@@ -733,7 +760,7 @@ static HRESULT parse_pattern_list(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHU
       break;						
     }
     }
-    TRACE_(dmfile)(": ListCount[0] = %d < ListSize[0] = %d\n", ListCount[0], ListSize[0]);
+    TRACE_(dmfile)(": ListCount[0] = %ld < ListSize[0] = %ld\n", ListCount[0], ListSize[0]);
   } while (ListCount[0] < ListSize[0]);
 
   return S_OK;
@@ -760,7 +787,7 @@ static HRESULT parse_style_form(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHUNK
   do {
     IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
     StreamCount += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-    TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+    TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
 
     hr = IDirectMusicUtils_IPersistStream_ParseDescGeneric(&Chunk, pStm, &This->dmobj.desc);
     if (FAILED(hr)) return hr;
@@ -837,7 +864,7 @@ static HRESULT parse_style_form(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHUNK
 	  do {
 	    IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
 	    ListCount[0] += sizeof(FOURCC) + sizeof(DWORD) + Chunk.dwSize;
-            TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+            TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
 
             hr = IDirectMusicUtils_IPersistStream_ParseUNFOGeneric(&Chunk, pStm, &This->dmobj.desc);
 	    if (FAILED(hr)) return hr;
@@ -852,7 +879,7 @@ static HRESULT parse_style_form(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHUNK
 	      }
 	      }
 	    }  
-            TRACE_(dmfile)(": ListCount[0] = %d < ListSize[0] = %d\n", ListCount[0], ListSize[0]);
+            TRACE_(dmfile)(": ListCount[0] = %ld < ListSize[0] = %ld\n", ListCount[0], ListSize[0]);
 	  } while (ListCount[0] < ListSize[0]);
 	  break;
 	}
@@ -885,7 +912,7 @@ static HRESULT parse_style_form(IDirectMusicStyle8Impl *This, DMUS_PRIVATE_CHUNK
       }
       }
     }
-    TRACE_(dmfile)(": StreamCount[0] = %d < StreamSize[0] = %d\n", StreamCount, StreamSize);
+    TRACE_(dmfile)(": StreamCount[0] = %ld < StreamSize[0] = %ld\n", StreamCount, StreamSize);
   } while (StreamCount < StreamSize);  
 
   return S_OK;
@@ -901,11 +928,11 @@ static HRESULT WINAPI IPersistStreamImpl_Load(IPersistStream *iface, IStream *pS
   FIXME("(%p, %p): Loading\n", This, pStm);
 
   IStream_Read (pStm, &Chunk, sizeof(FOURCC)+sizeof(DWORD), NULL);
-  TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+  TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
   switch (Chunk.fccID) {
   case FOURCC_RIFF: {
     IStream_Read (pStm, &Chunk.fccID, sizeof(FOURCC), NULL);
-    TRACE_(dmfile)(": %s chunk (size = %d)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
+    TRACE_(dmfile)(": %s chunk (size = %ld)", debugstr_fourcc (Chunk.fccID), Chunk.dwSize);
     switch (Chunk.fccID) {
     case DMUS_FOURCC_STYLE_FORM: {
       TRACE_(dmfile)(": Style form\n");

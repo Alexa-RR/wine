@@ -380,7 +380,7 @@ rem test  : echo i1|tmp.cmd i2|tmp.cmd i3|tmp.cmd i4
 rem result: i4:[i3:[i2:[i1,i2],i3],i4]@or_broken@i4:[i3:[i2:,i3],i4]@or_broken@i4:[i3:,i4]
 del tmp.cmd
 echo --- chain else
-rem Command arguments are gready and eat up the 'else' unless terminated by
+rem Command arguments are greedy and eat up the 'else' unless terminated by
 rem brackets, which means the 'else' can only be recognized when the
 rem 'if true' command chain ends with brackets.
 if 1==1 if 2==2 if 3==3 (echo a1) else (echo a2) else echo a3
@@ -1013,6 +1013,13 @@ if /i not (a)==(b) (
 ) else (
   echo comparison operators surrounded by brackets seem to be broken
 )
+if defined windir echo windir is defined
+if not defined windir echo windir is defined
+if not exist %windir% (
+  echo windir does not exist
+) else (
+  echo windir does exist
+)
 echo --- case sensitivity with and without /i option
 if bar==BAR echo if does not default to case sensitivity
 if not bar==BAR echo if seems to default to case sensitivity
@@ -1234,6 +1241,15 @@ goto :eof
 :endIfCompOpsSubroutines
 set WINE_STR_PARMS=
 set WINE_INT_PARMS=
+
+echo ------------ Testing if/for ------------
+if ""=="" for %%i in (A) DO (echo %%i)
+if not ""=="" for %%i in (B) DO (echo %%i)
+
+echo ------------ Testing if/set ------------
+set x=C:\Program Files (x86)
+if ""=="" set y=%x%\dummy
+echo %y%
 
 echo ------------ Testing for ------------
 echo --- plain FOR
@@ -2344,6 +2360,7 @@ echo ------------ Testing attrib ------------
 rem FIXME Add tests for archive, hidden and system attributes + mixed attributes modifications
 mkdir foobar & cd foobar
 echo foo original contents> foo
+attrib
 attrib foo
 echo > bar
 echo --- read-only attribute
@@ -3151,6 +3168,9 @@ echo %ErrorLevel% should be 7
 if errorlevel 7 echo setting var worked too well, bad
 call :setError 3
 echo %ErrorLevel% should still be 7
+rem Verify that (call ) sets errorlevel to 0
+(call )
+if errorlevel 1 echo errorlevel should have been 0
 
 echo ------------ Testing GOTO ------------
 if a==a goto dest1
@@ -3322,6 +3342,25 @@ if errorlevel 1 echo Normal+tab+garbage drive change failed
 
 popd
 
+echo ------------ Testing length wrt. MAX_PATH ------------
+rem native cmd limits all path lengths to MAX_PATH=260
+pushd c:\
+set depth=25
+for /L %%d in (0,1,25) do (
+  mkdir abcdefghij > NUL 2>&1
+  if exist abcdefghij (
+     cd abcdefghij
+     set depth=%%d
+  )
+)
+echo %depth%
+rem even relative paths are transformed to absolute, and tested against MAX_PATH
+echo abc > 01234567890123
+if exist 01234567890123 (echo Success) else echo Failure
+echo abc > 012345678901234
+if exist 012345678901234 (echo Failure) else echo Success
+popd
+rmdir /s /q c:\abcdefghij
 echo ------------ Testing combined CALLs/GOTOs ------------
 echo @echo off>foo.cmd
 echo goto :eof>>foot.cmd

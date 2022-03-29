@@ -19,6 +19,7 @@
  */
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -151,8 +152,11 @@ static BOOL build_filepathsW( const struct file_op *op, FILEPATHS_W *paths )
     unsigned int src_len = 1, dst_len = 1;
     WCHAR *source = (PWSTR)paths->Source, *target = (PWSTR)paths->Target;
 
-    if (op->media) src_len += lstrlenW(op->media->root) + 1;
-    if (op->src_path) src_len += lstrlenW(op->src_path) + 1;
+    if (!op->src_file || op->src_file[0] != '@')
+    {
+        if (op->media) src_len += lstrlenW(op->media->root) + 1;
+        if (op->src_path) src_len += lstrlenW(op->src_path) + 1;
+    }
     if (op->src_file) src_len += lstrlenW(op->src_file) + 1;
     if (op->dst_path) dst_len += lstrlenW(op->dst_path) + 1;
     if (op->dst_file) dst_len += lstrlenW(op->dst_file) + 1;
@@ -170,7 +174,10 @@ static BOOL build_filepathsW( const struct file_op *op, FILEPATHS_W *paths )
         paths->Target = target = HeapAlloc( GetProcessHeap(), 0, dst_len );
     }
     if (!source || !target) return FALSE;
-    concat_W( source, op->media ? op->media->root : NULL, op->src_path, op->src_file );
+    if (!op->src_file || op->src_file[0] != '@')
+        concat_W( source, op->media ? op->media->root : NULL, op->src_path, op->src_file );
+    else
+        lstrcpyW( source, op->src_file );
     concat_W( target, NULL, op->dst_path, op->dst_file );
     paths->Win32Error = 0;
     paths->Flags      = 0;
@@ -716,7 +723,7 @@ BOOL WINAPI SetupQueueRenameA( HSPFILEQ handle, PCSTR SourcePath, PCSTR SourceFi
     if (!(op = heap_alloc_zero( sizeof(*op) ))) return FALSE;
     op->src_path = strdupAtoW( SourcePath );
     op->src_file = strdupAtoW( SourceFilename );
-    op->dst_path = strdupAtoW( TargetPath );
+    op->dst_path = strdupAtoW( TargetPath ? TargetPath : SourcePath );
     op->dst_file = strdupAtoW( TargetFilename );
     queue_file_op( &queue->rename_queue, op );
     return TRUE;
@@ -735,7 +742,7 @@ BOOL WINAPI SetupQueueRenameW( HSPFILEQ handle, PCWSTR SourcePath, PCWSTR Source
     if (!(op = heap_alloc_zero( sizeof(*op) ))) return FALSE;
     op->src_path = strdupW( SourcePath );
     op->src_file = strdupW( SourceFilename );
-    op->dst_path = strdupW( TargetPath );
+    op->dst_path = strdupW( TargetPath ? TargetPath : SourcePath );
     op->dst_file = strdupW( TargetFilename );
     queue_file_op( &queue->rename_queue, op );
     return TRUE;
@@ -785,7 +792,7 @@ BOOL WINAPI SetupQueueCopySectionW( HSPFILEQ queue, PCWSTR src_root, HINF hinf, 
     BOOL ret = FALSE;
     DWORD len;
 
-    TRACE("queue %p, src_root %s, hinf %p, hlist %p, section %s, style %#x.\n",
+    TRACE("queue %p, src_root %s, hinf %p, hlist %p, section %s, style %#lx.\n",
             queue, debugstr_w(src_root), hinf, hlist, debugstr_w(section), style);
 
     if (!src_root)
@@ -1002,13 +1009,66 @@ static BOOL create_full_pathW(const WCHAR *path)
     return ret;
 }
 
+static BOOL copy_file( LPCWSTR source, LPCWSTR target )
+{
+    WCHAR module[MAX_PATH];
+    HMODULE mod = NULL;
+    HRSRC res;
+    HGLOBAL data;
+    HANDLE handle;
+    DWORD size, written;
+    BOOL ret = FALSE;
+    int id = 0;
+    const WCHAR *p;
+
+    TRACE( "%s -> %s\n", debugstr_w(source), debugstr_w(target) );
+
+    if (source[0] != '@') return CopyFileW( source, target, FALSE );
+
+    /* Wine extension: when the source of a file copy is in the format "@file.dll,-123"
+     * the source data is extracted from the corresponding file.dll resource */
+
+    source++;  /* skip '@' */
+    p = wcschr( source, ',' );
+    if (!p || p - source >= MAX_PATH)
+    {
+        SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
+        return FALSE;
+    }
+    memcpy( module, source, (p - source) * sizeof(WCHAR) );
+    module[p - source] = 0;
+    id = -wcstol( p + 1, NULL, 10 );
+    if (id <= 0 || id > 0xffff ||
+        !(mod = LoadLibraryExW( module, 0, LOAD_LIBRARY_AS_DATAFILE )) ||
+        !(res = FindResourceW( mod, MAKEINTRESOURCEW(id), L"WINE_DATA_FILE" )) ||
+        !(data = LoadResource( mod, res )))
+    {
+        WARN( "failed to save %s #%d to %s\n", debugstr_w(module), -id, debugstr_w(target) );
+        if (mod) FreeLibrary( mod );
+        SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
+        return FALSE;
+    }
+    size = SizeofResource( mod, res );
+    if ((handle = CreateFileW( target, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                               CREATE_ALWAYS, 0, 0 )) == INVALID_HANDLE_VALUE)
+    {
+        WARN( "failed to save %s #%d to %s\n", debugstr_w(module), -id, debugstr_w(target) );
+        if (mod) FreeLibrary( mod );
+        return FALSE;
+    }
+    ret = WriteFile( handle, LockResource(data), size, &written, NULL ) && written == size;
+    CloseHandle( handle );
+    if (!ret) DeleteFileW( target );
+    return ret;
+}
+
 static BOOL do_file_copyW( LPCWSTR source, LPCWSTR target, DWORD style, 
                            PSP_FILE_CALLBACK_W handler, PVOID context )
 {
     BOOL rc = FALSE;
     BOOL docopy = TRUE;
 
-    TRACE("copy %s to %s style 0x%x\n",debugstr_w(source),debugstr_w(target),style);
+    TRACE("copy %s to %s style 0x%lx\n",debugstr_w(source),debugstr_w(target),style);
 
     /* before copy processing */
     if (style & SP_COPY_REPLACEONLY)
@@ -1066,7 +1126,7 @@ static BOOL do_file_copyW( LPCWSTR source, LPCWSTR target, DWORD style,
                 {
                     FILEPATHS_W filepaths;
 
-                    TRACE("Versions: Source %i.%i target %i.%i\n",
+                    TRACE("Versions: Source %li.%li target %li.%li\n",
                       SourceInfo->dwFileVersionMS, SourceInfo->dwFileVersionLS,
                       TargetInfo->dwFileVersionMS, TargetInfo->dwFileVersionLS);
 
@@ -1119,12 +1179,12 @@ static BOOL do_file_copyW( LPCWSTR source, LPCWSTR target, DWORD style,
     if (style & (SP_COPY_NODECOMP | SP_COPY_LANGUAGEAWARE | SP_COPY_FORCE_IN_USE |
                  SP_COPY_NOSKIP | SP_COPY_WARNIFSKIP))
     {
-        ERR("Unsupported style(s) 0x%x\n",style);
+        ERR("Unsupported style(s) 0x%lx\n",style);
     }
 
     if (docopy)
     {
-        rc = CopyFileW(source,target,FALSE);
+        rc = copy_file( source, target );
         if (!rc && GetLastError() == ERROR_SHARING_VIOLATION &&
             (style & SP_COPY_IN_USE_NEEDS_REBOOT))
         {
@@ -1134,14 +1194,14 @@ static BOOL do_file_copyW( LPCWSTR source, LPCWSTR target, DWORD style,
             if (GetTempPathW(MAX_PATH, temp) &&
                 GetTempFileNameW(temp, L"SET", 0, temp_file))
             {
-                rc = CopyFileW(source, temp_file, FALSE);
+                rc = copy_file( source, temp_file );
                 if (rc)
                     rc = MoveFileExW(temp_file, target, MOVEFILE_DELAY_UNTIL_REBOOT);
                 else
                     DeleteFileW(temp_file);
             }
         }
-        if (!rc) WARN( "failed to copy, err %u\n", GetLastError() );
+        if (!rc) WARN( "failed to copy, err %lu\n", GetLastError() );
     }
     else
         SetLastError(ERROR_SUCCESS);
@@ -1166,7 +1226,7 @@ BOOL WINAPI SetupInstallFileExA( HINF hinf, PINFCONTEXT inf_context, PCSTR sourc
     struct callback_WtoA_context ctx;
     UNICODE_STRING sourceW, rootW, destW;
 
-    TRACE("%p %p %s %s %s %x %p %p %p\n", hinf, inf_context, debugstr_a(source), debugstr_a(root),
+    TRACE("%p %p %s %s %s %lx %p %p %p\n", hinf, inf_context, debugstr_a(source), debugstr_a(root),
           debugstr_a(dest), style, handler, context, in_use);
 
     sourceW.Buffer = rootW.Buffer = destW.Buffer = NULL;
@@ -1215,9 +1275,9 @@ BOOL WINAPI SetupInstallFileExW( HINF hinf, PINFCONTEXT inf_context, PCWSTR sour
 {
     BOOL ret, absolute = (root && *root && !(style & SP_COPY_SOURCE_ABSOLUTE));
     WCHAR *buffer, *p, *inf_source = NULL, dest_path[MAX_PATH];
-    unsigned int len;
+    DWORD len;
 
-    TRACE("%p %p %s %s %s %x %p %p %p\n", hinf, inf_context, debugstr_w(source), debugstr_w(root),
+    TRACE("%p %p %s %s %s %lx %p %p %p\n", hinf, inf_context, debugstr_w(source), debugstr_w(root),
           debugstr_w(dest), style, handler, context, in_use);
 
     if (in_use) FIXME("no file in use support\n");
@@ -1538,7 +1598,7 @@ BOOL WINAPI SetupScanFileQueueA( HSPFILEQ handle, DWORD flags, HWND window,
 {
     struct callback_WtoA_context ctx;
 
-    TRACE("%p %x %p %p %p %p\n", handle, flags, window, handler, context, result);
+    TRACE("%p %lx %p %p %p %p\n", handle, flags, window, handler, context, result);
 
     ctx.orig_context = context;
     ctx.orig_handler = handler;
@@ -1559,7 +1619,7 @@ BOOL WINAPI SetupScanFileQueueW( HSPFILEQ handle, DWORD flags, HWND window,
     UINT notification = 0;
     BOOL ret = FALSE;
 
-    TRACE("%p %x %p %p %p %p\n", handle, flags, window, handler, context, result);
+    TRACE("%p %lx %p %p %p %p\n", handle, flags, window, handler, context, result);
 
     if (!queue->copy_queue.count) return TRUE;
 
@@ -1568,7 +1628,7 @@ BOOL WINAPI SetupScanFileQueueW( HSPFILEQ handle, DWORD flags, HWND window,
 
     if (flags & ~(SPQ_SCAN_USE_CALLBACK | SPQ_SCAN_USE_CALLBACKEX))
     {
-        FIXME("flags %x not fully implemented\n", flags);
+        FIXME("flags %lx not fully implemented\n", flags);
     }
 
     paths.Source = paths.Target = NULL;
@@ -1720,10 +1780,10 @@ UINT WINAPI SetupDefaultQueueCallbackA( PVOID context, UINT notification,
         TRACE( "end queue\n" );
         return 0;
     case SPFILENOTIFY_STARTSUBQUEUE:
-        TRACE( "start subqueue %ld count %ld\n", param1, param2 );
+        TRACE( "start subqueue %Id count %Id\n", param1, param2 );
         return TRUE;
     case SPFILENOTIFY_ENDSUBQUEUE:
-        TRACE( "end subqueue %ld\n", param1 );
+        TRACE( "end subqueue %Id\n", param1 );
         return 0;
     case SPFILENOTIFY_STARTDELETE:
         TRACE( "start delete %s\n", debugstr_a(paths->Target) );
@@ -1763,7 +1823,7 @@ UINT WINAPI SetupDefaultQueueCallbackA( PVOID context, UINT notification,
         return FILEOP_DOIT;
     }
     default:
-        FIXME( "notification %d params %lx,%lx\n", notification, param1, param2 );
+        FIXME( "notification %d params %Ix,%Ix\n", notification, param1, param2 );
         break;
     }
     return 0;
@@ -1788,10 +1848,10 @@ UINT WINAPI SetupDefaultQueueCallbackW( PVOID context, UINT notification,
         TRACE( "end queue\n" );
         return 0;
     case SPFILENOTIFY_STARTSUBQUEUE:
-        TRACE( "start subqueue %ld count %ld\n", param1, param2 );
+        TRACE( "start subqueue %Id count %Id\n", param1, param2 );
         return TRUE;
     case SPFILENOTIFY_ENDSUBQUEUE:
-        TRACE( "end subqueue %ld\n", param1 );
+        TRACE( "end subqueue %Id\n", param1 );
         return 0;
     case SPFILENOTIFY_STARTDELETE:
         TRACE( "start delete %s\n", debugstr_w(paths->Target) );
@@ -1832,7 +1892,7 @@ UINT WINAPI SetupDefaultQueueCallbackW( PVOID context, UINT notification,
         return FILEOP_DOIT;
     }
     default:
-        FIXME( "notification %d params %lx,%lx\n", notification, param1, param2 );
+        FIXME( "notification %d params %Ix,%Ix\n", notification, param1, param2 );
         break;
     }
     return 0;

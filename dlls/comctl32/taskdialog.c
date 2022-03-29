@@ -145,7 +145,6 @@ static DLGTEMPLATE *create_taskdialog_template(const TASKDIALOGCONFIG *taskconfi
 {
     unsigned int size, title_size;
     static const WORD fontsize = 0x7fff;
-    static const WCHAR emptyW[] = { 0 };
     const WCHAR *titleW = NULL;
     DLGTEMPLATE *template;
     WCHAR pathW[MAX_PATH];
@@ -162,7 +161,7 @@ static DLGTEMPLATE *create_taskdialog_template(const TASKDIALOGCONFIG *taskconfi
     else
         titleW = taskconfig->pszWindowTitle;
     if (!titleW)
-        titleW = emptyW;
+        titleW = L"";
     title_size = (lstrlenW(titleW) + 1) * sizeof(WCHAR);
 
     size = sizeof(DLGTEMPLATE) + 2 * sizeof(WORD);
@@ -431,7 +430,8 @@ static void taskdialog_get_expando_size(struct taskdialog_info *dialog_info, HWN
     HFONT hfont, old_hfont;
     HDC hdc;
     RECT rect = {0};
-    LONG icon_width, icon_height, text_offset;
+    LONG icon_width, icon_height;
+    INT text_offset;
     LONG max_width, max_text_height;
 
     hdc = GetDC(hwnd);
@@ -1093,7 +1093,8 @@ static void taskdialog_draw_expando_control(struct taskdialog_info *dialog_info,
     HDC hdc;
     RECT rect = {0};
     WCHAR *text;
-    LONG icon_width, icon_height, text_offset;
+    LONG icon_width, icon_height;
+    INT text_offset;
     UINT style = DFCS_FLAT;
     BOOL draw_focus;
 
@@ -1205,11 +1206,11 @@ static void taskdialog_destroy(struct taskdialog_info *dialog_info)
 
 static INT_PTR CALLBACK taskdialog_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    static const WCHAR taskdialog_info_propnameW[] = {'T','a','s','k','D','i','a','l','o','g','I','n','f','o',0};
+    static const WCHAR taskdialog_info_propnameW[] = L"TaskDialogInfo";
     struct taskdialog_info *dialog_info;
     LRESULT result;
 
-    TRACE("hwnd=%p msg=0x%04x wparam=%lx lparam=%lx\n", hwnd, msg, wParam, lParam);
+    TRACE("hwnd %p, msg 0x%04x, wparam %Ix, lparam %Ix\n", hwnd, msg, wParam, lParam);
 
     if (msg != WM_INITDIALOG)
         dialog_info = GetPropW(hwnd, taskdialog_info_propnameW);

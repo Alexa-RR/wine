@@ -25,20 +25,49 @@
 #define __WINE_USE_MSVCRT
 #endif
 
-#ifdef __WINE_WINE_PORT_H
-# error You cannot use both wine/port.h and msvcrt headers
+#ifdef __WINE_CONFIG_H
+# error You cannot use config.h with msvcrt
+#endif
+
+#ifndef _WIN32
+# define _WIN32
+#endif
+
+#ifndef WIN32
+# define WIN32
 #endif
 
 #if (defined(__x86_64__) || defined(__powerpc64__) || defined(__aarch64__)) && !defined(_WIN64)
 #define _WIN64
 #endif
 
-#if !defined(_MSC_VER) && !defined(__int64)
-# if defined(_WIN64) && !defined(__MINGW64__)
-#   define __int64 long
-# else
-#   define __int64 long long
-# endif
+#ifndef _MSVCR_VER
+# define _MSVCR_VER 140
+#endif
+
+#if !defined(_UCRT) && _MSVCR_VER >= 140
+# define _UCRT
+#endif
+
+#include <sal.h>
+
+#ifndef _MSC_VER
+#  ifndef __int8
+#    define __int8  char
+#  endif
+#  ifndef __int16
+#    define __int16 short
+#  endif
+#  ifndef __int32
+#    define __int32 int
+#  endif
+#  ifndef __int64
+#    if defined(_WIN64) && !defined(__MINGW64__)
+#      define __int64 long
+#    else
+#      define __int64 long long
+#    endif
+#  endif
 #endif
 
 #ifndef NULL
@@ -49,7 +78,12 @@
 #endif
 #endif
 
-#ifndef __stdcall
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#ifndef _MSC_VER
+# undef __stdcall
 # ifdef __i386__
 #  ifdef __GNUC__
 #   if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 2)) || defined(__APPLE__)
@@ -57,68 +91,51 @@
 #   else
 #    define __stdcall __attribute__((__stdcall__))
 #   endif
-#  elif defined(_MSC_VER)
-    /* Nothing needs to be done. __stdcall already exists */
 #  else
 #   error You need to define __stdcall for your compiler
 #  endif
 # elif defined(__x86_64__) && defined (__GNUC__)
-#  if (__GNUC__ > 5) || ((__GNUC__ == 5) && (__GNUC_MINOR__ >= 3))
+#  if __has_attribute(__force_align_arg_pointer__)
 #   define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
 #  else
 #   define __stdcall __attribute__((ms_abi))
 #  endif
-# elif defined(__arm__) && defined (__GNUC__) && !defined(__SOFTFP__)
+# elif defined(__arm__) && defined (__GNUC__) && !defined(__SOFTFP__) && !defined(__MINGW32__) && !defined(__CYGWIN__)
 #   define __stdcall __attribute__((pcs("aapcs-vfp")))
-# elif defined(__aarch64__) && defined (__GNUC__)
+# elif defined(__aarch64__) && defined (__GNUC__) && __has_attribute(ms_abi)
 #  define __stdcall __attribute__((ms_abi))
 # else  /* __i386__ */
 #  define __stdcall
 # endif  /* __i386__ */
 #endif /* __stdcall */
 
-#ifndef __cdecl
+#ifndef _MSC_VER
+# undef __cdecl
 # if defined(__i386__) && defined(__GNUC__)
-#   if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 2)) || defined(__APPLE__)
+#  if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 2)) || defined(__APPLE__)
 #   define __cdecl __attribute__((__cdecl__)) __attribute__((__force_align_arg_pointer__))
 #  else
 #   define __cdecl __attribute__((__cdecl__))
 #  endif
-# elif defined(__x86_64__) && defined (__GNUC__)
-#  if (__GNUC__ > 5) || ((__GNUC__ == 5) && (__GNUC_MINOR__ >= 3))
-#   define __cdecl __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
-#  else
-#   define __cdecl __attribute__((ms_abi))
-#  endif
-# elif defined(__arm__) && defined (__GNUC__) && !defined(__SOFTFP__)
-#   define __cdecl __attribute__((pcs("aapcs-vfp")))
-# elif defined(__aarch64__) && defined (__GNUC__)
-#  define __cdecl __attribute__((ms_abi))
-# elif !defined(_MSC_VER)
-#  define __cdecl
-# endif
-#endif /* __cdecl */
-
-#ifndef __ms_va_list
-# if (defined(__x86_64__) || defined(__aarch64__)) && defined (__GNUC__)
-#  define __ms_va_list __builtin_ms_va_list
-#  define __ms_va_start(list,arg) __builtin_ms_va_start(list,arg)
-#  define __ms_va_end(list) __builtin_ms_va_end(list)
-#  define __ms_va_copy(dest,src) __builtin_ms_va_copy(dest,src)
 # else
-#  define __ms_va_list va_list
-#  define __ms_va_start(list,arg) va_start(list,arg)
-#  define __ms_va_end(list) va_end(list)
-#  ifdef va_copy
-#   define __ms_va_copy(dest,src) va_copy(dest,src)
-#  else
-#   define __ms_va_copy(dest,src) ((dest) = (src))
-#  endif
+#  define __cdecl __stdcall
 # endif
 #endif
 
+#if (defined(__x86_64__) || (defined(__aarch64__) && __has_attribute(ms_abi))) && defined (__GNUC__)
+# include <stdarg.h>
+# undef va_list
+# undef va_start
+# undef va_end
+# undef va_copy
+# define va_list __builtin_ms_va_list
+# define va_start(list,arg) __builtin_ms_va_start(list,arg)
+# define va_end(list) __builtin_ms_va_end(list)
+# define va_copy(dest,src) __builtin_ms_va_copy(dest,src)
+#endif
+
 #ifndef WINAPIV
-# if defined(__arm__) && defined (__GNUC__) && !defined(__SOFTFP__)
+# if defined(__arm__) && defined (__GNUC__) && !defined(__SOFTFP__) && !defined(__MINGW32__) && !defined(__CYGWIN__)
 #  define WINAPIV __attribute__((pcs("aapcs")))
 # else
 #  define WINAPIV __cdecl
@@ -163,8 +180,13 @@
 #ifndef _MSVCRT_LONG_DEFINED
 #define _MSVCRT_LONG_DEFINED
 /* we need 32-bit longs even on 64-bit */
+#ifdef __LP64__
 typedef int __msvcrt_long;
 typedef unsigned int __msvcrt_ulong;
+#else
+typedef long __msvcrt_long;
+typedef unsigned long __msvcrt_ulong;
+#endif
 #endif
 
 #ifndef _INTPTR_T_DEFINED
@@ -270,8 +292,16 @@ typedef struct tagLC_ID {
 
 #ifndef _THREADLOCALEINFO
 typedef struct threadlocaleinfostruct {
-    int refcount;
+#if _MSVCR_VER >= 140
+    unsigned short *pctype;
+    int mb_cur_max;
     unsigned int lc_codepage;
+#endif
+
+    int refcount;
+#if _MSVCR_VER < 140
+    unsigned int lc_codepage;
+#endif
     unsigned int lc_collate_cp;
     __msvcrt_ulong lc_handle[6];
     LC_ID lc_id[6];
@@ -282,19 +312,34 @@ typedef struct threadlocaleinfostruct {
         int *wrefcount;
     } lc_category[6];
     int lc_clike;
+#if _MSVCR_VER < 140
     int mb_cur_max;
+#endif
     int *lconv_intl_refcount;
     int *lconv_num_refcount;
     int *lconv_mon_refcount;
     struct lconv *lconv;
     int *ctype1_refcount;
     unsigned short *ctype1;
-    const unsigned short *pctype;
+#if _MSVCR_VER < 140
+    unsigned short *pctype;
+#endif
     const unsigned char *pclmap;
     const unsigned char *pcumap;
     struct __lc_time_data *lc_time_curr;
+#if _MSVCR_VER >= 110
+    wchar_t *lc_name[6];
+#endif
 } threadlocinfo;
 #define _THREADLOCALEINFO
+#endif
+
+#if !defined(__WINE_USE_MSVCRT) || defined(__MINGW32__)
+#define __WINE_CRT_PRINTF_ATTR(fmt,args) __attribute__((format (printf,fmt,args)))
+#define __WINE_CRT_SCANF_ATTR(fmt,args)  __attribute__((format (scanf,fmt,args)))
+#else
+#define __WINE_CRT_PRINTF_ATTR(fmt,args)
+#define __WINE_CRT_SCANF_ATTR(fmt,args)
 #endif
 
 #endif /* __WINE_CORECRT_H */

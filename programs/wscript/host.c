@@ -33,9 +33,7 @@
 WINE_DEFAULT_DEBUG_CHANNEL(wscript);
 
 #define BUILDVERSION 16535
-
-static const WCHAR wshNameW[] = {'W','i','n','d','o','w','s',' ','S','c','r','i','p','t',' ','H','o','s','t',0};
-static const WCHAR wshVersionW[] = {'5','.','8'};
+static const WCHAR wshVersionW[] = L"5.8";
 
 VARIANT_BOOL wshInteractive =
 #ifndef CSCRIPT_BUILD
@@ -49,10 +47,8 @@ static HRESULT to_string(VARIANT *src, BSTR *dst)
     VARIANT v;
     HRESULT hres;
 
-    static const WCHAR nullW[] = {'n','u','l','l',0};
-
     if(V_VT(src) == VT_NULL) {
-        *dst = SysAllocString(nullW);
+        *dst = SysAllocString(L"null");
         return *dst ? S_OK : E_OUTOFMEMORY;
     }
 
@@ -73,17 +69,14 @@ static void print_string(const WCHAR *string)
     char *buf;
 
     if(wshInteractive) {
-        static const WCHAR windows_script_hostW[] =
-            {'W','i','n','d','o','w','s',' ','S','c','r','i','p','t',' ','H','o','s','t',0};
-        MessageBoxW(NULL, string, windows_script_hostW, MB_OK);
+        MessageBoxW(NULL, string, L"Windows Script Host", MB_OK);
         return;
     }
 
     len = lstrlenW(string);
     ret = WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), string, len, &count, NULL);
     if(ret) {
-        static const WCHAR crnlW[] = {'\r','\n'};
-        WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), crnlW, ARRAY_SIZE(crnlW), &count, NULL);
+        WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), L"\r\n", lstrlenW(L"\r\n"), &count, NULL);
         return;
     }
 
@@ -133,7 +126,7 @@ static HRESULT WINAPI Host_GetTypeInfoCount(IHost *iface, UINT *pctinfo)
 static HRESULT WINAPI Host_GetTypeInfo(IHost *iface, UINT iTInfo, LCID lcid,
         ITypeInfo **ppTInfo)
 {
-    WINE_TRACE("(%x %x %p\n", iTInfo, lcid, ppTInfo);
+    WINE_TRACE("(%x %lx %p\n", iTInfo, lcid, ppTInfo);
 
     ITypeInfo_AddRef(host_ti);
     *ppTInfo = host_ti;
@@ -143,7 +136,7 @@ static HRESULT WINAPI Host_GetTypeInfo(IHost *iface, UINT iTInfo, LCID lcid,
 static HRESULT WINAPI Host_GetIDsOfNames(IHost *iface, REFIID riid, LPOLESTR *rgszNames,
         UINT cNames, LCID lcid, DISPID *rgDispId)
 {
-    WINE_TRACE("(%s %p %d %x %p)\n", wine_dbgstr_guid(riid), rgszNames,
+    WINE_TRACE("(%s %p %d %lx %p)\n", wine_dbgstr_guid(riid), rgszNames,
         cNames, lcid, rgDispId);
 
     return ITypeInfo_GetIDsOfNames(host_ti, rgszNames, cNames, rgDispId);
@@ -153,7 +146,7 @@ static HRESULT WINAPI Host_Invoke(IHost *iface, DISPID dispIdMember, REFIID riid
         LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
         EXCEPINFO *pExcepInfo, UINT *puArgErr)
 {
-    WINE_TRACE("(%d %p %p)\n", dispIdMember, pDispParams, pVarResult);
+    WINE_TRACE("(%ld %p %p)\n", dispIdMember, pDispParams, pVarResult);
 
     return ITypeInfo_Invoke(host_ti, iface, dispIdMember, wFlags, pDispParams,
             pVarResult, pExcepInfo, puArgErr);
@@ -163,7 +156,7 @@ static HRESULT WINAPI Host_get_Name(IHost *iface, BSTR *out_Name)
 {
     WINE_TRACE("(%p)\n", out_Name);
 
-    if(!(*out_Name = SysAllocString(wshNameW)))
+    if(!(*out_Name = SysAllocString(L"Windows Script Host")))
 	return E_OUTOFMEMORY;
     return S_OK;
 }
@@ -285,7 +278,7 @@ static HRESULT WINAPI Host_get_Timeout(IHost *iface, LONG *out_Timeout)
 
 static HRESULT WINAPI Host_put_Timeout(IHost *iface, LONG v)
 {
-    WINE_FIXME("(%d)\n", v);
+    WINE_FIXME("(%ld)\n", v);
     return E_NOTIMPL;
 }
 
@@ -321,7 +314,7 @@ static HRESULT WINAPI Host_Echo(IHost *iface, SAFEARRAY *args)
 {
     WCHAR *output = NULL, *ptr;
     unsigned argc, i, len;
-    int ubound, lbound;
+    LONG ubound, lbound;
     VARIANT *argv;
     BSTR *strs;
     HRESULT hres;
@@ -403,7 +396,7 @@ static HRESULT WINAPI Host_DisconnectObject(IHost *iface, IDispatch *Object)
 
 static HRESULT WINAPI Host_Sleep(IHost *iface, LONG Time)
 {
-    WINE_FIXME("(%d)\n", Time);
+    WINE_FIXME("(%ld)\n", Time);
     return E_NOTIMPL;
 }
 

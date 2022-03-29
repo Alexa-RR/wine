@@ -130,7 +130,7 @@ struct image_file_map
             struct image_file_map*      dsym;   /* the debug symbols file associated with this one */
             size_t                      header_size; /* size of real header in file */
             size_t                      commands_size;
-            size_t                      commands_count;
+            unsigned int                commands_count;
 
             const struct macho_load_command*    load_commands;
             const struct macho_uuid_command*    uuid;
@@ -150,7 +150,12 @@ struct image_file_map
         struct pe_file_map
         {
             HANDLE                      hMap;
-            IMAGE_NT_HEADERS            ntheader;
+            IMAGE_FILE_HEADER           file_header;
+            union
+            {
+                IMAGE_OPTIONAL_HEADER32 header32;
+                IMAGE_OPTIONAL_HEADER64 header64;
+            } opt;
             BOOL                        builtin;
             unsigned                    full_count;
             void*                       full_map;
@@ -189,6 +194,7 @@ struct macho64_nlist
 };
 
 BOOL image_check_alternate(struct image_file_map* fmap, const struct module* module) DECLSPEC_HIDDEN;
+struct image_file_map* image_load_debugaltlink(struct image_file_map* fmap, struct module* module) DECLSPEC_HIDDEN;
 
 BOOL elf_map_handle(HANDLE handle, struct image_file_map* fmap) DECLSPEC_HIDDEN;
 BOOL pe_map_file(HANDLE file, struct image_file_map* fmap, enum module_type mt) DECLSPEC_HIDDEN;

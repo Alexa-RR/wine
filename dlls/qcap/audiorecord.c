@@ -17,22 +17,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
+#include "qcap_private.h"
 
-#define COBJMACROS
-
-#include "windef.h"
-#include "winbase.h"
-#include "wtypes.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "dshow.h"
-
-#include "qcap_main.h"
-
-#include "wine/debug.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(qcap);
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 typedef struct {
     struct strmbase_filter filter;
@@ -60,7 +47,7 @@ static void audio_record_destroy(struct strmbase_filter *iface)
     AudioRecord *filter = impl_from_strmbase_filter(iface);
 
     strmbase_filter_cleanup(&filter->filter);
-    CoTaskMemFree(filter);
+    free(filter);
 }
 
 static HRESULT audio_record_query_interface(struct strmbase_filter *iface, REFIID iid, void **out)
@@ -121,15 +108,14 @@ static HRESULT WINAPI PPB_Load(IPersistPropertyBag *iface, IPropertyBag *pPropBa
     AudioRecord *This = impl_from_IPersistPropertyBag(iface);
     HRESULT hr;
     VARIANT var;
-    static const WCHAR WaveInIDW[] = {'W','a','v','e','I','n','I','D',0};
 
     TRACE("(%p/%p)->(%p, %p)\n", iface, This, pPropBag, pErrorLog);
 
     V_VT(&var) = VT_I4;
-    hr = IPropertyBag_Read(pPropBag, WaveInIDW, &var, pErrorLog);
+    hr = IPropertyBag_Read(pPropBag, L"WaveInID", &var, pErrorLog);
     if (SUCCEEDED(hr))
     {
-        FIXME("FIXME: implement opening waveIn device %d\n", V_I4(&var));
+        FIXME("FIXME: implement opening waveIn device %ld\n", V_I4(&var));
     }
 
     return hr;
@@ -158,9 +144,8 @@ HRESULT audio_record_create(IUnknown *outer, IUnknown **out)
 {
     AudioRecord *object;
 
-    if (!(object = CoTaskMemAlloc(sizeof(*object))))
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
-    memset(object, 0, sizeof(*object));
 
     object->IPersistPropertyBag_iface.lpVtbl = &PersistPropertyBagVtbl;
     strmbase_filter_init(&object->filter, outer, &CLSID_AudioRecord, &filter_ops);

@@ -24,10 +24,12 @@
 extern "C" {
 #endif
 
+#ifndef WINNORMALIZEAPI
 #ifndef _NORMALIZE_
-# define WINNORMALIZEAPI DECLSPEC_HIDDEN
+# define WINNORMALIZEAPI DECLSPEC_IMPORT
 #else
 # define WINNORMALIZEAPI
+#endif
 #endif
 
 /* Country codes */
@@ -314,6 +316,9 @@ extern "C" {
 #define LOCALE_SSHORTTIME           0x0079
 #define LOCALE_SOPENTYPELANGUAGETAG 0X007A
 #define LOCALE_SSORTLOCALE          0x007B
+#define LOCALE_SRELATIVELONGDATE    0x007C
+#define LOCALE_SSHORTESTAM          0x007E
+#define LOCALE_SSHORTESTPM          0x007F
 
 #define LOCALE_IDEFAULTEBCDICCODEPAGE 0x1012
 #define LOCALE_IPAPERSIZE             0x100A
@@ -392,17 +397,18 @@ static const WCHAR LOCALE_NAME_SYSTEM_DEFAULT[] = {'!','s','y','s','-','d','e','
 /* String mapping flags */
 #define LCMAP_LOWERCASE  0x00000100	/* Make lower-case */
 #define LCMAP_UPPERCASE  0x00000200	/* Make upper-case */
+#define LCMAP_TITLECASE  0x00000300	/* Make title-case */
 #define LCMAP_SORTKEY    0x00000400	/* Create a sort key */
 #define LCMAP_BYTEREV    0x00000800	/* Reverse the result */
-
+#define LCMAP_HASH       0x00040000
 #define LCMAP_HIRAGANA   0x00100000	/* Transform Japanese katakana into hiragana */
 #define LCMAP_KATAKANA   0x00200000	/* Transform Japanese hiragana into katakana */
 #define LCMAP_HALFWIDTH  0x00400000	/* Use single byte chars in output */
 #define LCMAP_FULLWIDTH  0x00800000	/* Use double byte chars in output */
-
 #define LCMAP_LINGUISTIC_CASING   0x01000000 /* Change case by using language context */
 #define LCMAP_SIMPLIFIED_CHINESE  0x02000000 /* Transform Chinese traditional into simplified */
 #define LCMAP_TRADITIONAL_CHINESE 0x04000000 /* Transform Chinese simplified into traditional */
+#define LCMAP_SORTHANDLE 0x20000000
 
 /* Date and time formatting flags */
 #define DATE_SHORTDATE          0x01  /* Short date format */
@@ -535,6 +541,9 @@ static const WCHAR LOCALE_NAME_SYSTEM_DEFAULT[] = {'!','s','y','s','-','d','e','
 #define CAL_SSHORTESTDAYNAME7  0x37
 #define CAL_SMONTHDAY          0x38
 #define CAL_SABBREVERASTRING   0x39
+#define CAL_SRELATIVELONGDATE  0x3a
+#define CAL_SENGLISHERANAME    0x3b
+#define CAL_SENGLISHABBREVERANAME 0x3c
 
 /* Calendar types */
 #define CAL_GREGORIAN              1
@@ -938,10 +947,12 @@ WINBASEAPI BOOL        WINAPI GetSystemPreferredUILanguages(DWORD,ULONG*,WCHAR*,
 WINBASEAPI LCID        WINAPI GetThreadLocale(void);
 WINBASEAPI BOOL        WINAPI GetThreadPreferredUILanguages(DWORD,ULONG*,WCHAR*,ULONG*);
 WINBASEAPI LANGID      WINAPI GetThreadUILanguage(void);
+WINBASEAPI BOOL        WINAPI GetUserPreferredUILanguages(DWORD,ULONG*,WCHAR*,ULONG*);
 WINBASEAPI INT         WINAPI GetTimeFormatA(LCID,DWORD,const SYSTEMTIME*,LPCSTR,LPSTR,INT);
 WINBASEAPI INT         WINAPI GetTimeFormatEx(LPCWSTR,DWORD,const SYSTEMTIME*,LPCWSTR,LPWSTR,INT);
 WINBASEAPI INT         WINAPI GetTimeFormatW(LCID,DWORD,const SYSTEMTIME*,LPCWSTR,LPWSTR,INT);
 #define                       GetTimeFormat WINELIB_NAME_AW(GetTimeFormat)
+WINBASEAPI INT         WINAPI GetUserDefaultGeoName(LPWSTR,int);
 WINBASEAPI LANGID      WINAPI GetUserDefaultLangID(void);
 WINBASEAPI LCID        WINAPI GetUserDefaultLCID(void);
 WINBASEAPI INT         WINAPI GetUserDefaultLocaleName(LPWSTR,int);
@@ -973,9 +984,12 @@ WINBASEAPI INT         WINAPI SetCalendarInfoW(LCID,CALID,CALTYPE,LPCWSTR);
 WINBASEAPI BOOL        WINAPI SetLocaleInfoA(LCID,LCTYPE,LPCSTR);
 WINBASEAPI BOOL        WINAPI SetLocaleInfoW(LCID,LCTYPE,LPCWSTR);
 #define                       SetLocaleInfo WINELIB_NAME_AW(SetLocaleInfo)
+WINBASEAPI BOOL        WINAPI SetProcessPreferredUILanguages(DWORD,PCZZWSTR,PULONG);
 WINBASEAPI BOOL        WINAPI SetThreadLocale(LCID);
+WINBASEAPI BOOL        WINAPI SetThreadPreferredUILanguages(DWORD,PCZZWSTR,PULONG);
 WINBASEAPI LANGID      WINAPI SetThreadUILanguage(LANGID);
 WINBASEAPI BOOL        WINAPI SetUserGeoID(GEOID);
+WINBASEAPI BOOL        WINAPI SetUserGeoName(PWSTR);
 WINBASEAPI INT         WINAPI WideCharToMultiByte(UINT,DWORD,LPCWSTR,INT,LPSTR,INT,LPCSTR,LPBOOL);
 WINBASEAPI INT         WINAPI FindNLSStringEx(const WCHAR *,DWORD,const WCHAR *,INT,const WCHAR *,INT,INT *,NLSVERSIONINFO *,void *,LPARAM);
 

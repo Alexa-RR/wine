@@ -66,7 +66,7 @@
 @ stub MFCreateTranscodeSinkActivate
 @ stub MFCreateTranscodeTopology
 @ stub MFCreateUrlmonSchemePlugin
-@ stub MFCreateVideoRenderer
+@ stdcall MFCreateVideoRenderer(ptr ptr)
 @ stdcall MFCreateVideoRendererActivate(long ptr)
 @ stub MFCreateWMAEncoderActivate
 @ stub MFCreateWMVEncoderActivate
@@ -77,7 +77,7 @@
 @ stdcall MFGetSupportedSchemes(ptr)
 @ stdcall MFGetTopoNodeCurrentType(ptr long long ptr)
 @ stub MFReadSequencerSegmentOffset
-@ stub MFRequireProtectedEnvironment
+@ stdcall MFRequireProtectedEnvironment(ptr)
 @ stdcall MFShutdownObject(ptr)
 @ stub MFTranscodeGetAudioOutputAvailableTypes
 @ stub MergePropertyStore

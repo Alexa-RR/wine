@@ -63,8 +63,8 @@ struct async_reader
 
     LPOLESTR pszFileName;
     AM_MEDIA_TYPE mt;
-    ALLOCATOR_PROPERTIES allocProps;
     HANDLE file, port, io_thread;
+    LARGE_INTEGER file_size;
     CRITICAL_SECTION sample_cs;
     BOOL flushing;
     struct request *requests;
@@ -183,9 +183,7 @@ static BOOL process_pattern_string(const WCHAR *pattern, HANDLE file)
 
 BOOL get_media_type(const WCHAR *filename, GUID *majortype, GUID *subtype, GUID *source_clsid)
 {
-    WCHAR extensions_path[278] = {'M','e','d','i','a',' ','T','y','p','e','\\','E','x','t','e','n','s','i','o','n','s','\\',0};
-    static const WCHAR wszExtensions[] = {'E','x','t','e','n','s','i','o','n','s',0};
-    static const WCHAR wszMediaType[] = {'M','e','d','i','a',' ','T','y','p','e',0};
+    WCHAR extensions_path[278] = L"Media Type\\Extensions\\";
     DWORD majortype_idx, size;
     const WCHAR *ext;
     HKEY parent_key;
@@ -219,11 +217,11 @@ BOOL get_media_type(const WCHAR *filename, GUID *majortype, GUID *subtype, GUID 
     if ((file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
             OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE)
     {
-        WARN("Failed to open file %s, error %u.\n", debugstr_w(filename), GetLastError());
+        WARN("Failed to open file %s, error %lu.\n", debugstr_w(filename), GetLastError());
         return FALSE;
     }
 
-    if (RegOpenKeyExW(HKEY_CLASSES_ROOT, wszMediaType, 0, KEY_READ, &parent_key))
+    if (RegOpenKeyExW(HKEY_CLASSES_ROOT, L"Media Type", 0, KEY_READ, &parent_key))
     {
         CloseHandle(file);
         return FALSE;
@@ -239,7 +237,7 @@ BOOL get_media_type(const WCHAR *filename, GUID *majortype, GUID *subtype, GUID 
         if (RegEnumKeyExW(parent_key, majortype_idx, majortype_str, &size, NULL, NULL, NULL, NULL))
             break;
 
-        if (!wcscmp(majortype_str, wszExtensions))
+        if (!wcscmp(majortype_str, L"Extensions"))
             continue;
 
         if (RegOpenKeyExW(parent_key, majortype_str, 0, KEY_READ, &majortype_key))
@@ -342,7 +340,7 @@ static void async_reader_destroy(struct strmbase_filter *iface)
         DeleteCriticalSection(&filter->sample_cs);
         strmbase_source_cleanup(&filter->source);
 
-        CoTaskMemFree(filter->pszFileName);
+        free(filter->pszFileName);
         FreeMediaType(&filter->mt);
     }
 
@@ -353,8 +351,6 @@ static void async_reader_destroy(struct strmbase_filter *iface)
 
     strmbase_filter_cleanup(&filter->filter);
     free(filter);
-
-    InterlockedDecrement(&object_locks);
 }
 
 static HRESULT async_reader_query_interface(struct strmbase_filter *iface, REFIID iid, void **out)
@@ -397,14 +393,14 @@ static DWORD CALLBACK io_thread(void *arg)
         EnterCriticalSection(&filter->sample_cs);
 
         req = CONTAINING_RECORD(ovl, struct request, ovl);
-        TRACE("Got sample %u.\n", req - filter->requests);
+        TRACE("Got sample %Iu.\n", req - filter->requests);
         assert(req >= filter->requests && req < filter->requests + filter->max_requests);
 
         if (ret)
             WakeConditionVariable(&filter->sample_cv);
         else
         {
-            ERR("GetQueuedCompletionStatus() returned failure, error %u.\n", GetLastError());
+            ERR("GetQueuedCompletionStatus() returned failure, error %lu.\n", GetLastError());
             req->sample = NULL;
         }
 
@@ -472,6 +468,13 @@ static HRESULT WINAPI FileSource_Load(IFileSourceFilter * iface, LPCOLESTR pszFi
 
     if (hFile == INVALID_HANDLE_VALUE)
     {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    if (!GetFileSizeEx(hFile, &This->file_size))
+    {
+        WARN("Could not get file size.\n");
+        CloseHandle(hFile);
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
@@ -550,11 +553,6 @@ static inline struct async_reader *impl_from_strmbase_pin(struct strmbase_pin *i
     return CONTAINING_RECORD(iface, struct async_reader, source.pin);
 }
 
-static inline struct async_reader *impl_from_strmbase_source(struct strmbase_source *iface)
-{
-    return CONTAINING_RECORD(iface, struct async_reader, source);
-}
-
 static inline struct async_reader *impl_from_IAsyncReader(IAsyncReader *iface)
 {
     return CONTAINING_RECORD(iface, struct async_reader, IAsyncReader_iface);
@@ -626,26 +624,7 @@ static HRESULT WINAPI FileAsyncReaderPin_AttemptConnection(struct strmbase_sourc
         FreeMediaType(&This->pin.mt);
     }
 
-    TRACE(" -- %x\n", hr);
     return hr;
-}
-
-static HRESULT WINAPI FileAsyncReaderPin_DecideBufferSize(struct strmbase_source *iface,
-        IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *ppropInputRequest)
-{
-    struct async_reader *This = impl_from_strmbase_source(iface);
-    ALLOCATOR_PROPERTIES actual;
-
-    if (ppropInputRequest->cbAlign && ppropInputRequest->cbAlign != This->allocProps.cbAlign)
-        FIXME("Requested Buffer cbAlign mismatch %i,%i\n",This->allocProps.cbAlign, ppropInputRequest->cbAlign);
-    if (ppropInputRequest->cbPrefix)
-        FIXME("Requested Buffer cbPrefix mismatch %i,%i\n",This->allocProps.cbPrefix, ppropInputRequest->cbPrefix);
-    if (ppropInputRequest->cbBuffer)
-        FIXME("Requested Buffer cbBuffer mismatch %i,%i\n",This->allocProps.cbBuffer, ppropInputRequest->cbBuffer);
-    if (ppropInputRequest->cBuffers)
-        FIXME("Requested Buffer cBuffers mismatch %i,%i\n",This->allocProps.cBuffers, ppropInputRequest->cBuffers);
-
-    return IMemAllocator_SetProperties(pAlloc, &This->allocProps, &actual);
 }
 
 static const struct strmbase_source_ops source_ops =
@@ -654,8 +633,6 @@ static const struct strmbase_source_ops source_ops =
     .base.pin_get_media_type = source_get_media_type,
     .base.pin_query_interface = source_query_interface,
     .pfnAttemptConnection = FileAsyncReaderPin_AttemptConnection,
-    .pfnDecideBufferSize = FileAsyncReaderPin_DecideBufferSize,
-    .pfnDecideAllocator = BaseOutputPinImpl_DecideAllocator,
 };
 
 static HRESULT WINAPI FileAsyncReader_QueryInterface(IAsyncReader *iface, REFIID iid, void **out)
@@ -720,7 +697,6 @@ static HRESULT WINAPI FileAsyncReader_RequestAllocator(IAsyncReader *iface,
 
     for (i = 0; i < filter->max_requests; ++i)
         filter->requests[i].ovl.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-    filter->allocProps = *props;
 
     *ret_allocator = allocator;
     return S_OK;
@@ -735,13 +711,16 @@ static HRESULT WINAPI FileAsyncReader_Request(IAsyncReader *iface, IMediaSample 
     HRESULT hr;
     BYTE *data;
 
-    TRACE("filter %p, sample %p, cookie %#lx.\n", filter, sample, cookie);
+    TRACE("filter %p, sample %p, cookie %#Ix.\n", filter, sample, cookie);
 
     if (!sample)
         return E_POINTER;
 
     if (FAILED(hr = IMediaSample_GetTime(sample, &start, &end)))
         return hr;
+
+    if (BYTES_FROM_MEDIATIME(start) >= filter->file_size.QuadPart)
+        return HRESULT_FROM_WIN32(ERROR_HANDLE_EOF);
 
     if (FAILED(hr = IMediaSample_GetPointer(sample, &data)))
         return hr;
@@ -785,7 +764,7 @@ static HRESULT WINAPI FileAsyncReader_WaitForNext(IAsyncReader *iface,
     struct async_reader *filter = impl_from_IAsyncReader(iface);
     unsigned int i;
 
-    TRACE("filter %p, timeout %u, sample %p, cookie %p.\n", filter, timeout, sample, cookie);
+    TRACE("filter %p, timeout %lu, sample %p, cookie %p.\n", filter, timeout, sample, cookie);
 
     *sample = NULL;
     *cookie = 0;
@@ -844,7 +823,7 @@ static BOOL sync_read(HANDLE file, LONGLONG offset, LONG length, BYTE *buffer, D
     if (ret || GetLastError() == ERROR_IO_PENDING)
         ret = GetOverlappedResult(file, &ovl, read_len, TRUE);
 
-    TRACE("Returning %u bytes.\n", *read_len);
+    TRACE("Returning %lu bytes.\n", *read_len);
 
     CloseHandle(ovl.hEvent);
     return ret;
@@ -893,7 +872,7 @@ static HRESULT WINAPI FileAsyncReader_SyncRead(IAsyncReader *iface,
     HRESULT hr;
     BOOL ret;
 
-    TRACE("filter %p, offset %s, length %d, buffer %p.\n",
+    TRACE("filter %p, offset %s, length %ld, buffer %p.\n",
             filter, wine_dbgstr_longlong(offset), length, buffer);
 
     ret = sync_read(filter->file, offset, length, buffer, &read_len);
@@ -910,14 +889,10 @@ static HRESULT WINAPI FileAsyncReader_SyncRead(IAsyncReader *iface,
 static HRESULT WINAPI FileAsyncReader_Length(IAsyncReader *iface, LONGLONG *total, LONGLONG *available)
 {
     struct async_reader *filter = impl_from_IAsyncReader(iface);
-    DWORD low, high;
 
     TRACE("iface %p, total %p, available %p.\n", iface, total, available);
 
-    if ((low = GetFileSize(filter->file, &high)) == -1 && GetLastError() != NO_ERROR)
-        return HRESULT_FROM_WIN32(GetLastError());
-
-    *available = *total = (LONGLONG)low | (LONGLONG)high << (sizeof(DWORD) * 8);
+    *available = *total = filter->file_size.QuadPart;
 
     return S_OK;
 }

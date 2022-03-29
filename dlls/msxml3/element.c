@@ -20,13 +20,9 @@
 
 #define COBJMACROS
 
-#include "config.h"
-
 #include <stdarg.h>
-#ifdef HAVE_LIBXML2
-# include <libxml/parser.h>
-# include <libxml/xmlerror.h>
-#endif
+#include <libxml/parser.h>
+#include <libxml/xmlerror.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -38,8 +34,6 @@
 #include "msxml_private.h"
 
 #include "wine/debug.h"
-
-#ifdef HAVE_LIBXML2
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -106,28 +100,27 @@ static HRESULT WINAPI domelem_QueryInterface(
     return S_OK;
 }
 
-static ULONG WINAPI domelem_AddRef(
-    IXMLDOMElement *iface )
+static ULONG WINAPI domelem_AddRef(IXMLDOMElement *iface)
 {
-    domelem *This = impl_from_IXMLDOMElement( iface );
-    LONG ref = InterlockedIncrement(&This->ref);
+    domelem *element = impl_from_IXMLDOMElement(iface);
+    LONG ref = InterlockedIncrement(&element->ref);
 
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("%p, refcount %ld.\n", iface, ref);
 
     return ref;
 }
 
-static ULONG WINAPI domelem_Release(
-    IXMLDOMElement *iface )
+static ULONG WINAPI domelem_Release(IXMLDOMElement *iface)
 {
-    domelem *This = impl_from_IXMLDOMElement( iface );
-    ULONG ref = InterlockedDecrement(&This->ref);
+    domelem *element = impl_from_IXMLDOMElement(iface);
+    ULONG ref = InterlockedDecrement(&element->ref);
 
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("%p, refcount %lu.\n", iface, ref);
 
-    if(!ref) {
-        destroy_xmlnode(&This->node);
-        heap_free(This);
+    if (!ref)
+    {
+        destroy_xmlnode(&element->node);
+        heap_free(element);
     }
 
     return ref;
@@ -308,6 +301,8 @@ static HRESULT WINAPI domelem_insertBefore(
     HRESULT hr;
 
     TRACE("(%p)->(%p %s %p)\n", This, newNode, debugstr_variant(&refChild), old_node);
+
+    if (!newNode) return E_INVALIDARG;
 
     hr = IXMLDOMNode_get_nodeType(newNode, &type);
     if (hr != S_OK) return hr;
@@ -502,9 +497,9 @@ static inline HRESULT variant_from_dt(XDR_DT dt, xmlChar* str, VARIANT* v)
 
             if(p+4<e && *(p+4)=='-') /* parse date (yyyy-mm-dd) */
             {
-                st.wYear = atoiW(p);
-                st.wMonth = atoiW(p+5);
-                st.wDay = atoiW(p+8);
+                st.wYear = wcstol(p, NULL, 10);
+                st.wMonth = wcstol(p+5, NULL, 10);
+                st.wDay = wcstol(p+8, NULL, 10);
                 p += 10;
 
                 if(*p == 'T') p++;
@@ -512,15 +507,15 @@ static inline HRESULT variant_from_dt(XDR_DT dt, xmlChar* str, VARIANT* v)
 
             if(p+2<e && *(p+2)==':') /* parse time (hh:mm:ss.?) */
             {
-                st.wHour = atoiW(p);
-                st.wMinute = atoiW(p+3);
-                st.wSecond = atoiW(p+6);
+                st.wHour = wcstol(p, NULL, 10);
+                st.wMinute = wcstol(p+3, NULL, 10);
+                st.wSecond = wcstol(p+6, NULL, 10);
                 p += 8;
 
                 if(*p == '.')
                 {
                     p++;
-                    while(isdigitW(*p)) p++;
+                    while (*p >= '0' && *p <= '9') p++;
                 }
             }
 
@@ -529,9 +524,9 @@ static inline HRESULT variant_from_dt(XDR_DT dt, xmlChar* str, VARIANT* v)
             V_DATE(v) = date;
 
             if(*p == '+') /* parse timezone offset (+hh:mm) */
-                V_DATE(v) += (DOUBLE)atoiW(p+1)/24 + (DOUBLE)atoiW(p+4)/1440;
+                V_DATE(v) += (DOUBLE)wcstol(p+1, NULL, 10)/24 + (DOUBLE)wcstol(p+4, NULL, 10)/1440;
             else if(*p == '-') /* parse timezone offset (-hh:mm) */
-                V_DATE(v) -= (DOUBLE)atoiW(p+1)/24 + (DOUBLE)atoiW(p+4)/1440;
+                V_DATE(v) -= (DOUBLE)wcstol(p+1, NULL, 10)/24 + (DOUBLE)wcstol(p+4, NULL, 10)/1440;
 
             VariantClear(&src);
             handled = TRUE;
@@ -847,6 +842,7 @@ static HRESULT WINAPI domelem_put_nodeTypedValue(
     {
     /* for untyped node coerce to BSTR and set */
     case DT_INVALID:
+    case DT_INT:
         if (V_VT(&value) != VT_BSTR)
         {
             VARIANT content;
@@ -1437,7 +1433,7 @@ static HRESULT WINAPI domelem_setAttributeNode(
     if (hr != S_OK) return hr;
 
     /* adding xmlns attribute doesn't change a tree or existing namespace definition */
-    if (!strcmpW(nameW, xmlnsW))
+    if (!wcscmp(nameW, xmlnsW))
     {
         SysFreeString(nameW);
         return DISP_E_UNKNOWNNAME;
@@ -1748,8 +1744,43 @@ static HRESULT domelem_remove_qualified_item(xmlNodePtr node, BSTR name, BSTR ur
 
 static HRESULT domelem_remove_named_item(xmlNodePtr node, BSTR name, IXMLDOMNode **item)
 {
+    xmlChar *nameA, *local, *prefix;
+    BSTR uriW, localW;
+    xmlNsPtr ns;
+    HRESULT hr;
+
     TRACE("(%p)->(%s %p)\n", node, debugstr_w(name), item);
-    return domelem_remove_qualified_item(node, name, NULL, item);
+
+    nameA = xmlchar_from_wchar(name);
+    local = xmlSplitQName2(nameA, &prefix);
+    heap_free(nameA);
+
+    if (!local)
+        return domelem_remove_qualified_item(node, name, NULL, item);
+
+    ns = xmlSearchNs(node->doc, node, prefix);
+
+    xmlFree(prefix);
+
+    if (!ns)
+    {
+        xmlFree(local);
+        if (item) *item = NULL;
+        return item ? S_FALSE : E_INVALIDARG;
+    }
+
+    uriW = bstr_from_xmlChar(ns->href);
+    localW = bstr_from_xmlChar(local);
+    xmlFree(local);
+
+    TRACE("removing qualified node %s, uri=%s\n", debugstr_w(localW), debugstr_w(uriW));
+
+    hr = domelem_remove_qualified_item(node, localW, uriW, item);
+
+    SysFreeString(localW);
+    SysFreeString(uriW);
+
+    return hr;
 }
 
 static HRESULT domelem_get_item(const xmlNodePtr node, LONG index, IXMLDOMNode **item)
@@ -1760,7 +1791,7 @@ static HRESULT domelem_get_item(const xmlNodePtr node, LONG index, IXMLDOMNode *
     IUnknown *unk;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %p)\n", node, index, item);
+    TRACE("%p, %ld, %p.\n", node, index, item);
 
     *item = NULL;
 
@@ -1847,11 +1878,13 @@ static HRESULT domelem_next_node(const xmlNodePtr node, LONG *iter, IXMLDOMNode 
     xmlAttrPtr curr;
     LONG i;
 
-    TRACE("(%p)->(%d: %p)\n", node, *iter, nextNode);
+    TRACE("%p, %ld, %p.\n", node, *iter, nextNode);
 
     *nextNode = NULL;
 
     curr = node->properties;
+    if (curr == NULL)
+        return S_FALSE;
 
     for (i = 0; i < *iter; i++) {
         if (curr->next == NULL)
@@ -1904,5 +1937,3 @@ IUnknown* create_element( xmlNodePtr element )
 
     return (IUnknown*)&This->IXMLDOMElement_iface;
 }
-
-#endif

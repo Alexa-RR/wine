@@ -46,8 +46,6 @@ static CRITICAL_SECTION_DEBUG mmdriver_lock_debug =
 static CRITICAL_SECTION mmdriver_lock = { &mmdriver_lock_debug, -1, 0, 0, 0, 0 };
 
 static LPWINE_DRIVER   lpDrvItemList  /* = NULL */;
-static const WCHAR HKLM_BASE[] = {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-                                  'W','i','n','d','o','w','s',' ','N','T','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n',0};
 
 static void DRIVER_Dump(const char *comment)
 {
@@ -127,10 +125,10 @@ static inline LRESULT DRIVER_SendMessage(LPWINE_DRIVER lpDrv, UINT msg,
 {
     LRESULT		ret;
 
-    TRACE("Before call32 proc=%p drvrID=%08lx hDrv=%p wMsg=%04x p1=%08lx p2=%08lx\n",
+    TRACE("Before call32 proc=%p drvrID=%08Ix hDrv=%p wMsg=%04x p1=%08Ix p2=%08Ix\n",
           lpDrv->lpDrvProc, lpDrv->dwDriverID, lpDrv, msg, lParam1, lParam2);
     ret = lpDrv->lpDrvProc(lpDrv->dwDriverID, (HDRVR)lpDrv, msg, lParam1, lParam2);
-    TRACE("After  call32 proc=%p drvrID=%08lx hDrv=%p wMsg=%04x p1=%08lx p2=%08lx => %08lx\n",
+    TRACE("After  call32 proc=%p drvrID=%08Ix hDrv=%p wMsg=%04x p1=%08Ix p2=%08Ix => %08Ix\n",
           lpDrv->lpDrvProc, lpDrv->dwDriverID, lpDrv, msg, lParam1, lParam2, ret);
 
     return ret;
@@ -146,14 +144,14 @@ LRESULT WINAPI SendDriverMessage(HDRVR hDriver, UINT msg, LPARAM lParam1,
     LPWINE_DRIVER	lpDrv;
     LRESULT 		retval = 0;
 
-    TRACE("(%p, %04X, %08lX, %08lX)\n", hDriver, msg, lParam1, lParam2);
+    TRACE("(%p, %04X, %08IX, %08IX)\n", hDriver, msg, lParam1, lParam2);
 
     if ((lpDrv = DRIVER_FindFromHDrvr(hDriver)) != NULL) {
 	retval = DRIVER_SendMessage(lpDrv, msg, lParam1, lParam2);
     } else {
 	WARN("Bad driver handle %p\n", hDriver);
     }
-    TRACE("retval = %ld\n", retval);
+    TRACE("retval = %Id\n", retval);
 
     return retval;
 }
@@ -246,12 +244,11 @@ BOOL	DRIVER_GetLibName(LPCWSTR keyName, LPCWSTR sectName, LPWSTR buf, int sz)
 {
     HKEY	hKey, hSecKey;
     DWORD	bufLen, lRet;
-    static const WCHAR wszSystemIni[] = {'S','Y','S','T','E','M','.','I','N','I',0};
-    WCHAR       wsznull = '\0';
 
     TRACE("registry: %s, %s, %p, %d\n", debugstr_w(keyName), debugstr_w(sectName), buf, sz);
 
-    lRet = RegOpenKeyExW(HKEY_LOCAL_MACHINE, HKLM_BASE, 0, KEY_QUERY_VALUE, &hKey);
+    lRet = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion",
+                         0, KEY_QUERY_VALUE, &hKey);
     if (lRet == ERROR_SUCCESS) {
 	lRet = RegOpenKeyExW(hKey, sectName, 0, KEY_QUERY_VALUE, &hSecKey);
 	if (lRet == ERROR_SUCCESS) {
@@ -266,7 +263,7 @@ BOOL	DRIVER_GetLibName(LPCWSTR keyName, LPCWSTR sectName, LPWSTR buf, int sz)
     /* default to system.ini if we can't find it in the registry,
      * to support native installations where system.ini is still used */
     TRACE("system.ini: %s, %s, %p, %d\n", debugstr_w(keyName), debugstr_w(sectName), buf, sz);
-    return GetPrivateProfileStringW(sectName, keyName, &wsznull, buf, sz / sizeof(WCHAR), wszSystemIni);
+    return GetPrivateProfileStringW(sectName, keyName, L"", buf, sz / sizeof(WCHAR), L"SYSTEM.INI");
 }
 
 /**************************************************************************
@@ -281,7 +278,7 @@ LPWINE_DRIVER	DRIVER_TryOpenDriver32(LPCWSTR fn, LPARAM lParam2)
     LPWSTR		ptr;
     LPCSTR		cause = 0;
 
-    TRACE("(%s, %08lX);\n", debugstr_w(fn), lParam2);
+    TRACE("(%s, %08IX);\n", debugstr_w(fn), lParam2);
 
     if ((ptr = wcschr(fn, ' ')) != NULL) {
 	*ptr++ = '\0';
@@ -385,18 +382,17 @@ HDRVR WINAPI OpenDriver(LPCWSTR lpDriverName, LPCWSTR lpSectionName, LPARAM lPar
     WCHAR 		libName[MAX_PATH + 1];
     LPCWSTR		lsn = lpSectionName;
 
-    TRACE("(%s, %s, 0x%08lx);\n", 
+    TRACE("(%s, %s, 0x%08Ix);\n",
           debugstr_w(lpDriverName), debugstr_w(lpSectionName), lParam);
 
     DRIVER_Dump("BEFORE:");
 
     if (lsn == NULL) {
-        static const WCHAR wszDrivers32[] = {'D','r','i','v','e','r','s','3','2',0};
 	lstrcpynW(libName, lpDriverName, ARRAY_SIZE(libName));
 
 	if ((lpDrv = DRIVER_TryOpenDriver32(libName, lParam)))
 	    goto the_end;
-	lsn = wszDrivers32;
+	lsn = L"Drivers32";
     }
     if (DRIVER_GetLibName(lpDriverName, lsn, libName, sizeof(libName)) &&
 	(lpDrv = DRIVER_TryOpenDriver32(libName, lParam)))
@@ -422,7 +418,7 @@ LRESULT WINAPI CloseDriver(HDRVR hDrvr, LPARAM lParam1, LPARAM lParam2)
     BOOL ret;
     LPWINE_DRIVER	lpDrv;
 
-    TRACE("(%p, %08lX, %08lX);\n", hDrvr, lParam1, lParam2);
+    TRACE("(%p, %08IX, %08IX);\n", hDrvr, lParam1, lParam2);
 
     DRIVER_Dump("BEFORE:");
 
@@ -549,7 +545,7 @@ BOOL WINAPI DriverCallback(DWORD_PTR dwCallBack, DWORD uFlags, HDRVR hDev,
 			   DWORD_PTR dwParam2)
 {
     BOOL ret = FALSE;
-    TRACE("(%08lX, %s %04X, %p, %04X, %08lX, %08lX, %08lX)\n",
+    TRACE("(%08IX, %s %04lX, %p, %04lX, %08IX, %08IX, %08IX)\n",
 	  dwCallBack, DRIVER_getCallback(uFlags), uFlags, hDev, wMsg, dwUser, dwParam1, dwParam2);
     if (!dwCallBack)
 	return ret;
@@ -598,7 +594,7 @@ BOOL WINAPI DriverCallback(DWORD_PTR dwCallBack, DWORD uFlags, HDRVR hDev,
 	break;
 #endif
     default:
-	WARN("Unknown callback type %d\n", uFlags & DCB_TYPEMASK);
+	WARN("Unknown callback type %ld\n", uFlags & DCB_TYPEMASK);
 	return FALSE;
     }
     if (ret)

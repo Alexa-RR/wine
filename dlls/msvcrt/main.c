@@ -17,6 +17,7 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
+#include <locale.h>
 #include "msvcrt.h"
 #include "winternl.h"
 
@@ -67,15 +68,15 @@ static inline void msvcrt_free_tls_mem(void)
 
   if (tls)
   {
-    MSVCRT_free(tls->efcvt_buffer);
-    MSVCRT_free(tls->asctime_buffer);
-    MSVCRT_free(tls->wasctime_buffer);
-    MSVCRT_free(tls->strerror_buffer);
-    MSVCRT_free(tls->wcserror_buffer);
-    MSVCRT_free(tls->time_buffer);
-    MSVCRT_free(tls->tmpnam_buffer);
-    MSVCRT_free(tls->wtmpnam_buffer);
-    if(tls->have_locale) {
+    free(tls->efcvt_buffer);
+    free(tls->asctime_buffer);
+    free(tls->wasctime_buffer);
+    free(tls->strerror_buffer);
+    free(tls->wcserror_buffer);
+    free(tls->time_buffer);
+    free(tls->tmpnam_buffer);
+    free(tls->wtmpnam_buffer);
+    if(tls->locale_flags & LOCALE_FREE) {
         free_locinfo(tls->locinfo);
         free_mbcinfo(tls->mbcinfo);
     }
@@ -88,7 +89,7 @@ static inline void msvcrt_free_tls_mem(void)
  */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-  TRACE("(%p, %s, %p) pid(%x), tid(%x), tls(%u)\n",
+  TRACE("(%p, %s, %p) pid(%lx), tid(%lx), tls(%lu)\n",
         hinstDLL, msvcrt_get_reason(fdwReason), lpvReserved,
         GetCurrentProcessId(), GetCurrentThreadId(),
         msvcrt_tls_index);
@@ -110,19 +111,18 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         msvcrt_destroy_heap();
         return FALSE;
     }
-    msvcrt_init_math();
+    msvcrt_init_math(hinstDLL);
     msvcrt_init_io();
-    msvcrt_init_console();
     msvcrt_init_args();
     msvcrt_init_signals();
 #if _MSVCR_VER >= 100 && _MSVCR_VER <= 120
-    msvcrt_init_scheduler(hinstDLL);
+    msvcrt_init_concurrency(hinstDLL);
 #endif
 #if _MSVCR_VER == 0
     /* don't allow unloading msvcrt, we can't setup file handles twice */
     LdrAddRefDll( LDR_ADDREF_DLL_PIN, hinstDLL );
 #elif _MSVCR_VER >= 80
-    MSVCRT__set_printf_count_output(0);
+    _set_printf_count_output(0);
 #endif
     msvcrt_init_clock();
     TRACE("finished process init\n");
@@ -140,10 +140,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     msvcrt_free_tls_mem();
     if (!msvcrt_free_tls())
       return FALSE;
-    MSVCRT__free_locale(MSVCRT_locale);
+    _free_locale(MSVCRT_locale);
 #if _MSVCR_VER >= 100 && _MSVCR_VER <= 120
     msvcrt_free_scheduler_thread();
-    msvcrt_free_scheduler();
+    msvcrt_free_concurrency();
 #endif
     msvcrt_destroy_heap();
     TRACE("finished process free\n");

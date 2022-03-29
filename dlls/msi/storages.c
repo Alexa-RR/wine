@@ -316,16 +316,16 @@ static UINT STORAGES_get_column_info( struct tagMSIVIEW *view, UINT n, LPCWSTR *
     switch (n)
     {
     case 1:
-        if (name) *name = szName;
+        if (name) *name = L"Name";
         if (type) *type = MSITYPE_STRING | MSITYPE_VALID | MAX_STORAGES_NAME_LEN;
         break;
 
     case 2:
-        if (name) *name = szData;
+        if (name) *name = L"Data";
         if (type) *type = MSITYPE_STRING | MSITYPE_VALID | MSITYPE_NULLABLE;
         break;
     }
-    if (table_name) *table_name = szStorages;
+    if (table_name) *table_name = L"_Storages";
     if (temporary) *temporary = FALSE;
     return ERROR_SUCCESS;
 }
@@ -466,7 +466,8 @@ static INT add_storages_to_table(MSISTORAGESVIEW *sv)
     IEnumSTATSTG *stgenum = NULL;
     STATSTG stat;
     HRESULT hr;
-    UINT count = 0, size;
+    UINT count = 0;
+    ULONG size;
 
     hr = IStorage_EnumElements(sv->db->storage, 0, NULL, 0, &stgenum);
     if (FAILED(hr))

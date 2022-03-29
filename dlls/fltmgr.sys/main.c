@@ -167,8 +167,7 @@ void WINAPI FltReleaseFileNameInformation(PFLT_FILE_NAME_INFORMATION info)
 
 void* WINAPI FltGetRoutineAddress(LPCSTR name)
 {
-    static const WCHAR fltmgrW[] = {'f','l','t','m','g','r','.','s','y','s',0};
-    HMODULE mod = GetModuleHandleW(fltmgrW);
+    HMODULE mod = GetModuleHandleW(L"fltmgr.sys");
     void *func;
 
     func = GetProcAddress(mod, name);

@@ -24,38 +24,23 @@
 #if defined(__i386__)
 #define USE_STRUCT_CONVERSION
 #endif
-
-#include "wine/debug.h"
-#include "wine/heap.h"
-#include "wine/list.h"
 #define VK_NO_PROTOTYPES
-#include "wine/vulkan.h"
-#include "wine/vulkan_driver.h"
 
+#include <pthread.h>
+
+#include "wine/list.h"
+
+#include "vulkan_loader.h"
 #include "vulkan_thunks.h"
 
-/* Magic value defined by Vulkan ICD / Loader spec */
-#define VULKAN_ICD_MAGIC_VALUE 0x01CDC0DE
-
-#define WINEVULKAN_QUIRK_GET_DEVICE_PROC_ADDR 0x00000001
-
-struct vulkan_func
-{
-    const char *name;
-    void *func;
-};
-
-/* Base 'class' for our Vulkan dispatchable objects such as VkDevice and VkInstance.
- * This structure MUST be the first element of a dispatchable object as the ICD
- * loader depends on it. For now only contains loader_magic, but over time more common
- * functionality is expected.
+/* Some extensions have callbacks for those we need to be able to
+ * get the wine wrapper for a native handle
  */
-struct wine_vk_base
+struct wine_vk_mapping
 {
-    /* Special section in each dispatchable object for use by the ICD loader for
-     * storing dispatch tables. The start contains a magical value '0x01CDC0DE'.
-     */
-    UINT_PTR loader_magic;
+    struct list link;
+    uint64_t native_handle;
+    uint64_t wine_wrapped_handle;
 };
 
 struct VkCommandBuffer_T
@@ -65,18 +50,34 @@ struct VkCommandBuffer_T
     VkCommandBuffer command_buffer; /* native command buffer */
 
     struct list pool_link;
+    struct wine_vk_mapping mapping;
 };
 
 struct VkDevice_T
 {
-    struct wine_vk_base base;
+    struct wine_vk_device_base base;
     struct vulkan_device_funcs funcs;
+    struct VkPhysicalDevice_T *phys_dev; /* parent */
     VkDevice device; /* native device */
 
-    struct VkQueue_T **queues;
-    uint32_t max_queue_families;
+    struct VkQueue_T* queues;
+    uint32_t queue_count;
 
-    unsigned int quirks;
+    struct wine_vk_mapping mapping;
+};
+
+struct wine_debug_utils_messenger;
+
+struct wine_debug_report_callback
+{
+    struct VkInstance_T *instance; /* parent */
+    VkDebugReportCallbackEXT debug_callback; /* native callback object */
+
+    /* application callback + data */
+    PFN_vkDebugReportCallbackEXT user_callback;
+    void *user_data;
+
+    struct wine_vk_mapping mapping;
 };
 
 struct VkInstance_T
@@ -91,7 +92,18 @@ struct VkInstance_T
     struct VkPhysicalDevice_T **phys_devs;
     uint32_t phys_dev_count;
 
+    VkBool32 enable_wrapper_list;
+    struct list wrappers;
+    pthread_rwlock_t wrapper_lock;
+
+    struct wine_debug_utils_messenger *utils_messengers;
+    uint32_t utils_messenger_count;
+
+    struct wine_debug_report_callback default_callback;
+
     unsigned int quirks;
+
+    struct wine_vk_mapping mapping;
 };
 
 struct VkPhysicalDevice_T
@@ -102,6 +114,8 @@ struct VkPhysicalDevice_T
 
     VkExtensionProperties *extensions;
     uint32_t extension_count;
+
+    struct wine_vk_mapping mapping;
 };
 
 struct VkQueue_T
@@ -110,7 +124,11 @@ struct VkQueue_T
     struct VkDevice_T *device; /* parent */
     VkQueue queue; /* native queue */
 
+    uint32_t family_index;
+    uint32_t queue_index;
     VkDeviceQueueCreateFlags flags;
+
+    struct wine_vk_mapping mapping;
 };
 
 struct wine_cmd_pool
@@ -118,6 +136,8 @@ struct wine_cmd_pool
     VkCommandPool command_pool;
 
     struct list command_buffers;
+
+    struct wine_vk_mapping mapping;
 };
 
 static inline struct wine_cmd_pool *wine_cmd_pool_from_handle(VkCommandPool handle)
@@ -130,10 +150,71 @@ static inline VkCommandPool wine_cmd_pool_to_handle(struct wine_cmd_pool *cmd_po
     return (VkCommandPool)(uintptr_t)cmd_pool;
 }
 
-void *wine_vk_get_device_proc_addr(const char *name) DECLSPEC_HIDDEN;
-void *wine_vk_get_instance_proc_addr(const char *name) DECLSPEC_HIDDEN;
+struct wine_debug_utils_messenger
+{
+    struct VkInstance_T *instance; /* parent */
+    VkDebugUtilsMessengerEXT debug_messenger; /* native messenger */
+
+    /* application callback + data */
+    PFN_vkDebugUtilsMessengerCallbackEXT user_callback;
+    void *user_data;
+
+    struct wine_vk_mapping mapping;
+};
+
+static inline struct wine_debug_utils_messenger *wine_debug_utils_messenger_from_handle(
+        VkDebugUtilsMessengerEXT handle)
+{
+    return (struct wine_debug_utils_messenger *)(uintptr_t)handle;
+}
+
+static inline VkDebugUtilsMessengerEXT wine_debug_utils_messenger_to_handle(
+        struct wine_debug_utils_messenger *debug_messenger)
+{
+    return (VkDebugUtilsMessengerEXT)(uintptr_t)debug_messenger;
+}
+
+static inline struct wine_debug_report_callback *wine_debug_report_callback_from_handle(
+        VkDebugReportCallbackEXT handle)
+{
+    return (struct wine_debug_report_callback *)(uintptr_t)handle;
+}
+
+static inline VkDebugReportCallbackEXT wine_debug_report_callback_to_handle(
+        struct wine_debug_report_callback *debug_messenger)
+{
+    return (VkDebugReportCallbackEXT)(uintptr_t)debug_messenger;
+}
+
+struct wine_surface
+{
+    VkSurfaceKHR surface; /* native surface */
+    VkSurfaceKHR driver_surface; /* wine driver surface */
+
+    struct wine_vk_mapping mapping;
+};
+
+static inline struct wine_surface *wine_surface_from_handle(VkSurfaceKHR handle)
+{
+    return (struct wine_surface *)(uintptr_t)handle;
+}
+
+static inline VkSurfaceKHR wine_surface_to_handle(struct wine_surface *surface)
+{
+    return (VkSurfaceKHR)(uintptr_t)surface;
+}
 
 BOOL wine_vk_device_extension_supported(const char *name) DECLSPEC_HIDDEN;
 BOOL wine_vk_instance_extension_supported(const char *name) DECLSPEC_HIDDEN;
+
+BOOL wine_vk_is_type_wrapped(VkObjectType type) DECLSPEC_HIDDEN;
+uint64_t wine_vk_unwrap_handle(VkObjectType type, uint64_t handle) DECLSPEC_HIDDEN;
+
+NTSTATUS init_vulkan(void *args) DECLSPEC_HIDDEN;
+
+extern const struct unix_funcs loader_funcs;
+
+BOOL WINAPI wine_vk_is_available_instance_function(VkInstance instance, const char *name) DECLSPEC_HIDDEN;
+BOOL WINAPI wine_vk_is_available_device_function(VkDevice device, const char *name) DECLSPEC_HIDDEN;
 
 #endif /* __WINE_VULKAN_PRIVATE_H */

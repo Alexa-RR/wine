@@ -32,17 +32,11 @@ WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
 static BOOL load_fusion_dlls( MSIPACKAGE *package )
 {
-    static const WCHAR szFusion[]    = {'f','u','s','i','o','n','.','d','l','l',0};
-    static const WCHAR szMscoree[]   = {'\\','m','s','c','o','r','e','e','.','d','l','l',0};
-    static const WCHAR szVersion10[] = {'v','1','.','0','.','3','7','0','5',0};
-    static const WCHAR szVersion11[] = {'v','1','.','1','.','4','3','2','2',0};
-    static const WCHAR szVersion20[] = {'v','2','.','0','.','5','0','7','2','7',0};
-    static const WCHAR szVersion40[] = {'v','4','.','0','.','3','0','3','1','9',0};
     HRESULT (WINAPI *pLoadLibraryShim)( const WCHAR *, const WCHAR *, void *, HMODULE * );
     WCHAR path[MAX_PATH];
     DWORD len = GetSystemDirectoryW( path, MAX_PATH );
 
-    lstrcpyW( path + len, szMscoree );
+    lstrcpyW( path + len, L"\\mscoree.dll" );
     if (package->hmscoree || !(package->hmscoree = LoadLibraryW( path ))) return TRUE;
     if (!(pLoadLibraryShim = (void *)GetProcAddress( package->hmscoree, "LoadLibraryShim" )))
     {
@@ -51,10 +45,10 @@ static BOOL load_fusion_dlls( MSIPACKAGE *package )
         return TRUE;
     }
 
-    pLoadLibraryShim( szFusion, szVersion10, NULL, &package->hfusion10 );
-    pLoadLibraryShim( szFusion, szVersion11, NULL, &package->hfusion11 );
-    pLoadLibraryShim( szFusion, szVersion20, NULL, &package->hfusion20 );
-    pLoadLibraryShim( szFusion, szVersion40, NULL, &package->hfusion40 );
+    pLoadLibraryShim( L"fusion.dll", L"v1.0.3705", NULL, &package->hfusion10 );
+    pLoadLibraryShim( L"fusion.dll", L"v1.1.4322", NULL, &package->hfusion11 );
+    pLoadLibraryShim( L"fusion.dll", L"v2.0.50727", NULL, &package->hfusion20 );
+    pLoadLibraryShim( L"fusion.dll", L"v4.0.30319", NULL, &package->hfusion40 );
 
     return TRUE;
 }
@@ -129,16 +123,11 @@ void msi_destroy_assembly_caches( MSIPACKAGE *package )
 
 static MSIRECORD *get_assembly_record( MSIPACKAGE *package, const WCHAR *comp )
 {
-    static const WCHAR query[] = {
-        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
-         '`','M','s','i','A','s','s','e','m','b','l','y','`',' ',
-         'W','H','E','R','E',' ','`','C','o','m','p','o','n','e','n','t','_','`',
-         ' ','=',' ','\'','%','s','\'',0};
     MSIQUERY *view;
     MSIRECORD *rec;
     UINT r;
 
-    r = MSI_OpenQuery( package->db, &view, query, comp );
+    r = MSI_OpenQuery( package->db, &view, L"SELECT * FROM `MsiAssembly` WHERE `Component_` = '%s'", comp );
     if (r != ERROR_SUCCESS)
         return NULL;
 
@@ -163,43 +152,35 @@ static MSIRECORD *get_assembly_record( MSIPACKAGE *package, const WCHAR *comp )
 
 struct assembly_name
 {
-    UINT    count;
+    DWORD   count;
     UINT    index;
     WCHAR **attrs;
 };
 
 static UINT get_assembly_name_attribute( MSIRECORD *rec, LPVOID param )
 {
-    static const WCHAR fmtW[] = {'%','s','=','"','%','s','"',0};
-    static const WCHAR nameW[] = {'n','a','m','e',0};
     struct assembly_name *name = param;
     const WCHAR *attr = MSI_RecordGetString( rec, 2 );
     const WCHAR *value = MSI_RecordGetString( rec, 3 );
-    int len = lstrlenW( fmtW ) + lstrlenW( attr ) + lstrlenW( value );
+    int len = lstrlenW( L"%s=\"%s\"" ) + lstrlenW( attr ) + lstrlenW( value );
 
     if (!(name->attrs[name->index] = msi_alloc( len * sizeof(WCHAR) )))
         return ERROR_OUTOFMEMORY;
 
-    if (!wcsicmp( attr, nameW )) lstrcpyW( name->attrs[name->index++], value );
-    else swprintf( name->attrs[name->index++], len, fmtW, attr, value );
+    if (!wcsicmp( attr, L"name" )) lstrcpyW( name->attrs[name->index++], value );
+    else swprintf( name->attrs[name->index++], len, L"%s=\"%s\"", attr, value );
     return ERROR_SUCCESS;
 }
 
 static WCHAR *get_assembly_display_name( MSIDATABASE *db, const WCHAR *comp, MSIASSEMBLY *assembly )
 {
-    static const WCHAR commaW[] = {',',0};
-    static const WCHAR queryW[] = {
-        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
-        '`','M','s','i','A','s','s','e','m','b','l','y','N','a','m','e','`',' ',
-        'W','H','E','R','E',' ','`','C','o','m','p','o','n','e','n','t','_','`',
-        ' ','=',' ','\'','%','s','\'',0};
     struct assembly_name name;
     WCHAR *display_name = NULL;
     MSIQUERY *view;
     UINT i, r;
     int len;
 
-    r = MSI_OpenQuery( db, &view, queryW, comp );
+    r = MSI_OpenQuery( db, &view, L"SELECT * FROM `MsiAssemblyName` WHERE `Component_` = '%s'", comp );
     if (r != ERROR_SUCCESS)
         return NULL;
 
@@ -224,7 +205,7 @@ static WCHAR *get_assembly_display_name( MSIDATABASE *db, const WCHAR *comp, MSI
         for (i = 0; i < name.count; i++)
         {
             lstrcatW( display_name, name.attrs[i] );
-            if (i < name.count - 1) lstrcatW( display_name, commaW );
+            if (i < name.count - 1) lstrcatW( display_name, L"," );
         }
     }
 
@@ -252,7 +233,7 @@ static BOOL is_assembly_installed( IAssemblyCache *cache, const WCHAR *display_n
     {
         return (info.dwAssemblyFlags == ASSEMBLYINFO_FLAG_INSTALLED);
     }
-    TRACE("QueryAssemblyInfo returned 0x%08x\n", hr);
+    TRACE( "QueryAssemblyInfo returned %#lx\n", hr );
     return FALSE;
 }
 
@@ -287,7 +268,7 @@ IAssemblyEnum *msi_create_assembly_enum( MSIPACKAGE *package, const WCHAR *displ
     IAssemblyName *name;
     IAssemblyEnum *ret;
     WCHAR *str;
-    UINT len = 0;
+    DWORD len = 0;
 
     if (!package->pCreateAssemblyNameObject || !package->pCreateAssemblyEnum) return NULL;
 
@@ -320,23 +301,17 @@ IAssemblyEnum *msi_create_assembly_enum( MSIPACKAGE *package, const WCHAR *displ
     return ret;
 }
 
-static const WCHAR clr_version_v10[] = {'v','1','.','0','.','3','7','0','5',0};
-static const WCHAR clr_version_v11[] = {'v','1','.','1','.','4','3','2','2',0};
-static const WCHAR clr_version_v20[] = {'v','2','.','0','.','5','0','7','2','7',0};
-static const WCHAR clr_version_v40[] = {'v','4','.','0','.','3','0','3','1','9',0};
-static const WCHAR clr_version_unknown[] = {'u','n','k','n','o','w','n',0};
-
 static const WCHAR *clr_version[] =
 {
-    clr_version_v10,
-    clr_version_v11,
-    clr_version_v20,
-    clr_version_v40
+    L"v1.0.3705",
+    L"v1.2.4322",
+    L"v2.0.50727",
+    L"v4.0.30319"
 };
 
 static const WCHAR *get_clr_version_str( enum clr_version version )
 {
-    if (version >= ARRAY_SIZE( clr_version )) return clr_version_unknown;
+    if (version >= ARRAY_SIZE( clr_version )) return L"unknown";
     return clr_version[version];
 }
 
@@ -362,7 +337,7 @@ MSIASSEMBLY *msi_load_assembly( MSIPACKAGE *package, MSICOMPONENT *comp )
     TRACE("application %s\n", debugstr_w(a->application));
 
     a->attributes = MSI_RecordGetInteger( rec, 5 );
-    TRACE("attributes %u\n", a->attributes);
+    TRACE( "attributes %lu\n", a->attributes );
 
     if (!(a->display_name = get_assembly_display_name( package->db, comp->Component, a )))
     {
@@ -470,7 +445,7 @@ UINT msi_install_assembly( MSIPACKAGE *package, MSICOMPONENT *comp )
     hr = IAssemblyCache_InstallAssembly( cache, 0, manifest, NULL );
     if (hr != S_OK)
     {
-        ERR("Failed to install assembly %s (0x%08x)\n", debugstr_w(manifest), hr);
+        ERR( "failed to install assembly %s (%#lx)\n", debugstr_w(manifest), hr );
         return ERROR_FUNCTION_FAILED;
     }
     if (feature) feature->Action = INSTALLSTATE_LOCAL;
@@ -499,7 +474,7 @@ UINT msi_uninstall_assembly( MSIPACKAGE *package, MSICOMPONENT *comp )
     {
         cache = package->cache_sxs;
         hr = IAssemblyCache_UninstallAssembly( cache, 0, assembly->display_name, NULL, NULL );
-        if (FAILED( hr )) WARN("failed to uninstall assembly 0x%08x\n", hr);
+        if (FAILED( hr )) WARN( "failed to uninstall assembly %#lx\n", hr );
     }
     else
     {
@@ -511,7 +486,7 @@ UINT msi_uninstall_assembly( MSIPACKAGE *package, MSICOMPONENT *comp )
             if (cache)
             {
                 hr = IAssemblyCache_UninstallAssembly( cache, 0, assembly->display_name, NULL, NULL );
-                if (FAILED( hr )) WARN("failed to uninstall assembly 0x%08x\n", hr);
+                if (FAILED( hr )) WARN( "failed to uninstall assembly %#lx\n", hr );
             }
         }
     }
@@ -539,30 +514,20 @@ static WCHAR *build_local_assembly_path( const WCHAR *filename )
 
 static LONG open_assemblies_key( UINT context, BOOL win32, HKEY *hkey )
 {
-    static const WCHAR path_win32[] =
-        {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-          'I','n','s','t','a','l','l','e','r','\\','W','i','n','3','2','A','s','s','e','m','b','l','i','e','s','\\',0};
-    static const WCHAR path_dotnet[] =
-        {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-         'I','n','s','t','a','l','l','e','r','\\','A','s','s','e','m','b','l','i','e','s','\\',0};
-    static const WCHAR classes_path_win32[] =
-        {'I','n','s','t','a','l','l','e','r','\\','W','i','n','3','2','A','s','s','e','m','b','l','i','e','s','\\',0};
-    static const WCHAR classes_path_dotnet[] =
-        {'I','n','s','t','a','l','l','e','r','\\','A','s','s','e','m','b','l','i','e','s','\\',0};
     HKEY root;
     const WCHAR *path;
 
     if (context == MSIINSTALLCONTEXT_MACHINE)
     {
         root = HKEY_CLASSES_ROOT;
-        if (win32) path = classes_path_win32;
-        else path = classes_path_dotnet;
+        if (win32) path = L"Installer\\Win32Assemblies\\";
+        else path = L"Installer\\Assemblies\\";
     }
     else
     {
         root = HKEY_CURRENT_USER;
-        if (win32) path = path_win32;
-        else path = path_dotnet;
+        if (win32) path = L"Software\\Microsoft\\Installer\\Win32Assemblies\\";
+        else path = L"Software\\Microsoft\\Installer\\Assemblies\\";
     }
     return RegCreateKeyW( root, path, hkey );
 }
@@ -609,33 +574,20 @@ static LONG delete_local_assembly_key( UINT context, BOOL win32, const WCHAR *fi
 
 static LONG open_global_assembly_key( UINT context, BOOL win32, HKEY *hkey )
 {
-    static const WCHAR path_win32[] =
-        {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-         'I','n','s','t','a','l','l','e','r','\\','W','i','n','3','2','A','s','s','e','m','b','l','i','e','s','\\',
-         'G','l','o','b','a','l',0};
-    static const WCHAR path_dotnet[] =
-        {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\',
-         'I','n','s','t','a','l','l','e','r','\\','A','s','s','e','m','b','l','i','e','s','\\',
-         'G','l','o','b','a','l',0};
-    static const WCHAR classes_path_win32[] =
-        {'I','n','s','t','a','l','l','e','r','\\','W','i','n','3','2','A','s','s','e','m','b','l','i','e','s','\\',
-         'G','l','o','b','a','l',0};
-    static const WCHAR classes_path_dotnet[] =
-        {'I','n','s','t','a','l','l','e','r','\\','A','s','s','e','m','b','l','i','e','s','\\','G','l','o','b','a','l',0};
     HKEY root;
     const WCHAR *path;
 
     if (context == MSIINSTALLCONTEXT_MACHINE)
     {
         root = HKEY_CLASSES_ROOT;
-        if (win32) path = classes_path_win32;
-        else path = classes_path_dotnet;
+        if (win32) path = L"Installer\\Win32Assemblies\\Global";
+        else path = L"Installer\\Assemblies\\Global";
     }
     else
     {
         root = HKEY_CURRENT_USER;
-        if (win32) path = path_win32;
-        else path = path_dotnet;
+        if (win32) path = L"Software\\Microsoft\\Installer\\Win32Assemblies\\Global";
+        else path = L"Software\\Microsoft\\Installer\\Assemblies\\Global";
     }
     return RegCreateKeyW( root, path, hkey );
 }
@@ -645,7 +597,7 @@ UINT ACTION_MsiPublishAssemblies( MSIPACKAGE *package )
     MSICOMPONENT *comp;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, szMsiPublishAssemblies);
+        return msi_schedule_action(package, SCRIPT_INSTALL, L"MsiPublishAssemblies");
 
     LIST_FOR_EACH_ENTRY(comp, &package->components, MSICOMPONENT, entry)
     {
@@ -686,7 +638,7 @@ UINT ACTION_MsiPublishAssemblies( MSIPACKAGE *package )
             }
             if ((res = open_local_assembly_key( package->Context, win32, file->TargetPath, &hkey )))
             {
-                WARN("failed to open local assembly key %d\n", res);
+                WARN( "failed to open local assembly key %ld\n", res );
                 return ERROR_FUNCTION_FAILED;
             }
         }
@@ -694,14 +646,14 @@ UINT ACTION_MsiPublishAssemblies( MSIPACKAGE *package )
         {
             if ((res = open_global_assembly_key( package->Context, win32, &hkey )))
             {
-                WARN("failed to open global assembly key %d\n", res);
+                WARN( "failed to open global assembly key %ld\n", res );
                 return ERROR_FUNCTION_FAILED;
             }
         }
         size = sizeof(buffer);
         if ((res = RegSetValueExW( hkey, assembly->display_name, 0, REG_MULTI_SZ, (const BYTE *)buffer, size )))
         {
-            WARN("failed to set assembly value %d\n", res);
+            WARN( "failed to set assembly value %ld\n", res );
         }
         RegCloseKey( hkey );
 
@@ -718,7 +670,7 @@ UINT ACTION_MsiUnpublishAssemblies( MSIPACKAGE *package )
     MSICOMPONENT *comp;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, szMsiUnpublishAssemblies);
+        return msi_schedule_action(package, SCRIPT_INSTALL, L"MsiUnpublishAssemblies");
 
     LIST_FOR_EACH_ENTRY(comp, &package->components, MSICOMPONENT, entry)
     {
@@ -747,17 +699,17 @@ UINT ACTION_MsiUnpublishAssemblies( MSIPACKAGE *package )
                 continue;
             }
             if ((res = delete_local_assembly_key( package->Context, win32, file->TargetPath )))
-                WARN("failed to delete local assembly key %d\n", res);
+                WARN( "failed to delete local assembly key %ld\n", res );
         }
         else
         {
             HKEY hkey;
             if ((res = open_global_assembly_key( package->Context, win32, &hkey )))
-                WARN("failed to delete global assembly key %d\n", res);
+                WARN( "failed to delete global assembly key %ld\n", res );
             else
             {
                 if ((res = RegDeleteValueW( hkey, assembly->display_name )))
-                    WARN("failed to delete global assembly value %d\n", res);
+                    WARN( "failed to delete global assembly value %ld\n", res );
                 RegCloseKey( hkey );
             }
         }

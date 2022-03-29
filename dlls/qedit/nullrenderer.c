@@ -24,7 +24,7 @@
 #include "wine/debug.h"
 #include "wine/strmbase.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(qedit);
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 struct null_renderer
 {
@@ -36,14 +36,13 @@ static struct null_renderer *impl_from_strmbase_renderer(struct strmbase_rendere
     return CONTAINING_RECORD(iface, struct null_renderer, renderer);
 }
 
-static HRESULT WINAPI NullRenderer_DoRenderSample(struct strmbase_renderer *iface, IMediaSample *sample)
+static HRESULT null_renderer_render(struct strmbase_renderer *iface, IMediaSample *sample)
 {
     return S_OK;
 }
 
-static HRESULT WINAPI NullRenderer_CheckMediaType(struct strmbase_renderer *iface, const AM_MEDIA_TYPE *mt)
+static HRESULT null_renderer_query_accept(struct strmbase_renderer *iface, const AM_MEDIA_TYPE *mt)
 {
-    TRACE("Not a stub!\n");
     return S_OK;
 }
 
@@ -57,8 +56,8 @@ static void null_renderer_destroy(struct strmbase_renderer *iface)
 
 static const struct strmbase_renderer_ops renderer_ops =
 {
-    .pfnCheckMediaType = NullRenderer_CheckMediaType,
-    .pfnDoRenderSample = NullRenderer_DoRenderSample,
+    .renderer_query_accept = null_renderer_query_accept,
+    .renderer_render = null_renderer_render,
     .renderer_destroy = null_renderer_destroy,
 };
 

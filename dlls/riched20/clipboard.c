@@ -77,7 +77,7 @@ static ULONG WINAPI EnumFormatImpl_AddRef(IEnumFORMATETC *iface)
 {
     EnumFormatImpl *This = impl_from_IEnumFORMATETC(iface);
     LONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
     return ref;
 }
 
@@ -85,7 +85,7 @@ static ULONG WINAPI EnumFormatImpl_Release(IEnumFORMATETC *iface)
 {
     EnumFormatImpl *This = impl_from_IEnumFORMATETC(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref) {
         GlobalFree(This->fmtetc);
@@ -100,7 +100,7 @@ static HRESULT WINAPI EnumFormatImpl_Next(IEnumFORMATETC *iface, ULONG celt,
 {
     EnumFormatImpl *This = impl_from_IEnumFORMATETC(iface);
     ULONG count = 0;
-    TRACE("(%p)->(%d %p %p)\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%ld %p %p)\n", This, celt, rgelt, pceltFetched);
 
     if(!rgelt)
         return E_INVALIDARG;
@@ -119,7 +119,7 @@ static HRESULT WINAPI EnumFormatImpl_Skip(IEnumFORMATETC *iface, ULONG celt)
 {
     EnumFormatImpl *This = impl_from_IEnumFORMATETC(iface);
     ULONG count = 0;
-    TRACE("(%p)->(%d)\n", This, celt);
+    TRACE("(%p)->(%ld)\n", This, celt);
 
     count = min(celt, This->fmtetc_cnt-This->cur);
     This->cur += count;
@@ -194,7 +194,7 @@ static ULONG WINAPI DataObjectImpl_AddRef(IDataObject* iface)
 {
     DataObjectImpl *This = impl_from_IDataObject(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
     return ref;
 }
 
@@ -202,7 +202,7 @@ static ULONG WINAPI DataObjectImpl_Release(IDataObject* iface)
 {
     DataObjectImpl *This = impl_from_IDataObject(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
-    TRACE("(%p) ref=%d\n",This, ref);
+    TRACE("(%p) ref=%ld\n",This, ref);
 
     if(!ref) {
         if(This->unicode) GlobalFree(This->unicode);
@@ -217,7 +217,7 @@ static ULONG WINAPI DataObjectImpl_Release(IDataObject* iface)
 static HRESULT WINAPI DataObjectImpl_GetData(IDataObject* iface, FORMATETC *pformatetc, STGMEDIUM *pmedium)
 {
     DataObjectImpl *This = impl_from_IDataObject(iface);
-    TRACE("(%p)->(fmt=0x%08x tym=0x%08x)\n", This, pformatetc->cfFormat, pformatetc->tymed);
+    TRACE("(%p)->(fmt=0x%08x tym=0x%08lx)\n", This, pformatetc->cfFormat, pformatetc->tymed);
 
     if(pformatetc->lindex != -1)
         return DV_E_LINDEX;
@@ -250,7 +250,7 @@ static HRESULT WINAPI DataObjectImpl_QueryGetData(IDataObject* iface, FORMATETC 
     DataObjectImpl *This = impl_from_IDataObject(iface);
     UINT i;
     BOOL foundFormat = FALSE;
-    TRACE("(%p)->(fmt=0x%08x tym=0x%08x)\n", This, pformatetc->cfFormat, pformatetc->tymed);
+    TRACE("(%p)->(fmt=0x%08x tym=0x%08lx)\n", This, pformatetc->cfFormat, pformatetc->tymed);
 
     if(pformatetc->lindex != -1)
         return DV_E_LINDEX;
@@ -290,10 +290,10 @@ static HRESULT WINAPI DataObjectImpl_EnumFormatEtc(IDataObject* iface, DWORD dwD
                                                    IEnumFORMATETC **ppenumFormatEtc)
 {
     DataObjectImpl *This = impl_from_IDataObject(iface);
-    TRACE("(%p)->(%d)\n", This, dwDirection);
+    TRACE("(%p)->(%ld)\n", This, dwDirection);
 
     if(dwDirection != DATADIR_GET) {
-        FIXME("Unsupported direction: %d\n", dwDirection);
+        FIXME("Unsupported direction: %ld\n", dwDirection);
         /* WinXP riched20 also returns E_NOTIMPL in this case */
         *ppenumFormatEtc = NULL;
         return E_NOTIMPL;
@@ -344,13 +344,12 @@ static HGLOBAL get_unicode_text(ME_TextEditor *editor, const ME_Cursor *start, i
     int pars = 0;
     WCHAR *data;
     HANDLE ret;
-    ME_DisplayItem *para;
+    ME_Paragraph *para;
     int nEnd = ME_GetCursorOfs(start) + nChars;
 
     /* count paragraphs in range */
-    para = start->pPara;
-    while((para = para->member.para.next_para) &&
-          para->member.para.nCharOfs <= nEnd)
+    para = start->para;
+    while ((para = para_next( para )) && para->nCharOfs <= nEnd)
         pars++;
 
     ret = GlobalAlloc(GMEM_MOVEABLE, sizeof(WCHAR) * (nChars + pars + 1));

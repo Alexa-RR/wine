@@ -16,9 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -30,7 +27,6 @@
 #include "wincodecs_private.h"
 
 #include "wine/debug.h"
-#include "wine/library.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wincodecs);
 
@@ -156,7 +152,7 @@ static ULONG WINAPI TgaDecoder_AddRef(IWICBitmapDecoder *iface)
     TgaDecoder *This = impl_from_IWICBitmapDecoder(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%u\n", iface, ref);
+    TRACE("(%p) refcount=%lu\n", iface, ref);
 
     return ref;
 }
@@ -166,7 +162,7 @@ static ULONG WINAPI TgaDecoder_Release(IWICBitmapDecoder *iface)
     TgaDecoder *This = impl_from_IWICBitmapDecoder(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%u\n", iface, ref);
+    TRACE("(%p) refcount=%lu\n", iface, ref);
 
     if (ref == 0)
     {
@@ -226,7 +222,7 @@ static HRESULT WINAPI TgaDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
     hr = IStream_Read(pIStream, &This->header, sizeof(tga_header), &bytesread);
     if (SUCCEEDED(hr) && bytesread != sizeof(tga_header))
     {
-        TRACE("got only %u bytes\n", bytesread);
+        TRACE("got only %lu bytes\n", bytesread);
         hr = E_FAIL;
     }
     if (FAILED(hr)) goto end;
@@ -298,7 +294,7 @@ static HRESULT WINAPI TgaDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
         hr = IStream_Read(pIStream, &footer, sizeof(tga_footer), &bytesread);
         if (SUCCEEDED(hr) && bytesread != sizeof(tga_footer))
         {
-            TRACE("got only %u footer bytes\n", bytesread);
+            TRACE("got only %lu footer bytes\n", bytesread);
             hr = E_FAIL;
         }
 
@@ -330,7 +326,7 @@ static HRESULT WINAPI TgaDecoder_Initialize(IWICBitmapDecoder *iface, IStream *p
         hr = IStream_Read(pIStream, &This->extension_area, sizeof(tga_extension_area), &bytesread);
         if (SUCCEEDED(hr) && bytesread != sizeof(tga_extension_area))
         {
-            TRACE("got only %u extension area bytes\n", bytesread);
+            TRACE("got only %lu extension area bytes\n", bytesread);
             hr = E_FAIL;
         }
         if (SUCCEEDED(hr) && This->extension_area.size < 495)
@@ -643,7 +639,7 @@ static HRESULT WINAPI TgaDecoder_Frame_CopyPalette(IWICBitmapFrameDecode *iface,
         hr = IStream_Read(This->stream, colormap_data, This->colormap_length, &bytesread);
         if (SUCCEEDED(hr) && bytesread != This->colormap_length)
         {
-            WARN("expected %i bytes in colormap, got %i\n", This->colormap_length, bytesread);
+            WARN("expected %li bytes in colormap, got %li\n", This->colormap_length, bytesread);
             hr = E_FAIL;
         }
     }

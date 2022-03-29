@@ -16,8 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -27,6 +25,8 @@
 #include "winreg.h"
 #include "objbase.h"
 #include "ocidl.h"
+#include "wincodec.h"
+#include "wincodecsdk.h"
 #include "initguid.h"
 
 #include "wincodecs_private.h"
@@ -47,6 +47,7 @@ static const classinfo wic_classes[] = {
     {&CLSID_WICImagingFactory2, ImagingFactory_CreateInstance},
     {&CLSID_WICBmpDecoder, BmpDecoder_CreateInstance},
     {&CLSID_WICPngDecoder, PngDecoder_CreateInstance},
+    {&CLSID_WICPngDecoder2, PngDecoder_CreateInstance},
     {&CLSID_WICPngEncoder, PngEncoder_CreateInstance},
     {&CLSID_WICBmpEncoder, BmpEncoder_CreateInstance},
     {&CLSID_WICGifDecoder, GifDecoder_CreateInstance},
@@ -56,7 +57,8 @@ static const classinfo wic_classes[] = {
     {&CLSID_WICJpegEncoder, JpegEncoder_CreateInstance},
     {&CLSID_WICTiffDecoder, TiffDecoder_CreateInstance},
     {&CLSID_WICTiffEncoder, TiffEncoder_CreateInstance},
-    {&CLSID_WICIcnsEncoder, IcnsEncoder_CreateInstance},
+    {&CLSID_WICDdsDecoder, DdsDecoder_CreateInstance},
+    {&CLSID_WICDdsEncoder, DdsEncoder_CreateInstance},
     {&CLSID_WICDefaultFormatConverter, FormatConverter_CreateInstance},
     {&CLSID_WineTgaDecoder, TgaDecoder_CreateInstance},
     {&CLSID_WICUnknownMetadataReader, UnknownMetadataReader_CreateInstance},
@@ -110,7 +112,7 @@ static ULONG WINAPI ClassFactoryImpl_AddRef(IClassFactory *iface)
     ClassFactoryImpl *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%u\n", iface, ref);
+    TRACE("(%p) refcount=%lu\n", iface, ref);
 
     return ref;
 }
@@ -120,7 +122,7 @@ static ULONG WINAPI ClassFactoryImpl_Release(IClassFactory *iface)
     ClassFactoryImpl *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%u\n", iface, ref);
+    TRACE("(%p) refcount=%lu\n", iface, ref);
 
     if (ref == 0)
         HeapFree(GetProcessHeap(), 0, This);
@@ -201,11 +203,11 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID iid, LPVOID *ppv)
     else
         ret = WIC_DllGetClassObject(rclsid, iid, ppv);
 
-    TRACE("<-- %08X\n", ret);
+    TRACE("<-- %08lX\n", ret);
     return ret;
 }
 
-HRESULT create_instance(CLSID *clsid, const IID *iid, void **ppv)
+HRESULT create_instance(const CLSID *clsid, const IID *iid, void **ppv)
 {
     int i;
 

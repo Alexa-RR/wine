@@ -18,15 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define COBJMACROS
-
-#include <stdarg.h>
-
-#include "windef.h"
-#include "winbase.h"
-#include "ole2.h"
-#include "rpcproxy.h"
-#include "comsvcs.h"
+#include "comsvcs_private.h"
 #include "wine/heap.h"
 #include "wine/debug.h"
 #include "initguid.h"
@@ -34,13 +26,11 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(comsvcs);
 
-static HINSTANCE COMSVCS_hInstance;
-
 typedef struct dispensermanager
 {
     IDispenserManager IDispenserManager_iface;
     LONG ref;
-    HANDLE mta_thread, mta_stop_event;
+    CO_MTA_USAGE_COOKIE mta_cookie;
 } dispensermanager;
 
 typedef struct holder
@@ -107,7 +97,7 @@ static ULONG WINAPI holder_AddRef(IHolder *iface)
 {
     holder *This = impl_from_IHolder(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("(%p)->(%ld)\n", This, ref);
     return ref;
 }
 
@@ -115,7 +105,7 @@ static ULONG WINAPI holder_Release(IHolder *iface)
 {
     holder *This = impl_from_IHolder(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("(%p)->(%ld)\n", This, ref);
 
     if (!ref)
     {
@@ -131,11 +121,11 @@ static HRESULT WINAPI holder_AllocResource(IHolder *iface, const RESTYPID typeid
     HRESULT hr;
     TIMEINSECS secs;
 
-    TRACE("(%p)->(%08lx, %p) stub\n", This, typeid, resid);
+    TRACE("(%p)->(%08Ix, %p) stub\n", This, typeid, resid);
 
     hr = IDispenserDriver_CreateResource(This->driver, typeid, resid, &secs);
 
-    TRACE("<- 0x%08x\n", hr);
+    TRACE("<- 0x%08lx\n", hr);
     return hr;
 }
 
@@ -144,11 +134,11 @@ static HRESULT WINAPI holder_FreeResource(IHolder *iface, const RESID resid)
     holder *This = impl_from_IHolder(iface);
     HRESULT hr;
 
-    TRACE("(%p)->(%08lx) stub\n", This, resid);
+    TRACE("(%p)->(%08Ix) stub\n", This, resid);
 
     hr = IDispenserDriver_DestroyResource(This->driver, resid);
 
-    TRACE("<- 0x%08x\n", hr);
+    TRACE("<- 0x%08lx\n", hr);
 
     return hr;
 }
@@ -157,7 +147,7 @@ static HRESULT WINAPI holder_TrackResource(IHolder *iface, const RESID resid)
 {
     holder *This = impl_from_IHolder(iface);
 
-    FIXME("(%p)->(%08lx) stub\n", This, resid);
+    FIXME("(%p)->(%08Ix) stub\n", This, resid);
 
     return E_NOTIMPL;
 }
@@ -175,7 +165,7 @@ static HRESULT WINAPI holder_UntrackResource(IHolder *iface, const RESID resid, 
 {
     holder *This = impl_from_IHolder(iface);
 
-    FIXME("(%p)->(%08lx, %d) stub\n", This, resid, value);
+    FIXME("(%p)->(%08Ix, %d) stub\n", This, resid, value);
 
     return E_NOTIMPL;
 }
@@ -204,7 +194,7 @@ static HRESULT WINAPI holder_RequestDestroyResource(IHolder *iface, const RESID 
 {
     holder *This = impl_from_IHolder(iface);
 
-    FIXME("(%p)->(%08lx) stub\n", This, resid);
+    FIXME("(%p)->(%08Ix) stub\n", This, resid);
 
     return E_NOTIMPL;
 }
@@ -273,7 +263,7 @@ static ULONG WINAPI dismanager_AddRef(IDispenserManager *iface)
 {
     dispensermanager *This = impl_from_IDispenserManager(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("(%p)->(%ld)\n", This, ref);
     return ref;
 }
 
@@ -281,29 +271,16 @@ static ULONG WINAPI dismanager_Release(IDispenserManager *iface)
 {
     dispensermanager *This = impl_from_IDispenserManager(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
-    TRACE("(%p)->(%d)\n", This, ref);
+    TRACE("(%p)->(%ld)\n", This, ref);
 
     if (!ref)
     {
-        if (This->mta_thread)
-        {
-            SetEvent(This->mta_stop_event);
-            WaitForSingleObject(This->mta_thread, INFINITE);
-            CloseHandle(This->mta_stop_event);
-            CloseHandle(This->mta_thread);
-        }
+        if (This->mta_cookie)
+            CoDecrementMTAUsage(This->mta_cookie);
         heap_free(This);
     }
 
     return ref;
-}
-
-static DWORD WINAPI mta_thread_proc(void *arg)
-{
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    WaitForSingleObject(arg, INFINITE);
-    CoUninitialize();
-    return 0;
 }
 
 static HRESULT WINAPI dismanager_RegisterDispenser(IDispenserManager *iface, IDispenserDriver *driver,
@@ -319,13 +296,10 @@ static HRESULT WINAPI dismanager_RegisterDispenser(IDispenserManager *iface, IDi
 
     hr = create_holder(driver, dispenser);
 
-    if (!This->mta_thread)
-    {
-        This->mta_stop_event = CreateEventA(NULL, TRUE, FALSE, NULL);
-        This->mta_thread = CreateThread(NULL, 0, mta_thread_proc, This->mta_stop_event, 0, NULL);
-    }
+    if (!This->mta_cookie)
+        CoIncrementMTAUsage(&This->mta_cookie);
 
-    TRACE("<-- 0x%08x, %p\n", hr, *dispenser);
+    TRACE("<-- 0x%08lx, %p\n", hr, *dispenser);
 
     return hr;
 }
@@ -370,20 +344,6 @@ static HRESULT WINAPI dispenser_manager_cf_CreateInstance(IClassFactory *iface, 
     dismanager_Release(&dismanager->IDispenserManager_iface);
 
     return ret;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID lpv)
-{
-    switch(reason)
-    {
-    case DLL_WINE_PREATTACH:
-        return FALSE;    /* prefer native version */
-    case DLL_PROCESS_ATTACH:
-        COMSVCS_hInstance = hinst;
-        DisableThreadLibraryCalls(hinst);
-        break;
-    }
-    return TRUE;
 }
 
 static HRESULT WINAPI comsvcscf_QueryInterface(IClassFactory *iface, REFIID riid, void **ppv )
@@ -469,7 +429,7 @@ static ULONG WINAPI new_moniker_AddRef(IMoniker* iface)
     struct new_moniker *moniker = impl_from_IMoniker(iface);
     ULONG refcount = InterlockedIncrement(&moniker->refcount);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     return refcount;
 }
@@ -479,7 +439,7 @@ static ULONG WINAPI new_moniker_Release(IMoniker* iface)
     struct new_moniker *moniker = impl_from_IMoniker(iface);
     ULONG refcount = InterlockedDecrement(&moniker->refcount);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -640,7 +600,7 @@ static HRESULT WINAPI new_moniker_BindToStorage(IMoniker *iface, IBindCtx *pbc, 
 static HRESULT WINAPI new_moniker_Reduce(IMoniker *iface, IBindCtx *pbc, DWORD flags, IMoniker **ppmkToLeft,
         IMoniker **ret)
 {
-    TRACE("%p, %p, %d, %p, %p.\n", iface, pbc, flags, ppmkToLeft, ret);
+    TRACE("%p, %p, %ld, %p, %p.\n", iface, pbc, flags, ppmkToLeft, ret);
 
     if (!ret)
         return E_POINTER;
@@ -798,7 +758,7 @@ static ULONG WINAPI new_moniker_rotdata_Release(IROTData *iface)
 
 static HRESULT WINAPI new_moniker_rotdata_GetComparisonData(IROTData *iface, byte *data, ULONG data_len, ULONG *length)
 {
-    FIXME("%p, %p, %u, %p.\n", iface, data, data_len, length);
+    FIXME("%p, %p, %lu, %p.\n", iface, data, data_len, length);
 
     return E_NOTIMPL;
 }
@@ -1027,8 +987,18 @@ static const IClassFactoryVtbl newmoniker_cf_vtbl =
     comsvcscf_LockServer
 };
 
+static const IClassFactoryVtbl group_manager_cf_vtbl =
+{
+    comsvcscf_QueryInterface,
+    comsvcscf_AddRef,
+    comsvcscf_Release,
+    group_manager_create,
+    comsvcscf_LockServer
+};
+
 static IClassFactory DispenserManageFactory = { &comsvcscf_vtbl };
 static IClassFactory NewMonikerFactory = { &newmoniker_cf_vtbl };
+static IClassFactory GroupManagerFactory = { &group_manager_cf_vtbl };
 
 /******************************************************************
  * DllGetClassObject
@@ -1045,31 +1015,12 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void **ppv)
         TRACE("(CLSID_NewMoniker %s %p)\n", debugstr_guid(riid), ppv);
         return IClassFactory_QueryInterface(&NewMonikerFactory, riid, ppv);
     }
+    else if (IsEqualGUID(&CLSID_SharedPropertyGroupManager, rclsid))
+    {
+        TRACE("(CLSID_SharedPropertyGroupManager %s %p)\n", debugstr_guid(riid), ppv);
+        return IClassFactory_QueryInterface(&GroupManagerFactory, riid, ppv);
+    }
 
     FIXME("%s %s %p\n", debugstr_guid(rclsid), debugstr_guid(riid), ppv);
     return CLASS_E_CLASSNOTAVAILABLE;
-}
-
-/******************************************************************
- * DllCanUnloadNow
- */
-HRESULT WINAPI DllCanUnloadNow(void)
-{
-    return S_FALSE;
-}
-
-/***********************************************************************
- *		DllRegisterServer (comsvcs.@)
- */
-HRESULT WINAPI DllRegisterServer(void)
-{
-    return __wine_register_resources( COMSVCS_hInstance );
-}
-
-/***********************************************************************
- *		DllUnregisterServer (comsvcs.@)
- */
-HRESULT WINAPI DllUnregisterServer(void)
-{
-    return __wine_unregister_resources( COMSVCS_hInstance );
 }

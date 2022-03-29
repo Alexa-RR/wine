@@ -257,7 +257,7 @@
 257 stdcall -noname SHCreateWorkerWindowA(ptr ptr long long ptr long)
 258 stub -noname SHRegisterWaitForSingleObject
 259 stub -noname SHUnregisterWait
-260 stdcall -noname SHQueueUserWorkItem(long long long long long long long)
+260 stdcall -noname SHQueueUserWorkItem(long long long long long str long)
 261 stub -noname SHCreateTimerQueue
 262 stub -noname SHDeleteTimerQueue
 263 stdcall -noname SHSetTimerQueueTimer(long ptr ptr long long str long)
@@ -288,11 +288,11 @@
 288 stub -noname IUnknown_CPContainerInvokeIndirect
 289 stdcall -noname PlaySoundWrapW(wstr long long)
 290 stub -noname SHMirrorIcon
-291 stdcall -noname SHMessageBoxCheckExA(ptr ptr ptr ptr ptr long str)
-292 stdcall -noname SHMessageBoxCheckExW(ptr ptr ptr ptr ptr long wstr)
+291 stdcall -noname SHMessageBoxCheckExA(ptr ptr str ptr ptr long str)
+292 stdcall -noname SHMessageBoxCheckExW(ptr ptr wstr ptr ptr long wstr)
 293 stub -noname SHCancelUserWorkItems
 294 stdcall -noname SHGetIniStringW(wstr wstr ptr long wstr)
-295 stdcall -noname SHSetIniStringW(wstr ptr wstr wstr)
+295 stdcall -noname SHSetIniStringW(wstr wstr wstr wstr)
 296 stub -noname CreateURLFileContentsW
 297 stub -noname CreateURLFileContentsA
 298 stdcall -noname WritePrivateProfileStringWrapW(wstr wstr wstr wstr) kernel32.WritePrivateProfileStringW
@@ -488,7 +488,7 @@
 488 stub -noname SHConvertGraphicsFile
 489 stdcall -noname GlobalAddAtomWrapW(wstr) kernel32.GlobalAddAtomW
 490 stdcall -noname GlobalFindAtomWrapW(wstr) kernel32.GlobalFindAtomW
-491 stdcall -noname SHGetShellKey(long long long)
+491 stdcall -noname SHGetShellKey(long wstr long)
 492 stub -noname PrettifyFileDescriptionW
 493 stub -noname SHPropertyBag_ReadType
 494 stub -noname SHPropertyBag_ReadStr
@@ -642,6 +642,8 @@
 @ stdcall PathMakeSystemFolderA(str)
 @ stdcall PathMakeSystemFolderW(wstr)
 @ stdcall -import PathMatchSpecA(str str)
+@ stdcall -import PathMatchSpecExA(str str long)
+@ stdcall -import PathMatchSpecExW(wstr wstr long)
 @ stdcall -import PathMatchSpecW(wstr wstr)
 @ stdcall -import PathParseIconLocationA(str)
 @ stdcall -import PathParseIconLocationW(wstr)
@@ -663,8 +665,8 @@
 @ stdcall -import PathRenameExtensionW(wstr wstr)
 @ stdcall -import PathSearchAndQualifyA(str ptr long)
 @ stdcall -import PathSearchAndQualifyW(wstr ptr long)
-@ stdcall PathSetDlgItemPathA (long long ptr)
-@ stdcall PathSetDlgItemPathW (long long ptr)
+@ stdcall PathSetDlgItemPathA(long long str)
+@ stdcall PathSetDlgItemPathW(long long wstr)
 @ stdcall -import PathSkipRootA(str)
 @ stdcall -import PathSkipRootW(wstr)
 @ stdcall -import PathStripPathA(str)
@@ -694,25 +696,25 @@
 @ stdcall SHDeleteKeyW(long wstr) shcore.SHDeleteKeyW
 @ stdcall SHDeleteOrphanKeyA(long str)
 @ stdcall SHDeleteOrphanKeyW(long wstr)
-@ stdcall SHDeleteValueA(long  str  str)
-@ stdcall SHDeleteValueW(long wstr wstr)
+@ stdcall -import SHDeleteValueA(long str str)
+@ stdcall -import SHDeleteValueW(long wstr wstr)
 @ stdcall SHEnumKeyExA(long long str ptr) shcore.SHEnumKeyExA
 @ stdcall SHEnumKeyExW(long long wstr ptr) shcore.SHEnumKeyExW
 @ stdcall SHEnumValueA(long long str ptr ptr ptr ptr) shcore.SHEnumValueA
 @ stdcall SHEnumValueW(long long wstr ptr ptr ptr ptr) shcore.SHEnumValueW
 @ stdcall SHGetInverseCMAP ( ptr long )
 @ stdcall SHGetThreadRef(ptr) shcore.SHGetThreadRef
-@ stdcall SHGetValueA ( long str str ptr ptr ptr )
-@ stdcall SHGetValueW ( long wstr wstr ptr ptr ptr )
+@ stdcall -import SHGetValueA(long str str ptr ptr ptr)
+@ stdcall -import SHGetValueW(long wstr wstr ptr ptr ptr)
 @ stdcall SHIsLowMemoryMachine(long)
 @ stdcall SHOpenRegStream2A(long str str long) shcore.SHOpenRegStream2A
 @ stdcall SHOpenRegStream2W(long wstr wstr long) shcore.SHOpenRegStream2W
 @ stdcall SHOpenRegStreamA(long str str long) shcore.SHOpenRegStreamA
 @ stdcall SHOpenRegStreamW(long wstr wstr long) shcore.SHOpenRegStreamW
-@ stdcall SHQueryInfoKeyA(long ptr ptr ptr ptr)
-@ stdcall SHQueryInfoKeyW(long ptr ptr ptr ptr)
-@ stdcall SHQueryValueExA(long str ptr ptr ptr ptr)
-@ stdcall SHQueryValueExW(long wstr ptr ptr ptr ptr)
+@ stdcall -import SHQueryInfoKeyA(long ptr ptr ptr ptr)
+@ stdcall -import SHQueryInfoKeyW(long ptr ptr ptr ptr)
+@ stdcall -import SHQueryValueExA(long str ptr ptr ptr ptr)
+@ stdcall -import SHQueryValueExW(long wstr ptr ptr ptr ptr)
 @ stdcall SHRegCloseUSKey(ptr)
 @ stdcall SHRegCreateUSKeyA(str long long ptr long)
 @ stdcall SHRegCreateUSKeyW(wstr long long ptr long)
@@ -720,15 +722,15 @@
 @ stdcall SHRegDeleteEmptyUSKeyW(long wstr long)
 @ stdcall SHRegDeleteUSValueA(long str long)
 @ stdcall SHRegDeleteUSValueW(long wstr long)
-@ stdcall SHRegDuplicateHKey (long)
+@ stdcall -import SHRegDuplicateHKey(long)
 @ stdcall SHRegEnumUSKeyA(long long str ptr long)
 @ stdcall SHRegEnumUSKeyW(long long wstr ptr long)
 @ stdcall SHRegEnumUSValueA(long long ptr ptr ptr ptr ptr long)
 @ stdcall SHRegEnumUSValueW(long long ptr ptr ptr ptr ptr long)
 @ stdcall SHRegGetBoolUSValueA(str str long long)
 @ stdcall SHRegGetBoolUSValueW(wstr wstr long long)
-@ stdcall SHRegGetPathA(long str str ptr long)
-@ stdcall SHRegGetPathW(long wstr wstr ptr long)
+@ stdcall -import SHRegGetPathA(long str str ptr long)
+@ stdcall -import SHRegGetPathW(long wstr wstr ptr long)
 @ stdcall SHRegGetUSValueA ( str str ptr ptr ptr long ptr long )
 @ stdcall SHRegGetUSValueW ( wstr wstr ptr ptr ptr long ptr long )
 @ stdcall SHRegGetValueA ( long str str long ptr ptr ptr ) advapi32.RegGetValueA
@@ -739,8 +741,8 @@
 @ stdcall SHRegQueryInfoUSKeyW ( long ptr ptr ptr ptr long )
 @ stdcall SHRegQueryUSValueA ( long str ptr ptr ptr long ptr long )
 @ stdcall SHRegQueryUSValueW ( long wstr ptr ptr ptr long ptr long )
-@ stdcall SHRegSetPathA(long str str str long)
-@ stdcall SHRegSetPathW(long wstr wstr wstr long)
+@ stdcall -import SHRegSetPathA(long str str str long)
+@ stdcall -import SHRegSetPathW(long wstr wstr wstr long)
 @ stdcall SHRegSetUSValueA ( str str long ptr long long)
 @ stdcall SHRegSetUSValueW ( wstr wstr long ptr long long)
 @ stdcall SHRegWriteUSValueA (long str long ptr long long)
@@ -748,8 +750,8 @@
 @ stdcall SHRegisterValidateTemplate(wstr long)
 @ stdcall SHReleaseThreadRef() shcore.SHReleaseThreadRef
 @ stdcall SHSetThreadRef(ptr) shcore.SHSetThreadRef
-@ stdcall SHSetValueA (long  str  str long ptr long)
-@ stdcall SHSetValueW (long wstr wstr long ptr long)
+@ stdcall -import SHSetValueA(long str str long ptr long)
+@ stdcall -import SHSetValueW(long wstr wstr long ptr long)
 @ stdcall SHSkipJunction(ptr ptr)
 @ stdcall SHStrDupA (str ptr)
 @ stdcall SHStrDupW (wstr ptr)

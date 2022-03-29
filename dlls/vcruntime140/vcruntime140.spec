@@ -10,7 +10,7 @@
 @ cdecl __AdjustPointer(ptr ptr) ucrtbase.__AdjustPointer
 @ stub __BuildCatchObject
 @ stub __BuildCatchObjectHelper
-@ stdcall -arch=x86_64 __C_specific_handler(ptr long ptr ptr) ucrtbase.__C_specific_handler
+@ stdcall -arch=x86_64,arm,arm64 __C_specific_handler(ptr long ptr ptr) ucrtbase.__C_specific_handler
 @ stub __C_specific_handler_noexcept
 @ cdecl -arch=i386,x86_64,arm,arm64 __CxxDetectRethrow(ptr) ucrtbase.__CxxDetectRethrow
 @ cdecl -arch=i386,x86_64,arm,arm64 __CxxExceptionFilter(ptr ptr long ptr) ucrtbase.__CxxExceptionFilter
@@ -33,12 +33,13 @@
 @ cdecl __current_exception() ucrtbase.__current_exception
 @ cdecl __current_exception_context() ucrtbase.__current_exception_context
 @ cdecl -arch=i386,x86_64,arm,arm64 -norelay __intrinsic_setjmp(ptr) ucrtbase.__intrinsic_setjmp
-@ cdecl -arch=x86_64,arm64 -norelay __intrinsic_setjmpex(ptr ptr) ucrtbase.__intrinsic_setjmpex
+@ cdecl -arch=x86_64,arm,arm64 -norelay __intrinsic_setjmpex(ptr ptr) ucrtbase.__intrinsic_setjmpex
+@ stdcall -arch=arm __jump_unwind(ptr ptr) ucrtbase.__jump_unwind
 @ cdecl __processing_throw() ucrtbase.__processing_throw
 @ stub __report_gsfailure
 @ cdecl __std_exception_copy(ptr ptr) ucrtbase.__std_exception_copy
 @ cdecl __std_exception_destroy(ptr) ucrtbase.__std_exception_destroy
-@ cdecl __std_terminate() ucrtbase.terminate
+@ cdecl __std_terminate() ucrtbase.__std_terminate
 @ cdecl __std_type_info_compare(ptr ptr) ucrtbase.__std_type_info_compare
 @ cdecl __std_type_info_destroy_list(ptr) ucrtbase.__std_type_info_destroy_list
 @ cdecl __std_type_info_hash(ptr) ucrtbase.__std_type_info_hash
@@ -64,7 +65,7 @@
 @ cdecl -arch=i386 _local_unwind2(ptr long) ucrtbase._local_unwind2
 @ cdecl -arch=i386 _local_unwind4(ptr ptr long) ucrtbase._local_unwind4
 @ cdecl -arch=i386 _longjmpex(ptr long) ucrtbase._longjmpex
-@ cdecl -arch=x86_64 _local_unwind(ptr ptr) ucrtbase._local_unwind
+@ cdecl -arch=x86_64,arm64 _local_unwind(ptr ptr) ucrtbase._local_unwind
 @ cdecl _purecall() ucrtbase._purecall
 @ stdcall -arch=i386 _seh_longjmp_unwind4(ptr) ucrtbase._seh_longjmp_unwind4
 @ stdcall -arch=i386 _seh_longjmp_unwind(ptr) ucrtbase._seh_longjmp_unwind

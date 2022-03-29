@@ -699,6 +699,8 @@ comparison operators surrounded by brackets seem to work
 comparison operators surrounded by brackets seem to work
 comparison operators surrounded by brackets seem to work
 comparison operators surrounded by brackets seem to work
+windir is defined
+windir does exist
 --- case sensitivity with and without /i option
 if seems to default to case sensitivity
 if /i seems to work
@@ -912,6 +914,10 @@ x@space@
 ---
 x@space@
 ---
+------------ Testing if/for ------------
+A
+------------ Testing if/set ------------
+C:\Program Files (x86)\dummy
 ------------ Testing for ------------
 --- plain FOR
 A
@@ -1341,8 +1347,8 @@ original file still present
 ------------ Testing move ------------
 --- file move
 file move succeeded
-@todo_wine@file move with overwrite succeeded@or_broken@file overwrite impossible!
-@todo_wine@bar@or_broken@baz
+file move with overwrite succeeded@or_broken@file overwrite impossible!
+bar@or_broken@baz
 read-only files are moveable
 file moved in subdirectory
 moving a file to itself is a no-op@or_broken@moving a file to itself should be a no-op!
@@ -1424,6 +1430,7 @@ bar\baz removed
 @drive@@path@foobar
 @pwd@
 ------------ Testing attrib ------------
+A@spaces@@drive@@path@foobar\foo@or_broken@A       I@spaces@@drive@@path@foobar\foo
 A@spaces@@drive@@path@foobar\foo@or_broken@A       I@spaces@@drive@@path@foobar\foo
 --- read-only attribute
 A    R@spaces@@drive@@path@foobar\foo@or_broken@A    R  I@spaces@@drive@@path@foobar\foo
@@ -1683,6 +1690,10 @@ Normal+space+garbage
 Quoted should fail
 Normal+tab
 Normal+tab+garbage
+------------ Testing length wrt. MAX_PATH ------------
+@todo_wine@21
+Success
+@todo_wine@Success
 ------------ Testing combined CALLs/GOTOs ------------
 world
 cheball

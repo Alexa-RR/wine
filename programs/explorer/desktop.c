@@ -22,6 +22,8 @@
 #include <stdio.h>
 
 #define COBJMACROS
+#define NONAMELESSUNION
+#define NONAMELESSSTRUCT
 #define OEMRESOURCE
 #include <windows.h>
 #include <rpc.h>
@@ -84,7 +86,7 @@ static HRESULT load_typelib(void)
     hres = LoadRegTypeLib(&LIBID_SHDocVw, 1, 0, LOCALE_SYSTEM_DEFAULT, &tl);
     if (FAILED(hres))
     {
-        ERR("LoadRegTypeLib failed: %08x\n", hres);
+        ERR("LoadRegTypeLib failed: %08lx\n", hres);
         return hres;
     }
 
@@ -107,7 +109,7 @@ static HRESULT get_typeinfo(tid_t tid, ITypeInfo **typeinfo)
 
         hres = ITypeLib_GetTypeInfoOfGuid(typelib, tid_ids[tid], &ti);
         if (FAILED(hres)) {
-            ERR("GetTypeInfoOfGuid(%s) failed: %08x\n", debugstr_guid(tid_ids[tid]), hres);
+            ERR("GetTypeInfoOfGuid(%s) failed: %08lx\n", debugstr_guid(tid_ids[tid]), hres);
             return hres;
         }
 
@@ -120,9 +122,49 @@ static HRESULT get_typeinfo(tid_t tid, ITypeInfo **typeinfo)
     return S_OK;
 }
 
+static BOOL array_reserve(void **elements, unsigned int *capacity, unsigned int count, unsigned int size)
+{
+    unsigned int new_capacity, max_capacity;
+    void *new_elements;
+
+    if (count <= *capacity)
+        return TRUE;
+
+    max_capacity = ~(SIZE_T)0 / size;
+    if (count > max_capacity)
+        return FALSE;
+
+    new_capacity = max(4, *capacity);
+    while (new_capacity < count && new_capacity <= max_capacity / 2)
+        new_capacity *= 2;
+    if (new_capacity < count)
+        new_capacity = max_capacity;
+
+    if (!(new_elements = realloc(*elements, new_capacity * size)))
+        return FALSE;
+
+    *elements = new_elements;
+    *capacity = new_capacity;
+
+    return TRUE;
+}
+
+static LONG cookie_counter;
+
+struct window
+{
+    LONG cookie, hwnd;
+    int class;
+    ITEMIDLIST *pidl;
+};
+
 struct shellwindows
 {
     IShellWindows IShellWindows_iface;
+    CRITICAL_SECTION cs;
+
+    unsigned int count, max;
+    struct window *windows;
 };
 
 /* This is not limited to desktop itself, every file browser window that
@@ -427,7 +469,7 @@ static BOOL process_changes( const WCHAR *folder, char *buf )
             break;
 
         default:
-            WARN( "unexpected action %u\n", info->Action );
+            WARN( "unexpected action %lu\n", info->Action );
             break;
         }
         if (!info->NextEntryOffset) break;
@@ -583,7 +625,7 @@ static WNDPROC desktop_orig_wndproc;
 /* window procedure for the desktop window */
 static LRESULT WINAPI desktop_wnd_proc( HWND hwnd, UINT message, WPARAM wp, LPARAM lp )
 {
-    WINE_TRACE( "got msg %04x wp %lx lp %lx\n", message, wp, lp );
+    WINE_TRACE( "got msg %04x wp %Ix lp %Ix\n", message, wp, lp );
 
     switch(message)
     {
@@ -692,7 +734,7 @@ static const WCHAR *get_default_desktop_name(void)
     /* @@ Wine registry key: HKCU\Software\Wine\Explorer */
     if (!RegOpenKeyW( HKEY_CURRENT_USER, explorer_keyW, &hkey ))
     {
-        if (!RegQueryValueExW( hkey, desktopW, 0, NULL, (LPBYTE)buffer, &size )) ret = buffer;
+        if (!RegQueryValueExW( hkey, desktopW, 0, NULL, (LPBYTE)buffer, &size ) && *buffer) ret = buffer;
         RegCloseKey( hkey );
     }
     return ret;
@@ -801,6 +843,7 @@ static HMODULE load_graphics_driver( const WCHAR *driver, const GUID *guid )
         if (!wcscmp( name, L"null" ))
         {
             TRACE( "display %s using null driver\n", debugstr_guid(guid) );
+            wcscpy( libname, L"null" );
             null_driver = TRUE;
             break;
         }
@@ -816,17 +859,13 @@ static HMODULE load_graphics_driver( const WCHAR *driver, const GUID *guid )
             strcpy( error, "Make sure that your X server is running and that $DISPLAY is set correctly." );
             break;
         default:
-            sprintf( error, "Unknown error (%u).", GetLastError() );
+            sprintf( error, "Unknown error (%lu).", GetLastError() );
             break;
         }
         name = next;
     }
 
-    if (module)
-    {
-        GetModuleFileNameW( module, buffer, MAX_PATH );
-        TRACE( "display %s driver %s\n", debugstr_guid(guid), debugstr_w(buffer) );
-    }
+    TRACE( "display %s driver %s\n", debugstr_guid(guid), debugstr_w(libname) );
 
     /* create video key first without REG_OPTION_VOLATILE attribute */
     if (!RegCreateKeyExW( HKEY_LOCAL_MACHINE, video_keyW, 0, NULL, 0, KEY_SET_VALUE, NULL, &hkey, NULL ))
@@ -841,7 +880,7 @@ static HMODULE load_graphics_driver( const WCHAR *driver, const GUID *guid )
     {
         if (module || null_driver)
             RegSetValueExW( hkey, graphics_driverW, 0, REG_SZ,
-                            (BYTE *)buffer, (lstrlenW(buffer) + 1) * sizeof(WCHAR) );
+                            (BYTE *)libname, (lstrlenW(libname) + 1) * sizeof(WCHAR) );
         else
             RegSetValueExA( hkey, "DriverError", 0, REG_SZ, (BYTE *)error, strlen(error) + 1 );
         RegCloseKey( hkey );
@@ -852,16 +891,32 @@ static HMODULE load_graphics_driver( const WCHAR *driver, const GUID *guid )
 
 static void initialize_display_settings(void)
 {
+    DISPLAY_DEVICEW ddW;
     DEVMODEW dmW;
+    DWORD i = 0;
 
     /* Store current display mode in the registry */
-    if (EnumDisplaySettingsExW( NULL, ENUM_CURRENT_SETTINGS, &dmW, 0 ))
+    ddW.cb = sizeof(ddW);
+    memset(&dmW, 0, sizeof(dmW));
+    dmW.dmSize = sizeof(dmW);
+    while (EnumDisplayDevicesW( NULL, i++, &ddW, 0 ))
     {
-        WINE_TRACE( "Current display mode %ux%u %u bpp %u Hz\n", dmW.dmPelsWidth,
-                    dmW.dmPelsHeight, dmW.dmBitsPerPel, dmW.dmDisplayFrequency );
-        ChangeDisplaySettingsExW( NULL, &dmW, 0,
-                                  CDS_GLOBAL | CDS_NORESET | CDS_UPDATEREGISTRY,
-                                  NULL );
+        if (!EnumDisplaySettingsExW( ddW.DeviceName, ENUM_CURRENT_SETTINGS, &dmW, 0))
+        {
+            WINE_ERR( "Failed to query current display settings for %s.\n",
+                      wine_dbgstr_w( ddW.DeviceName ) );
+            continue;
+        }
+
+        WINE_TRACE( "Device %s current display mode %lux%lu %luBits %luHz at %ld,%ld.\n",
+                    wine_dbgstr_w( ddW.DeviceName ), dmW.dmPelsWidth, dmW.dmPelsHeight,
+                    dmW.dmBitsPerPel, dmW.dmDisplayFrequency, dmW.u1.s2.dmPosition.x,
+                    dmW.u1.s2.dmPosition.y );
+
+        if (ChangeDisplaySettingsExW( ddW.DeviceName, &dmW, 0,
+                                      CDS_GLOBAL | CDS_NORESET | CDS_UPDATEREGISTRY, 0 ))
+            WINE_ERR( "Failed to initialize registry display settings for %s.\n",
+                       wine_dbgstr_w( ddW.DeviceName ) );
     }
 }
 
@@ -916,6 +971,7 @@ void manage_desktop( WCHAR *arg )
     const WCHAR *name = NULL;
     BOOL enable_shell = FALSE;
     void (WINAPI *pShellDDEInit)( BOOL ) = NULL;
+    HMODULE shell32;
 
     /* get the rest of the command line (if any) */
     while (*p && !is_whitespace(*p)) p++;
@@ -928,7 +984,7 @@ void manage_desktop( WCHAR *arg )
 
     /* parse the desktop option */
     /* the option is of the form /desktop=name[,widthxheight[,driver]] */
-    if (*arg == '=' || *arg == ',')
+    if ((arg[0] == '=' || arg[0] == ',') && arg[1] && arg[1] != ',')
     {
         arg++;
         name = arg;
@@ -952,7 +1008,7 @@ void manage_desktop( WCHAR *arg )
     {
         if (!(desktop = CreateDesktopW( name, NULL, NULL, 0, DESKTOP_ALL_ACCESS, NULL )))
         {
-            WINE_ERR( "failed to create desktop %s error %d\n", wine_dbgstr_w(name), GetLastError() );
+            WINE_ERR( "failed to create desktop %s error %ld\n", wine_dbgstr_w(name), GetLastError() );
             ExitProcess( 1 );
         }
         SetThreadDesktop( desktop );
@@ -985,20 +1041,15 @@ void manage_desktop( WCHAR *arg )
         initialize_display_settings();
         initialize_appbar();
 
-        if (graphics_driver)
+        if (using_root) enable_shell = FALSE;
+
+        initialize_systray( graphics_driver, using_root, enable_shell );
+        if (!using_root) initialize_launchers( hwnd );
+
+        if ((shell32 = LoadLibraryW( L"shell32.dll" )) &&
+            (pShellDDEInit = (void *)GetProcAddress( shell32, (LPCSTR)188)))
         {
-            HMODULE shell32;
-
-            if (using_root) enable_shell = FALSE;
-
-            initialize_systray( graphics_driver, using_root, enable_shell );
-            if (!using_root) initialize_launchers( hwnd );
-
-            if ((shell32 = LoadLibraryA( "shell32.dll" )) &&
-                (pShellDDEInit = (void *)GetProcAddress( shell32, (LPCSTR)188)))
-            {
-                pShellDDEInit( TRUE );
-            }
+            pShellDDEInit( TRUE );
         }
     }
 
@@ -1096,7 +1147,7 @@ static HRESULT WINAPI shellwindows_GetTypeInfoCount(IShellWindows *iface, UINT *
 static HRESULT WINAPI shellwindows_GetTypeInfo(IShellWindows *iface,
         UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
 {
-    TRACE("%d %d %p\n", iTInfo, lcid, ppTInfo);
+    TRACE("%d %ld %p\n", iTInfo, lcid, ppTInfo);
     return get_typeinfo(IShellWindows_tid, ppTInfo);
 }
 
@@ -1107,7 +1158,7 @@ static HRESULT WINAPI shellwindows_GetIDsOfNames(IShellWindows *iface,
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%s %p %d %d %p\n", debugstr_guid(riid), rgszNames, cNames,
+    TRACE("%s %p %d %ld %p\n", debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
 
     if (!rgszNames || cNames == 0 || !rgDispId)
@@ -1131,7 +1182,7 @@ static HRESULT WINAPI shellwindows_Invoke(IShellWindows *iface,
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%d %s %d %08x %p %p %p %p\n", dispIdMember, debugstr_guid(riid),
+    TRACE("%ld %s %ld %08x %p %p %p %p\n", dispIdMember, debugstr_guid(riid),
             lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     hr = get_typeinfo(IShellWindows_tid, &typeinfo);
@@ -1165,63 +1216,159 @@ static HRESULT WINAPI shellwindows__NewEnum(IShellWindows *iface, IUnknown **ppu
 }
 
 static HRESULT WINAPI shellwindows_Register(IShellWindows *iface,
-        IDispatch *disp, LONG hWnd, int class, LONG *cookie)
+        IDispatch *disp, LONG hwnd, int class, LONG *cookie)
 {
-    FIXME("%p 0x%x 0x%x %p\n", disp, hWnd, class, cookie);
-    return E_NOTIMPL;
+    struct shellwindows *sw = impl_from_IShellWindows(iface);
+    struct window *window;
+
+    TRACE("iface %p, disp %p, hwnd %#lx, class %u, cookie %p.\n", iface, disp, hwnd, class, cookie);
+
+    if (!hwnd)
+        return E_POINTER;
+
+    if (disp)
+        FIXME("Ignoring IDispatch %p.\n", disp);
+
+    EnterCriticalSection(&sw->cs);
+
+    if (!array_reserve((void **)&sw->windows, &sw->max, sw->count + 1, sizeof(*sw->windows)))
+    {
+        LeaveCriticalSection(&sw->cs);
+        return E_OUTOFMEMORY;
+    }
+
+    window = &sw->windows[sw->count++];
+    window->hwnd = hwnd;
+    window->class = class;
+    *cookie = window->cookie = ++cookie_counter;
+    window->pidl = NULL;
+
+    LeaveCriticalSection(&sw->cs);
+    return S_OK;
 }
 
 static HRESULT WINAPI shellwindows_RegisterPending(IShellWindows *iface,
     LONG threadid, VARIANT *loc, VARIANT *root, int class, LONG *cookie)
 {
-    FIXME("0x%x %s %s 0x%x %p\n", threadid, debugstr_variant(loc), debugstr_variant(root),
+    FIXME("0x%lx %s %s 0x%x %p\n", threadid, debugstr_variant(loc), debugstr_variant(root),
             class, cookie);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI shellwindows_Revoke(IShellWindows *iface, LONG cookie)
 {
-    FIXME("0x%x\n", cookie);
-    return E_NOTIMPL;
+    struct shellwindows *sw = impl_from_IShellWindows(iface);
+    unsigned int i;
+
+    TRACE("iface %p, cookie %lu.\n", iface, cookie);
+
+    EnterCriticalSection(&sw->cs);
+
+    for (i = 0; i < sw->count; ++i)
+    {
+        if (sw->windows[i].cookie == cookie)
+        {
+            --sw->count;
+            memmove(&sw->windows[i], &sw->windows[i + 1], (sw->count - i) * sizeof(*sw->windows));
+            LeaveCriticalSection(&sw->cs);
+            return S_OK;
+        }
+    }
+
+    LeaveCriticalSection(&sw->cs);
+    return S_FALSE;
 }
 
-static HRESULT WINAPI shellwindows_OnNavigate(IShellWindows *iface, LONG cookie, VARIANT *loc)
+static HRESULT WINAPI shellwindows_OnNavigate(IShellWindows *iface, LONG cookie, VARIANT *location)
 {
-    FIXME("0x%x %s\n", cookie, debugstr_variant(loc));
-    return E_NOTIMPL;
+    struct shellwindows *sw = impl_from_IShellWindows(iface);
+    unsigned int i;
+
+    TRACE("iface %p, cookie %lu, location %s.\n", iface, cookie, debugstr_variant(location));
+
+    if (V_VT(location) != (VT_ARRAY | VT_UI1))
+    {
+        FIXME("Unexpected variant type %s.\n", debugstr_vt(V_VT(location)));
+        return E_NOTIMPL;
+    }
+
+    EnterCriticalSection(&sw->cs);
+
+    for (i = 0; i < sw->count; ++i)
+    {
+        if (sw->windows[i].cookie == cookie)
+        {
+            size_t len = V_ARRAY(location)->rgsabound[0].cElements;
+            if (!(sw->windows[i].pidl = realloc(sw->windows[i].pidl, len)))
+            {
+                LeaveCriticalSection(&sw->cs);
+                return E_OUTOFMEMORY;
+            }
+            memcpy(sw->windows[i].pidl, V_ARRAY(location)->pvData, len);
+
+            LeaveCriticalSection(&sw->cs);
+            return S_OK;
+        }
+    }
+
+    LeaveCriticalSection(&sw->cs);
+    return E_INVALIDARG;
 }
 
 static HRESULT WINAPI shellwindows_OnActivated(IShellWindows *iface, LONG cookie, VARIANT_BOOL active)
 {
-    FIXME("0x%x 0x%x\n", cookie, active);
+    FIXME("0x%lx 0x%x\n", cookie, active);
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI shellwindows_FindWindowSW(IShellWindows *iface, VARIANT *loc,
-    VARIANT *root, int class, LONG *hwnd, int options, IDispatch **disp)
+static HRESULT WINAPI shellwindows_FindWindowSW(IShellWindows *iface, VARIANT *location,
+        VARIANT *root, int class, LONG *hwnd, int options, IDispatch **disp)
 {
-    TRACE("%s %s 0x%x %p 0x%x %p\n", debugstr_variant(loc), debugstr_variant(root),
-        class, hwnd, options, disp);
+    struct shellwindows *sw = impl_from_IShellWindows(iface);
+    unsigned int i;
 
-    if (class != SWC_DESKTOP)
+    TRACE("iface %p, location %p, root %p, class %#x, hwnd %p, options %#x, disp %p.\n",
+            iface, location, root, class, hwnd, options, disp);
+
+    if (class == SWC_DESKTOP)
     {
-        WARN("only SWC_DESKTOP class supported.\n");
+        *hwnd = (LONG)(LONG_PTR)GetDesktopWindow();
+        if (options & SWFO_NEEDDISPATCH)
+        {
+            *disp = (IDispatch *)&desktopshellbrowserwindow.IWebBrowser2_iface;
+            IDispatch_AddRef(*disp);
+        }
+        return S_OK;
+    }
+
+    if (options)
+        FIXME("Ignoring options %#x.\n", options);
+
+    if (V_VT(location) != (VT_ARRAY | VT_UI1))
+    {
+        FIXME("Unexpected variant type %s.\n", debugstr_vt(V_VT(location)));
         return E_NOTIMPL;
     }
 
-    *hwnd = HandleToLong(GetDesktopWindow());
-    if (options & SWFO_NEEDDISPATCH)
+    EnterCriticalSection(&sw->cs);
+
+    for (i = 0; i < sw->count; ++i)
     {
-        *disp = (IDispatch*)&desktopshellbrowserwindow.IWebBrowser2_iface;
-        IDispatch_AddRef(*disp);
+        if (sw->windows[i].class == class && ILIsEqual(V_ARRAY(location)->pvData, sw->windows[i].pidl))
+        {
+            *hwnd = sw->windows[i].hwnd;
+            LeaveCriticalSection(&sw->cs);
+            return S_OK;
+        }
     }
 
-    return S_OK;
+    LeaveCriticalSection(&sw->cs);
+    return S_FALSE;
 }
 
 static HRESULT WINAPI shellwindows_OnCreated(IShellWindows *iface, LONG cookie, IUnknown *punk)
 {
-    FIXME("0x%x %p\n", cookie, punk);
+    FIXME("0x%lx %p\n", cookie, punk);
     return E_NOTIMPL;
 }
 
@@ -1375,7 +1522,7 @@ static HRESULT WINAPI webbrowser_GetTypeInfo(IWebBrowser2 *iface, UINT iTInfo, L
                                      LPTYPEINFO *ppTInfo)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    TRACE("(%p)->(%d %d %p)\n", This, iTInfo, lcid, ppTInfo);
+    TRACE("(%p)->(%d %ld %p)\n", This, iTInfo, lcid, ppTInfo);
     return get_typeinfo(IWebBrowser2_tid, ppTInfo);
 }
 
@@ -1387,7 +1534,7 @@ static HRESULT WINAPI webbrowser_GetIDsOfNames(IWebBrowser2 *iface, REFIID riid,
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("(%p)->(%s %p %d %d %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
+    TRACE("(%p)->(%s %p %d %ld %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
 
     if(!rgszNames || cNames == 0 || !rgDispId)
@@ -1412,7 +1559,7 @@ static HRESULT WINAPI webbrowser_Invoke(IWebBrowser2 *iface, DISPID dispIdMember
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %s %d %08x %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
+    TRACE("(%p)->(%ld %s %ld %08x %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
             lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     hr = get_typeinfo(IWebBrowser2_tid, &typeinfo);
@@ -1544,7 +1691,7 @@ static HRESULT WINAPI webbrowser_get_Left(IWebBrowser2 *iface, LONG *pl)
 static HRESULT WINAPI webbrowser_put_Left(IWebBrowser2 *iface, LONG Left)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)->(%d)\n", This, Left);
+    FIXME("(%p)->(%ld)\n", This, Left);
     return E_NOTIMPL;
 }
 
@@ -1558,7 +1705,7 @@ static HRESULT WINAPI webbrowser_get_Top(IWebBrowser2 *iface, LONG *pl)
 static HRESULT WINAPI webbrowser_put_Top(IWebBrowser2 *iface, LONG Top)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)->(%d)\n", This, Top);
+    FIXME("(%p)->(%ld)\n", This, Top);
     return E_NOTIMPL;
 }
 
@@ -1572,7 +1719,7 @@ static HRESULT WINAPI webbrowser_get_Width(IWebBrowser2 *iface, LONG *pl)
 static HRESULT WINAPI webbrowser_put_Width(IWebBrowser2 *iface, LONG Width)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)->(%d)\n", This, Width);
+    FIXME("(%p)->(%ld)\n", This, Width);
     return E_NOTIMPL;
 }
 
@@ -1586,7 +1733,7 @@ static HRESULT WINAPI webbrowser_get_Height(IWebBrowser2 *iface, LONG *pl)
 static HRESULT WINAPI webbrowser_put_Height(IWebBrowser2 *iface, LONG Height)
 {
     struct shellbrowserwindow *This = impl_from_IWebBrowser2(iface);
-    FIXME("(%p)->(%d)\n", This, Height);
+    FIXME("(%p)->(%ld)\n", This, Height);
     return E_NOTIMPL;
 }
 
@@ -2101,7 +2248,7 @@ static HRESULT WINAPI shellbrowser_BrowseObject(IShellBrowser *iface, LPCITEMIDL
 
 static HRESULT WINAPI shellbrowser_GetViewStateStream(IShellBrowser *iface, DWORD mode, IStream **stream)
 {
-    FIXME("0x%x %p\n", mode, stream);
+    FIXME("0x%lx %p\n", mode, stream);
     return E_NOTIMPL;
 }
 
@@ -2114,7 +2261,7 @@ static HRESULT WINAPI shellbrowser_GetControlWindow(IShellBrowser *iface, UINT i
 static HRESULT WINAPI shellbrowser_SendControlMsg(IShellBrowser *iface, UINT id, UINT uMsg,
     WPARAM wParam, LPARAM lParam, LRESULT *pret)
 {
-    FIXME("%d %d %lx %lx %p\n", id, uMsg, wParam, lParam, pret);
+    FIXME("%d %d %Ix %Ix %p\n", id, uMsg, wParam, lParam, pret);
     return E_NOTIMPL;
 }
 
@@ -2182,6 +2329,8 @@ static void shellwindows_init(void)
     CoInitialize(NULL);
 
     shellwindows.IShellWindows_iface.lpVtbl = &shellwindowsvtbl;
+    InitializeCriticalSection(&shellwindows.cs);
+    shellwindows.cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": shellwindows.cs");
 
     hr = CoRegisterClassObject(&CLSID_ShellWindows,
         (IUnknown*)&shellwindows_classfactory.IClassFactory_iface,
@@ -2190,5 +2339,5 @@ static void shellwindows_init(void)
         &shellwindows_classfactory.classreg);
 
     if (FAILED(hr))
-        WARN("Failed to register ShellWindows object: %08x\n", hr);
+        WARN("Failed to register ShellWindows object: %08lx\n", hr);
 }

@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <assert.h>
 
 #define COBJMACROS
 
@@ -267,8 +266,7 @@ static HRESULT WINAPI HTMLObjectElement_put_width(IHTMLObjectElement *iface, VAR
 
     switch(V_VT(&v)) {
     case VT_I4: {
-        static const WCHAR formatW[] = {'%','d',0};
-        swprintf(buf, ARRAY_SIZE(buf), formatW, V_I4(&v));
+        swprintf(buf, ARRAY_SIZE(buf), L"%d", V_I4(&v));
         break;
     }
     default:
@@ -280,7 +278,7 @@ static HRESULT WINAPI HTMLObjectElement_put_width(IHTMLObjectElement *iface, VAR
     nsres = nsIDOMHTMLObjectElement_SetWidth(This->nsobject, &width_str);
     nsAString_Finish(&width_str);
     if(NS_FAILED(nsres)) {
-        FIXME("SetWidth failed: %08x\n", nsres);
+        FIXME("SetWidth failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -307,7 +305,7 @@ static HRESULT WINAPI HTMLObjectElement_get_width(IHTMLObjectElement *iface, VAR
         V_BSTR(p) = SysAllocString(width);
         hres = V_BSTR(p) ? S_OK : E_OUTOFMEMORY;
     }else {
-        ERR("GetWidth failed: %08x\n", nsres);
+        ERR("GetWidth failed: %08lx\n", nsres);
         hres = E_FAIL;
     }
 
@@ -326,8 +324,7 @@ static HRESULT WINAPI HTMLObjectElement_put_height(IHTMLObjectElement *iface, VA
 
     switch(V_VT(&v)) {
     case VT_I4: {
-        static const WCHAR formatW[] = {'%','d',0};
-        swprintf(buf, ARRAY_SIZE(buf), formatW, V_I4(&v));
+        swprintf(buf, ARRAY_SIZE(buf), L"%d", V_I4(&v));
         break;
     }
     default:
@@ -339,7 +336,7 @@ static HRESULT WINAPI HTMLObjectElement_put_height(IHTMLObjectElement *iface, VA
     nsres = nsIDOMHTMLObjectElement_SetHeight(This->nsobject, &height_str);
     nsAString_Finish(&height_str);
     if(NS_FAILED(nsres)) {
-        FIXME("SetHeight failed: %08x\n", nsres);
+        FIXME("SetHeight failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -366,7 +363,7 @@ static HRESULT WINAPI HTMLObjectElement_get_height(IHTMLObjectElement *iface, VA
         V_BSTR(p) = SysAllocString(height);
         hres = V_BSTR(p) ? S_OK : E_OUTOFMEMORY;
     }else {
-        ERR("GetHeight failed: %08x\n", nsres);
+        ERR("GetHeight failed: %08lx\n", nsres);
         hres = E_FAIL;
     }
 
@@ -426,7 +423,7 @@ static HRESULT WINAPI HTMLObjectElement_get_altHtml(IHTMLObjectElement *iface, B
 static HRESULT WINAPI HTMLObjectElement_put_vspace(IHTMLObjectElement *iface, LONG v)
 {
     HTMLObjectElement *This = impl_from_IHTMLObjectElement(iface);
-    FIXME("(%p)->(%d)\n", This, v);
+    FIXME("(%p)->(%ld)\n", This, v);
     return E_NOTIMPL;
 }
 
@@ -439,7 +436,7 @@ static HRESULT WINAPI HTMLObjectElement_get_vspace(IHTMLObjectElement *iface, LO
 
     nsres = nsIDOMHTMLObjectElement_GetVspace(This->nsobject, p);
     if(NS_FAILED(nsres)) {
-        ERR("GetVspace failed: %08x\n", nsres);
+        ERR("GetVspace failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -449,7 +446,7 @@ static HRESULT WINAPI HTMLObjectElement_get_vspace(IHTMLObjectElement *iface, LO
 static HRESULT WINAPI HTMLObjectElement_put_hspace(IHTMLObjectElement *iface, LONG v)
 {
     HTMLObjectElement *This = impl_from_IHTMLObjectElement(iface);
-    FIXME("(%p)->(%d)\n", This, v);
+    FIXME("(%p)->(%ld)\n", This, v);
     return E_NOTIMPL;
 }
 
@@ -577,11 +574,9 @@ static HRESULT WINAPI HTMLObjectElement2_put_classid(IHTMLObjectElement2 *iface,
     HTMLObjectElement *This = impl_from_IHTMLObjectElement2(iface);
     HRESULT hres;
 
-    static const WCHAR classidW[] = {'c','l','a','s','s','i','d',0};
-
     FIXME("(%p)->(%s) semi-stub\n", This, debugstr_w(v));
 
-    hres = elem_string_attr_setter(&This->plugin_container.element, classidW, v);
+    hres = elem_string_attr_setter(&This->plugin_container.element, L"classid", v);
     if(FAILED(hres))
         return hres;
 
@@ -709,7 +704,7 @@ static HRESULT HTMLObjectElement_get_dispid(HTMLDOMNode *iface, BSTR name,
 {
     HTMLObjectElement *This = impl_from_HTMLDOMNode(iface);
 
-    TRACE("(%p)->(%s %x %p)\n", This, debugstr_w(name), grfdex, pid);
+    TRACE("(%p)->(%s %lx %p)\n", This, debugstr_w(name), grfdex, pid);
 
     return get_plugin_dispid(&This->plugin_container, name, pid);
 }
@@ -719,7 +714,7 @@ static HRESULT HTMLObjectElement_invoke(HTMLDOMNode *iface, DISPID id, LCID lcid
 {
     HTMLObjectElement *This = impl_from_HTMLDOMNode(iface);
 
-    TRACE("(%p)->(%d)\n", This, id);
+    TRACE("(%p)->(%ld)\n", This, id);
 
     return invoke_plugin_prop(&This->plugin_container, id, lcid, flags, params, res, ei);
 }
@@ -771,6 +766,7 @@ static const tid_t HTMLObjectElement_iface_tids[] = {
     0
 };
 static dispex_static_data_t HTMLObjectElement_dispex = {
+    L"HTMLObjectElement",
     NULL,
     DispHTMLObjectElement_tid,
     HTMLObjectElement_iface_tids,
@@ -1033,6 +1029,7 @@ static const tid_t HTMLEmbedElement_iface_tids[] = {
     0
 };
 static dispex_static_data_t HTMLEmbedElement_dispex = {
+    L"HTMLEmbedElement",
     NULL,
     DispHTMLEmbed_tid,
     HTMLEmbedElement_iface_tids,

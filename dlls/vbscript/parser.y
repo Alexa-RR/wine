@@ -34,6 +34,7 @@ static void source_add_class(parser_ctx_t*,class_decl_t*);
 
 static void *new_expression(parser_ctx_t*,expression_type_t,size_t);
 static expression_t *new_bool_expression(parser_ctx_t*,VARIANT_BOOL);
+static expression_t *new_date_expression(parser_ctx_t*,DATE);
 static expression_t *new_string_expression(parser_ctx_t*,const WCHAR*);
 static expression_t *new_long_expression(parser_ctx_t*,expression_type_t,LONG);
 static expression_t *new_double_expression(parser_ctx_t*,double);
@@ -46,7 +47,7 @@ static call_expression_t *new_call_expression(parser_ctx_t*,expression_t*,expres
 static call_expression_t *make_call_expression(parser_ctx_t*,expression_t*,expression_t*);
 
 static void *new_statement(parser_ctx_t*,statement_type_t,size_t,unsigned);
-static statement_t *new_call_statement(parser_ctx_t*,unsigned,BOOL,expression_t*);
+static statement_t *new_call_statement(parser_ctx_t*,unsigned,expression_t*);
 static statement_t *new_assign_statement(parser_ctx_t*,unsigned,expression_t*,expression_t*);
 static statement_t *new_set_statement(parser_ctx_t*,unsigned,expression_t*,expression_t*);
 static statement_t *new_dim_statement(parser_ctx_t*,unsigned,dim_decl_t*);
@@ -80,13 +81,14 @@ static statement_t *link_statements(statement_t*,statement_t*);
 
 #define CHECK_ERROR if(((parser_ctx_t*)ctx)->hres != S_OK) YYABORT
 
-#define YYLTYPE unsigned
+#define PARSER_LTYPE unsigned
 #define YYLLOC_DEFAULT(Cur, Rhs, N) Cur = YYRHSLOC((Rhs), (N) ? 1 : 0)
 
 %}
 
 %lex-param { parser_ctx_t *ctx }
 %parse-param { parser_ctx_t *ctx }
+%define api.prefix {parser_}
 %define api.pure
 %start Program
 
@@ -107,6 +109,7 @@ static statement_t *link_statements(statement_t*,statement_t*);
     LONG integer;
     BOOL boolean;
     double dbl;
+    DATE date;
 }
 
 %token tEXPRESSION tNL tEMPTYBRACKETS tEXPRLBRACKET
@@ -129,8 +132,10 @@ static statement_t *link_statements(statement_t*,statement_t*);
 %token <string> tDEFAULT tERROR tEXPLICIT tPROPERTY tSTEP
 %token <integer> tInt
 %token <dbl> tDouble
+%token <date> tDate
 
 %type <statement> Statement SimpleStatement StatementNl StatementsNl StatementsNl_opt BodyStatements IfStatement Else_opt
+%type <statement> GlobalDimDeclaration
 %type <expression> Expression LiteralExpression PrimaryExpression EqualityExpression CallExpression ExpressionNl_opt
 %type <expression> ConcatExpression AdditiveExpression ModExpression IntdivExpression MultiplicativeExpression ExpExpression
 %type <expression> NotExpression UnaryExpression AndExpression OrExpression XorExpression EqvExpression SignExpression
@@ -161,8 +166,14 @@ OptionExplicit_opt
 
 SourceElements
     : /* empty */
+    | SourceElements GlobalDimDeclaration StSep
+                                            { source_add_statement(ctx, $2); }
     | SourceElements StatementNl            { source_add_statement(ctx, $2); }
     | SourceElements ClassDeclaration       { source_add_class(ctx, $2); }
+
+GlobalDimDeclaration
+    : tPRIVATE DimDeclList                  { $$ = new_dim_statement(ctx, @$, $2); CHECK_ERROR; }
+    | tPUBLIC  DimDeclList                  { $$ = new_dim_statement(ctx, @$, $2); CHECK_ERROR; }
 
 ExpressionNl_opt
     : /* empty */                           { $$ = NULL; }
@@ -178,8 +189,8 @@ StatementsNl_opt
     | StatementsNl                          { $$ = $1; }
 
 StatementsNl
-    : StatementNl                           { $$ = $1; }
-    | StatementNl StatementsNl              { $$ = link_statements($1, $2); }
+    : SimpleStatement StSep                 { $$ = $1; }
+    | SimpleStatement StSep StatementsNl    { $$ = link_statements($1, $3); }
 
 StatementNl
     : Statement tNL                         { $$ = $1; }
@@ -193,8 +204,8 @@ Statement
 
 SimpleStatement
     : CallExpression ArgumentList_opt       { call_expression_t *call_expr = make_call_expression(ctx, $1, $2); CHECK_ERROR;
-                                              $$ = new_call_statement(ctx, @$, FALSE, &call_expr->expr); CHECK_ERROR; };
-    | tCALL UnaryExpression                 { $$ = new_call_statement(ctx, @$, TRUE, $2); CHECK_ERROR; }
+                                              $$ = new_call_statement(ctx, @$, &call_expr->expr); CHECK_ERROR; };
+    | tCALL UnaryExpression                 { $$ = new_call_statement(ctx, @$, $2); CHECK_ERROR; }
     | CallExpression '=' Expression
                                             { $$ = new_assign_statement(ctx, @$, $1, $3); CHECK_ERROR; }
     | tDIM DimDeclList                      { $$ = new_dim_statement(ctx, @$, $2); CHECK_ERROR; }
@@ -301,7 +312,7 @@ Else_opt
 
 CaseClausules
     : /* empty */                          { $$ = NULL; }
-    | tCASE tELSE StSep StatementsNl       { $$ = new_case_clausule(ctx, NULL, $4, NULL); }
+    | tCASE tELSE StSep StatementsNl_opt   { $$ = new_case_clausule(ctx, NULL, $4, NULL); }
     | tCASE ExpressionList StSep StatementsNl_opt CaseClausules
                                            { $$ = new_case_clausule(ctx, $2, $4, $5); }
 
@@ -409,6 +420,7 @@ LiteralExpression
     : tTRUE                         { $$ = new_bool_expression(ctx, VARIANT_TRUE); CHECK_ERROR; }
     | tFALSE                        { $$ = new_bool_expression(ctx, VARIANT_FALSE); CHECK_ERROR; }
     | tString                       { $$ = new_string_expression(ctx, $1); CHECK_ERROR; }
+    | tDate                         { $$ = new_date_expression(ctx, $1); CHECK_ERROR; }
     | NumericLiteralExpression      { $$ = $1; }
     | tEMPTY                        { $$ = new_expression(ctx, EXPR_EMPTY, 0); CHECK_ERROR; }
     | tNULL                         { $$ = new_expression(ctx, EXPR_NULL, 0); CHECK_ERROR; }
@@ -445,11 +457,11 @@ ClassBody
     | PropertyDecl StSep ClassBody                { $$ = add_class_function(ctx, $3, $1); CHECK_ERROR; }
 
 PropertyDecl
-    : Storage_opt tPROPERTY tGET tIdentifier ArgumentsDecl_opt StSep BodyStatements tEND tPROPERTY
+    : Storage_opt tPROPERTY tGET Identifier ArgumentsDecl_opt StSep BodyStatements tEND tPROPERTY
                                     { $$ = new_function_decl(ctx, $4, FUNC_PROPGET, $1, $5, $7); CHECK_ERROR; }
-    | Storage_opt tPROPERTY tLET tIdentifier '(' ArgumentDecl ')' StSep BodyStatements tEND tPROPERTY
+    | Storage_opt tPROPERTY tLET Identifier '(' ArgumentDeclList ')' StSep BodyStatements tEND tPROPERTY
                                     { $$ = new_function_decl(ctx, $4, FUNC_PROPLET, $1, $6, $9); CHECK_ERROR; }
-    | Storage_opt tPROPERTY tSET tIdentifier '(' ArgumentDecl ')' StSep BodyStatements tEND tPROPERTY
+    | Storage_opt tPROPERTY tSET Identifier '(' ArgumentDeclList ')' StSep BodyStatements tEND tPROPERTY
                                     { $$ = new_function_decl(ctx, $4, FUNC_PROPSET, $1, $6, $9); CHECK_ERROR; }
 
 FunctionDecl
@@ -483,11 +495,11 @@ ArgumentDecl
 /* these keywords may also be an identifier, depending on context */
 Identifier
     : tIdentifier    { $$ = $1; }
-    | tDEFAULT       { $$ = $1; }
-    | tERROR         { $$ = $1; }
-    | tEXPLICIT      { $$ = $1; }
-    | tPROPERTY      { $$ = $1; }
-    | tSTEP          { $$ = $1; }
+    | tDEFAULT       { ctx->last_token = tIdentifier; $$ = $1; }
+    | tERROR         { ctx->last_token = tIdentifier; $$ = $1; }
+    | tEXPLICIT      { ctx->last_token = tIdentifier; $$ = $1; }
+    | tPROPERTY      { ctx->last_token = tIdentifier; $$ = $1; }
+    | tSTEP          { ctx->last_token = tIdentifier; $$ = $1; }
 
 /* Most statements accept both new line and ':' as separators */
 StSep
@@ -506,7 +518,7 @@ static int parser_error(unsigned *loc, parser_ctx_t *ctx, const char *str)
         FIXME("%s: %s\n", debugstr_w(ctx->code + *loc), debugstr_a(str));
         ctx->hres = E_FAIL;
     }else {
-        WARN("%s: %08x\n", debugstr_w(ctx->code + *loc), ctx->hres);
+        WARN("%s: %08lx\n", debugstr_w(ctx->code + *loc), ctx->hres);
     }
     return 0;
 }
@@ -516,11 +528,16 @@ static void source_add_statement(parser_ctx_t *ctx, statement_t *stat)
     if(!stat)
         return;
 
+    /* concatenate both linked lists */
     if(ctx->stats) {
         ctx->stats_tail->next = stat;
         ctx->stats_tail = stat;
     }else {
         ctx->stats = ctx->stats_tail = stat;
+    }
+    /* find new tail */
+    while(ctx->stats_tail->next) {
+        ctx->stats_tail=ctx->stats_tail->next;
     }
 }
 
@@ -575,6 +592,18 @@ static expression_t *new_string_expression(parser_ctx_t *ctx, const WCHAR *value
     string_expression_t *expr;
 
     expr = new_expression(ctx, EXPR_STRING, sizeof(*expr));
+    if(!expr)
+        return NULL;
+
+    expr->value = value;
+    return &expr->expr;
+}
+
+static expression_t *new_date_expression(parser_ctx_t *ctx, DATE value)
+{
+    date_expression_t *expr;
+
+    expr = new_expression(ctx, EXPR_DATE, sizeof(*expr));
     if(!expr)
         return NULL;
 
@@ -722,7 +751,7 @@ static void *new_statement(parser_ctx_t *ctx, statement_type_t type, size_t size
     return stat;
 }
 
-static statement_t *new_call_statement(parser_ctx_t *ctx, unsigned loc, BOOL is_strict, expression_t *expr)
+static statement_t *new_call_statement(parser_ctx_t *ctx, unsigned loc, expression_t *expr)
 {
     call_expression_t *call_expr = NULL;
     call_statement_t *stat;
@@ -746,7 +775,6 @@ static statement_t *new_call_statement(parser_ctx_t *ctx, unsigned loc, BOOL is_
         return NULL;
 
     stat->expr = call_expr;
-    stat->is_strict = is_strict;
     return &stat->stat;
 }
 
@@ -978,10 +1006,11 @@ static function_decl_t *new_function_decl(parser_ctx_t *ctx, const WCHAR *name, 
         unsigned storage_flags, arg_decl_t *arg_decl, statement_t *body)
 {
     function_decl_t *decl;
+    BOOL is_default = FALSE;
 
     if(storage_flags & STORAGE_IS_DEFAULT) {
-        if(type == FUNC_PROPGET) {
-            type = FUNC_DEFGET;
+        if(type == FUNC_PROPGET || type == FUNC_FUNCTION || type == FUNC_SUB) {
+            is_default = TRUE;
         }else {
             FIXME("Invalid default property\n");
             ctx->hres = E_FAIL;
@@ -996,6 +1025,7 @@ static function_decl_t *new_function_decl(parser_ctx_t *ctx, const WCHAR *name, 
     decl->name = name;
     decl->type = type;
     decl->is_public = !(storage_flags & STORAGE_IS_PRIVATE);
+    decl->is_default = is_default;
     decl->args = arg_decl;
     decl->body = body;
     decl->next = NULL;

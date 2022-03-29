@@ -195,7 +195,6 @@ static void assembleshader_test(void)
     };
     struct D3DXIncludeImpl include;
     char shader_vsh_path[MAX_PATH], shader3_vsh_path[MAX_PATH];
-    static const WCHAR shader_filename_w[] = {'s','h','a','d','e','r','.','v','s','h',0};
 
     /* pDefines test */
     shader = NULL;
@@ -260,7 +259,7 @@ static void assembleshader_test(void)
     messages = NULL;
     hr = D3DXAssembleShader(testshader2, strlen(testshader2), NULL, &include.ID3DXInclude_iface,
                             D3DXSHADER_SKIPVALIDATION, &shader, &messages);
-    ok(hr == D3D_OK, "D3DXAssembleShader test failed with error 0x%x - %d\n", hr, hr & 0x0000FFFF);
+    todo_wine ok(hr == D3D_OK, "D3DXAssembleShader test failed with error 0x%x - %d\n", hr, hr & 0x0000FFFF);
     if(messages) {
         trace("recursive D3DXAssembleShader messages:\n%s", (char *)ID3DXBuffer_GetBufferPointer(messages));
         ID3DXBuffer_Release(messages);
@@ -356,7 +355,7 @@ static void assembleshader_test(void)
 
         shader = NULL;
         messages = NULL;
-        hr = D3DXAssembleShaderFromFileW(shader_filename_w, NULL, &include.ID3DXInclude_iface,
+        hr = D3DXAssembleShaderFromFileW(L"shader.vsh", NULL, &include.ID3DXInclude_iface,
                 D3DXSHADER_SKIPVALIDATION, &shader, &messages);
         ok(hr == D3D_OK, "D3DXAssembleShaderFromFile + pInclude main shader test failed with error 0x%x - %d\n",
                 hr, hr & 0x0000ffff);
@@ -445,7 +444,6 @@ static void d3dxpreprocess_test(void)
     ID3DXBuffer *shader, *messages;
     char shader_vsh_path[MAX_PATH], shader3_vsh_path[MAX_PATH];
     static struct D3DXIncludeImpl include = {{&D3DXInclude_Vtbl}};
-    static const WCHAR shader_filename_w[] = {'s','h','a','d','e','r','.','v','s','h',0};
 
     if (create_file("shader.vsh", testshader, sizeof(testshader) - 1, shader_vsh_path))
     {
@@ -520,7 +518,7 @@ static void d3dxpreprocess_test(void)
 
         shader = NULL;
         messages = NULL;
-        hr = D3DXPreprocessShaderFromFileW(shader_filename_w, NULL, &include.ID3DXInclude_iface,
+        hr = D3DXPreprocessShaderFromFileW(L"shader.vsh", NULL, &include.ID3DXInclude_iface,
                 &shader, &messages);
         ok(hr == D3D_OK, "D3DXPreprocessShaderFromFile + pInclude main shader test failed with error 0x%x - %d\n",
                 hr, hr & 0x0000ffff);

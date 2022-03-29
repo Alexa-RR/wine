@@ -31,22 +31,21 @@ typedef struct {
     BOOL val;
 } BoolInstance;
 
-static const WCHAR toStringW[] = {'t','o','S','t','r','i','n','g',0};
-static const WCHAR valueOfW[] = {'v','a','l','u','e','O','f',0};
-
 static inline BoolInstance *bool_from_jsdisp(jsdisp_t *jsdisp)
 {
     return CONTAINING_RECORD(jsdisp, BoolInstance, dispex);
 }
 
-static inline BoolInstance *bool_from_vdisp(vdisp_t *vdisp)
+static inline HRESULT boolval_this(jsval_t vthis, BOOL *ret)
 {
-    return bool_from_jsdisp(vdisp->u.jsdisp);
-}
-
-static inline BoolInstance *bool_this(vdisp_t *jsthis)
-{
-    return is_vclass(jsthis, JSCLASS_BOOLEAN) ? bool_from_vdisp(jsthis) : NULL;
+    jsdisp_t *jsdisp;
+    if(is_bool(vthis))
+        *ret = get_bool(vthis);
+    else if(is_object_instance(vthis) && (jsdisp = to_jsdisp(get_object(vthis))) && is_class(jsdisp, JSCLASS_BOOLEAN))
+        *ret = bool_from_jsdisp(jsdisp)->val;
+    else
+        return JS_E_BOOLEAN_EXPECTED;
+    return S_OK;
 }
 
 BOOL bool_obj_value(jsdisp_t *obj)
@@ -56,22 +55,21 @@ BOOL bool_obj_value(jsdisp_t *obj)
 }
 
 /* ECMA-262 3rd Edition    15.6.4.2 */
-static HRESULT Bool_toString(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv, jsval_t *r)
+static HRESULT Bool_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv, jsval_t *r)
 {
-    BoolInstance *bool;
-
-    static const WCHAR trueW[] = {'t','r','u','e',0};
-    static const WCHAR falseW[] = {'f','a','l','s','e',0};
+    BOOL boolval;
+    HRESULT hres;
 
     TRACE("\n");
 
-    if(!(bool = bool_this(jsthis)))
-        return JS_E_BOOLEAN_EXPECTED;
+    hres = boolval_this(vthis, &boolval);
+    if(FAILED(hres))
+        return hres;
 
     if(r) {
         jsstr_t *val;
 
-        val = jsstr_alloc(bool->val ? trueW : falseW);
+        val = jsstr_alloc(boolval ? L"true" : L"false");
         if(!val)
             return E_OUTOFMEMORY;
 
@@ -82,21 +80,23 @@ static HRESULT Bool_toString(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, uns
 }
 
 /* ECMA-262 3rd Edition    15.6.4.3 */
-static HRESULT Bool_valueOf(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv, jsval_t *r)
+static HRESULT Bool_valueOf(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv, jsval_t *r)
 {
-    BoolInstance *bool;
+    BOOL boolval;
+    HRESULT hres;
 
     TRACE("\n");
 
-    if(!(bool = bool_this(jsthis)))
-        return JS_E_BOOLEAN_EXPECTED;
+    hres = boolval_this(vthis, &boolval);
+    if(FAILED(hres))
+        return hres;
 
     if(r)
-        *r = jsval_bool(bool->val);
+        *r = jsval_bool(boolval);
     return S_OK;
 }
 
-static HRESULT Bool_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv,
+static HRESULT Bool_value(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv,
         jsval_t *r)
 {
     TRACE("\n");
@@ -114,13 +114,13 @@ static HRESULT Bool_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsign
 }
 
 static const builtin_prop_t Bool_props[] = {
-    {toStringW,              Bool_toString,             PROPF_METHOD},
-    {valueOfW,               Bool_valueOf,              PROPF_METHOD}
+    {L"toString",            Bool_toString,             PROPF_METHOD},
+    {L"valueOf",             Bool_valueOf,              PROPF_METHOD}
 };
 
 static const builtin_info_t Bool_info = {
     JSCLASS_BOOLEAN,
-    {NULL, Bool_value, 0},
+    Bool_value,
     ARRAY_SIZE(Bool_props),
     Bool_props,
     NULL,
@@ -129,13 +129,13 @@ static const builtin_info_t Bool_info = {
 
 static const builtin_info_t BoolInst_info = {
     JSCLASS_BOOLEAN,
-    {NULL, Bool_value, 0},
+    Bool_value,
     0, NULL,
     NULL,
     NULL
 };
 
-static HRESULT BoolConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags, unsigned argc, jsval_t *argv,
+static HRESULT BoolConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags, unsigned argc, jsval_t *argv,
         jsval_t *r)
 {
     BOOL value = FALSE;
@@ -200,13 +200,11 @@ HRESULT create_bool_constr(script_ctx_t *ctx, jsdisp_t *object_prototype, jsdisp
     BoolInstance *bool;
     HRESULT hres;
 
-    static const WCHAR BooleanW[] = {'B','o','o','l','e','a','n',0};
-
     hres = alloc_bool(ctx, object_prototype, &bool);
     if(FAILED(hres))
         return hres;
 
-    hres = create_builtin_constructor(ctx, BoolConstr_value, BooleanW, NULL,
+    hres = create_builtin_constructor(ctx, BoolConstr_value, L"Boolean", NULL,
             PROPF_CONSTR|1, &bool->dispex, ret);
 
     jsdisp_release(&bool->dispex);

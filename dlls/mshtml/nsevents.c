@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <assert.h>
 
 #define COBJMACROS
 
@@ -37,11 +36,6 @@
 #include "resource.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
-
-static const PRUnichar blurW[]      = {'b','l','u','r',0};
-static const PRUnichar focusW[]     = {'f','o','c','u','s',0};
-static const PRUnichar keypressW[]  = {'k','e','y','p','r','e','s','s',0};
-static const PRUnichar loadW[]      = {'l','o','a','d',0};
 
 typedef struct {
     nsIDOMEventListener nsIDOMEventListener_iface;
@@ -64,7 +58,7 @@ static LONG release_listener(nsDocumentEventListener *This)
 {
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref)
         heap_free(This);
@@ -106,7 +100,7 @@ static nsrefcnt NSAPI nsDOMEventListener_AddRef(nsIDOMEventListener *iface)
     nsEventListener *This = impl_from_nsIDOMEventListener(iface);
     LONG ref = InterlockedIncrement(&This->This->ref);
 
-    TRACE("(%p) ref=%d\n", This->This, ref);
+    TRACE("(%p) ref=%ld\n", This->This, ref);
 
     return ref;
 }
@@ -275,7 +269,7 @@ static nsresult NSAPI handle_load(nsIDOMEventListener *iface, nsIDOMEvent *event
     }
 
     if(doc->window) {
-        hres = create_event_from_nsevent(event, &load_event);
+        hres = create_event_from_nsevent(event, dispex_compat_mode(&doc->node.event_target.dispex), &load_event);
         if(SUCCEEDED(hres)) {
             dispatch_event(&doc->window->event_target, load_event);
             IDOMEvent_Release(&load_event->IDOMEvent_iface);
@@ -308,14 +302,14 @@ static nsresult NSAPI handle_htmlevent(nsIDOMEventListener *iface, nsIDOMEvent *
 
     nsres = nsIDOMEvent_GetTarget(nsevent, &event_target);
     if(NS_FAILED(nsres) || !event_target) {
-        ERR("GetEventTarget failed: %08x\n", nsres);
+        ERR("GetEventTarget failed: %08lx\n", nsres);
         return NS_OK;
     }
 
     nsres = nsIDOMEventTarget_QueryInterface(event_target, &IID_nsIDOMNode, (void**)&nsnode);
     nsIDOMEventTarget_Release(event_target);
     if(NS_FAILED(nsres)) {
-        ERR("Could not get nsIDOMNode: %08x\n", nsres);
+        ERR("Could not get nsIDOMNode: %08lx\n", nsres);
         return NS_OK;
     }
 
@@ -324,7 +318,7 @@ static nsresult NSAPI handle_htmlevent(nsIDOMEventListener *iface, nsIDOMEvent *
     if(FAILED(hres))
         return NS_OK;
 
-    hres = create_event_from_nsevent(nsevent, &event);
+    hres = create_event_from_nsevent(nsevent, dispex_compat_mode(&doc->node.event_target.dispex), &event);
     if(FAILED(hres)) {
         node_release(node);
         return NS_OK;
@@ -372,7 +366,7 @@ static void init_event(nsIDOMEventTarget *target, const PRUnichar *type,
     nsres = nsIDOMEventTarget_AddEventListener(target, &type_str, listener, capture, FALSE, 1);
     nsAString_Finish(&type_str);
     if(NS_FAILED(nsres))
-        ERR("AddEventTarget failed: %08x\n", nsres);
+        ERR("AddEventTarget failed: %08lx\n", nsres);
 
 }
 
@@ -429,7 +423,7 @@ static void detach_nslistener(HTMLDocumentNode *doc, const WCHAR *type, nsEventL
     nsAString_Finish(&type_str);
     nsIDOMEventTarget_Release(target);
     if(NS_FAILED(nsres))
-        ERR("RemoveEventTarget failed: %08x\n", nsres);
+        ERR("RemoveEventTarget failed: %08lx\n", nsres);
 }
 
 void detach_nsevent(HTMLDocumentNode *doc, const WCHAR *type)
@@ -446,10 +440,10 @@ void release_nsevents(HTMLDocumentNode *doc)
     if(!listener)
         return;
 
-    detach_nslistener(doc, blurW,     &listener->blur_listener,     TRUE);
-    detach_nslistener(doc, focusW,    &listener->focus_listener,    TRUE);
-    detach_nslistener(doc, keypressW, &listener->keypress_listener, FALSE);
-    detach_nslistener(doc, loadW,     &listener->load_listener,     TRUE);
+    detach_nslistener(doc, L"blur",     &listener->blur_listener,     TRUE);
+    detach_nslistener(doc, L"focus",    &listener->focus_listener,    TRUE);
+    detach_nslistener(doc, L"keypress", &listener->keypress_listener, FALSE);
+    detach_nslistener(doc, L"load",     &listener->load_listener,     TRUE);
 
     listener->doc = NULL;
     release_listener(listener);
@@ -482,10 +476,10 @@ void init_nsevents(HTMLDocumentNode *doc)
     if(!target)
         return;
 
-    init_event(target, blurW,     &listener->blur_listener.nsIDOMEventListener_iface,     TRUE);
-    init_event(target, focusW,    &listener->focus_listener.nsIDOMEventListener_iface,    TRUE);
-    init_event(target, keypressW, &listener->keypress_listener.nsIDOMEventListener_iface, FALSE);
-    init_event(target, loadW,     &listener->load_listener.nsIDOMEventListener_iface,     TRUE);
+    init_event(target, L"blur",     &listener->blur_listener.nsIDOMEventListener_iface,     TRUE);
+    init_event(target, L"focus",    &listener->focus_listener.nsIDOMEventListener_iface,    TRUE);
+    init_event(target, L"keypress", &listener->keypress_listener.nsIDOMEventListener_iface, FALSE);
+    init_event(target, L"load",     &listener->load_listener.nsIDOMEventListener_iface,     TRUE);
 
     nsIDOMEventTarget_Release(target);
 }

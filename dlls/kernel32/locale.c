@@ -21,9 +21,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <assert.h>
 #include <locale.h>
 #include <string.h>
@@ -37,7 +34,6 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
-#include "wine/unicode.h"
 #include "winnls.h"
 #include "winerror.h"
 #include "winver.h"
@@ -62,11 +58,6 @@ extern BOOL WINAPI Internal_EnumTimeFormats( TIMEFMT_ENUMPROCW proc, LCID lcid, 
 extern BOOL WINAPI Internal_EnumUILanguages( UILANGUAGE_ENUMPROCW proc, DWORD flags,
                                              LONG_PTR param, BOOL unicode );
 
-static inline unsigned short get_table_entry( const unsigned short *table, WCHAR ch )
-{
-    return table[table[table[ch >> 8] + ((ch >> 4) & 0x0f)] + (ch & 0xf)];
-}
-
 /***********************************************************************
  *		get_lcid_codepage
  *
@@ -80,139 +71,6 @@ static inline UINT get_lcid_codepage( LCID lcid )
     return ret;
 }
 
-
-static BOOL get_dummy_preferred_ui_language( DWORD flags, ULONG *count, WCHAR *buffer, ULONG *size )
-{
-    LCTYPE type;
-    int lsize;
-
-    FIXME("(0x%x %p %p %p) returning a dummy value (current locale)\n", flags, count, buffer, size);
-
-    if (flags & MUI_LANGUAGE_ID)
-        type = LOCALE_ILANGUAGE;
-    else
-        type = LOCALE_SNAME;
-
-    lsize = GetLocaleInfoW(LOCALE_SYSTEM_DEFAULT, type, NULL, 0);
-    if (!lsize)
-    {
-        /* keep last error from callee */
-        return FALSE;
-    }
-    lsize++;
-    if (!*size)
-    {
-        *size = lsize;
-        *count = 1;
-        return TRUE;
-    }
-
-    if (lsize > *size)
-    {
-        *size = lsize;
-        SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return FALSE;
-    }
-
-    if (!GetLocaleInfoW(LOCALE_SYSTEM_DEFAULT, type, buffer, *size))
-    {
-        /* keep last error from callee */
-        return FALSE;
-    }
-
-    buffer[lsize-1] = 0;
-    *size = lsize;
-    *count = 1;
-    TRACE("returned variable content: %d, \"%s\", %d\n", *count, debugstr_w(buffer), *size);
-    return TRUE;
-
-}
-
-/***********************************************************************
- *             GetProcessPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI GetProcessPreferredUILanguages( DWORD flags, ULONG *count, WCHAR *buf, ULONG *size )
-{
-    FIXME( "%08x, %p, %p %p\n", flags, count, buf, size );
-    return get_dummy_preferred_ui_language( flags, count, buf, size );
-}
-
-/***********************************************************************
- *             GetSystemPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI GetSystemPreferredUILanguages(DWORD flags, ULONG* count, WCHAR* buffer, ULONG* size)
-{
-    if (flags & ~(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID | MUI_MACHINE_LANGUAGE_SETTINGS))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    if ((flags & MUI_LANGUAGE_NAME) && (flags & MUI_LANGUAGE_ID))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    if (*size && !buffer)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    return get_dummy_preferred_ui_language( flags, count, buffer, size );
-}
-
-/***********************************************************************
- *              SetProcessPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI SetProcessPreferredUILanguages( DWORD flags, PCZZWSTR buffer, PULONG count )
-{
-    FIXME("%u, %p, %p\n", flags, buffer, count );
-    return TRUE;
-}
-
-/***********************************************************************
- *              SetThreadPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI SetThreadPreferredUILanguages( DWORD flags, PCZZWSTR buffer, PULONG count )
-{
-    FIXME( "%u, %p, %p\n", flags, buffer, count );
-    return TRUE;
-}
-
-/***********************************************************************
- *              GetThreadPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI GetThreadPreferredUILanguages( DWORD flags, ULONG *count, WCHAR *buf, ULONG *size )
-{
-    FIXME( "%08x, %p, %p %p\n", flags, count, buf, size );
-    return get_dummy_preferred_ui_language( flags, count, buf, size );
-}
-
-/******************************************************************************
- *             GetUserPreferredUILanguages (KERNEL32.@)
- */
-BOOL WINAPI GetUserPreferredUILanguages( DWORD flags, ULONG *count, WCHAR *buffer, ULONG *size )
-{
-    TRACE( "%u %p %p %p\n", flags, count, buffer, size );
-
-    if (flags & ~(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    if ((flags & MUI_LANGUAGE_NAME) && (flags & MUI_LANGUAGE_ID))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    if (*size && !buffer)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    return get_dummy_preferred_ui_language( flags, count, buffer, size );
-}
 
 /******************************************************************************
  *		SetLocaleInfoA	[KERNEL32.@]
@@ -309,6 +167,17 @@ BOOL WINAPI GetCPInfoExA( UINT codepage, DWORD dwFlags, LPCPINFOEXA cpinfo )
     WideCharToMultiByte(CP_ACP, 0, cpinfoW.CodePageName, -1, cpinfo->CodePageName, sizeof(cpinfo->CodePageName), NULL, NULL);
     return TRUE;
 }
+
+
+/*********************************************************************
+ *              GetDaylightFlag   (KERNEL32.@)
+ */
+BOOL WINAPI GetDaylightFlag(void)
+{
+    TIME_ZONE_INFORMATION tzinfo;
+    return GetTimeZoneInformation( &tzinfo) == TIME_ZONE_ID_DAYLIGHT;
+}
+
 
 /***********************************************************************
  *              EnumSystemCodePagesA   (KERNEL32.@)
@@ -515,7 +384,7 @@ INT WINAPI GetGeoInfoA(GEOID geoid, GEOTYPE geotype, LPSTR data, int data_len, L
     WCHAR *buffW;
     INT len;
 
-    TRACE("%d %d %p %d %d\n", geoid, geotype, data, data_len, lang);
+    TRACE("%ld %ld %p %d %d\n", geoid, geotype, data, data_len, lang);
 
     len = GetGeoInfoW(geoid, geotype, NULL, 0, lang);
     if (!len)
@@ -538,32 +407,4 @@ INT WINAPI GetGeoInfoA(GEOID geoid, GEOTYPE geotype, LPSTR data, int data_len, L
     if (data_len < len)
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
     return data_len < len ? 0 : len;
-}
-
-
-/******************************************************************************
- *           GetFileMUIPath (KERNEL32.@)
- */
-
-BOOL WINAPI GetFileMUIPath(DWORD flags, PCWSTR filepath, PWSTR language, PULONG languagelen,
-                           PWSTR muipath, PULONG muipathlen, PULONGLONG enumerator)
-{
-    FIXME("stub: 0x%x, %s, %s, %p, %p, %p, %p\n", flags, debugstr_w(filepath),
-           debugstr_w(language), languagelen, muipath, muipathlen, enumerator);
-
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-
-    return FALSE;
-}
-
-/******************************************************************************
- *           GetFileMUIInfo (KERNEL32.@)
- */
-
-BOOL WINAPI GetFileMUIInfo(DWORD flags, PCWSTR path, FILEMUIINFO *info, DWORD *size)
-{
-    FIXME("stub: %u, %s, %p, %p\n", flags, debugstr_w(path), info, size);
-
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return FALSE;
 }

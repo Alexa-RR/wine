@@ -23,6 +23,7 @@
 #define COBJMACROS
 #include "objbase.h"
 #include "msado15_backcompat.h"
+#include "oledb.h"
 
 #include "wine/debug.h"
 #include "wine/heap.h"
@@ -35,6 +36,7 @@ struct fields;
 struct recordset
 {
     _Recordset         Recordset_iface;
+    ADORecordsetConstruction ADORecordsetConstruction_iface;
     ISupportErrorInfo  ISupportErrorInfo_iface;
     LONG               refs;
     LONG               state;
@@ -44,6 +46,8 @@ struct recordset
     LONG               index;
     VARIANT           *data;
     CursorLocationEnum cursor_location;
+    CursorTypeEnum     cursor_type;
+    IRowset           *row_set;
 };
 
 struct fields
@@ -61,6 +65,7 @@ struct field
 {
     Field               Field_iface;
     ISupportErrorInfo   ISupportErrorInfo_iface;
+    Properties          Properties_iface;
     LONG                refs;
     WCHAR              *name;
     DataTypeEnum        type;
@@ -75,11 +80,16 @@ static inline struct field *impl_from_Field( Field *iface )
     return CONTAINING_RECORD( iface, struct field, Field_iface );
 }
 
+static inline struct field *impl_from_Properties( Properties *iface )
+{
+    return CONTAINING_RECORD( iface, struct field, Properties_iface );
+}
+
 static ULONG WINAPI field_AddRef( Field *iface )
 {
     struct field *field = impl_from_Field( iface );
     LONG refs = InterlockedIncrement( &field->refs );
-    TRACE( "%p new refcount %d\n", field, refs );
+    TRACE( "%p new refcount %ld\n", field, refs );
     return refs;
 }
 
@@ -87,7 +97,7 @@ static ULONG WINAPI field_Release( Field *iface )
 {
     struct field *field = impl_from_Field( iface );
     LONG refs = InterlockedDecrement( &field->refs );
-    TRACE( "%p new refcount %d\n", field, refs );
+    TRACE( "%p new refcount %ld\n", field, refs );
     if (!refs)
     {
         TRACE( "destroying %p\n", field );
@@ -122,38 +132,70 @@ static HRESULT WINAPI field_QueryInterface( Field *iface, REFIID riid, void **ob
 
 static HRESULT WINAPI field_GetTypeInfoCount( Field *iface, UINT *count )
 {
-    FIXME( "%p, %p\n", iface, count );
-    return E_NOTIMPL;
+    struct field *field = impl_from_Field( iface );
+    TRACE( "%p, %p\n", field, count );
+    *count = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI field_GetTypeInfo( Field *iface, UINT index, LCID lcid, ITypeInfo **info )
 {
-    FIXME( "%p, %u, %u, %p\n", iface, index, lcid, info );
-    return E_NOTIMPL;
+    struct field *field = impl_from_Field( iface );
+    TRACE( "%p, %u, %lu, %p\n", field, index, lcid, info );
+    return get_typeinfo(Field_tid, info);
 }
 
 static HRESULT WINAPI field_GetIDsOfNames( Field *iface, REFIID riid, LPOLESTR *names, UINT count,
                                            LCID lcid, DISPID *dispid )
 {
-    FIXME( "%p, %s, %p, %u, %u, %p\n", iface, debugstr_guid(riid), names, count, lcid, dispid );
-    return E_NOTIMPL;
+    struct field *field = impl_from_Field( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %s, %p, %u, %lu, %p\n", field, debugstr_guid(riid), names, count, lcid, dispid );
+
+    hr = get_typeinfo(Field_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, names, count, dispid);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI field_Invoke( Field *iface, DISPID member, REFIID riid, LCID lcid, WORD flags,
                                     DISPPARAMS *params, VARIANT *result, EXCEPINFO *excep_info, UINT *arg_err )
 {
-    FIXME( "%p, %d, %s, %d, %d, %p, %p, %p, %p\n", iface, member, debugstr_guid(riid), lcid, flags, params,
+    struct field *field = impl_from_Field( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %ld, %s, %ld, %d, %p, %p, %p, %p\n", field, member, debugstr_guid(riid), lcid, flags, params,
            result, excep_info, arg_err );
-    return E_NOTIMPL;
+
+    hr = get_typeinfo(Field_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &field->Field_iface, member, flags, params,
+                               result, excep_info, arg_err);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI field_get_Properties( Field *iface, Properties **obj )
 {
-    FIXME( "%p, %p\n", iface, obj );
-    return E_NOTIMPL;
+    struct field *field = impl_from_Field( iface );
+    TRACE( "%p, %p\n", iface, obj );
+
+    *obj = &field->Properties_iface;
+    Properties_AddRef(&field->Properties_iface);
+    return S_OK;
 }
 
-static HRESULT WINAPI field_get_ActualSize( Field *iface, LONG *size )
+static HRESULT WINAPI field_get_ActualSize( Field *iface, ADO_LONGPTR *size )
 {
     FIXME( "%p, %p\n", iface, size );
     return E_NOTIMPL;
@@ -169,7 +211,7 @@ static HRESULT WINAPI field_get_Attributes( Field *iface, LONG *attrs )
     return S_OK;
 }
 
-static HRESULT WINAPI field_get_DefinedSize( Field *iface, LONG *size )
+static HRESULT WINAPI field_get_DefinedSize( Field *iface, ADO_LONGPTR *size )
 {
     struct field *field = impl_from_Field( iface );
 
@@ -268,7 +310,7 @@ static HRESULT WINAPI field_AppendChunk( Field *iface, VARIANT data )
 
 static HRESULT WINAPI field_GetChunk( Field *iface, LONG length, VARIANT *var )
 {
-    FIXME( "%p, %d, %p\n", iface, length, var );
+    FIXME( "%p, %ld, %p\n", iface, length, var );
     return E_NOTIMPL;
 }
 
@@ -318,11 +360,11 @@ static HRESULT WINAPI field_put_Type( Field *iface, DataTypeEnum type )
     return S_OK;
 }
 
-static HRESULT WINAPI field_put_DefinedSize( Field *iface, LONG size )
+static HRESULT WINAPI field_put_DefinedSize( Field *iface, ADO_LONGPTR size )
 {
     struct field *field = impl_from_Field( iface );
 
-    TRACE( "%p, %d\n", field, size );
+    TRACE( "%p, %Id\n", field, size );
 
     field->defined_size = size;
     return S_OK;
@@ -332,7 +374,7 @@ static HRESULT WINAPI field_put_Attributes( Field *iface, LONG attrs )
 {
     struct field *field = impl_from_Field( iface );
 
-    TRACE( "%p, %d\n", field, attrs );
+    TRACE( "%p, %ld\n", field, attrs );
 
     field->attrs = attrs;
     return S_OK;
@@ -415,6 +457,135 @@ static const ISupportErrorInfoVtbl field_supporterrorinfo_vtbl =
     field_supporterrorinfo_InterfaceSupportsErrorInfo
 };
 
+static HRESULT WINAPI field_props_QueryInterface(Properties *iface, REFIID riid, void **ppv)
+{
+    struct field *field = impl_from_Properties( iface );
+
+    if (IsEqualGUID( riid, &IID_Properties) || IsEqualGUID( riid, &IID_IDispatch ) ||
+        IsEqualGUID( riid, &IID_IUnknown ))
+    {
+        *ppv = &field->Properties_iface;
+    }
+    else
+    {
+        FIXME( "interface %s not implemented\n", debugstr_guid(riid) );
+        return E_NOINTERFACE;
+    }
+    Field_AddRef(&field->Field_iface);
+    return S_OK;
+}
+
+static ULONG WINAPI field_props_AddRef(Properties *iface)
+{
+    struct field *field = impl_from_Properties( iface );
+    return Field_AddRef(&field->Field_iface);
+}
+
+static ULONG WINAPI field_props_Release(Properties *iface)
+{
+    struct field *field = impl_from_Properties( iface );
+    return Field_Release(&field->Field_iface);
+}
+
+static HRESULT WINAPI field_props_GetTypeInfoCount(Properties *iface, UINT *count)
+{
+    struct field *field = impl_from_Properties( iface );
+    TRACE( "%p, %p\n", field, count );
+    *count = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI field_props_GetTypeInfo(Properties *iface, UINT index, LCID lcid, ITypeInfo **info)
+{
+    struct field *field = impl_from_Properties( iface );
+    TRACE( "%p, %u, %lu, %p\n", field, index, lcid, info );
+    return get_typeinfo(Properties_tid, info);
+}
+
+static HRESULT WINAPI field_props_GetIDsOfNames(Properties *iface, REFIID riid, LPOLESTR *names, UINT count,
+                                           LCID lcid, DISPID *dispid )
+{
+    struct field *field = impl_from_Properties( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %s, %p, %u, %lu, %p\n", field, debugstr_guid(riid), names, count, lcid, dispid );
+
+    hr = get_typeinfo(Properties_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, names, count, dispid);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
+}
+
+static HRESULT WINAPI field_props_Invoke(Properties *iface, DISPID member, REFIID riid, LCID lcid, WORD flags,
+                                    DISPPARAMS *params, VARIANT *result, EXCEPINFO *excep_info, UINT *arg_err )
+{
+    struct field *field = impl_from_Properties( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %ld, %s, %ld, %d, %p, %p, %p, %p\n", field, member, debugstr_guid(riid), lcid, flags, params,
+           result, excep_info, arg_err );
+
+    hr = get_typeinfo(Properties_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &field->Field_iface, member, flags, params,
+                               result, excep_info, arg_err);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
+}
+
+static HRESULT WINAPI field_props_get_Count(Properties *iface, LONG *count)
+{
+    struct field *field = impl_from_Properties( iface );
+    FIXME( "%p, %p\n", field, count);
+    *count = 0;
+    return S_OK;
+}
+
+static HRESULT WINAPI field_props__NewEnum(Properties *iface, IUnknown **object)
+{
+    struct field *field = impl_from_Properties( iface );
+    FIXME( "%p, %p\n", field, object);
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI field_props_Refresh(Properties *iface)
+{
+    struct field *field = impl_from_Properties( iface );
+    FIXME( "%p\n", field);
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI field_props_get_Item(Properties *iface, VARIANT index, Property **object)
+{
+    struct field *field = impl_from_Properties( iface );
+    FIXME( "%p, %s, %p\n", field, debugstr_variant(&index), object);
+    return MAKE_ADO_HRESULT(adErrItemNotFound);
+}
+
+static struct PropertiesVtbl field_properties_vtbl =
+{
+    field_props_QueryInterface,
+    field_props_AddRef,
+    field_props_Release,
+    field_props_GetTypeInfoCount,
+    field_props_GetTypeInfo,
+    field_props_GetIDsOfNames,
+    field_props_Invoke,
+    field_props_get_Count,
+    field_props__NewEnum,
+    field_props_Refresh,
+    field_props_get_Item
+};
+
 static HRESULT Field_create( const WCHAR *name, LONG index, struct recordset *recordset, Field **obj )
 {
     struct field *field;
@@ -422,6 +593,8 @@ static HRESULT Field_create( const WCHAR *name, LONG index, struct recordset *re
     if (!(field = heap_alloc_zero( sizeof(*field) ))) return E_OUTOFMEMORY;
     field->Field_iface.lpVtbl = &field_vtbl;
     field->ISupportErrorInfo_iface.lpVtbl = &field_supporterrorinfo_vtbl;
+    field->Properties_iface.lpVtbl = &field_properties_vtbl;
+    field->refs = 1;
     if (!(field->name = strdupW( name )))
     {
         heap_free( field );
@@ -444,7 +617,7 @@ static ULONG WINAPI fields_AddRef( Fields *iface )
 {
     struct fields *fields = impl_from_Fields( iface );
     LONG refs = InterlockedIncrement( &fields->refs );
-    TRACE( "%p new refcount %d\n", fields, refs );
+    TRACE( "%p new refcount %ld\n", fields, refs );
     return refs;
 }
 
@@ -452,10 +625,11 @@ static ULONG WINAPI fields_Release( Fields *iface )
 {
     struct fields *fields = impl_from_Fields( iface );
     LONG refs = InterlockedDecrement( &fields->refs );
-    TRACE( "%p new refcount %d\n", fields, refs );
+    TRACE( "%p new refcount %ld\n", fields, refs );
     if (!refs)
     {
         if (fields->recordset) _Recordset_Release( &fields->recordset->Recordset_iface );
+        fields->recordset = NULL;
         WARN( "not destroying %p\n", fields );
         return InterlockedIncrement( &fields->refs );
     }
@@ -487,29 +661,57 @@ static HRESULT WINAPI fields_QueryInterface( Fields *iface, REFIID riid, void **
 
 static HRESULT WINAPI fields_GetTypeInfoCount( Fields *iface, UINT *count )
 {
-    FIXME( "%p, %p\n", iface, count );
-    return E_NOTIMPL;
+    struct fields *fields = impl_from_Fields( iface );
+    TRACE( "%p, %p\n", fields, count );
+    *count = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI fields_GetTypeInfo( Fields *iface, UINT index, LCID lcid, ITypeInfo **info )
 {
-    FIXME( "%p, %u, %u, %p\n", iface, index, lcid, info );
-    return E_NOTIMPL;
+    struct fields *fields = impl_from_Fields( iface );
+    TRACE( "%p, %u, %lu, %p\n", fields, index, lcid, info );
+    return get_typeinfo(Fields_tid, info);
 }
 
 static HRESULT WINAPI fields_GetIDsOfNames( Fields *iface, REFIID riid, LPOLESTR *names, UINT count,
                                             LCID lcid, DISPID *dispid )
 {
-    FIXME( "%p, %s, %p, %u, %u, %p\n", iface, debugstr_guid(riid), names, count, lcid, dispid );
-    return E_NOTIMPL;
+    struct fields *fields = impl_from_Fields( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %s, %p, %u, %lu, %p\n", fields, debugstr_guid(riid), names, count, lcid, dispid );
+
+    hr = get_typeinfo(Fields_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, names, count, dispid);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI fields_Invoke( Fields *iface, DISPID member, REFIID riid, LCID lcid, WORD flags,
                                      DISPPARAMS *params, VARIANT *result, EXCEPINFO *excep_info, UINT *arg_err )
 {
-    FIXME( "%p, %d, %s, %d, %d, %p, %p, %p, %p\n", iface, member, debugstr_guid(riid), lcid, flags, params,
+    struct fields *fields = impl_from_Fields( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %ld, %s, %ld, %d, %p, %p, %p, %p\n", fields, member, debugstr_guid(riid), lcid, flags, params,
            result, excep_info, arg_err );
-    return E_NOTIMPL;
+
+    hr = get_typeinfo(Fields_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &fields->Fields_iface, member, flags, params,
+                               result, excep_info, arg_err);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI fields_get_Count( Fields *iface, LONG *count )
@@ -540,8 +742,20 @@ static HRESULT map_index( struct fields *fields, VARIANT *index, ULONG *ret )
 
     if (V_VT( index ) != VT_BSTR)
     {
-        FIXME( "variant type %u not supported\n", V_VT( index ) );
-        return E_INVALIDARG;
+        VARIANT idx;
+
+        VariantInit(&idx);
+        if (VariantChangeType(&idx, index, 0, VT_UI4) == S_OK)
+        {
+            i = V_UI4 ( &idx );
+            if (i < fields->count)
+            {
+                *ret = i;
+                return S_OK;
+            }
+        }
+
+        return MAKE_ADO_HRESULT(adErrItemNotFound);
     }
 
     for (i = 0; i < fields->count; i++)
@@ -560,7 +774,7 @@ static HRESULT map_index( struct fields *fields, VARIANT *index, ULONG *ret )
         }
     }
 
-    return E_INVALIDARG;
+    return MAKE_ADO_HRESULT(adErrItemNotFound);
 }
 
 static HRESULT WINAPI fields_get_Item( Fields *iface, VARIANT index, Field **obj )
@@ -615,11 +829,11 @@ static HRESULT append_field( struct fields *fields, BSTR name, DataTypeEnum type
     return S_OK;
 }
 
-static HRESULT WINAPI fields__Append( Fields *iface, BSTR name, DataTypeEnum type, LONG size, FieldAttributeEnum attr )
+static HRESULT WINAPI fields__Append( Fields *iface, BSTR name, DataTypeEnum type, ADO_LONGPTR size, FieldAttributeEnum attr )
 {
     struct fields *fields = impl_from_Fields( iface );
 
-    TRACE( "%p, %s, %u, %d, %d\n", fields, debugstr_w(name), type, size, attr );
+    TRACE( "%p, %s, %u, %Id, %d\n", fields, debugstr_w(name), type, size, attr );
 
     return append_field( fields, name, type, size, attr, NULL );
 }
@@ -630,12 +844,12 @@ static HRESULT WINAPI fields_Delete( Fields *iface, VARIANT index )
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI fields_Append( Fields *iface, BSTR name, DataTypeEnum type, LONG size, FieldAttributeEnum attr,
+static HRESULT WINAPI fields_Append( Fields *iface, BSTR name, DataTypeEnum type, ADO_LONGPTR size, FieldAttributeEnum attr,
                                      VARIANT value )
 {
     struct fields *fields = impl_from_Fields( iface );
 
-    TRACE( "%p, %s, %u, %d, %d, %s\n", fields, debugstr_w(name), type, size, attr, debugstr_variant(&value) );
+    TRACE( "%p, %s, %u, %Id, %d, %s\n", fields, debugstr_w(name), type, size, attr, debugstr_variant(&value) );
 
     return append_field( fields, name, type, size, attr, &value );
 }
@@ -717,6 +931,46 @@ static const ISupportErrorInfoVtbl fields_supporterrorinfo_vtbl =
     fields_supporterrorinfo_InterfaceSupportsErrorInfo
 };
 
+static void map_rowset_fields(struct recordset *recordset, struct fields *fields)
+{
+    HRESULT hr;
+    IColumnsInfo *columninfo;
+    DBORDINAL columns, i;
+    DBCOLUMNINFO *colinfo;
+    OLECHAR *stringsbuffer;
+
+    /* Not Finding the interface or GetColumnInfo failing just causes 0 Fields to be returned */
+    hr = IRowset_QueryInterface(recordset->row_set, &IID_IColumnsInfo, (void**)&columninfo);
+    if (FAILED(hr))
+        return;
+
+    hr = IColumnsInfo_GetColumnInfo(columninfo, &columns, &colinfo, &stringsbuffer);
+    if (SUCCEEDED(hr))
+    {
+        for (i=0; i < columns; i++)
+        {
+            TRACE("Adding Column %Iu, pwszName: %s, pTypeInfo %p, iOrdinal %Iu, dwFlags 0x%08lx, "
+                  "ulColumnSize %Iu, wType %d, bPrecision %d, bScale %d\n",
+                  i, debugstr_w(colinfo[i].pwszName), colinfo[i].pTypeInfo, colinfo[i].iOrdinal,
+                  colinfo[i].dwFlags, colinfo[i].ulColumnSize, colinfo[i].wType,
+                  colinfo[i].bPrecision, colinfo[i].bScale);
+
+            hr = append_field(fields, colinfo[i].pwszName, colinfo[i].wType, colinfo[i].ulColumnSize,
+                     colinfo[i].dwFlags, NULL);
+            if (FAILED(hr))
+            {
+                ERR("Failed to add Field name - 0x%08lx\n", hr);
+                return;
+            }
+        }
+
+        CoTaskMemFree(colinfo);
+        CoTaskMemFree(stringsbuffer);
+    }
+
+    IColumnsInfo_Release(columninfo);
+}
+
 static HRESULT fields_create( struct recordset *recordset, struct fields **ret )
 {
     struct fields *fields;
@@ -728,6 +982,9 @@ static HRESULT fields_create( struct recordset *recordset, struct fields **ret )
     fields->recordset = recordset;
     _Recordset_AddRef( &fields->recordset->Recordset_iface );
 
+    if ( recordset->row_set )
+        map_rowset_fields(recordset, fields);
+
     *ret = fields;
     TRACE( "returning %p\n", *ret );
     return S_OK;
@@ -738,19 +995,37 @@ static inline struct recordset *impl_from_Recordset( _Recordset *iface )
     return CONTAINING_RECORD( iface, struct recordset, Recordset_iface );
 }
 
+static inline struct recordset *impl_from_ADORecordsetConstruction( ADORecordsetConstruction *iface )
+{
+    return CONTAINING_RECORD( iface, struct recordset, ADORecordsetConstruction_iface );
+}
+
 static ULONG WINAPI recordset_AddRef( _Recordset *iface )
 {
     struct recordset *recordset = impl_from_Recordset( iface );
     LONG refs = InterlockedIncrement( &recordset->refs );
-    TRACE( "%p new refcount %d\n", recordset, refs );
+    TRACE( "%p new refcount %ld\n", recordset, refs );
     return refs;
 }
 
 static void close_recordset( struct recordset *recordset )
 {
-    ULONG row, col, col_count = get_column_count( recordset );
+    ULONG row, col, col_count;
+    ULONG i;
 
-    recordset->fields->recordset = NULL;
+    if ( recordset->row_set ) IRowset_Release( recordset->row_set );
+    recordset->row_set = NULL;
+
+    if (!recordset->fields) return;
+    col_count = get_column_count( recordset );
+
+    for (i = 0; i < col_count; i++)
+    {
+        struct field *field = impl_from_Field( recordset->fields->field[i] );
+        field->recordset = NULL;
+        Field_Release(&field->Field_iface);
+    }
+    recordset->fields->count = 0;
     Fields_Release( &recordset->fields->Fields_iface );
     recordset->fields = NULL;
 
@@ -766,7 +1041,7 @@ static ULONG WINAPI recordset_Release( _Recordset *iface )
 {
     struct recordset *recordset = impl_from_Recordset( iface );
     LONG refs = InterlockedDecrement( &recordset->refs );
-    TRACE( "%p new refcount %d\n", recordset, refs );
+    TRACE( "%p new refcount %ld\n", recordset, refs );
     if (!refs)
     {
         TRACE( "destroying %p\n", recordset );
@@ -781,6 +1056,8 @@ static HRESULT WINAPI recordset_QueryInterface( _Recordset *iface, REFIID riid, 
     struct recordset *recordset = impl_from_Recordset( iface );
     TRACE( "%p, %s, %p\n", iface, debugstr_guid(riid), obj );
 
+    *obj = NULL;
+
     if (IsEqualIID(riid, &IID_IUnknown)    || IsEqualIID(riid, &IID_IDispatch)   ||
         IsEqualIID(riid, &IID__ADO)        || IsEqualIID(riid, &IID_Recordset15) ||
         IsEqualIID(riid, &IID_Recordset20) || IsEqualIID(riid, &IID_Recordset21) ||
@@ -791,6 +1068,15 @@ static HRESULT WINAPI recordset_QueryInterface( _Recordset *iface, REFIID riid, 
     else if (IsEqualGUID( riid, &IID_ISupportErrorInfo ))
     {
         *obj = &recordset->ISupportErrorInfo_iface;
+    }
+    else if (IsEqualGUID( riid, &IID_ADORecordsetConstruction ))
+    {
+        *obj = &recordset->ADORecordsetConstruction_iface;
+    }
+    else if (IsEqualGUID( riid, &IID_IRunnableObject ))
+    {
+        TRACE("IID_IRunnableObject not supported returning NULL\n");
+        return E_NOINTERFACE;
     }
     else
     {
@@ -803,29 +1089,57 @@ static HRESULT WINAPI recordset_QueryInterface( _Recordset *iface, REFIID riid, 
 
 static HRESULT WINAPI recordset_GetTypeInfoCount( _Recordset *iface, UINT *count )
 {
-    FIXME( "%p, %p\n", iface, count );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+    TRACE( "%p, %p\n", recordset, count );
+    *count = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI recordset_GetTypeInfo( _Recordset *iface, UINT index, LCID lcid, ITypeInfo **info )
 {
-    FIXME( "%p, %u, %u, %p\n", iface, index, lcid, info );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+    TRACE( "%p, %u, %lu, %p\n", recordset, index, lcid, info );
+    return get_typeinfo(Recordset_tid, info);
 }
 
 static HRESULT WINAPI recordset_GetIDsOfNames( _Recordset *iface, REFIID riid, LPOLESTR *names, UINT count,
                                                 LCID lcid, DISPID *dispid )
 {
-    FIXME( "%p, %s, %p, %u, %u, %p\n", iface, debugstr_guid(riid), names, count, lcid, dispid );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %s, %p, %u, %lu, %p\n", recordset, debugstr_guid(riid), names, count, lcid, dispid );
+
+    hr = get_typeinfo(Recordset_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, names, count, dispid);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI recordset_Invoke( _Recordset *iface, DISPID member, REFIID riid, LCID lcid, WORD flags,
                                          DISPPARAMS *params, VARIANT *result, EXCEPINFO *excep_info, UINT *arg_err )
 {
-    FIXME( "%p, %d, %s, %d, %d, %p, %p, %p, %p\n", iface, member, debugstr_guid(riid), lcid, flags, params,
+    struct recordset *recordset = impl_from_Recordset( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %ld, %s, %ld, %d, %p, %p, %p, %p\n", recordset, member, debugstr_guid(riid), lcid, flags, params,
            result, excep_info, arg_err );
-    return E_NOTIMPL;
+
+    hr = get_typeinfo(Recordset_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &recordset->Recordset_iface, member, flags, params,
+                               result, excep_info, arg_err);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI recordset_get_Properties( _Recordset *iface, Properties **obj )
@@ -842,7 +1156,7 @@ static HRESULT WINAPI recordset_get_AbsolutePosition( _Recordset *iface, Positio
 
 static HRESULT WINAPI recordset_put_AbsolutePosition( _Recordset *iface, PositionEnum_Param pos )
 {
-    FIXME( "%p, %d\n", iface, pos );
+    FIXME( "%p, %Id\n", iface, pos );
     return E_NOTIMPL;
 }
 
@@ -876,14 +1190,28 @@ static HRESULT WINAPI recordset_get_BOF( _Recordset *iface, VARIANT_BOOL *bof )
 
 static HRESULT WINAPI recordset_get_Bookmark( _Recordset *iface, VARIANT *bookmark )
 {
-    FIXME( "%p, %p\n", iface, bookmark );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+    TRACE( "%p, %p\n", iface, bookmark );
+
+    if (recordset->state == adStateClosed) return MAKE_ADO_HRESULT( adErrObjectClosed );
+    if (recordset->index < 0) return MAKE_ADO_HRESULT( adErrNoCurrentRecord );
+
+    V_VT(bookmark) = VT_I4;
+    V_I4(bookmark) = recordset->index;
+    return S_OK;
 }
 
 static HRESULT WINAPI recordset_put_Bookmark( _Recordset *iface, VARIANT bookmark )
 {
-    FIXME( "%p, %s\n", iface, debugstr_variant(&bookmark) );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+    TRACE( "%p, %s\n", iface, debugstr_variant(&bookmark) );
+
+    if (recordset->state == adStateClosed) return MAKE_ADO_HRESULT( adErrObjectClosed );
+
+    if (V_VT(&bookmark) != VT_I4) return MAKE_ADO_HRESULT( adErrInvalidArgument );
+
+    recordset->index = V_I4(&bookmark);
+    return S_OK;
 }
 
 static HRESULT WINAPI recordset_get_CacheSize( _Recordset *iface, LONG *size )
@@ -894,20 +1222,28 @@ static HRESULT WINAPI recordset_get_CacheSize( _Recordset *iface, LONG *size )
 
 static HRESULT WINAPI recordset_put_CacheSize( _Recordset *iface, LONG size )
 {
-    FIXME( "%p, %d\n", iface, size );
+    FIXME( "%p, %ld\n", iface, size );
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI recordset_get_CursorType( _Recordset *iface, CursorTypeEnum *cursor_type )
 {
-    FIXME( "%p, %p\n", iface, cursor_type );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+
+    TRACE( "%p, %p\n", iface, cursor_type );
+
+    *cursor_type = recordset->cursor_type;
+    return S_OK;
 }
 
 static HRESULT WINAPI recordset_put_CursorType( _Recordset *iface, CursorTypeEnum cursor_type )
 {
-    FIXME( "%p, %d\n", iface, cursor_type );
-    return E_NOTIMPL;
+    struct recordset *recordset = impl_from_Recordset( iface );
+
+    TRACE( "%p, %d\n", iface, cursor_type );
+
+    recordset->cursor_type = cursor_type;
+    return S_OK;
 }
 
 static HRESULT WINAPI recordset_get_EOF( _Recordset *iface, VARIANT_BOOL *eof )
@@ -931,6 +1267,7 @@ static HRESULT WINAPI recordset_get_Fields( _Recordset *iface, Fields **obj )
     {
         /* yes, this adds a reference to the recordset instead of the fields object */
         _Recordset_AddRef( &recordset->Recordset_iface );
+        recordset->fields->recordset = recordset;
         *obj = &recordset->fields->Fields_iface;
         return S_OK;
     }
@@ -953,19 +1290,19 @@ static HRESULT WINAPI recordset_put_LockType( _Recordset *iface, LockTypeEnum lo
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI recordset_get_MaxRecords( _Recordset *iface, LONG *max_records )
+static HRESULT WINAPI recordset_get_MaxRecords( _Recordset *iface, ADO_LONGPTR *max_records )
 {
     FIXME( "%p, %p\n", iface, max_records );
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI recordset_put_MaxRecords( _Recordset *iface, LONG max_records )
+static HRESULT WINAPI recordset_put_MaxRecords( _Recordset *iface, ADO_LONGPTR max_records )
 {
-    FIXME( "%p, %d\n", iface, max_records );
+    FIXME( "%p, %Id\n", iface, max_records );
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI recordset_get_RecordCount( _Recordset *iface, LONG *count )
+static HRESULT WINAPI recordset_get_RecordCount( _Recordset *iface, ADO_LONGPTR *count )
 {
     struct recordset *recordset = impl_from_Recordset( iface );
 
@@ -1051,13 +1388,13 @@ static HRESULT WINAPI recordset_Delete( _Recordset *iface, AffectEnum affect_rec
 
 static HRESULT WINAPI recordset_GetRows( _Recordset *iface, LONG rows, VARIANT start, VARIANT fields, VARIANT *var )
 {
-    FIXME( "%p, %d, %s, %s, %p\n", iface, rows, debugstr_variant(&start), debugstr_variant(&fields), var );
+    FIXME( "%p, %ld, %s, %s, %p\n", iface, rows, debugstr_variant(&start), debugstr_variant(&fields), var );
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI recordset_Move( _Recordset *iface, LONG num_records, VARIANT start )
+static HRESULT WINAPI recordset_Move( _Recordset *iface, ADO_LONGPTR num_records, VARIANT start )
 {
-    FIXME( "%p, %d, %s\n", iface, num_records, debugstr_variant(&start) );
+    FIXME( "%p, %Id, %s\n", iface, num_records, debugstr_variant(&start) );
     return E_NOTIMPL;
 }
 
@@ -1101,24 +1438,114 @@ static HRESULT WINAPI recordset_MoveLast( _Recordset *iface )
     return S_OK;
 }
 
+static HRESULT create_command_text(IUnknown *session, BSTR command, ICommandText **cmd_text)
+{
+    HRESULT hr;
+    IOpenRowset *openrowset;
+    ICommandText *command_text;
+    ICommand *cmd;
+    IDBCreateCommand *create_command;
+
+    hr = IUnknown_QueryInterface(session, &IID_IOpenRowset, (void**)&openrowset);
+    if (FAILED(hr))
+        return hr;
+
+    hr = IOpenRowset_QueryInterface(openrowset, &IID_IDBCreateCommand, (void**)&create_command);
+    IOpenRowset_Release(openrowset);
+    if (FAILED(hr))
+        return hr;
+
+    hr = IDBCreateCommand_CreateCommand(create_command, NULL, &IID_IUnknown, (IUnknown **)&cmd);
+    IDBCreateCommand_Release(create_command);
+    if (FAILED(hr))
+        return hr;
+
+    hr = ICommand_QueryInterface(cmd, &IID_ICommandText, (void**)&command_text);
+    ICommand_Release(cmd);
+    if (FAILED(hr))
+    {
+        FIXME("Currently only ICommandText interface is support\n");
+        return hr;
+    }
+
+    hr = ICommandText_SetCommandText(command_text, &DBGUID_DEFAULT, command);
+    if (FAILED(hr))
+    {
+        ICommandText_Release(command_text);
+        return hr;
+    }
+
+    *cmd_text = command_text;
+
+    return S_OK;
+}
+
 static HRESULT WINAPI recordset_Open( _Recordset *iface, VARIANT source, VARIANT active_connection,
                                       CursorTypeEnum cursor_type, LockTypeEnum lock_type, LONG options )
 {
     struct recordset *recordset = impl_from_Recordset( iface );
+    ADOConnectionConstruction15 *construct;
+    IUnknown *session;
+    ICommandText *command_text;
+    DBROWCOUNT affected;
+    IUnknown *rowset;
+    HRESULT hr;
 
-    FIXME( "%p, %s, %s, %d, %d, %d\n", recordset, debugstr_variant(&source), debugstr_variant(&active_connection),
+    FIXME( "%p, %s, %s, %d, %d, %ld Semi-stub\n", recordset, debugstr_variant(&source), debugstr_variant(&active_connection),
            cursor_type, lock_type, options );
 
-    if (!recordset->fields) return MAKE_ADO_HRESULT( adErrInvalidConnection );
     if (recordset->state == adStateOpen) return MAKE_ADO_HRESULT( adErrObjectOpen );
 
+    if (recordset->fields)
+    {
+        recordset->state = adStateOpen;
+        return S_OK;
+    }
+
+    if (V_VT(&active_connection) != VT_DISPATCH)
+    {
+        FIXME("Unsupported Active connection type %d\n", V_VT(&active_connection));
+        return MAKE_ADO_HRESULT( adErrInvalidConnection );
+    }
+
+    hr = IDispatch_QueryInterface(V_DISPATCH(&active_connection), &IID_ADOConnectionConstruction15, (void**)&construct);
+    if (FAILED(hr))
+        return E_FAIL;
+
+    hr = ADOConnectionConstruction15_get_Session(construct, &session);
+    ADOConnectionConstruction15_Release(construct);
+    if (FAILED(hr))
+        return E_FAIL;
+
+    if (V_VT(&source) != VT_BSTR)
+    {
+        FIXME("Unsupported source type!\n");
+        IUnknown_Release(session);
+        return E_FAIL;
+    }
+
+    hr = create_command_text(session, V_BSTR(&source), &command_text);
+    IUnknown_Release(session);
+    if (FAILED(hr))
+        return hr;
+
+    hr = ICommandText_Execute(command_text, NULL, &IID_IUnknown, NULL, &affected, &rowset);
+    ICommandText_Release(command_text);
+    if (FAILED(hr) || !rowset)
+        return hr;
+
+    ADORecordsetConstruction_put_Rowset(&recordset->ADORecordsetConstruction_iface, rowset);
+    recordset->cursor_type = cursor_type;
     recordset->state = adStateOpen;
-    return S_OK;
+
+    IUnknown_Release(rowset);
+
+    return hr;
 }
 
 static HRESULT WINAPI recordset_Requery( _Recordset *iface, LONG options )
 {
-    FIXME( "%p, %d\n", iface, options );
+    FIXME( "%p, %ld\n", iface, options );
     return E_NOTIMPL;
 }
 
@@ -1142,7 +1569,7 @@ static HRESULT WINAPI recordset_get_AbsolutePage( _Recordset *iface, PositionEnu
 
 static HRESULT WINAPI recordset_put_AbsolutePage( _Recordset *iface, PositionEnum_Param pos )
 {
-    FIXME( "%p, %d\n", iface, pos );
+    FIXME( "%p, %Id\n", iface, pos );
     return E_NOTIMPL;
 }
 
@@ -1164,7 +1591,7 @@ static HRESULT WINAPI recordset_put_Filter( _Recordset *iface, VARIANT criteria 
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI recordset_get_PageCount( _Recordset *iface, LONG *count )
+static HRESULT WINAPI recordset_get_PageCount( _Recordset *iface, ADO_LONGPTR *count )
 {
     FIXME( "%p, %p\n", iface, count );
     return E_NOTIMPL;
@@ -1178,7 +1605,7 @@ static HRESULT WINAPI recordset_get_PageSize( _Recordset *iface, LONG *size )
 
 static HRESULT WINAPI recordset_put_PageSize( _Recordset *iface, LONG size )
 {
-    FIXME( "%p, %d\n", iface, size );
+    FIXME( "%p, %ld\n", iface, size );
     return E_NOTIMPL;
 }
 
@@ -1245,6 +1672,8 @@ static HRESULT WINAPI recordset_put_CursorLocation( _Recordset *iface, CursorLoc
 
     TRACE( "%p, %u\n", iface, cursor_loc );
 
+    if (recordset->state == adStateOpen) return MAKE_ADO_HRESULT( adErrObjectOpen );
+
     recordset->cursor_location = cursor_loc;
 
     return S_OK;
@@ -1289,7 +1718,7 @@ static HRESULT WINAPI recordset_put_MarshalOptions( _Recordset *iface, MarshalOp
 static HRESULT WINAPI recordset_Find( _Recordset *iface, BSTR criteria, LONG skip_records,
                                       SearchDirectionEnum search_direction, VARIANT start )
 {
-    FIXME( "%p, %s, %d, %d, %s\n", iface, debugstr_w(criteria), skip_records, search_direction,
+    FIXME( "%p, %s, %ld, %d, %s\n", iface, debugstr_w(criteria), skip_records, search_direction,
            debugstr_variant(&start) );
     return E_NOTIMPL;
 }
@@ -1340,7 +1769,7 @@ static HRESULT WINAPI recordset_GetString( _Recordset *iface, StringFormatEnum s
                                            BSTR column_delimiter, BSTR row_delimiter, BSTR null_expr,
                                            BSTR *ret_string )
 {
-    FIXME( "%p, %u, %d, %s, %s, %s, %p\n", iface, string_format, num_rows, debugstr_w(column_delimiter),
+    FIXME( "%p, %u, %ld, %s, %s, %s, %p\n", iface, string_format, num_rows, debugstr_w(column_delimiter),
            debugstr_w(row_delimiter), debugstr_w(null_expr), ret_string );
     return E_NOTIMPL;
 }
@@ -1526,6 +1955,157 @@ static const ISupportErrorInfoVtbl recordset_supporterrorinfo_vtbl =
     recordset_supporterrorinfo_InterfaceSupportsErrorInfo
 };
 
+static HRESULT WINAPI rsconstruction_QueryInterface(ADORecordsetConstruction *iface,
+    REFIID riid, void **obj)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    return _Recordset_QueryInterface( &recordset->Recordset_iface, riid, obj );
+}
+
+static ULONG WINAPI rsconstruction_AddRef(ADORecordsetConstruction *iface)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    return _Recordset_AddRef( &recordset->Recordset_iface );
+}
+
+static ULONG WINAPI rsconstruction_Release(ADORecordsetConstruction *iface)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    return _Recordset_Release( &recordset->Recordset_iface );
+}
+
+static HRESULT WINAPI rsconstruction_GetTypeInfoCount(ADORecordsetConstruction *iface, UINT *pctinfo)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    TRACE( "%p, %p\n", recordset, pctinfo );
+    *pctinfo = 1;
+    return S_OK;
+}
+
+static HRESULT WINAPI rsconstruction_GetTypeInfo(ADORecordsetConstruction *iface, UINT iTInfo,
+    LCID lcid, ITypeInfo **ppTInfo)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    TRACE( "%p %u %lu %p\n", recordset, iTInfo, lcid, ppTInfo );
+    return get_typeinfo(ADORecordsetConstruction_tid, ppTInfo);
+}
+
+static HRESULT WINAPI rsconstruction_GetIDsOfNames(ADORecordsetConstruction *iface, REFIID riid,
+    LPOLESTR *rgszNames, UINT cNames, LCID lcid, DISPID *rgDispId)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p %s %p %u %lu %p\n", recordset, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId );
+
+    hr = get_typeinfo(ADORecordsetConstruction_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, rgszNames, cNames, rgDispId);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
+}
+
+static HRESULT WINAPI rsconstruction_Invoke(ADORecordsetConstruction *iface, DISPID dispIdMember,
+    REFIID riid, LCID lcid, WORD wFlags, DISPPARAMS *pDispParams, VARIANT *pVarResult,
+    EXCEPINFO *pExcepInfo, UINT *puArgErr)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p %ld %s %ld %d %p %p %p %p\n", recordset, dispIdMember, debugstr_guid(riid),
+          lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr );
+
+    hr = get_typeinfo(ADORecordsetConstruction_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &recordset->ADORecordsetConstruction_iface, dispIdMember, wFlags,
+                              pDispParams, pVarResult, pExcepInfo, puArgErr);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
+}
+
+static HRESULT WINAPI rsconstruction_get_Rowset(ADORecordsetConstruction *iface, IUnknown **row_set)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    HRESULT hr;
+
+    TRACE( "%p, %p\n", recordset, row_set );
+
+    hr = IRowset_QueryInterface(recordset->row_set, &IID_IUnknown, (void**)row_set);
+    if ( FAILED(hr) ) return E_FAIL;
+
+    return S_OK;
+}
+
+static HRESULT WINAPI rsconstruction_put_Rowset(ADORecordsetConstruction *iface, IUnknown *unk)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    HRESULT hr;
+    IRowset *rowset;
+
+    TRACE( "%p, %p\n", recordset, unk );
+
+    hr = IUnknown_QueryInterface(unk, &IID_IRowset, (void**)&rowset);
+    if ( FAILED(hr) ) return E_FAIL;
+
+    if ( recordset->row_set ) IRowset_Release( recordset->row_set );
+    recordset->row_set = rowset;
+
+    return S_OK;
+}
+
+static HRESULT WINAPI rsconstruction_get_Chapter(ADORecordsetConstruction *iface, ADO_LONGPTR *chapter)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    FIXME( "%p, %p\n", recordset, chapter );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI rsconstruction_put_Chapter(ADORecordsetConstruction *iface, ADO_LONGPTR chapter)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    FIXME( "%p, %Id\n", recordset, chapter );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI rsconstruction_get_RowPosition(ADORecordsetConstruction *iface, IUnknown **row_pos)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    FIXME( "%p, %p\n", recordset, row_pos );
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI rsconstruction_put_RowPosition(ADORecordsetConstruction *iface, IUnknown *row_pos)
+{
+    struct recordset *recordset = impl_from_ADORecordsetConstruction( iface );
+    FIXME( "%p, %p\n", recordset, row_pos );
+    return E_NOTIMPL;
+}
+
+static const ADORecordsetConstructionVtbl rsconstruction_vtbl =
+{
+    rsconstruction_QueryInterface,
+    rsconstruction_AddRef,
+    rsconstruction_Release,
+    rsconstruction_GetTypeInfoCount,
+    rsconstruction_GetTypeInfo,
+    rsconstruction_GetIDsOfNames,
+    rsconstruction_Invoke,
+    rsconstruction_get_Rowset,
+    rsconstruction_put_Rowset,
+    rsconstruction_get_Chapter,
+    rsconstruction_put_Chapter,
+    rsconstruction_get_RowPosition,
+    rsconstruction_put_RowPosition
+};
+
 HRESULT Recordset_create( void **obj )
 {
     struct recordset *recordset;
@@ -1533,9 +2113,12 @@ HRESULT Recordset_create( void **obj )
     if (!(recordset = heap_alloc_zero( sizeof(*recordset) ))) return E_OUTOFMEMORY;
     recordset->Recordset_iface.lpVtbl = &recordset_vtbl;
     recordset->ISupportErrorInfo_iface.lpVtbl = &recordset_supporterrorinfo_vtbl;
+    recordset->ADORecordsetConstruction_iface.lpVtbl = &rsconstruction_vtbl;
     recordset->refs = 1;
     recordset->index = -1;
     recordset->cursor_location = adUseServer;
+    recordset->cursor_type = adOpenForwardOnly;
+    recordset->row_set = NULL;
 
     *obj = &recordset->Recordset_iface;
     TRACE( "returning iface %p\n", *obj );

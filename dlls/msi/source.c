@@ -53,7 +53,7 @@ typedef struct tagMediaInfo
 static UINT OpenSourceKey(LPCWSTR szProduct, HKEY* key, DWORD dwOptions,
                           MSIINSTALLCONTEXT context, BOOL create)
 {
-    HKEY rootkey = 0; 
+    HKEY rootkey = 0;
     UINT rc = ERROR_FUNCTION_FAILED;
 
     if (context == MSIINSTALLCONTEXT_USERUNMANAGED)
@@ -90,10 +90,10 @@ static UINT OpenSourceKey(LPCWSTR szProduct, HKEY* key, DWORD dwOptions,
     }
 
     if (create)
-        rc = RegCreateKeyW(rootkey, szSourceList, key);
+        rc = RegCreateKeyW(rootkey, L"SourceList", key);
     else
     {
-        rc = RegOpenKeyW(rootkey,szSourceList, key);
+        rc = RegOpenKeyW(rootkey, L"SourceList", key);
         if (rc != ERROR_SUCCESS)
             rc = ERROR_BAD_CONFIGURATION;
     }
@@ -105,12 +105,11 @@ static UINT OpenSourceKey(LPCWSTR szProduct, HKEY* key, DWORD dwOptions,
 static UINT OpenMediaSubkey(HKEY rootkey, HKEY *key, BOOL create)
 {
     UINT rc;
-    static const WCHAR media[] = {'M','e','d','i','a',0};
 
     if (create)
-        rc = RegCreateKeyW(rootkey, media, key);
+        rc = RegCreateKeyW(rootkey, L"Media", key);
     else
-        rc = RegOpenKeyW(rootkey,media, key); 
+        rc = RegOpenKeyW(rootkey, L"Media", key);
 
     return rc;
 }
@@ -118,12 +117,11 @@ static UINT OpenMediaSubkey(HKEY rootkey, HKEY *key, BOOL create)
 static UINT OpenNetworkSubkey(HKEY rootkey, HKEY *key, BOOL create)
 {
     UINT rc;
-    static const WCHAR net[] = {'N','e','t',0};
 
     if (create)
-        rc = RegCreateKeyW(rootkey, net, key);
+        rc = RegCreateKeyW(rootkey, L"Net", key);
     else
-        rc = RegOpenKeyW(rootkey, net, key); 
+        rc = RegOpenKeyW(rootkey, L"Net", key);
 
     return rc;
 }
@@ -131,12 +129,11 @@ static UINT OpenNetworkSubkey(HKEY rootkey, HKEY *key, BOOL create)
 static UINT OpenURLSubkey(HKEY rootkey, HKEY *key, BOOL create)
 {
     UINT rc;
-    static const WCHAR URL[] = {'U','R','L',0};
 
     if (create)
-        rc = RegCreateKeyW(rootkey, URL, key);
+        rc = RegCreateKeyW(rootkey, L"URL", key);
     else
-        rc = RegOpenKeyW(rootkey, URL, key); 
+        rc = RegOpenKeyW(rootkey, L"URL", key);
 
     return rc;
 }
@@ -144,21 +141,17 @@ static UINT OpenURLSubkey(HKEY rootkey, HKEY *key, BOOL create)
 /******************************************************************
  *  MsiSourceListEnumMediaDisksA   (MSI.@)
  */
-UINT WINAPI MsiSourceListEnumMediaDisksA(LPCSTR szProductCodeOrPatchCode,
-                                         LPCSTR szUserSid, MSIINSTALLCONTEXT dwContext,
-                                         DWORD dwOptions, DWORD dwIndex, LPDWORD pdwDiskId,
-                                         LPSTR szVolumeLabel, LPDWORD pcchVolumeLabel,
-                                         LPSTR szDiskPrompt, LPDWORD pcchDiskPrompt)
+UINT WINAPI MsiSourceListEnumMediaDisksA( const char *szProductCodeOrPatchCode, const char *szUserSid,
+                                          MSIINSTALLCONTEXT dwContext, DWORD dwOptions, DWORD dwIndex,
+                                          DWORD *pdwDiskId, char *szVolumeLabel, DWORD *pcchVolumeLabel,
+                                          char *szDiskPrompt, DWORD *pcchDiskPrompt )
 {
-    LPWSTR product = NULL;
-    LPWSTR usersid = NULL;
-    LPWSTR volume = NULL;
-    LPWSTR prompt = NULL;
+    WCHAR *product = NULL, *usersid = NULL, *volume = NULL, *prompt = NULL;
     UINT r = ERROR_INVALID_PARAMETER;
 
-    TRACE("(%s, %s, %d, %d, %d, %p, %p, %p, %p, %p)\n", debugstr_a(szProductCodeOrPatchCode),
-          debugstr_a(szUserSid), dwContext, dwOptions, dwIndex, pdwDiskId,
-          szVolumeLabel, pcchVolumeLabel, szDiskPrompt, pcchDiskPrompt);
+    TRACE( "%s, %s, %d, %#lx, %lu, %p, %p, %p, %p, %p\n", debugstr_a(szProductCodeOrPatchCode),
+           debugstr_a(szUserSid), dwContext, dwOptions, dwIndex, pdwDiskId, szVolumeLabel, pcchVolumeLabel,
+           szDiskPrompt, pcchDiskPrompt );
 
     if (szDiskPrompt && !pcchDiskPrompt)
         return ERROR_INVALID_PARAMETER;
@@ -202,13 +195,11 @@ done:
 /******************************************************************
  *  MsiSourceListEnumMediaDisksW   (MSI.@)
  */
-UINT WINAPI MsiSourceListEnumMediaDisksW(LPCWSTR szProductCodeOrPatchCode,
-                                         LPCWSTR szUserSid, MSIINSTALLCONTEXT dwContext,
-                                         DWORD dwOptions, DWORD dwIndex, LPDWORD pdwDiskId,
-                                         LPWSTR szVolumeLabel, LPDWORD pcchVolumeLabel,
-                                         LPWSTR szDiskPrompt, LPDWORD pcchDiskPrompt)
+UINT WINAPI MsiSourceListEnumMediaDisksW( const WCHAR *szProductCodeOrPatchCode, const WCHAR *szUserSid,
+                                          MSIINSTALLCONTEXT dwContext, DWORD dwOptions, DWORD dwIndex,
+                                          DWORD *pdwDiskId, WCHAR *szVolumeLabel, DWORD *pcchVolumeLabel,
+                                          WCHAR *szDiskPrompt, DWORD *pcchDiskPrompt )
 {
-    static const WCHAR fmt[] = {'#','%','d',0};
     WCHAR squashed_pc[SQUASHED_GUID_SIZE], convert[11];
     WCHAR *value = NULL, *data = NULL, *ptr, *ptr2;
     HKEY source, media;
@@ -217,9 +208,9 @@ UINT WINAPI MsiSourceListEnumMediaDisksW(LPCWSTR szProductCodeOrPatchCode,
     UINT r;
     static DWORD index = 0;
 
-    TRACE("(%s, %s, %d, %d, %d, %p, %p, %p, %p)\n", debugstr_w(szProductCodeOrPatchCode),
-          debugstr_w(szUserSid), dwContext, dwOptions, dwIndex, szVolumeLabel,
-          pcchVolumeLabel, szDiskPrompt, pcchDiskPrompt);
+    TRACE( "%s, %s, %d, %#lx, %lu, %p, %p, %p, %p\n", debugstr_w(szProductCodeOrPatchCode),
+           debugstr_w(szUserSid), dwContext, dwOptions, dwIndex, szVolumeLabel, pcchVolumeLabel,
+           szDiskPrompt, pcchDiskPrompt );
 
     if (!szProductCodeOrPatchCode || !squash_guid( szProductCodeOrPatchCode, squashed_pc ))
         return ERROR_INVALID_PARAMETER;
@@ -285,7 +276,7 @@ UINT WINAPI MsiSourceListEnumMediaDisksW(LPCWSTR szProductCodeOrPatchCode,
     {
         if (type == REG_DWORD)
         {
-            swprintf(convert, ARRAY_SIZE(convert), fmt, *data);
+            swprintf(convert, ARRAY_SIZE(convert), L"#%d", *data);
             size = lstrlenW(convert);
             ptr2 = convert;
         }
@@ -307,7 +298,7 @@ UINT WINAPI MsiSourceListEnumMediaDisksW(LPCWSTR szProductCodeOrPatchCode,
 
         if (type == REG_DWORD)
         {
-            swprintf(convert, ARRAY_SIZE(convert), fmt, *ptr);
+            swprintf(convert, ARRAY_SIZE(convert), L"#%d", *ptr);
             size = lstrlenW(convert);
             ptr = convert;
         }
@@ -335,20 +326,17 @@ done:
 /******************************************************************
  *  MsiSourceListEnumSourcesA   (MSI.@)
  */
-UINT WINAPI MsiSourceListEnumSourcesA(LPCSTR szProductCodeOrPatch, LPCSTR szUserSid,
-                                      MSIINSTALLCONTEXT dwContext,
-                                      DWORD dwOptions, DWORD dwIndex,
-                                      LPSTR szSource, LPDWORD pcchSource)
+UINT WINAPI MsiSourceListEnumSourcesA( const char *szProductCodeOrPatch, const char *szUserSid,
+                                       MSIINSTALLCONTEXT dwContext, DWORD dwOptions, DWORD dwIndex, char *szSource,
+                                       DWORD *pcchSource )
 {
-    LPWSTR product = NULL;
-    LPWSTR usersid = NULL;
-    LPWSTR source = NULL;
+    WCHAR *product = NULL, *usersid = NULL, *source = NULL;
     DWORD len = 0;
     UINT r = ERROR_INVALID_PARAMETER;
     static DWORD index = 0;
 
-    TRACE("(%s, %s, %d, %d, %d, %p, %p)\n", debugstr_a(szProductCodeOrPatch),
-          debugstr_a(szUserSid), dwContext, dwOptions, dwIndex, szSource, pcchSource);
+    TRACE( "%s, %s, %d, %#lx, %lu, %p, %p)\n", debugstr_a(szProductCodeOrPatch), debugstr_a(szUserSid), dwContext,
+           dwOptions, dwIndex, szSource, pcchSource );
 
     if (dwIndex == 0)
         index = 0;
@@ -407,20 +395,18 @@ done:
 /******************************************************************
  *  MsiSourceListEnumSourcesW   (MSI.@)
  */
-UINT WINAPI MsiSourceListEnumSourcesW(LPCWSTR szProductCodeOrPatch, LPCWSTR szUserSid,
-                                      MSIINSTALLCONTEXT dwContext,
-                                      DWORD dwOptions, DWORD dwIndex,
-                                      LPWSTR szSource, LPDWORD pcchSource)
+UINT WINAPI MsiSourceListEnumSourcesW( const WCHAR *szProductCodeOrPatch, const WCHAR *szUserSid,
+                                       MSIINSTALLCONTEXT dwContext, DWORD dwOptions, DWORD dwIndex, WCHAR *szSource,
+                                       DWORD *pcchSource )
 {
-    static const WCHAR format[] = {'%','d',0};
     WCHAR squashed_pc[SQUASHED_GUID_SIZE], name[32];
     HKEY source = NULL, subkey = NULL;
     LONG res;
     UINT r = ERROR_INVALID_PARAMETER;
     static DWORD index = 0;
 
-    TRACE("(%s, %s, %d, %d, %d, %p, %p)\n", debugstr_w(szProductCodeOrPatch),
-          debugstr_w(szUserSid), dwContext, dwOptions, dwIndex, szSource, pcchSource);
+    TRACE( "%s, %s, %d, %#lx, %lu, %p, %p\n", debugstr_w(szProductCodeOrPatch), debugstr_w(szUserSid), dwContext,
+           dwOptions, dwIndex, szSource, pcchSource );
 
     if (dwIndex == 0)
         index = 0;
@@ -458,7 +444,7 @@ UINT WINAPI MsiSourceListEnumSourcesW(LPCWSTR szProductCodeOrPatch, LPCWSTR szUs
         goto done;
     }
 
-    swprintf(name, ARRAY_SIZE(name), format, dwIndex + 1);
+    swprintf(name, ARRAY_SIZE(name), L"%d", dwIndex + 1);
 
     res = RegQueryValueExW(subkey, name, 0, 0, (LPBYTE)szSource, pcchSource);
     if (res != ERROR_SUCCESS && res != ERROR_MORE_DATA)
@@ -536,10 +522,9 @@ done:
  */
 UINT WINAPI MsiSourceListGetInfoW( LPCWSTR szProduct, LPCWSTR szUserSid,
                                    MSIINSTALLCONTEXT dwContext, DWORD dwOptions,
-                                   LPCWSTR szProperty, LPWSTR szValue, 
-                                   LPDWORD pcchValue) 
+                                   LPCWSTR szProperty, LPWSTR szValue,
+                                   LPDWORD pcchValue)
 {
-    static const WCHAR mediapack[] = {'M','e','d','i','a','P','a','c','k','a','g','e',0};
     WCHAR *source, *ptr, squashed_pc[SQUASHED_GUID_SIZE];
     HKEY sourcekey, media;
     DWORD size;
@@ -579,7 +564,7 @@ UINT WINAPI MsiSourceListGetInfoW( LPCWSTR szProduct, LPCWSTR szUserSid,
         }
 
         if (!wcscmp( szProperty, INSTALLPROPERTY_MEDIAPACKAGEPATHW ))
-            szProperty = mediapack;
+            szProperty = L"MediaPackage";
 
         RegQueryValueExW(media, szProperty, 0, 0, (LPBYTE)szValue, pcchValue);
         RegCloseKey(media);
@@ -591,7 +576,7 @@ UINT WINAPI MsiSourceListGetInfoW( LPCWSTR szProduct, LPCWSTR szUserSid,
                               0, 0, NULL, &size);
         if (rc != ERROR_SUCCESS)
         {
-            static WCHAR szEmpty[1] = { '\0' };
+            static WCHAR szEmpty[] = L"";
             rc = ERROR_SUCCESS;
             source = NULL;
             ptr = szEmpty;
@@ -709,8 +694,6 @@ UINT msi_set_last_used_source(LPCWSTR product, LPCWSTR usersid,
     UINT r;
     int index = 1;
 
-    static const WCHAR format[] = {'%','c',';','%','i',';','%','s',0};
-
     if (options & MSISOURCETYPE_NETWORK)
         typechar = 'n';
     else if (options & MSISOURCETYPE_URL)
@@ -736,7 +719,7 @@ UINT msi_set_last_used_source(LPCWSTR product, LPCWSTR usersid,
             return r;
     }
 
-    size = lstrlenW(format) + lstrlenW(value) + 7;
+    size = lstrlenW(L"%c;%d;%s") + lstrlenW(value) + 7;
     buffer = msi_alloc(size * sizeof(WCHAR));
     if (!buffer)
         return ERROR_OUTOFMEMORY;
@@ -748,7 +731,7 @@ UINT msi_set_last_used_source(LPCWSTR product, LPCWSTR usersid,
         return r;
     }
 
-    swprintf(buffer, size, format, typechar, index, value);
+    swprintf(buffer, size, L"%c;%d;%s", typechar, index, value);
 
     size = (lstrlenW(buffer) + 1) * sizeof(WCHAR);
     r = RegSetValueExW(source, INSTALLPROPERTY_LASTUSEDSOURCEW, 0,
@@ -762,18 +745,16 @@ UINT msi_set_last_used_source(LPCWSTR product, LPCWSTR usersid,
 /******************************************************************
  *  MsiSourceListSetInfoW   (MSI.@)
  */
-UINT WINAPI MsiSourceListSetInfoW( LPCWSTR szProduct, LPCWSTR szUserSid,
-                                   MSIINSTALLCONTEXT dwContext, DWORD dwOptions,
-                                   LPCWSTR szProperty, LPCWSTR szValue)
+UINT WINAPI MsiSourceListSetInfoW( const WCHAR *szProduct, const WCHAR *szUserSid, MSIINSTALLCONTEXT dwContext,
+                                   DWORD dwOptions, const WCHAR *szProperty, const WCHAR *szValue )
 {
-    static const WCHAR media_package[] = {'M','e','d','i','a','P','a','c','k','a','g','e',0};
     WCHAR squashed_pc[SQUASHED_GUID_SIZE];
     HKEY sourcekey, media;
     LPCWSTR property;
     UINT rc;
 
-    TRACE("%s %s %x %x %s %s\n", debugstr_w(szProduct), debugstr_w(szUserSid),
-            dwContext, dwOptions, debugstr_w(szProperty), debugstr_w(szValue));
+    TRACE( "%s, %s, %d, %#lx, %s, %s\n", debugstr_w(szProduct), debugstr_w(szUserSid), dwContext, dwOptions,
+           debugstr_w(szProperty), debugstr_w(szValue) );
 
     if (!szProduct || !squash_guid( szProduct, squashed_pc ))
         return ERROR_INVALID_PARAMETER;
@@ -795,7 +776,7 @@ UINT WINAPI MsiSourceListSetInfoW( LPCWSTR szProduct, LPCWSTR szUserSid,
 
     property = szProperty;
     if (!wcscmp( szProperty, INSTALLPROPERTY_MEDIAPACKAGEPATHW ))
-        property = media_package;
+        property = L"MediaPackage";
 
     rc = OpenSourceKey(szProduct, &sourcekey, MSICODE_PRODUCT, dwContext, FALSE);
     if (rc != ERROR_SUCCESS)
@@ -896,7 +877,7 @@ UINT WINAPI MsiSourceListAddSourceW( LPCWSTR szProduct, LPCWSTR szUserName,
         RegCloseKey(hkey);
     }
 
-    ret = MsiSourceListAddSourceExW(szProduct, sidstr, 
+    ret = MsiSourceListAddSourceExW(szProduct, sidstr,
         context, MSISOURCETYPE_NETWORK, szSource, 0);
 
     if (sidstr)
@@ -968,7 +949,6 @@ static void add_source_to_list(struct list *sourcelist, media_info *info,
 {
     media_info *iter;
     BOOL found = FALSE;
-    static const WCHAR fmt[] = {'%','i',0};
 
     if (index) *index = 0;
 
@@ -988,7 +968,7 @@ static void add_source_to_list(struct list *sourcelist, media_info *info,
 
         /* update the rest of the list */
         if (found)
-            swprintf(iter->szIndex, ARRAY_SIZE(iter->szIndex), fmt, ++iter->index);
+            swprintf(iter->szIndex, ARRAY_SIZE(iter->szIndex), L"%d", ++iter->index);
         else if (index)
             (*index)++;
     }
@@ -1051,11 +1031,9 @@ error:
 /******************************************************************
  *  MsiSourceListAddSourceExW (MSI.@)
  */
-UINT WINAPI MsiSourceListAddSourceExW( LPCWSTR szProduct, LPCWSTR szUserSid,
-        MSIINSTALLCONTEXT dwContext, DWORD dwOptions, LPCWSTR szSource, 
-        DWORD dwIndex)
+UINT WINAPI MsiSourceListAddSourceExW( const WCHAR *szProduct, const WCHAR *szUserSid, MSIINSTALLCONTEXT dwContext,
+                                       DWORD dwOptions, const WCHAR *szSource, DWORD dwIndex )
 {
-    static const WCHAR fmt[] = {'%','i',0};
     HKEY sourcekey, typekey;
     UINT rc;
     struct list sourcelist;
@@ -1064,8 +1042,8 @@ UINT WINAPI MsiSourceListAddSourceExW( LPCWSTR szProduct, LPCWSTR szUserSid,
     LPCWSTR postfix;
     DWORD size, count, index;
 
-    TRACE("%s %s %x %x %s %i\n", debugstr_w(szProduct), debugstr_w(szUserSid),
-          dwContext, dwOptions, debugstr_w(szSource), dwIndex);
+    TRACE( "%s, %s, %d, %#lx, %s, %lu\n", debugstr_w(szProduct), debugstr_w(szUserSid), dwContext, dwOptions,
+           debugstr_w(szSource), dwIndex );
 
     if (!szProduct || !squash_guid( szProduct, squashed_pc ))
         return ERROR_INVALID_PARAMETER;
@@ -1097,7 +1075,7 @@ UINT WINAPI MsiSourceListAddSourceExW( LPCWSTR szProduct, LPCWSTR szUserSid,
         rc = OpenMediaSubkey(sourcekey, &typekey, TRUE);
     else
     {
-        ERR("unknown media type: %08x\n", dwOptions);
+        ERR( "unknown media type: %#lx\n", dwOptions );
         RegCloseKey(sourcekey);
         return ERROR_FUNCTION_FAILED;
     }
@@ -1108,7 +1086,7 @@ UINT WINAPI MsiSourceListAddSourceExW( LPCWSTR szProduct, LPCWSTR szUserSid,
         return rc;
     }
 
-    postfix = (dwOptions & MSISOURCETYPE_NETWORK) ? szBackSlash : szForwardSlash;
+    postfix = (dwOptions & MSISOURCETYPE_NETWORK) ? L"\\" : L"/";
     if (szSource[lstrlenW(szSource) - 1] == *postfix)
         source = strdupW(szSource);
     else
@@ -1128,18 +1106,18 @@ UINT WINAPI MsiSourceListAddSourceExW( LPCWSTR szProduct, LPCWSTR szUserSid,
 
     if (count == 0)
     {
-        rc = RegSetValueExW(typekey, szOne, 0, REG_EXPAND_SZ, (LPBYTE)source, size);
+        rc = RegSetValueExW(typekey, L"1", 0, REG_EXPAND_SZ, (LPBYTE)source, size);
         goto done;
     }
     else if (dwIndex > count || dwIndex == 0)
     {
-        swprintf(name, ARRAY_SIZE(name), fmt, count + 1);
+        swprintf(name, ARRAY_SIZE(name), L"%d", count + 1);
         rc = RegSetValueExW(typekey, name, 0, REG_EXPAND_SZ, (LPBYTE)source, size);
         goto done;
     }
     else
     {
-        swprintf(name, ARRAY_SIZE(name), fmt, dwIndex);
+        swprintf(name, ARRAY_SIZE(name), L"%d", dwIndex);
         info = msi_alloc(sizeof(media_info));
         if (!info)
         {
@@ -1205,19 +1183,17 @@ UINT WINAPI MsiSourceListAddMediaDiskA(LPCSTR szProduct, LPCSTR szUserSid,
 /******************************************************************
  *  MsiSourceListAddMediaDiskW (MSI.@)
  */
-UINT WINAPI MsiSourceListAddMediaDiskW(LPCWSTR szProduct, LPCWSTR szUserSid, 
-        MSIINSTALLCONTEXT dwContext, DWORD dwOptions, DWORD dwDiskId, 
-        LPCWSTR szVolumeLabel, LPCWSTR szDiskPrompt)
+UINT WINAPI MsiSourceListAddMediaDiskW( const WCHAR *szProduct, const WCHAR *szUserSid, MSIINSTALLCONTEXT dwContext,
+                                        DWORD dwOptions, DWORD dwDiskId, const WCHAR *szVolumeLabel,
+                                        const WCHAR *szDiskPrompt )
 {
-    static const WCHAR fmt[] = {'%','i',0};
     HKEY sourcekey, mediakey;
     UINT rc;
     WCHAR *buffer, squashed_pc[SQUASHED_GUID_SIZE], szIndex[10];
     DWORD size;
 
-    TRACE("%s %s %x %x %i %s %s\n", debugstr_w(szProduct),
-            debugstr_w(szUserSid), dwContext, dwOptions, dwDiskId,
-            debugstr_w(szVolumeLabel), debugstr_w(szDiskPrompt));
+    TRACE( "%s, %s, %d, %#lx, %lu, %s, %s\n", debugstr_w(szProduct), debugstr_w(szUserSid), dwContext, dwOptions,
+           dwDiskId, debugstr_w(szVolumeLabel), debugstr_w(szDiskPrompt) );
 
     if (!szProduct || !squash_guid( szProduct, squashed_pc ))
         return ERROR_INVALID_PARAMETER;
@@ -1243,7 +1219,7 @@ UINT WINAPI MsiSourceListAddMediaDiskW(LPCWSTR szProduct, LPCWSTR szUserSid,
 
     OpenMediaSubkey(sourcekey, &mediakey, TRUE);
 
-    swprintf(szIndex, ARRAY_SIZE(szIndex), fmt, dwDiskId);
+    swprintf(szIndex, ARRAY_SIZE(szIndex), L"%d", dwDiskId);
 
     size = 2;
     if (szVolumeLabel) size += lstrlenW(szVolumeLabel);
@@ -1254,7 +1230,7 @@ UINT WINAPI MsiSourceListAddMediaDiskW(LPCWSTR szProduct, LPCWSTR szUserSid,
     *buffer = '\0';
 
     if (szVolumeLabel) lstrcpyW(buffer, szVolumeLabel);
-    lstrcatW(buffer, szSemiColon);
+    lstrcatW(buffer, L";");
     if (szDiskPrompt) lstrcatW(buffer, szDiskPrompt);
 
     RegSetValueExW(mediakey, szIndex, 0, REG_SZ, (LPBYTE)buffer, size);
@@ -1269,81 +1245,77 @@ UINT WINAPI MsiSourceListAddMediaDiskW(LPCWSTR szProduct, LPCWSTR szUserSid,
 /******************************************************************
  *  MsiSourceListClearAllA (MSI.@)
  */
-UINT WINAPI MsiSourceListClearAllA( LPCSTR szProduct, LPCSTR szUserName, DWORD dwReserved )
+UINT WINAPI MsiSourceListClearAllA( const char *szProduct, const char *szUserName, DWORD dwReserved )
 {
-    FIXME("(%s %s %d)\n", debugstr_a(szProduct), debugstr_a(szUserName), dwReserved);
+    FIXME( "%s, %s, %#lx\n", debugstr_a(szProduct), debugstr_a(szUserName), dwReserved );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListClearAllW (MSI.@)
  */
-UINT WINAPI MsiSourceListClearAllW( LPCWSTR szProduct, LPCWSTR szUserName, DWORD dwReserved )
+UINT WINAPI MsiSourceListClearAllW( const WCHAR *szProduct, const WCHAR *szUserName, DWORD dwReserved )
 {
-    FIXME("(%s %s %d)\n", debugstr_w(szProduct), debugstr_w(szUserName), dwReserved);
+    FIXME( "%s, %s, %#lx\n", debugstr_w(szProduct), debugstr_w(szUserName), dwReserved );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListClearAllExA (MSI.@)
  */
-UINT WINAPI MsiSourceListClearAllExA( LPCSTR szProduct, LPCSTR szUserSid,
-    MSIINSTALLCONTEXT dwContext, DWORD dwOptions )
+UINT WINAPI MsiSourceListClearAllExA( const char *szProduct, const char *szUserSid, MSIINSTALLCONTEXT dwContext,
+                                      DWORD dwOptions )
 {
-    FIXME("(%s %s %d %08x)\n", debugstr_a(szProduct), debugstr_a(szUserSid),
-          dwContext, dwOptions);
+    FIXME( "%s, %s, %d, %#lx\n", debugstr_a(szProduct), debugstr_a(szUserSid), dwContext, dwOptions );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListClearAllExW (MSI.@)
  */
-UINT WINAPI MsiSourceListClearAllExW( LPCWSTR szProduct, LPCWSTR szUserSid,
-    MSIINSTALLCONTEXT dwContext, DWORD dwOptions )
+UINT WINAPI MsiSourceListClearAllExW( const WCHAR *szProduct, const WCHAR *szUserSid, MSIINSTALLCONTEXT dwContext,
+                                      DWORD dwOptions )
 {
-    FIXME("(%s %s %d %08x)\n", debugstr_w(szProduct), debugstr_w(szUserSid),
-          dwContext, dwOptions);
+    FIXME( "%s, %s, %d, %#lx\n", debugstr_w(szProduct), debugstr_w(szUserSid), dwContext, dwOptions );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListClearSourceA (MSI.@)
  */
-UINT WINAPI MsiSourceListClearSourceA(LPCSTR szProductCodeOrPatchCode, LPCSTR szUserSid,
-                                      MSIINSTALLCONTEXT dwContext, DWORD dwOptions,
-                                      LPCSTR szSource)
+UINT WINAPI MsiSourceListClearSourceA( const char *szProductCodeOrPatchCode, const char *szUserSid,
+                                       MSIINSTALLCONTEXT dwContext, DWORD dwOptions, const char *szSource )
 {
-    FIXME("(%s %s %x %x %s)\n", debugstr_a(szProductCodeOrPatchCode), debugstr_a(szUserSid),
-          dwContext, dwOptions, debugstr_a(szSource));
+    FIXME( "%s, %s, %d, %#lx, %s\n", debugstr_a(szProductCodeOrPatchCode), debugstr_a(szUserSid), dwContext,
+           dwOptions, debugstr_a(szSource) );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListClearSourceW (MSI.@)
  */
-UINT WINAPI MsiSourceListClearSourceW(LPCWSTR szProductCodeOrPatchCode, LPCWSTR szUserSid,
-                                      MSIINSTALLCONTEXT dwContext, DWORD dwOptions,
-                                      LPCWSTR szSource)
+UINT WINAPI MsiSourceListClearSourceW( const WCHAR *szProductCodeOrPatchCode, const WCHAR *szUserSid,
+                                       MSIINSTALLCONTEXT dwContext, DWORD dwOptions, LPCWSTR szSource )
 {
-    FIXME("(%s %s %x %x %s)\n", debugstr_w(szProductCodeOrPatchCode), debugstr_w(szUserSid),
-          dwContext, dwOptions, debugstr_w(szSource));
+    FIXME( "%s, %s, %d, %#lx, %s\n", debugstr_w(szProductCodeOrPatchCode), debugstr_w(szUserSid), dwContext,
+           dwOptions, debugstr_w(szSource) );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListForceResolutionA (MSI.@)
  */
-UINT WINAPI MsiSourceListForceResolutionA(const CHAR *product, const CHAR *user, DWORD reserved)
+UINT WINAPI MsiSourceListForceResolutionA( const char *product, const char *user, DWORD reserved )
 {
-    FIXME("(%s %s %x)\n", debugstr_a(product), debugstr_a(user), reserved);
+    FIXME( "%s, %s, %#lx\n", debugstr_a(product), debugstr_a(user), reserved );
     return ERROR_SUCCESS;
 }
 
 /******************************************************************
  *  MsiSourceListForceResolutionW (MSI.@)
  */
-UINT WINAPI MsiSourceListForceResolutionW(const WCHAR *product, const WCHAR *user, DWORD reserved)
+UINT WINAPI MsiSourceListForceResolutionW( const WCHAR *product, const WCHAR *user, DWORD reserved )
 {
-    FIXME("(%s %s %x)\n", debugstr_w(product), debugstr_w(user), reserved);
+    FIXME( "%s, %s, %#lx\n", debugstr_w(product), debugstr_w(user), reserved );
     return ERROR_SUCCESS;
 }

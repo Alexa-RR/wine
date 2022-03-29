@@ -19,11 +19,12 @@
  */
 
 #include "config.h"
-#include "wine/port.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <math.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -563,7 +564,7 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
                 continue;
             }
         }
-        if (ppfd->cDepthBits)
+        if (ppfd->cDepthBits && !(ppfd->dwFlags & PFD_DEPTH_DONTCARE))
         {
             if (((ppfd->cDepthBits > best.cDepthBits) && (format.cDepthBits > best.cDepthBits)) ||
                 ((format.cDepthBits >= ppfd->cDepthBits) && (format.cDepthBits < best.cDepthBits)))
@@ -599,6 +600,9 @@ INT WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR* ppfd)
                 continue;
             }
         }
+        if (ppfd->dwFlags & PFD_DEPTH_DONTCARE && format.cDepthBits < best.cDepthBits)
+            goto found;
+
         continue;
 
     found:
@@ -947,6 +951,15 @@ int WINAPI wglSetLayerPaletteEntries(HDC hdc,
   FIXME("(): stub!\n");
 
   return 0;
+}
+
+/***********************************************************************
+ *		wglGetDefaultProcAddress (OPENGL32.@)
+ */
+PROC WINAPI wglGetDefaultProcAddress( LPCSTR name )
+{
+    FIXME( "%s: stub\n", debugstr_a(name));
+    return NULL;
 }
 
 /***********************************************************************

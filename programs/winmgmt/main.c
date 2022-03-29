@@ -24,7 +24,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winmgmt);
 
-static WCHAR winmgmtW[] = {'W','i','n','m','g','m','t',0};
+static WCHAR winmgmtW[] = L"Winmgmt";
 
 static SERVICE_STATUS_HANDLE service_handle;
 static HANDLE stop_event;
@@ -51,7 +51,7 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
         SetEvent( stop_event );
         return NO_ERROR;
     default:
-        FIXME( "got service ctrl %x\n", ctrl );
+        FIXME( "got service ctrl %lx\n", ctrl );
         status.dwCurrentState = SERVICE_RUNNING;
         SetServiceStatus( service_handle, &status );
         return NO_ERROR;
