@@ -64,7 +64,9 @@ static ULONG STDMETHODCALLTYPE d3d11_blend_state_AddRef(ID3D11BlendState *iface)
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(state->device);
+        wined3d_mutex_lock();
         wined3d_blend_state_incref(state->wined3d_state);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -80,7 +82,11 @@ static ULONG STDMETHODCALLTYPE d3d11_blend_state_Release(ID3D11BlendState *iface
     if (!refcount)
     {
         ID3D11Device2 *device = state->device;
+
+        wined3d_mutex_lock();
         wined3d_blend_state_decref(state->wined3d_state);
+        wined3d_mutex_unlock();
+
         ID3D11Device2_Release(device);
     }
 
@@ -234,16 +240,6 @@ static HRESULT STDMETHODCALLTYPE d3d10_blend_state_SetPrivateDataInterface(ID3D1
 
 /* ID3D10BlendState methods */
 
-static D3D10_BLEND d3d10_blend_from_d3d11(D3D11_BLEND factor)
-{
-    return (D3D10_BLEND)factor;
-}
-
-static D3D10_BLEND_OP d3d10_blend_op_from_d3d11(D3D11_BLEND_OP op)
-{
-    return (D3D10_BLEND_OP)op;
-}
-
 static void STDMETHODCALLTYPE d3d10_blend_state_GetDesc(ID3D10BlendState1 *iface, D3D10_BLEND_DESC *desc)
 {
     struct d3d_blend_state *state = impl_from_ID3D10BlendState(iface);
@@ -253,12 +249,12 @@ static void STDMETHODCALLTYPE d3d10_blend_state_GetDesc(ID3D10BlendState1 *iface
     TRACE("iface %p, desc %p.\n", iface, desc);
 
     desc->AlphaToCoverageEnable = d3d11_desc->AlphaToCoverageEnable;
-    desc->SrcBlend = d3d10_blend_from_d3d11(d3d11_desc->RenderTarget[0].SrcBlend);
-    desc->DestBlend = d3d10_blend_from_d3d11(d3d11_desc->RenderTarget[0].DestBlend);
-    desc->BlendOp = d3d10_blend_op_from_d3d11(d3d11_desc->RenderTarget[0].BlendOp);
-    desc->SrcBlendAlpha = d3d10_blend_from_d3d11(d3d11_desc->RenderTarget[0].SrcBlendAlpha);
-    desc->DestBlendAlpha = d3d10_blend_from_d3d11(d3d11_desc->RenderTarget[0].DestBlendAlpha);
-    desc->BlendOpAlpha = d3d10_blend_op_from_d3d11(d3d11_desc->RenderTarget[0].BlendOpAlpha);
+    desc->SrcBlend = d3d11_desc->RenderTarget[0].SrcBlend;
+    desc->DestBlend = d3d11_desc->RenderTarget[0].DestBlend;
+    desc->BlendOp = d3d11_desc->RenderTarget[0].BlendOp;
+    desc->SrcBlendAlpha = d3d11_desc->RenderTarget[0].SrcBlendAlpha;
+    desc->DestBlendAlpha = d3d11_desc->RenderTarget[0].DestBlendAlpha;
+    desc->BlendOpAlpha = d3d11_desc->RenderTarget[0].BlendOpAlpha;
     for (i = 0; i < D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
     {
         desc->BlendEnable[i] = d3d11_desc->RenderTarget[i].BlendEnable;
@@ -306,16 +302,6 @@ static const struct wined3d_parent_ops d3d_blend_state_wined3d_parent_ops =
 {
     d3d_blend_state_wined3d_object_destroyed,
 };
-
-static enum wined3d_blend wined3d_blend_from_d3d11(D3D11_BLEND factor)
-{
-    return (enum wined3d_blend)factor;
-}
-
-static enum wined3d_blend_op wined3d_blend_op_from_d3d11(D3D11_BLEND_OP op)
-{
-    return (enum wined3d_blend_op)op;
-}
 
 HRESULT d3d_blend_state_create(struct d3d_device *device, const D3D11_BLEND_DESC *desc,
         struct d3d_blend_state **state)
@@ -399,12 +385,12 @@ HRESULT d3d_blend_state_create(struct d3d_device *device, const D3D11_BLEND_DESC
     for (i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
     {
         wined3d_desc.rt[i].enable = desc->RenderTarget[i].BlendEnable;
-        wined3d_desc.rt[i].src = wined3d_blend_from_d3d11(desc->RenderTarget[i].SrcBlend);
-        wined3d_desc.rt[i].dst = wined3d_blend_from_d3d11(desc->RenderTarget[i].DestBlend);
-        wined3d_desc.rt[i].op = wined3d_blend_op_from_d3d11(desc->RenderTarget[i].BlendOp);
-        wined3d_desc.rt[i].src_alpha = wined3d_blend_from_d3d11(desc->RenderTarget[i].SrcBlendAlpha);
-        wined3d_desc.rt[i].dst_alpha = wined3d_blend_from_d3d11(desc->RenderTarget[i].DestBlendAlpha);
-        wined3d_desc.rt[i].op_alpha = wined3d_blend_op_from_d3d11(desc->RenderTarget[i].BlendOpAlpha);
+        wined3d_desc.rt[i].src = desc->RenderTarget[i].SrcBlend;
+        wined3d_desc.rt[i].dst = desc->RenderTarget[i].DestBlend;
+        wined3d_desc.rt[i].op = desc->RenderTarget[i].BlendOp;
+        wined3d_desc.rt[i].src_alpha = desc->RenderTarget[i].SrcBlendAlpha;
+        wined3d_desc.rt[i].dst_alpha = desc->RenderTarget[i].DestBlendAlpha;
+        wined3d_desc.rt[i].op_alpha = desc->RenderTarget[i].BlendOpAlpha;
         wined3d_desc.rt[i].writemask = desc->RenderTarget[i].RenderTargetWriteMask;
     }
 
@@ -487,13 +473,13 @@ static ULONG STDMETHODCALLTYPE d3d11_depthstencil_state_AddRef(ID3D11DepthStenci
 
     TRACE("%p increasing refcount to %u.\n", state, refcount);
 
-    if (refcount == 1)
-    {
-        ID3D11Device2_AddRef(state->device);
-        wined3d_depth_stencil_state_incref(state->wined3d_state);
-    }
-
     return refcount;
+}
+
+static void d3d_depthstencil_state_cleanup(struct d3d_depthstencil_state *state)
+{
+    wined3d_private_store_cleanup(&state->private_store);
+    ID3D11Device2_Release(state->device);
 }
 
 static ULONG STDMETHODCALLTYPE d3d11_depthstencil_state_Release(ID3D11DepthStencilState *iface)
@@ -505,10 +491,12 @@ static ULONG STDMETHODCALLTYPE d3d11_depthstencil_state_Release(ID3D11DepthStenc
 
     if (!refcount)
     {
-        ID3D11Device2 *device = state->device;
-
-        wined3d_depth_stencil_state_decref(state->wined3d_state);
-        ID3D11Device2_Release(device);
+        struct d3d_device *device = impl_from_ID3D11Device2(state->device);
+        wined3d_mutex_lock();
+        wine_rb_remove(&device->depthstencil_states, &state->entry);
+        d3d_depthstencil_state_cleanup(state);
+        wined3d_mutex_unlock();
+        heap_free(state);
     }
 
     return refcount;
@@ -687,25 +675,23 @@ static const struct ID3D10DepthStencilStateVtbl d3d10_depthstencil_state_vtbl =
     d3d10_depthstencil_state_GetDesc,
 };
 
-static void STDMETHODCALLTYPE d3d_depthstencil_state_wined3d_object_destroyed(void *parent)
+static HRESULT d3d_depthstencil_state_init(struct d3d_depthstencil_state *state, struct d3d_device *device,
+        const D3D11_DEPTH_STENCIL_DESC *desc)
 {
-    struct d3d_depthstencil_state *state = parent;
-    struct d3d_device *device = impl_from_ID3D11Device2(state->device);
+    state->ID3D11DepthStencilState_iface.lpVtbl = &d3d11_depthstencil_state_vtbl;
+    state->ID3D10DepthStencilState_iface.lpVtbl = &d3d10_depthstencil_state_vtbl;
+    state->refcount = 1;
+    wined3d_private_store_init(&state->private_store);
+    state->desc = *desc;
 
-    wine_rb_remove(&device->depthstencil_states, &state->entry);
-    wined3d_private_store_cleanup(&state->private_store);
-    heap_free(parent);
+    ID3D11Device2_AddRef(state->device = &device->ID3D11Device2_iface);
+
+    return S_OK;
 }
-
-static const struct wined3d_parent_ops d3d_depthstencil_state_wined3d_parent_ops =
-{
-    d3d_depthstencil_state_wined3d_object_destroyed,
-};
 
 HRESULT d3d_depthstencil_state_create(struct d3d_device *device, const D3D11_DEPTH_STENCIL_DESC *desc,
         struct d3d_depthstencil_state **state)
 {
-    struct wined3d_depth_stencil_state_desc wined3d_desc;
     struct d3d_depthstencil_state *object;
     D3D11_DEPTH_STENCIL_DESC tmp_desc;
     struct wine_rb_entry *entry;
@@ -769,53 +755,25 @@ HRESULT d3d_depthstencil_state_create(struct d3d_device *device, const D3D11_DEP
         return E_OUTOFMEMORY;
     }
 
-    object->ID3D11DepthStencilState_iface.lpVtbl = &d3d11_depthstencil_state_vtbl;
-    object->ID3D10DepthStencilState_iface.lpVtbl = &d3d10_depthstencil_state_vtbl;
-    object->refcount = 1;
-    wined3d_private_store_init(&object->private_store);
-    object->desc = tmp_desc;
-
-    if (wine_rb_put(&device->depthstencil_states, &tmp_desc, &object->entry) == -1)
+    if (FAILED(hr = d3d_depthstencil_state_init(object, device, &tmp_desc)))
     {
-        ERR("Failed to insert depth/stencil state entry.\n");
-        wined3d_private_store_cleanup(&object->private_store);
-        heap_free(object);
-        wined3d_mutex_unlock();
-        return E_FAIL;
-    }
-
-    wined3d_desc.depth = desc->DepthEnable;
-    wined3d_desc.depth_write = desc->DepthWriteMask;
-    wined3d_desc.depth_func = desc->DepthFunc;
-    wined3d_desc.stencil = desc->StencilEnable;
-    wined3d_desc.stencil_read_mask = desc->StencilReadMask;
-    wined3d_desc.stencil_write_mask = desc->StencilWriteMask;
-    wined3d_desc.front.fail_op = desc->FrontFace.StencilFailOp;
-    wined3d_desc.front.depth_fail_op = desc->FrontFace.StencilDepthFailOp;
-    wined3d_desc.front.pass_op = desc->FrontFace.StencilPassOp;
-    wined3d_desc.front.func = desc->FrontFace.StencilFunc;
-    wined3d_desc.back.fail_op = desc->BackFace.StencilFailOp;
-    wined3d_desc.back.depth_fail_op = desc->BackFace.StencilDepthFailOp;
-    wined3d_desc.back.pass_op = desc->BackFace.StencilPassOp;
-    wined3d_desc.back.func = desc->BackFace.StencilFunc;
-
-    /* We cannot fail after creating a wined3d_depth_stencil_state object. It
-     * would lead to double free. */
-    if (FAILED(hr = wined3d_depth_stencil_state_create(device->wined3d_device, &wined3d_desc,
-            object, &d3d_depthstencil_state_wined3d_parent_ops, &object->wined3d_state)))
-    {
-        WARN("Failed to create wined3d depth/stencil state, hr %#x.\n", hr);
-        wined3d_private_store_cleanup(&object->private_store);
-        wine_rb_remove(&device->depthstencil_states, &object->entry);
+        WARN("Failed to initialize depthstencil state, hr %#x.\n", hr);
         heap_free(object);
         wined3d_mutex_unlock();
         return hr;
     }
+
+    if (wine_rb_put(&device->depthstencil_states, &tmp_desc, &object->entry) == -1)
+    {
+        ERR("Failed to insert depthstencil state entry.\n");
+        d3d_depthstencil_state_cleanup(object);
+        heap_free(object);
+        wined3d_mutex_unlock();
+        return E_FAIL;
+    }
     wined3d_mutex_unlock();
 
-    ID3D11Device2_AddRef(object->device = &device->ID3D11Device2_iface);
-
-    TRACE("Created depth/stencil state %p.\n", object);
+    TRACE("Created depthstencil state %p.\n", object);
     *state = object;
 
     return S_OK;
@@ -841,24 +799,23 @@ struct d3d_depthstencil_state *unsafe_impl_from_ID3D10DepthStencilState(ID3D10De
 
 /* ID3D11RasterizerState methods */
 
-static inline struct d3d_rasterizer_state *impl_from_ID3D11RasterizerState1(ID3D11RasterizerState1 *iface)
+static inline struct d3d_rasterizer_state *impl_from_ID3D11RasterizerState(ID3D11RasterizerState *iface)
 {
-    return CONTAINING_RECORD(iface, struct d3d_rasterizer_state, ID3D11RasterizerState1_iface);
+    return CONTAINING_RECORD(iface, struct d3d_rasterizer_state, ID3D11RasterizerState_iface);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_QueryInterface(ID3D11RasterizerState1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_QueryInterface(ID3D11RasterizerState *iface,
         REFIID riid, void **object)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, riid %s, object %p.\n", iface, debugstr_guid(riid), object);
 
     if (IsEqualGUID(riid, &IID_ID3D11RasterizerState)
-            || IsEqualGUID(riid, &IID_ID3D11RasterizerState1)
             || IsEqualGUID(riid, &IID_ID3D11DeviceChild)
             || IsEqualGUID(riid, &IID_IUnknown))
     {
-        ID3D11RasterizerState1_AddRef(iface);
+        ID3D11RasterizerState_AddRef(iface);
         *object = iface;
         return S_OK;
     }
@@ -877,9 +834,9 @@ static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_QueryInterface(ID3D11Ras
     return E_NOINTERFACE;
 }
 
-static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_AddRef(ID3D11RasterizerState1 *iface)
+static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_AddRef(ID3D11RasterizerState *iface)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
     ULONG refcount = InterlockedIncrement(&state->refcount);
 
     TRACE("%p increasing refcount to %u.\n", state, refcount);
@@ -887,15 +844,17 @@ static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_AddRef(ID3D11RasterizerSta
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(state->device);
+        wined3d_mutex_lock();
         wined3d_rasterizer_state_incref(state->wined3d_state);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
 }
 
-static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_Release(ID3D11RasterizerState1 *iface)
+static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_Release(ID3D11RasterizerState *iface)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
     ULONG refcount = InterlockedDecrement(&state->refcount);
 
     TRACE("%p decreasing refcount to %u.\n", state, refcount);
@@ -903,17 +862,21 @@ static ULONG STDMETHODCALLTYPE d3d11_rasterizer_state_Release(ID3D11RasterizerSt
     if (!refcount)
     {
         ID3D11Device2 *device = state->device;
+
+        wined3d_mutex_lock();
         wined3d_rasterizer_state_decref(state->wined3d_state);
+        wined3d_mutex_unlock();
+
         ID3D11Device2_Release(device);
     }
 
     return refcount;
 }
 
-static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDevice(ID3D11RasterizerState1 *iface,
+static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDevice(ID3D11RasterizerState *iface,
         ID3D11Device **device)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, device %p.\n", iface, device);
 
@@ -921,57 +884,47 @@ static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDevice(ID3D11RasterizerS
     ID3D11Device_AddRef(*device);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_GetPrivateData(ID3D11RasterizerState1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_GetPrivateData(ID3D11RasterizerState *iface,
         REFGUID guid, UINT *data_size, void *data)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, guid %s, data_size %p, data %p.\n", iface, debugstr_guid(guid), data_size, data);
 
     return d3d_get_private_data(&state->private_store, guid, data_size, data);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_SetPrivateData(ID3D11RasterizerState1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_SetPrivateData(ID3D11RasterizerState *iface,
         REFGUID guid, UINT data_size, const void *data)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
 
     return d3d_set_private_data(&state->private_store, guid, data_size, data);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_SetPrivateDataInterface(ID3D11RasterizerState1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_rasterizer_state_SetPrivateDataInterface(ID3D11RasterizerState *iface,
         REFGUID guid, const IUnknown *data)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, guid %s, data %p.\n", iface, debugstr_guid(guid), data);
 
     return d3d_set_private_data_interface(&state->private_store, guid, data);
 }
 
-static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDesc(ID3D11RasterizerState1 *iface,
+static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDesc(ID3D11RasterizerState *iface,
         D3D11_RASTERIZER_DESC *desc)
 {
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
-
-    TRACE("iface %p, desc %p.\n", iface, desc);
-
-    memcpy(desc, &state->desc, sizeof(*desc));
-}
-
-static void STDMETHODCALLTYPE d3d11_rasterizer_state_GetDesc1(ID3D11RasterizerState1 *iface,
-        D3D11_RASTERIZER_DESC1 *desc)
-{
-    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState1(iface);
+    struct d3d_rasterizer_state *state = impl_from_ID3D11RasterizerState(iface);
 
     TRACE("iface %p, desc %p.\n", iface, desc);
 
     *desc = state->desc;
 }
 
-static const struct ID3D11RasterizerState1Vtbl d3d11_rasterizer_state_vtbl =
+static const struct ID3D11RasterizerStateVtbl d3d11_rasterizer_state_vtbl =
 {
     /* IUnknown methods */
     d3d11_rasterizer_state_QueryInterface,
@@ -984,8 +937,6 @@ static const struct ID3D11RasterizerState1Vtbl d3d11_rasterizer_state_vtbl =
     d3d11_rasterizer_state_SetPrivateDataInterface,
     /* ID3D11RasterizerState methods */
     d3d11_rasterizer_state_GetDesc,
-    /* ID3D11RasterizerState1 methods */
-    d3d11_rasterizer_state_GetDesc1,
 };
 
 /* ID3D10RasterizerState methods */
@@ -1004,7 +955,7 @@ static HRESULT STDMETHODCALLTYPE d3d10_rasterizer_state_QueryInterface(ID3D10Ras
 
     TRACE("iface %p, riid %s, object %p.\n", iface, debugstr_guid(riid), object);
 
-    return d3d11_rasterizer_state_QueryInterface(&state->ID3D11RasterizerState1_iface, riid, object);
+    return d3d11_rasterizer_state_QueryInterface(&state->ID3D11RasterizerState_iface, riid, object);
 }
 
 static ULONG STDMETHODCALLTYPE d3d10_rasterizer_state_AddRef(ID3D10RasterizerState *iface)
@@ -1013,7 +964,7 @@ static ULONG STDMETHODCALLTYPE d3d10_rasterizer_state_AddRef(ID3D10RasterizerSta
 
     TRACE("iface %p.\n", iface);
 
-    return d3d11_rasterizer_state_AddRef(&state->ID3D11RasterizerState1_iface);
+    return d3d11_rasterizer_state_AddRef(&state->ID3D11RasterizerState_iface);
 }
 
 static ULONG STDMETHODCALLTYPE d3d10_rasterizer_state_Release(ID3D10RasterizerState *iface)
@@ -1022,7 +973,7 @@ static ULONG STDMETHODCALLTYPE d3d10_rasterizer_state_Release(ID3D10RasterizerSt
 
     TRACE("iface %p.\n", state);
 
-    return d3d11_rasterizer_state_Release(&state->ID3D11RasterizerState1_iface);
+    return d3d11_rasterizer_state_Release(&state->ID3D11RasterizerState_iface);
 }
 
 /* ID3D10DeviceChild methods */
@@ -1110,23 +1061,13 @@ static const struct wined3d_parent_ops d3d_rasterizer_state_wined3d_parent_ops =
     d3d_rasterizer_state_wined3d_object_destroyed,
 };
 
-static enum wined3d_fill_mode wined3d_fill_mode_from_d3d11(D3D11_FILL_MODE mode)
-{
-    return (enum wined3d_fill_mode)mode;
-}
-
-static enum wined3d_cull wined3d_cull_from_d3d11(D3D11_CULL_MODE mode)
-{
-    return (enum wined3d_cull)mode;
-}
-
 static HRESULT d3d_rasterizer_state_init(struct d3d_rasterizer_state *state, struct d3d_device *device,
-        const D3D11_RASTERIZER_DESC1 *desc)
+        const D3D11_RASTERIZER_DESC *desc)
 {
     struct wined3d_rasterizer_state_desc wined3d_desc;
     HRESULT hr;
 
-    state->ID3D11RasterizerState1_iface.lpVtbl = &d3d11_rasterizer_state_vtbl;
+    state->ID3D11RasterizerState_iface.lpVtbl = &d3d11_rasterizer_state_vtbl;
     state->ID3D10RasterizerState_iface.lpVtbl = &d3d10_rasterizer_state_vtbl;
     state->refcount = 1;
     wined3d_private_store_init(&state->private_store);
@@ -1139,8 +1080,8 @@ static HRESULT d3d_rasterizer_state_init(struct d3d_rasterizer_state *state, str
         return E_FAIL;
     }
 
-    wined3d_desc.fill_mode = wined3d_fill_mode_from_d3d11(desc->FillMode);
-    wined3d_desc.cull_mode = wined3d_cull_from_d3d11(desc->CullMode);
+    wined3d_desc.fill_mode = desc->FillMode;
+    wined3d_desc.cull_mode = desc->CullMode;
     wined3d_desc.front_ccw = desc->FrontCounterClockwise;
     wined3d_desc.depth_bias = desc->DepthBias;
     wined3d_desc.depth_bias_clamp = desc->DepthBiasClamp;
@@ -1148,20 +1089,6 @@ static HRESULT d3d_rasterizer_state_init(struct d3d_rasterizer_state *state, str
     wined3d_desc.depth_clip = desc->DepthClipEnable;
     wined3d_desc.scissor = desc->ScissorEnable;
     wined3d_desc.line_antialias = desc->AntialiasedLineEnable;
-
-    if (desc->MultisampleEnable)
-    {
-        static unsigned int once;
-        if (!once++)
-            FIXME("Ignoring MultisampleEnable %#x.\n", desc->MultisampleEnable);
-    }
-
-    if (desc->ForcedSampleCount)
-    {
-        static unsigned int once;
-        if (!once++)
-            FIXME("Ignoring ForcedSampleCount %#x.\n", desc->ForcedSampleCount);
-    }
 
     /* We cannot fail after creating a wined3d_rasterizer_state object. It
      * would lead to double free. */
@@ -1179,12 +1106,15 @@ static HRESULT d3d_rasterizer_state_init(struct d3d_rasterizer_state *state, str
     return S_OK;
 }
 
-HRESULT d3d_rasterizer_state_create(struct d3d_device *device, const D3D11_RASTERIZER_DESC1 *desc,
+HRESULT d3d_rasterizer_state_create(struct d3d_device *device, const D3D11_RASTERIZER_DESC *desc,
         struct d3d_rasterizer_state **state)
 {
     struct d3d_rasterizer_state *object;
     struct wine_rb_entry *entry;
     HRESULT hr;
+
+    if (!desc)
+        return E_INVALIDARG;
 
     wined3d_mutex_lock();
     if ((entry = wine_rb_get(&device->rasterizer_states, desc)))
@@ -1192,7 +1122,7 @@ HRESULT d3d_rasterizer_state_create(struct d3d_device *device, const D3D11_RASTE
         object = WINE_RB_ENTRY_VALUE(entry, struct d3d_rasterizer_state, entry);
 
         TRACE("Returning existing rasterizer state %p.\n", object);
-        ID3D11RasterizerState1_AddRef(&object->ID3D11RasterizerState1_iface);
+        ID3D11RasterizerState_AddRef(&object->ID3D11RasterizerState_iface);
         *state = object;
         wined3d_mutex_unlock();
 
@@ -1224,9 +1154,9 @@ struct d3d_rasterizer_state *unsafe_impl_from_ID3D11RasterizerState(ID3D11Raster
 {
     if (!iface)
         return NULL;
-    assert(iface->lpVtbl == (ID3D11RasterizerStateVtbl *)&d3d11_rasterizer_state_vtbl);
+    assert(iface->lpVtbl == &d3d11_rasterizer_state_vtbl);
 
-    return impl_from_ID3D11RasterizerState1((ID3D11RasterizerState1 *)iface);
+    return impl_from_ID3D11RasterizerState(iface);
 }
 
 struct d3d_rasterizer_state *unsafe_impl_from_ID3D10RasterizerState(ID3D10RasterizerState *iface)
@@ -1285,7 +1215,9 @@ static ULONG STDMETHODCALLTYPE d3d11_sampler_state_AddRef(ID3D11SamplerState *if
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(state->device);
+        wined3d_mutex_lock();
         wined3d_sampler_incref(state->wined3d_sampler);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -1301,7 +1233,11 @@ static ULONG STDMETHODCALLTYPE d3d11_sampler_state_Release(ID3D11SamplerState *i
     if (!refcount)
     {
         ID3D11Device2 *device = state->device;
+
+        wined3d_mutex_lock();
         wined3d_sampler_decref(state->wined3d_sampler);
+        wined3d_mutex_unlock();
+
         ID3D11Device2_Release(device);
     }
 
@@ -1553,7 +1489,7 @@ static HRESULT d3d_sampler_state_init(struct d3d_sampler_state *state, struct d3
     wined3d_desc.mip_filter = wined3d_texture_filter_mip_from_d3d11(desc->Filter);
     wined3d_desc.lod_bias = desc->MipLODBias;
     wined3d_desc.min_lod = desc->MinLOD;
-    wined3d_desc.max_lod = max(desc->MinLOD, desc->MaxLOD);
+    wined3d_desc.max_lod = desc->MaxLOD;
     wined3d_desc.mip_base_level = 0;
     wined3d_desc.max_anisotropy = D3D11_DECODE_IS_ANISOTROPIC_FILTER(desc->Filter) ? desc->MaxAnisotropy : 1;
     wined3d_desc.compare = wined3d_texture_compare_from_d3d11(desc->Filter);

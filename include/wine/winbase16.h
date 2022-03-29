@@ -23,7 +23,6 @@
 #include <windef.h>
 #include <winbase.h>
 #include <winnls.h>
-#include <winternl.h>
 #include <wine/windef16.h>
 
 #include <pshpack1.h>
@@ -197,7 +196,7 @@ typedef struct _STACK16FRAME
     DWORD         callfrom_ip;    /* 18 callfrom tail IP */
     DWORD         module_cs;      /* 1c module code segment */
     DWORD         relay;          /* 20 relay function address */
-    WORD          entry_ip;       /* 24 entry point IP */
+    WORD          entry_ip;       /* 22 entry point IP */
     DWORD         entry_point;    /* 26 API entry point to call, reused as mutex count */
     WORD          bp;             /* 2a 16-bit stack frame chain */
     WORD          ip;             /* 2c return address */
@@ -516,8 +515,6 @@ BOOL16      WINAPI LocalUnlock16(HLOCAL16);
 LPVOID      WINAPI LockResource16(HGLOBAL16);
 HGLOBAL16   WINAPI LockSegment16(HGLOBAL16);
 FARPROC16   WINAPI MakeProcInstance16(FARPROC16,HANDLE16);
-HMODULE     WINAPI MapHModuleSL(WORD);
-WORD        WINAPI MapHModuleLS(HMODULE);
 HFILE16     WINAPI OpenFile16(LPCSTR,OFSTRUCT*,UINT16);
 DWORD       WINAPI RegCloseKey16(HKEY);
 DWORD       WINAPI RegCreateKey16(HKEY,LPCSTR,PHKEY);
@@ -561,10 +558,5 @@ UINT16      WINAPI _lwrite16(HFILE16,LPCSTR,UINT16);
 BOOL16      WINAPI WritePrivateProfileSection16(LPCSTR,LPCSTR,LPCSTR);
 BOOL16      WINAPI WritePrivateProfileStruct16(LPCSTR,LPCSTR,LPVOID,UINT16,LPCSTR);
 BOOL16      WINAPI WriteProfileSection16(LPCSTR,LPCSTR);
-
-#define CURRENT_STACK16 ((STACK16FRAME *)MapSL((SEGPTR)NtCurrentTeb()->SystemReserved1[0]))
-#define CURRENT_DS      (CURRENT_STACK16->ds)
-#define CURRENT_SP      (((WORD *)NtCurrentTeb()->SystemReserved1)[0])
-#define CURRENT_SS      (((WORD *)NtCurrentTeb()->SystemReserved1)[1])
 
 #endif /* __WINE_WINE_WINBASE16_H */

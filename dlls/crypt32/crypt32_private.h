@@ -20,9 +20,6 @@
 #define __CRYPT32_PRIVATE_H__
 
 #include "wine/list.h"
-#include "wine/unixlib.h"
-
-BOOL CNG_ImportPubKey(CERT_PUBLIC_KEY_INFO *pubKeyInfo, BCRYPT_KEY_HANDLE *key) DECLSPEC_HIDDEN;
 
 /* a few asn.1 tags we need */
 #define ASN_BOOL            (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x01)
@@ -42,11 +39,6 @@ BOOL CNG_ImportPubKey(CERT_PUBLIC_KEY_INFO *pubKeyInfo, BCRYPT_KEY_HANDLE *key) 
 #define ASN_GENERALSTRING   (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x1b)
 #define ASN_UNIVERSALSTRING (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x1c)
 #define ASN_BMPSTRING       (ASN_UNIVERSAL | ASN_PRIMITIVE | 0x1e)
-
-/* Copies `len` bytes from `src` to `dst`,
- * reversing the order of the bytes
- */
-void CRYPT_CopyReversed(BYTE *dst, const BYTE *src, size_t len);
 
 BOOL CRYPT_EncodeLen(DWORD len, BYTE *pbEncoded, DWORD *pcbEncoded) DECLSPEC_HIDDEN;
 
@@ -378,13 +370,13 @@ BOOL CRYPT_ReadSerializedStoreFromFile(HANDLE file, HCERTSTORE store) DECLSPEC_H
 BOOL CRYPT_ReadSerializedStoreFromBlob(const CRYPT_DATA_BLOB *blob,
  HCERTSTORE store) DECLSPEC_HIDDEN;
 
-struct store_CERT_KEY_CONTEXT
-{
-    DWORD   cbSize;
-    DWORD64 hCryptProv;
-    DWORD   dwKeySpec;
-};
-void CRYPT_ConvertKeyContext(const struct store_CERT_KEY_CONTEXT *src, CERT_KEY_CONTEXT *dst) DECLSPEC_HIDDEN;
+/* Fixes up the pointers in info, where info is assumed to be a
+ * CRYPT_KEY_PROV_INFO, followed by its container name, provider name, and any
+ * provider parameters, in a contiguous buffer, but where info's pointers are
+ * assumed to be invalid.  Upon return, info's pointers point to the
+ * appropriate memory locations.
+ */
+void CRYPT_FixKeyProvInfoPointers(PCRYPT_KEY_PROV_INFO info) DECLSPEC_HIDDEN;
 
 /**
  *  String functions
@@ -459,57 +451,7 @@ void init_empty_store(void) DECLSPEC_HIDDEN;
  */
 #define IS_INTOID(x)    (((ULONG_PTR)(x) >> 16) == 0)
 
-/* Unix interface */
-
-typedef UINT64 cert_store_data_t;
-
-struct open_cert_store_params
-{
-    CRYPT_DATA_BLOB *pfx;
-    const WCHAR *password;
-    cert_store_data_t *data_ret;
-};
-
-struct import_store_key_params
-{
-    cert_store_data_t data;
-    void *buf;
-    DWORD *buf_size;
-};
-
-struct import_store_cert_params
-{
-    cert_store_data_t data;
-    unsigned int index;
-    void *buf;
-    DWORD *buf_size;
-};
-
-struct close_cert_store_params
-{
-    cert_store_data_t data;
-};
-
-struct enum_root_certs_params
-{
-    void  *buffer;
-    DWORD  size;
-    DWORD *needed;
-};
-
-enum unix_funcs
-{
-    unix_process_attach,
-    unix_process_detach,
-    unix_open_cert_store,
-    unix_import_store_key,
-    unix_import_store_cert,
-    unix_close_cert_store,
-    unix_enum_root_certs,
-};
-
-extern unixlib_handle_t crypt32_handle;
-
-#define CRYPT32_CALL( func, params ) __wine_unix_call( crypt32_handle, unix_ ## func, params )
+BOOL gnutls_initialize(void) DECLSPEC_HIDDEN;
+void gnutls_uninitialize(void) DECLSPEC_HIDDEN;
 
 #endif

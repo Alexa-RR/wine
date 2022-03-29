@@ -17,9 +17,6 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include <conio.h>
-#include <process.h>
-#include <signal.h>
 #include <stdio.h>
 #include "msvcrt.h"
 #include "mtdll.h"
@@ -29,12 +26,12 @@
 WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 
 /* MT */
-#define LOCK_EXIT   _lock(_EXIT_LOCK1)
-#define UNLOCK_EXIT _unlock(_EXIT_LOCK1)
+#define LOCK_EXIT   _mlock(_EXIT_LOCK1)
+#define UNLOCK_EXIT _munlock(_EXIT_LOCK1)
 
-static _purecall_handler purecall_handler = NULL;
+static MSVCRT_purecall_handler purecall_handler = NULL;
 
-static _onexit_table_t MSVCRT_atexit_table;
+static MSVCRT__onexit_table_t MSVCRT_atexit_table;
 
 typedef void (__stdcall *_tls_callback_type)(void*,ULONG,void*);
 static _tls_callback_type tls_atexit_callback;
@@ -49,14 +46,14 @@ static CRITICAL_SECTION_DEBUG MSVCRT_onexit_cs_debug =
 static CRITICAL_SECTION MSVCRT_onexit_cs = { &MSVCRT_onexit_cs_debug, -1, 0, 0, 0, 0 };
 
 extern int MSVCRT_app_type;
-extern wchar_t *MSVCRT__wpgmptr;
+extern MSVCRT_wchar_t *MSVCRT__wpgmptr;
 
-static unsigned int MSVCRT_abort_behavior =  _WRITE_ABORT_MSG | _CALL_REPORTFAULT;
-static int MSVCRT_error_mode = _OUT_TO_DEFAULT;
+static unsigned int MSVCRT_abort_behavior =  MSVCRT__WRITE_ABORT_MSG | MSVCRT__CALL_REPORTFAULT;
+static int MSVCRT_error_mode = MSVCRT__OUT_TO_DEFAULT;
 
-void (*CDECL _aexit_rtn)(int) = _exit;
+void (*CDECL _aexit_rtn)(int) = MSVCRT__exit;
 
-static int initialize_onexit_table(_onexit_table_t *table)
+static int initialize_onexit_table(MSVCRT__onexit_table_t *table)
 {
     if (!table)
         return -1;
@@ -66,7 +63,7 @@ static int initialize_onexit_table(_onexit_table_t *table)
     return 0;
 }
 
-static int register_onexit_function(_onexit_table_t *table, _onexit_t func)
+static int register_onexit_function(MSVCRT__onexit_table_t *table, MSVCRT__onexit_t func)
 {
     if (!table)
         return -1;
@@ -74,7 +71,7 @@ static int register_onexit_function(_onexit_table_t *table, _onexit_t func)
     EnterCriticalSection(&MSVCRT_onexit_cs);
     if (!table->_first)
     {
-        table->_first = calloc(32, sizeof(void *));
+        table->_first = MSVCRT_calloc(32, sizeof(void *));
         if (!table->_first)
         {
             WARN("failed to allocate initial table.\n");
@@ -89,7 +86,7 @@ static int register_onexit_function(_onexit_table_t *table, _onexit_t func)
     if (table->_last == table->_end)
     {
         int len = table->_end - table->_first;
-        _PVFV *tmp = realloc(table->_first, 2 * len * sizeof(void *));
+        MSVCRT__onexit_t *tmp = MSVCRT_realloc(table->_first, 2 * len * sizeof(void *));
         if (!tmp)
         {
             WARN("failed to grow table.\n");
@@ -101,16 +98,16 @@ static int register_onexit_function(_onexit_table_t *table, _onexit_t func)
         table->_last = table->_first + len;
     }
 
-    *table->_last = (_PVFV)func;
+    *table->_last = func;
     table->_last++;
     LeaveCriticalSection(&MSVCRT_onexit_cs);
     return 0;
 }
 
-static int execute_onexit_table(_onexit_table_t *table)
+static int execute_onexit_table(MSVCRT__onexit_table_t *table)
 {
-    _onexit_table_t copy;
-    _PVFV *func;
+    MSVCRT__onexit_t *func;
+    MSVCRT__onexit_table_t copy;
 
     if (!table)
         return -1;
@@ -134,7 +131,7 @@ static int execute_onexit_table(_onexit_table_t *table)
            (*func)();
     }
 
-    free(copy._first);
+    MSVCRT_free(copy._first);
     return 0;
 }
 
@@ -148,9 +145,9 @@ static void call_atexit(void)
 /*********************************************************************
  *		__dllonexit (MSVCRT.@)
  */
-_onexit_t CDECL __dllonexit(_onexit_t func, _onexit_t **start, _onexit_t **end)
+MSVCRT__onexit_t CDECL __dllonexit(MSVCRT__onexit_t func, MSVCRT__onexit_t **start, MSVCRT__onexit_t **end)
 {
-  _onexit_t *tmp;
+  MSVCRT__onexit_t *tmp;
   int len;
 
   TRACE("(%p,%p,%p)\n", func, start, end);
@@ -168,7 +165,7 @@ _onexit_t CDECL __dllonexit(_onexit_t func, _onexit_t **start, _onexit_t **end)
   if (++len <= 0)
     return NULL;
 
-  tmp = realloc(*start, len * sizeof(*tmp));
+  tmp = MSVCRT_realloc(*start, len * sizeof(*tmp));
   if (!tmp)
     return NULL;
   *start = tmp;
@@ -181,28 +178,33 @@ _onexit_t CDECL __dllonexit(_onexit_t func, _onexit_t **start, _onexit_t **end)
 /*********************************************************************
  *		_exit (MSVCRT.@)
  */
-void CDECL _exit(int exitcode)
+void CDECL MSVCRT__exit(int exitcode)
 {
   TRACE("(%d)\n", exitcode);
   ExitProcess(exitcode);
 }
 
 /* Print out an error message with an option to debug */
-static void DoMessageBoxW(const wchar_t *lead, const wchar_t *message)
+static void DoMessageBoxW(const MSVCRT_wchar_t *lead, const MSVCRT_wchar_t *message)
 {
+  static const MSVCRT_wchar_t message_format[] = {'%','l','s','\n','\n','P','r','o','g','r','a','m',':',' ','%','l','s','\n',
+    '%','l','s','\n','\n','P','r','e','s','s',' ','O','K',' ','t','o',' ','e','x','i','t',' ','t','h','e',' ',
+    'p','r','o','g','r','a','m',',',' ','o','r',' ','C','a','n','c','e','l',' ','t','o',' ','s','t','a','r','t',' ',
+    't','h','e',' ','W','i','n','e',' ','d','e','b','u','g','g','e','r','.','\n',0};
+  static const WCHAR title[] =
+    {'W','i','n','e',' ','C','+','+',' ','R','u','n','t','i','m','e',' ','L','i','b','r','a','r','y',0};
+
   MSGBOXPARAMSW msgbox;
-  wchar_t text[2048];
+  MSVCRT_wchar_t text[2048];
   INT ret;
 
-  _snwprintf(text, ARRAY_SIZE(text), L"%ls\n\nProgram: %ls\n%ls\n\n"
-          L"Press OK to exit the program, or Cancel to start the Wine debugger.\n",
-          lead, MSVCRT__wpgmptr, message);
+  MSVCRT__snwprintf(text, ARRAY_SIZE(text), message_format, lead, MSVCRT__wpgmptr, message);
 
   msgbox.cbSize = sizeof(msgbox);
   msgbox.hwndOwner = GetActiveWindow();
   msgbox.hInstance = 0;
   msgbox.lpszText = text;
-  msgbox.lpszCaption = L"Wine C++ Runtime Library";
+  msgbox.lpszCaption = title;
   msgbox.dwStyle = MB_OKCANCEL|MB_ICONERROR;
   msgbox.lpszIcon = NULL;
   msgbox.dwContextHelpId = 0;
@@ -216,10 +218,10 @@ static void DoMessageBoxW(const wchar_t *lead, const wchar_t *message)
 
 static void DoMessageBox(const char *lead, const char *message)
 {
-  wchar_t leadW[1024], messageW[1024];
+  MSVCRT_wchar_t leadW[1024], messageW[1024];
 
-  mbstowcs(leadW, lead, 1024);
-  mbstowcs(messageW, message, 1024);
+  MSVCRT_mbstowcs(leadW, lead, 1024);
+  MSVCRT_mbstowcs(messageW, message, 1024);
 
   DoMessageBoxW(leadW, messageW);
 }
@@ -231,8 +233,8 @@ void CDECL _amsg_exit(int errnum)
 {
   TRACE("(%d)\n", errnum);
 
-  if ((MSVCRT_error_mode == _OUT_TO_MSGBOX) ||
-     ((MSVCRT_error_mode == _OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
+  if ((MSVCRT_error_mode == MSVCRT__OUT_TO_MSGBOX) ||
+     ((MSVCRT_error_mode == MSVCRT__OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
   {
     char text[32];
     sprintf(text, "Error: R60%d",errnum);
@@ -246,35 +248,35 @@ void CDECL _amsg_exit(int errnum)
 /*********************************************************************
  *		abort (MSVCRT.@)
  */
-void CDECL abort(void)
+void CDECL MSVCRT_abort(void)
 {
   TRACE("()\n");
 
-  if (MSVCRT_abort_behavior & _WRITE_ABORT_MSG)
+  if (MSVCRT_abort_behavior & MSVCRT__WRITE_ABORT_MSG)
   {
-    if ((MSVCRT_error_mode == _OUT_TO_MSGBOX) ||
-       ((MSVCRT_error_mode == _OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
+    if ((MSVCRT_error_mode == MSVCRT__OUT_TO_MSGBOX) ||
+       ((MSVCRT_error_mode == MSVCRT__OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
     {
       DoMessageBox("Runtime error!", "abnormal program termination");
     }
     else
       _cputs("\nabnormal program termination\n");
   }
-  raise(SIGABRT);
+  MSVCRT_raise(MSVCRT_SIGABRT);
   /* in case raise() returns */
-  _exit(3);
+  MSVCRT__exit(3);
 }
 
 #if _MSVCR_VER>=80
 /*********************************************************************
  *		_set_abort_behavior (MSVCR80.@)
  */
-unsigned int CDECL _set_abort_behavior(unsigned int flags, unsigned int mask)
+unsigned int CDECL MSVCRT__set_abort_behavior(unsigned int flags, unsigned int mask)
 {
   unsigned int old = MSVCRT_abort_behavior;
 
   TRACE("%x, %x\n", flags, mask);
-  if (mask & _CALL_REPORTFAULT)
+  if (mask & MSVCRT__CALL_REPORTFAULT)
     FIXME("_WRITE_CALL_REPORTFAULT unhandled\n");
 
   MSVCRT_abort_behavior = (MSVCRT_abort_behavior & ~mask) | (flags & mask);
@@ -285,41 +287,47 @@ unsigned int CDECL _set_abort_behavior(unsigned int flags, unsigned int mask)
 /*********************************************************************
  *              _wassert (MSVCRT.@)
  */
-void CDECL _wassert(const wchar_t* str, const wchar_t* file, unsigned int line)
+void CDECL MSVCRT__wassert(const MSVCRT_wchar_t* str, const MSVCRT_wchar_t* file, unsigned int line)
 {
+  static const MSVCRT_wchar_t assertion_failed[] = {'A','s','s','e','r','t','i','o','n',' ','f','a','i','l','e','d','!',0};
+  static const MSVCRT_wchar_t format_msgbox[] = {'F','i','l','e',':',' ','%','l','s','\n','L','i','n','e',':',' ','%','d',
+      '\n','\n','E','x','p','r','e','s','s','i','o','n',':',' ','\"','%','l','s','\"',0};
+  static const MSVCRT_wchar_t format_console[] = {'A','s','s','e','r','t','i','o','n',' ','f','a','i','l','e','d',':',' ',
+      '%','l','s',',',' ','f','i','l','e',' ','%','l','s',',',' ','l','i','n','e',' ','%','d','\n','\n',0};
+
   TRACE("(%s,%s,%d)\n", debugstr_w(str), debugstr_w(file), line);
 
-  if ((MSVCRT_error_mode == _OUT_TO_MSGBOX) ||
-     ((MSVCRT_error_mode == _OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
+  if ((MSVCRT_error_mode == MSVCRT__OUT_TO_MSGBOX) ||
+     ((MSVCRT_error_mode == MSVCRT__OUT_TO_DEFAULT) && (MSVCRT_app_type == 2)))
   {
-    wchar_t text[2048];
-    _snwprintf(text, sizeof(text), L"File: %ls\nLine: %d\n\nExpression: \"%ls\"", file, line, str);
-    DoMessageBoxW(L"Assertion failed!", text);
+    MSVCRT_wchar_t text[2048];
+    MSVCRT__snwprintf(text, sizeof(text), format_msgbox, file, line, str);
+    DoMessageBoxW(assertion_failed, text);
   }
   else
-    fwprintf(MSVCRT_stderr, L"Assertion failed: %ls, file %ls, line %d\n\n", str, file, line);
+    _cwprintf(format_console, str, file, line);
 
-  raise(SIGABRT);
-  _exit(3);
+  MSVCRT_raise(MSVCRT_SIGABRT);
+  MSVCRT__exit(3);
 }
 
 /*********************************************************************
  *		_assert (MSVCRT.@)
  */
-void CDECL _assert(const char* str, const char* file, unsigned int line)
+void CDECL MSVCRT__assert(const char* str, const char* file, unsigned int line)
 {
-    wchar_t strW[1024], fileW[1024];
+    MSVCRT_wchar_t strW[1024], fileW[1024];
 
-    mbstowcs(strW, str, 1024);
-    mbstowcs(fileW, file, 1024);
+    MSVCRT_mbstowcs(strW, str, 1024);
+    MSVCRT_mbstowcs(fileW, file, 1024);
 
-    _wassert(strW, fileW, line);
+    MSVCRT__wassert(strW, fileW, line);
 }
 
 /*********************************************************************
  *		_c_exit (MSVCRT.@)
  */
-void CDECL _c_exit(void)
+void CDECL MSVCRT__c_exit(void)
 {
   TRACE("(void)\n");
   /* All cleanup is done on DLL detach; Return to caller */
@@ -328,7 +336,7 @@ void CDECL _c_exit(void)
 /*********************************************************************
  *		_cexit (MSVCRT.@)
  */
-void CDECL _cexit(void)
+void CDECL MSVCRT__cexit(void)
 {
   TRACE("(void)\n");
   LOCK_EXIT;
@@ -339,7 +347,7 @@ void CDECL _cexit(void)
 /*********************************************************************
  *		_onexit (MSVCRT.@)
  */
-_onexit_t CDECL _onexit(_onexit_t func)
+MSVCRT__onexit_t CDECL MSVCRT__onexit(MSVCRT__onexit_t func)
 {
   TRACE("(%p)\n",func);
 
@@ -356,15 +364,16 @@ _onexit_t CDECL _onexit(_onexit_t func)
 /*********************************************************************
  *		exit (MSVCRT.@)
  */
-void CDECL exit(int exitcode)
+void CDECL MSVCRT_exit(int exitcode)
 {
   HMODULE hmscoree;
+  static const WCHAR mscoreeW[] = {'m','s','c','o','r','e','e',0};
   void (WINAPI *pCorExitProcess)(int);
 
   TRACE("(%d)\n",exitcode);
-  _cexit();
+  MSVCRT__cexit();
 
-  hmscoree = GetModuleHandleW(L"mscoree");
+  hmscoree = GetModuleHandleW(mscoreeW);
 
   if (hmscoree)
   {
@@ -383,45 +392,45 @@ void CDECL exit(int exitcode)
 int CDECL MSVCRT_atexit(void (__cdecl *func)(void))
 {
   TRACE("(%p)\n", func);
-  return _onexit((_onexit_t)func) == (_onexit_t)func ? 0 : -1;
+  return MSVCRT__onexit((MSVCRT__onexit_t)func) == (MSVCRT__onexit_t)func ? 0 : -1;
 }
 
 #if _MSVCR_VER >= 140
-static _onexit_table_t MSVCRT_quick_exit_table;
+static MSVCRT__onexit_table_t MSVCRT_quick_exit_table;
 
 /*********************************************************************
  *             _crt_at_quick_exit (UCRTBASE.@)
  */
-int CDECL _crt_at_quick_exit(void (__cdecl *func)(void))
+int CDECL MSVCRT__crt_at_quick_exit(void (__cdecl *func)(void))
 {
   TRACE("(%p)\n", func);
-  return register_onexit_function(&MSVCRT_quick_exit_table, (_onexit_t)func);
+  return register_onexit_function(&MSVCRT_quick_exit_table, (MSVCRT__onexit_t)func);
 }
 
 /*********************************************************************
  *             quick_exit (UCRTBASE.@)
  */
-void CDECL quick_exit(int exitcode)
+void CDECL MSVCRT_quick_exit(int exitcode)
 {
   TRACE("(%d)\n", exitcode);
 
   execute_onexit_table(&MSVCRT_quick_exit_table);
-  _exit(exitcode);
+  MSVCRT__exit(exitcode);
 }
 
 /*********************************************************************
  *		_crt_atexit (UCRTBASE.@)
  */
-int CDECL _crt_atexit(void (__cdecl *func)(void))
+int CDECL MSVCRT__crt_atexit(void (__cdecl *func)(void))
 {
   TRACE("(%p)\n", func);
-  return _onexit((_onexit_t)func) == (_onexit_t)func ? 0 : -1;
+  return MSVCRT__onexit((MSVCRT__onexit_t)func) == (MSVCRT__onexit_t)func ? 0 : -1;
 }
 
 /*********************************************************************
  *		_initialize_onexit_table (UCRTBASE.@)
  */
-int CDECL _initialize_onexit_table(_onexit_table_t *table)
+int CDECL MSVCRT__initialize_onexit_table(MSVCRT__onexit_table_t *table)
 {
     TRACE("(%p)\n", table);
 
@@ -431,7 +440,7 @@ int CDECL _initialize_onexit_table(_onexit_table_t *table)
 /*********************************************************************
  *		_register_onexit_function (UCRTBASE.@)
  */
-int CDECL _register_onexit_function(_onexit_table_t *table, _onexit_t func)
+int CDECL MSVCRT__register_onexit_function(MSVCRT__onexit_table_t *table, MSVCRT__onexit_t func)
 {
     TRACE("(%p %p)\n", table, func);
 
@@ -441,7 +450,7 @@ int CDECL _register_onexit_function(_onexit_table_t *table, _onexit_t func)
 /*********************************************************************
  *		_execute_onexit_table (UCRTBASE.@)
  */
-int CDECL _execute_onexit_table(_onexit_table_t *table)
+int CDECL MSVCRT__execute_onexit_table(MSVCRT__onexit_table_t *table)
 {
     TRACE("(%p)\n", table);
 
@@ -462,9 +471,9 @@ void CDECL _register_thread_local_exe_atexit_callback(_tls_callback_type callbac
 /*********************************************************************
  *		_set_purecall_handler (MSVCR71.@)
  */
-_purecall_handler CDECL _set_purecall_handler(_purecall_handler function)
+MSVCRT_purecall_handler CDECL _set_purecall_handler(MSVCRT_purecall_handler function)
 {
-    _purecall_handler ret = purecall_handler;
+    MSVCRT_purecall_handler ret = purecall_handler;
 
     TRACE("(%p)\n", function);
     purecall_handler = function;
@@ -476,7 +485,7 @@ _purecall_handler CDECL _set_purecall_handler(_purecall_handler function)
 /*********************************************************************
  *		_get_purecall_handler (MSVCR80.@)
  */
-_purecall_handler CDECL _get_purecall_handler(void)
+MSVCRT_purecall_handler CDECL _get_purecall_handler(void)
 {
     TRACE("\n");
     return purecall_handler;
@@ -511,7 +520,7 @@ int CDECL _set_error_mode(int mode)
 {
 
   const int old = MSVCRT_error_mode;
-  if ( _REPORT_ERRMODE != mode ) {
+  if ( MSVCRT__REPORT_ERRMODE != mode ) {
     MSVCRT_error_mode = mode;
   }
   return old;

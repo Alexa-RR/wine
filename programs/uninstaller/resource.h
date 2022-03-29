@@ -19,7 +19,6 @@
  */
 
 #include <windef.h>
-#include <winuser.h>
 
 #define IDS_APPNAME                     1000
 #define IDS_UNINSTALLFAILED             1001

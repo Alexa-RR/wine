@@ -111,7 +111,7 @@
 extern "C" {
 #endif
 
-_ACRTIMP int* __cdecl _errno(void);
+extern int* __cdecl _errno(void);
 
 #ifdef __cplusplus
 }

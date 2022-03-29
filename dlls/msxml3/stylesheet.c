@@ -20,9 +20,13 @@
 
 #define COBJMACROS
 
+#include "config.h"
+
 #include <stdarg.h>
-#include <libxml/parser.h>
-#include <libxml/xmlerror.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+# include <libxml/xmlerror.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -139,7 +143,7 @@ static ULONG WINAPI xsltemplate_AddRef( IXSLTemplate *iface )
 {
     xsltemplate *This = impl_from_IXSLTemplate( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -148,7 +152,7 @@ static ULONG WINAPI xsltemplate_Release( IXSLTemplate *iface )
     xsltemplate *This = impl_from_IXSLTemplate( iface );
     ULONG ref = InterlockedDecrement( &This->ref );
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     if ( ref == 0 )
     {
         if (This->node) IXMLDOMNode_Release( This->node );
@@ -317,7 +321,7 @@ static ULONG WINAPI xslprocessor_AddRef( IXSLProcessor *iface )
 {
     xslprocessor *This = impl_from_IXSLProcessor( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -326,7 +330,7 @@ static ULONG WINAPI xslprocessor_Release( IXSLProcessor *iface )
     xslprocessor *This = impl_from_IXSLProcessor( iface );
     ULONG ref = InterlockedDecrement( &This->ref );
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     if ( ref == 0 )
     {
         struct xslprocessor_par *par, *par2;
@@ -400,7 +404,7 @@ static HRESULT WINAPI xslprocessor_put_input( IXSLProcessor *iface, VARIANT inpu
     {
         IXMLDOMDocument *doc;
 
-        hr = dom_document_create(MSXML_DEFAULT, (void **)&doc);
+        hr = DOMDocument_create(MSXML_DEFAULT, (void**)&doc);
         if (hr == S_OK)
         {
             VARIANT_BOOL b;
@@ -509,7 +513,7 @@ static HRESULT WINAPI xslprocessor_put_output(
         if (FAILED(hr))
         {
             output_type = PROCESSOR_OUTPUT_NOT_SET;
-            WARN("failed to get output interface, hr %#lx.\n", hr);
+            WARN("failed to get output interface, 0x%08x\n", hr);
         }
         break;
     default:
@@ -559,6 +563,7 @@ static HRESULT WINAPI xslprocessor_transform(
     IXSLProcessor *iface,
     VARIANT_BOOL  *ret)
 {
+#ifdef HAVE_LIBXML2
     xslprocessor *This = impl_from_IXSLProcessor( iface );
     ISequentialStream *stream = NULL;
     HRESULT hr;
@@ -645,6 +650,10 @@ static HRESULT WINAPI xslprocessor_transform(
 
     *ret = hr == S_OK ? VARIANT_TRUE : VARIANT_FALSE;
     return hr;
+#else
+    FIXME("libxml2 is required but wasn't present at compile time\n");
+    return E_NOTIMPL;
+#endif
 }
 
 static HRESULT WINAPI xslprocessor_reset( IXSLProcessor *iface )
@@ -704,7 +713,7 @@ static HRESULT WINAPI xslprocessor_addParameter(
     /* search for existing parameter first */
     LIST_FOR_EACH_ENTRY(cur, &This->params.list, struct xslprocessor_par, entry)
     {
-        if (!wcscmp(cur->name, p))
+        if (!strcmpW(cur->name, p))
         {
             par = cur;
             break;

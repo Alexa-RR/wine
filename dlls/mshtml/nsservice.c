@@ -126,6 +126,8 @@ static nsresult NSAPI nsPromptService_ConfirmEx(nsIPromptService *iface,
         const PRUnichar *aButton1Title, const PRUnichar *aButton2Title,
         const PRUnichar *aCheckMsg, cpp_bool *aCheckState, LONG *_retval)
 {
+    static const PRUnichar wszContinue[] = {'C','o','n','t','i','n','u','e',0};
+
     FIXME("(%p %s %s %08x %s %s %s %s %p %p) hack!\n", aParent, debugstr_w(aDialogTitle),
           debugstr_w(aText), aButtonFlags, debugstr_w(aButton0Title),
           debugstr_w(aButton1Title), debugstr_w(aButton2Title), debugstr_w(aCheckMsg),
@@ -136,11 +138,11 @@ static nsresult NSAPI nsPromptService_ConfirmEx(nsIPromptService *iface,
      * This is really very very ugly hack!!!
      */
 
-    if(aButton0Title && !memcmp(aButton0Title, L"Continue", sizeof(L"Continue")))
+    if(aButton0Title && !memcmp(aButton0Title, wszContinue, sizeof(wszContinue)))
         *_retval = 0;
-    else if(aButton1Title && !memcmp(aButton1Title, L"Continue", sizeof(L"Continue")))
+    else if(aButton1Title && !memcmp(aButton1Title, wszContinue, sizeof(wszContinue)))
         *_retval = 1;
-    else if(aButton2Title && !memcmp(aButton2Title, L"Continue", sizeof(L"Continue")))
+    else if(aButton2Title && !memcmp(aButton2Title, wszContinue, sizeof(wszContinue)))
         *_retval = 2;
     /* else
      *     let's hope that _retval is set to the default value */
@@ -388,11 +390,11 @@ void register_nsservice(nsIComponentRegistrar *registrar, nsIServiceManager *ser
     nsres = nsIComponentRegistrar_RegisterFactory(registrar, &NS_PROMPTSERVICE_CID,
             "Prompt Service", NS_PROMPTSERVICE_CONTRACTID, &nsPromptServiceFactory.nsIFactory_iface);
     if(NS_FAILED(nsres))
-        ERR("RegisterFactory failed: %08lx\n", nsres);
+        ERR("RegisterFactory failed: %08x\n", nsres);
 
     nsres = nsIComponentRegistrar_RegisterFactory(registrar, &NS_TOOLTIPTEXTPROVIDER_CID,
             NS_TOOLTIPTEXTPROVIDER_CLASSNAME, NS_TOOLTIPTEXTPROVIDER_CONTRACTID,
             &nsTooltipTextFactory.nsIFactory_iface);
     if(NS_FAILED(nsres))
-        ERR("RegisterFactory failed: %08lx\n", nsres);
+        ERR("RegisterFactory failed: %08x\n", nsres);
 }

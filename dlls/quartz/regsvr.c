@@ -86,8 +86,8 @@ static HRESULT register_filters(struct regsvr_filter const *list)
 	    for (i = 0; list->pins[i].flags != 0xFFFFFFFF; i++) ;
 	    rf2.dwVersion = 2;
 	    rf2.dwMerit = list->merit;
-	    rf2.cPins2 = i;
-	    rf2.rgPins2 = prfp2 = CoTaskMemAlloc(i*sizeof(REGFILTERPINS2));
+	    rf2.u.s2.cPins2 = i;
+	    rf2.u.s2.rgPins2 = prfp2 = CoTaskMemAlloc(i*sizeof(REGFILTERPINS2));
 	    if (!prfp2) {
 		hr = E_OUTOFMEMORY;
 		break;
@@ -127,7 +127,7 @@ static HRESULT register_filters(struct regsvr_filter const *list)
 	    }
 
 	    if (FAILED(hr)) {
-		ERR("failed to register with hresult %#lx\n", hr);
+		ERR("failed to register with hresult 0x%x\n", hr);
 		CoTaskMemFree(prfp2);
 		break;
 	    }
@@ -189,7 +189,19 @@ static struct regsvr_filter const filter_list[] = {
     {   &CLSID_VideoRendererDefault,
         &CLSID_LegacyAmFilterCategory,
         L"Video Renderer",
-        0x800001,
+        0x800000,
+        {   {   REG_PINFLAG_B_RENDERER,
+                {   { &MEDIATYPE_Video, &GUID_NULL },
+                    { NULL }
+                },
+            },
+            { 0xFFFFFFFF },
+        }
+    },
+    {   &CLSID_VideoMixingRenderer,
+        &CLSID_LegacyAmFilterCategory,
+        L"Video Mixing Renderer",
+        0x200000,
         {   {   REG_PINFLAG_B_RENDERER,
                 {   { &MEDIATYPE_Video, &GUID_NULL },
                     { NULL }
@@ -204,6 +216,32 @@ static struct regsvr_filter const filter_list[] = {
         0x200000,
         {   {   REG_PINFLAG_B_RENDERER,
                 {   { &MEDIATYPE_Video, &GUID_NULL },
+                    { NULL }
+                },
+            },
+            { 0xFFFFFFFF },
+        }
+    },
+    {   &CLSID_DSoundRender,
+        &CLSID_LegacyAmFilterCategory,
+        L"Audio Renderer",
+        0x800000,
+        {   {   REG_PINFLAG_B_RENDERER,
+                {   { &MEDIATYPE_Audio, &MEDIASUBTYPE_PCM },
+/*                  { &MEDIATYPE_Audio, &MEDIASUBTYPE_IEEE_FLOAT }, */
+                    { NULL }
+                },
+            },
+            { 0xFFFFFFFF },
+        }
+    },
+    {   &CLSID_AudioRender,
+        &CLSID_LegacyAmFilterCategory,
+        L"Audio Renderer",
+        0x800000,
+        {   {   REG_PINFLAG_B_RENDERER,
+                {   { &MEDIATYPE_Audio, &MEDIASUBTYPE_PCM },
+/*                  { &MEDIATYPE_Audio, &MEDIASUBTYPE_IEEE_FLOAT }, */
                     { NULL }
                 },
             },

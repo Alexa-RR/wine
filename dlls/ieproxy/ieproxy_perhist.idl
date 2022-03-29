@@ -25,6 +25,6 @@
 
 [
     threading(both),
-    uuid(a4a1a128-768f-41e0-bf75-e4fddd701cba)
+    uuid(a4a1a128-768f-41e0-bf75-e4fddd701cba)  /* IInternetExplorerManager */
 ]
 coclass PSFactoryBuffer { interface IFactoryBuffer; }

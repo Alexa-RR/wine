@@ -21,9 +21,13 @@
 
 #define COBJMACROS
 
+#include "config.h"
+
 #include <stdarg.h>
-#include <libxml/parser.h>
-#include <libxml/xmlerror.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+# include <libxml/xmlerror.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -195,22 +199,20 @@ static inline DOMFactory *DOMFactory_from_IClassFactory(IClassFactory *iface)
 
 static ULONG WINAPI DOMClassFactory_AddRef(IClassFactory *iface )
 {
-    DOMFactory *factory = DOMFactory_from_IClassFactory(iface);
-    ULONG ref = InterlockedIncrement(&factory->ref);
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    DOMFactory *This = DOMFactory_from_IClassFactory(iface);
+    ULONG ref = InterlockedIncrement(&This->ref);
+    TRACE("(%p) ref = %u\n", This, ref);
     return ref;
 }
 
 static ULONG WINAPI DOMClassFactory_Release(IClassFactory *iface )
 {
-    DOMFactory *factory = DOMFactory_from_IClassFactory(iface);
-    ULONG ref = InterlockedDecrement(&factory->ref);
-
-    TRACE("%p, refcount %lu.\n", iface, ref);
-
-    if (!ref)
-        heap_free(factory);
-
+    DOMFactory *This = DOMFactory_from_IClassFactory(iface);
+    ULONG ref = InterlockedDecrement(&This->ref);
+    TRACE("(%p) ref = %u\n", This, ref);
+    if(!ref) {
+        heap_free(This);
+    }
     return ref;
 }
 
@@ -300,7 +302,7 @@ HRESULT WINAPI DllGetClassObject( REFCLSID rclsid, REFIID riid, void **ppv )
         IsEqualCLSID( rclsid, &CLSID_DOMDocument40 )||  /* Version dep.   v 4.0 */
         IsEqualCLSID( rclsid, &CLSID_DOMDocument60 ))   /* Version dep.   v 6.0 */
     {
-        return DOMClassFactory_Create(rclsid, riid, ppv, dom_document_create);
+        return DOMClassFactory_Create(rclsid, riid, ppv, DOMDocument_create);
     }
     else if( IsEqualCLSID( rclsid, &CLSID_XMLSchemaCache )   ||
              IsEqualCLSID( rclsid, &CLSID_XMLSchemaCache26 ) ||
@@ -321,7 +323,7 @@ HRESULT WINAPI DllGetClassObject( REFCLSID rclsid, REFIID riid, void **ppv )
              IsEqualCLSID( rclsid, &CLSID_FreeThreadedDOMDocument40 ) ||
              IsEqualCLSID( rclsid, &CLSID_FreeThreadedDOMDocument60 ))
     {
-        return DOMClassFactory_Create(rclsid, riid, ppv, dom_document_create);
+        return DOMClassFactory_Create(rclsid, riid, ppv, DOMDocument_create);
     }
     else if( IsEqualCLSID( rclsid, &CLSID_SAXXMLReader) ||
              IsEqualCLSID( rclsid, &CLSID_SAXXMLReader30 ) ||

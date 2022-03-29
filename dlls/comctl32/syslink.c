@@ -165,6 +165,10 @@ static VOID SYSLINK_ClearDoc (SYSLINK_INFO *infoPtr)
  */
 static UINT SYSLINK_ParseText (SYSLINK_INFO *infoPtr, LPCWSTR Text)
 {
+    static const WCHAR SL_LINKOPEN[] =  { '<','a' };
+    static const WCHAR SL_HREF[] =      { 'h','r','e','f','=','\"' };
+    static const WCHAR SL_ID[] =        { 'i','d','=','\"' };
+    static const WCHAR SL_LINKCLOSE[] = { '<','/','a','>' };
     LPCWSTR current, textstart = NULL, linktext = NULL, firsttag = NULL;
     int taglen = 0, textlen = 0, linklen = 0, docitems = 0;
     PDOC_ITEM Last = NULL;
@@ -178,7 +182,7 @@ static UINT SYSLINK_ParseText (SYSLINK_INFO *infoPtr, LPCWSTR Text)
     {
         if(*current == '<')
         {
-            if(!wcsnicmp(current, L"<a", 2) && (CurrentType == slText))
+            if(!wcsnicmp(current, SL_LINKOPEN, ARRAY_SIZE(SL_LINKOPEN)) && (CurrentType == slText))
             {
                 BOOL ValidParam = FALSE, ValidLink = FALSE;
 
@@ -206,14 +210,14 @@ static UINT SYSLINK_ParseText (SYSLINK_INFO *infoPtr, LPCWSTR Text)
                     
 CheckParameter:
                     /* compare the current position with all known parameters */
-                    if(!wcsnicmp(tmp, L"href=\"", 6))
+                    if(!wcsnicmp(tmp, SL_HREF, ARRAY_SIZE(SL_HREF)))
                     {
                         taglen += 6;
                         ValidParam = TRUE;
                         CurrentParameter = &lpUrl;
                         CurrentParameterLen = &lenUrl;
                     }
-                    else if(!wcsnicmp(tmp, L"id=\"", 4))
+                    else if(!wcsnicmp(tmp, SL_ID, ARRAY_SIZE(SL_ID)))
                     {
                         taglen += 4;
                         ValidParam = TRUE;
@@ -287,7 +291,7 @@ CheckParameter:
                     }
                 }
             }
-            else if (!wcsnicmp(current, L"</a>", 4) && (CurrentType == slLink) && firsttag)
+            else if(!wcsnicmp(current, SL_LINKCLOSE, ARRAY_SIZE(SL_LINKCLOSE)) && (CurrentType == slLink) && firsttag)
             {
                 /* there's a <a...> tag opened, first add the previous text, if present */
                 if(textstart != NULL && textlen > 0 && firsttag > textstart)
@@ -1497,7 +1501,7 @@ static LRESULT WINAPI SysLinkWindowProc(HWND hwnd, UINT message,
 {
     SYSLINK_INFO *infoPtr;
 
-    TRACE("hwnd %p, msg %04x, wparam %Ix, lParam %Ix\n", hwnd, message, wParam, lParam);
+    TRACE("hwnd=%p msg=%04x wparam=%lx lParam=%lx\n", hwnd, message, wParam, lParam);
 
     infoPtr = (SYSLINK_INFO *)GetWindowLongPtrW(hwnd, 0);
 
@@ -1726,7 +1730,7 @@ static LRESULT WINAPI SysLinkWindowProc(HWND hwnd, UINT message,
     default:
         if ((message >= WM_USER) && (message < WM_APP) && !COMCTL32_IsReflectedMessage(message))
         {
-            ERR("unknown msg %04x, wp %Ix, lp %Ix\n", message, wParam, lParam );
+            ERR("unknown msg %04x wp=%04lx lp=%08lx\n", message, wParam, lParam );
         }
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }

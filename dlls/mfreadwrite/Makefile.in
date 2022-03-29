@@ -2,7 +2,7 @@ MODULE    = mfreadwrite.dll
 IMPORTLIB = mfreadwrite
 IMPORTS   = mfuuid uuid mfplat ole32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	reader.c \

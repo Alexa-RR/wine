@@ -18,6 +18,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <assert.h>
 
 #define COBJMACROS
 
@@ -64,23 +65,27 @@ HTMLOuterWindow *get_target_window(HTMLOuterWindow *window, nsAString *target_st
     const PRUnichar *target;
     HRESULT hres;
 
+    static const WCHAR _parentW[] = {'_','p','a','r','e','n','t',0};
+    static const WCHAR _selfW[] = {'_','s','e','l','f',0};
+    static const WCHAR _topW[] = {'_','t','o','p',0};
+
     *use_new_window = FALSE;
 
     nsAString_GetData(target_str, &target);
     TRACE("%s\n", debugstr_w(target));
 
-    if(!*target || !wcsicmp(target, L"_self")) {
+    if(!*target || !wcsicmp(target, _selfW)) {
         IHTMLWindow2_AddRef(&window->base.IHTMLWindow2_iface);
         return window;
     }
 
-    if(!wcsicmp(target, L"_top")) {
+    if(!wcsicmp(target, _topW)) {
         get_top_window(window, &top_window);
         IHTMLWindow2_AddRef(&top_window->base.IHTMLWindow2_iface);
         return top_window;
     }
 
-    if(!wcsicmp(target, L"_parent")) {
+    if(!wcsicmp(target, _parentW)) {
         if(!window->parent) {
             WARN("Window has no parent, treat as self\n");
             IHTMLWindow2_AddRef(&window->base.IHTMLWindow2_iface);
@@ -183,7 +188,7 @@ static IUri *get_anchor_uri(HTMLAnchorElement *anchor)
         nsAString_GetData(&href_str, &href);
         create_uri(href, 0, &uri);
     }else {
-        ERR("GetHref failed: %08lx\n", nsres);
+        ERR("GetHref failed: %08x\n", nsres);
     }
 
     nsAString_Finish(&href_str);
@@ -283,7 +288,7 @@ static HRESULT WINAPI HTMLAnchorElement_get_href(IHTMLAnchorElement *iface, BSTR
         nsAString_GetData(&href_str, &href);
         hres = nsuri_to_url(href, TRUE, p);
     }else {
-        ERR("GetHref failed: %08lx\n", nsres);
+        ERR("GetHref failed: %08x\n", nsres);
         hres = E_FAIL;
     }
 
@@ -476,15 +481,8 @@ static HRESULT WINAPI HTMLAnchorElement_put_pathname(IHTMLAnchorElement *iface, 
 static HRESULT WINAPI HTMLAnchorElement_get_pathname(IHTMLAnchorElement *iface, BSTR *p)
 {
     HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    nsAString pathname_str;
-    nsresult nsres;
-
-    TRACE("(%p)->(%p)\n", This, p);
-
-    /* FIXME: IE prepends a slash for some protocols */
-    nsAString_Init(&pathname_str, NULL);
-    nsres = nsIDOMHTMLAnchorElement_GetPathname(This->nsanchor, &pathname_str);
-    return return_nsstr(nsres, &pathname_str, p);
+    FIXME("(%p)->(%p)\n", This, p);
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI HTMLAnchorElement_put_port(IHTMLAnchorElement *iface, BSTR v)
@@ -497,35 +495,8 @@ static HRESULT WINAPI HTMLAnchorElement_put_port(IHTMLAnchorElement *iface, BSTR
 static HRESULT WINAPI HTMLAnchorElement_get_port(IHTMLAnchorElement *iface, BSTR *p)
 {
     HTMLAnchorElement *This = impl_from_IHTMLAnchorElement(iface);
-    IUri *uri;
-    HRESULT hres;
-    DWORD port;
-    WCHAR buf[11];
-    int len;
-    BSTR str;
-
-    TRACE("(%p)->(%p)\n", This, p);
-
-    uri = get_anchor_uri(This);
-    if(!uri) {
-        WARN("Could not create IUri\n");
-        *p = NULL;
-        return S_OK;
-    }
-
-    hres = IUri_GetPort(uri, &port);
-    IUri_Release(uri);
-    if(FAILED(hres))
-        return hres;
-
-    len = swprintf(buf, ARRAY_SIZE(buf), L"%u", port);
-    str = SysAllocStringLen(buf, len);
-    if (str)
-        *p = str;
-    else
-        hres = E_OUTOFMEMORY;
-
-    return hres;
+    FIXME("(%p)->(%p)\n", This, p);
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI HTMLAnchorElement_put_protocol(IHTMLAnchorElement *iface, BSTR v)
@@ -823,14 +794,14 @@ static HRESULT HTMLAnchorElement_handle_event(HTMLDOMNode *iface, DWORD eid, nsI
         nsAString_Init(&href_str, NULL);
         nsres = nsIDOMHTMLAnchorElement_GetHref(This->nsanchor, &href_str);
         if (NS_FAILED(nsres)) {
-            ERR("Could not get anchor href: %08lx\n", nsres);
+            ERR("Could not get anchor href: %08x\n", nsres);
             goto fallback;
         }
 
         nsAString_Init(&target_str, NULL);
         nsres = nsIDOMHTMLAnchorElement_GetTarget(This->nsanchor, &target_str);
         if (NS_FAILED(nsres)) {
-            ERR("Could not get anchor target: %08lx\n", nsres);
+            ERR("Could not get anchor target: %08x\n", nsres);
             goto fallback;
         }
 
@@ -891,7 +862,6 @@ static const tid_t HTMLAnchorElement_iface_tids[] = {
 };
 
 static dispex_static_data_t HTMLAnchorElement_dispex = {
-    L"HTMLAnchorElement",
     NULL,
     DispHTMLAnchorElement_tid,
     HTMLAnchorElement_iface_tids,

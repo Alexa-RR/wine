@@ -34,7 +34,18 @@
  *	  whole stuff did not work anyway to other changes).
  */
 
-#include "ws2_32_private.h"
+#include "config.h"
+#include "wine/port.h"
+
+#include <stdarg.h>
+#include "windef.h"
+#include "winbase.h"
+#include "wingdi.h"
+#include "winuser.h"
+#include "winsock2.h"
+#include "ws2spi.h"
+
+#include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(winsock);
 
@@ -120,15 +131,15 @@ static int list_dup(char** l_src, char* ref, int item_size)
 
 /* ----- hostent */
 
-static LPARAM copy_he(void *base, int size, const struct hostent *he)
+static LPARAM copy_he(void *base, int size, const struct WS_hostent *he)
 {
     char *p;
     int needed;
-    struct hostent *to = base;
+    struct WS_hostent *to = base;
 
     if (!he) return MAKELPARAM( 0, GetLastError() );
 
-    needed = sizeof(struct hostent) + strlen(he->h_name) + 1 +
+    needed = sizeof(struct WS_hostent) + strlen(he->h_name) + 1 +
                  list_size(he->h_aliases, 0) +
                  list_size(he->h_addr_list, he->h_length );
     if (size < needed) return MAKELPARAM( needed, WSAENOBUFS );
@@ -148,7 +159,7 @@ static LPARAM copy_he(void *base, int size, const struct hostent *he)
 static LPARAM async_gethostbyname( struct async_query_header *query )
 {
     struct async_query_gethostbyname *aq = CONTAINING_RECORD( query, struct async_query_gethostbyname, query );
-    struct hostent *he = gethostbyname( aq->host_name );
+    struct WS_hostent *he = WS_gethostbyname( aq->host_name );
 
     return copy_he( query->sbuf, query->sbuflen, he );
 }
@@ -156,22 +167,22 @@ static LPARAM async_gethostbyname( struct async_query_header *query )
 static LPARAM async_gethostbyaddr( struct async_query_header *query )
 {
     struct async_query_gethostbyaddr *aq = CONTAINING_RECORD( query, struct async_query_gethostbyaddr, query );
-    struct hostent *he = gethostbyaddr( aq->host_addr, aq->host_len, aq->host_type );
+    struct WS_hostent *he = WS_gethostbyaddr( aq->host_addr, aq->host_len, aq->host_type );
 
     return copy_he( query->sbuf, query->sbuflen, he );
 }
 
 /* ----- protoent */
 
-static LPARAM copy_pe( void *base, int size, const struct protoent *pe )
+static LPARAM copy_pe(void *base, int size, const struct WS_protoent* pe)
 {
     char *p;
     int needed;
-    struct protoent *to = base;
+    struct WS_protoent *to = base;
 
     if (!pe) return MAKELPARAM( 0, GetLastError() );
 
-    needed = sizeof(struct protoent) + strlen( pe->p_name ) + 1 + list_size( pe->p_aliases, 0 );
+    needed = sizeof(struct WS_protoent) + strlen(pe->p_name) + 1 + list_size(pe->p_aliases, 0);
     if (size < needed) return MAKELPARAM( needed, WSAENOBUFS );
 
     to->p_proto = pe->p_proto;
@@ -186,7 +197,7 @@ static LPARAM copy_pe( void *base, int size, const struct protoent *pe )
 static LPARAM async_getprotobyname( struct async_query_header *query )
 {
     struct async_query_getprotobyname *aq = CONTAINING_RECORD( query, struct async_query_getprotobyname, query );
-    struct protoent *pe = getprotobyname( aq->proto_name );
+    struct WS_protoent *pe = WS_getprotobyname( aq->proto_name );
 
     return copy_pe( query->sbuf, query->sbuflen, pe );
 }
@@ -194,22 +205,22 @@ static LPARAM async_getprotobyname( struct async_query_header *query )
 static LPARAM async_getprotobynumber( struct async_query_header *query )
 {
     struct async_query_getprotobynumber *aq = CONTAINING_RECORD( query, struct async_query_getprotobynumber, query );
-    struct protoent *pe = getprotobynumber( aq->proto_number );
+    struct WS_protoent *pe = WS_getprotobynumber( aq->proto_number );
 
     return copy_pe( query->sbuf, query->sbuflen, pe );
 }
 
 /* ----- servent */
 
-static LPARAM copy_se( void *base, int size, const struct servent *se )
+static LPARAM copy_se(void *base, int size, const struct WS_servent* se)
 {
     char *p;
     int needed;
-    struct servent *to = base;
+    struct WS_servent *to = base;
 
     if (!se) return MAKELPARAM( 0, GetLastError() );
 
-    needed = sizeof(struct servent) + strlen( se->s_proto ) + strlen( se->s_name ) + 2 + list_size( se->s_aliases, 0 );
+    needed = sizeof(struct WS_servent) + strlen(se->s_proto) + strlen(se->s_name) + 2 + list_size(se->s_aliases, 0);
     if (size < needed) return MAKELPARAM( needed, WSAENOBUFS );
 
     to->s_port = se->s_port;
@@ -226,7 +237,7 @@ static LPARAM copy_se( void *base, int size, const struct servent *se )
 static LPARAM async_getservbyname( struct async_query_header *query )
 {
     struct async_query_getservbyname *aq = CONTAINING_RECORD( query, struct async_query_getservbyname, query );
-    struct servent *se = getservbyname( aq->serv_name, aq->serv_proto );
+    struct WS_servent *se = WS_getservbyname( aq->serv_name, aq->serv_proto );
 
     return copy_se( query->sbuf, query->sbuflen, se );
 }
@@ -234,7 +245,7 @@ static LPARAM async_getservbyname( struct async_query_header *query )
 static LPARAM async_getservbyport( struct async_query_header *query )
 {
     struct async_query_getservbyport *aq = CONTAINING_RECORD( query, struct async_query_getservbyport, query );
-    struct servent *se = getservbyport( aq->serv_port, aq->serv_proto );
+    struct WS_servent *se = WS_getservbyport( aq->serv_port, aq->serv_proto );
 
     return copy_se( query->sbuf, query->sbuflen, se );
 }
@@ -245,7 +256,7 @@ static void WINAPI async_worker( TP_CALLBACK_INSTANCE *instance, void *context )
     struct async_query_header *query = context;
     LPARAM lparam = query->func( query );
     PostMessageW( query->hWnd, query->uMsg, (WPARAM)query->handle, lparam );
-    free( query );
+    HeapFree( GetProcessHeap(), 0, query );
 }
 
 
@@ -275,7 +286,7 @@ static HANDLE run_query( HWND hWnd, UINT uMsg, LPARAM (*func)(struct async_query
     if (!TrySubmitThreadpoolCallback( async_worker, query, NULL ))
     {
         SetLastError( WSAEWOULDBLOCK );
-        free( query );
+        HeapFree( GetProcessHeap(), 0, query );
         return 0;
     }
     return UlongToHandle( handle );
@@ -292,7 +303,7 @@ HANDLE WINAPI WSAAsyncGetHostByAddr(HWND hWnd, UINT uMsg, LPCSTR addr,
 
     TRACE("hwnd %p, msg %04x, addr %p[%i]\n", hWnd, uMsg, addr, len );
 
-    if (!(aq = malloc( sizeof(*aq) + len )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) + len )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -315,7 +326,7 @@ HANDLE WINAPI WSAAsyncGetHostByName(HWND hWnd, UINT uMsg, LPCSTR name,
 
     TRACE("hwnd %p, msg %04x, host %s, buffer %i\n", hWnd, uMsg, debugstr_a(name), buflen );
 
-    if (!(aq = malloc( sizeof(*aq) + len )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) + len )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -336,7 +347,7 @@ HANDLE WINAPI WSAAsyncGetProtoByName(HWND hWnd, UINT uMsg, LPCSTR name,
 
     TRACE("hwnd %p, msg %04x, proto %s, buffer %i\n", hWnd, uMsg, debugstr_a(name), buflen );
 
-    if (!(aq = malloc( sizeof(*aq) + len )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) + len )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -357,7 +368,7 @@ HANDLE WINAPI WSAAsyncGetProtoByNumber(HWND hWnd, UINT uMsg, INT number,
 
     TRACE("hwnd %p, msg %04x, num %i\n", hWnd, uMsg, number );
 
-    if (!(aq = malloc( sizeof(*aq) )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -378,7 +389,7 @@ HANDLE WINAPI WSAAsyncGetServByName(HWND hWnd, UINT uMsg, LPCSTR name,
 
     TRACE("hwnd %p, msg %04x, name %s, proto %s\n", hWnd, uMsg, debugstr_a(name), debugstr_a(proto));
 
-    if (!(aq = malloc( sizeof(*aq) + len1 + len2 )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) + len1 + len2 )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -409,7 +420,7 @@ HANDLE WINAPI WSAAsyncGetServByPort(HWND hWnd, UINT uMsg, INT port,
 
     TRACE("hwnd %p, msg %04x, port %i, proto %s\n", hWnd, uMsg, port, debugstr_a(proto));
 
-    if (!(aq = malloc( sizeof(*aq) + len )))
+    if (!(aq = HeapAlloc( GetProcessHeap(), 0, sizeof(*aq) + len )))
     {
         SetLastError( WSAEWOULDBLOCK );
         return 0;
@@ -452,8 +463,7 @@ INT WINAPI WSApSetPostRoutine(LPWPUPOSTMESSAGE lpPostRoutine)
 WSAEVENT WINAPI WPUCompleteOverlappedRequest(SOCKET s, LPWSAOVERLAPPED overlapped,
                                              DWORD error, DWORD transferred, LPINT errcode)
 {
-    FIXME( "socket %#Ix, overlapped %p, error %lu, transferred %lu, errcode %p, stub!\n",
-           s, overlapped, error, transferred, errcode );
+    FIXME("(0x%08lx,%p,0x%08x,0x%08x,%p), stub !\n", s, overlapped, error, transferred, errcode);
 
     if (errcode)
         *errcode = WSAEINVAL;

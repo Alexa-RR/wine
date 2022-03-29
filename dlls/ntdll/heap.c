@@ -20,13 +20,19 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <assert.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-
-#define RUNNING_ON_VALGRIND 0  /* FIXME */
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+#include <valgrind/memcheck.h>
+#else
+#define RUNNING_ON_VALGRIND 0
+#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -38,6 +44,7 @@
 #include "wine/list.h"
 #include "wine/rbtree.h"
 #include "wine/debug.h"
+#include "wine/server.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(heap);
 
@@ -115,7 +122,6 @@ C_ASSERT( sizeof(ARENA_LARGE) % LARGE_ALIGNMENT == 0 );
 #define HEAP_TAIL_EXTRA_SIZE(flags) \
     ((flags & HEAP_TAIL_CHECKING_ENABLED) || RUNNING_ON_VALGRIND ? ALIGNMENT : 0)
 
-<<<<<<< HEAD
 /* size of the blocks on the free lists */
 #define HEAP_FREELIST_SIZE(index) \
     ((DWORD)(((index) * ALIGNMENT) + HEAP_MIN_DATA_SIZE + sizeof(ARENA_INUSE)))
@@ -124,25 +130,6 @@ C_ASSERT( sizeof(ARENA_LARGE) % LARGE_ALIGNMENT == 0 );
     (((size) - HEAP_MIN_DATA_SIZE - sizeof(ARENA_INUSE)) / ALIGNMENT)
 /* number of free lists */
 #define HEAP_NB_FREE_LISTS  128
-=======
-/* There will be a free list bucket for every arena size up to and including this value */
-#define HEAP_MAX_SMALL_FREE_LIST 0x100
-C_ASSERT( HEAP_MAX_SMALL_FREE_LIST % ALIGNMENT == 0 );
-#define HEAP_NB_SMALL_FREE_LISTS (((HEAP_MAX_SMALL_FREE_LIST - HEAP_MIN_ARENA_SIZE) / ALIGNMENT) + 1)
-
-/* Max size of the blocks on the free lists above HEAP_MAX_SMALL_FREE_LIST */
-static const SIZE_T HEAP_freeListSizes[] =
-{
-    0x200, 0x400, 0x1000, ~(SIZE_T)0
-};
-#define HEAP_NB_FREE_LISTS (ARRAY_SIZE( HEAP_freeListSizes ) + HEAP_NB_SMALL_FREE_LISTS)
-
-typedef union
-{
-    ARENA_FREE  arena;
-    void       *alignment[4];
-} FREE_LIST_ENTRY;
->>>>>>> master
 
 struct tagHEAP;
 
@@ -163,13 +150,7 @@ typedef struct tagSUBHEAP
 typedef struct tagHEAP
 {
     DWORD_PTR        unknown1[2];
-    DWORD            unknown2[2];
-    DWORD_PTR        unknown3[4];
-    DWORD            unknown4;
-    DWORD_PTR        unknown5[2];
-    DWORD            unknown6[3];
-    DWORD_PTR        unknown7[2];
-    /* For Vista through 10, 'flags' is at offset 0x40 (x86) / 0x70 (x64) */
+    DWORD            unknown2;
     DWORD            flags;         /* Heap flags */
     DWORD            force_flags;   /* Forced heap flags for debugging */
     SUBHEAP          subheap;       /* First sub-heap */
@@ -823,8 +804,7 @@ static void *allocate_large_block( HEAP *heap, DWORD flags, SIZE_T size )
     LPVOID address = NULL;
 
     if (block_size < size) return NULL;  /* overflow */
-    if (NtAllocateVirtualMemory( NtCurrentProcess(), &address, 0, &block_size,
-                                 MEM_COMMIT, get_protection_type( flags )))
+    if (virtual_alloc_aligned( &address, 0, &block_size, MEM_COMMIT, get_protection_type( flags ), 5 ))
     {
         WARN("Could not allocate block for %08lx bytes\n", size );
         return NULL;
@@ -1084,7 +1064,7 @@ static SUBHEAP *HEAP_CreateSubHeap( HEAP *heap, LPVOID address, DWORD flags,
             if (!sem) NtCreateSemaphore( &sem, SEMAPHORE_ALL_ACCESS, NULL, 0, 1 );
 
             NtDuplicateObject( NtCurrentProcess(), sem, NtCurrentProcess(), &sem, 0, 0,
-                               DUPLICATE_MAKE_GLOBAL | DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE );
+                               DUP_HANDLE_MAKE_GLOBAL | DUP_HANDLE_SAME_ACCESS | DUP_HANDLE_CLOSE_SOURCE );
             heap->critSection.LockSemaphore = sem;
             RtlFreeHeap( processHeap, 0, heap->critSection.DebugInfo );
             heap->critSection.DebugInfo = NULL;
@@ -1600,7 +1580,7 @@ static BOOL validate_block_pointer( HEAP *heap, SUBHEAP **ret_subheap, const ARE
 /***********************************************************************
  *           heap_set_debug_flags
  */
-static void heap_set_debug_flags( HANDLE handle )
+void heap_set_debug_flags( HANDLE handle )
 {
     HEAP *heap = HEAP_GetPtr( handle );
     ULONG global_flags = RtlGetNtGlobalFlags();
@@ -1668,9 +1648,14 @@ static void heap_set_debug_flags( HANDLE handle )
     if ((heap->flags & HEAP_GROWABLE) && !heap->pending_free &&
         ((flags & HEAP_FREE_CHECKING_ENABLED) || RUNNING_ON_VALGRIND))
     {
-        heap->pending_free = RtlAllocateHeap( handle, HEAP_ZERO_MEMORY,
-                                              MAX_FREE_PENDING * sizeof(*heap->pending_free) );
-        heap->pending_pos = 0;
+        void *ptr = NULL;
+        SIZE_T size = MAX_FREE_PENDING * sizeof(*heap->pending_free);
+
+        if (!virtual_alloc_aligned( &ptr, 0, &size, MEM_COMMIT, PAGE_READWRITE, 4 ))
+        {
+            heap->pending_free = ptr;
+            heap->pending_pos = 0;
+        }
     }
 }
 
@@ -1748,12 +1733,6 @@ HANDLE WINAPI RtlDestroyHeap( HANDLE heap )
     void *addr;
 
     TRACE("%p\n", heap );
-    if (!heapPtr && heap && (((HEAP *)heap)->flags & HEAP_VALIDATE_PARAMS) &&
-        NtCurrentTeb()->Peb->BeingDebugged)
-    {
-        DbgPrint( "Attempt to destroy an invalid heap\n" );
-        DbgBreakPoint();
-    }
     if (!heapPtr) return heap;
 
     if (heap == processHeap) return heap; /* cannot delete the main process heap */
@@ -1783,7 +1762,12 @@ HANDLE WINAPI RtlDestroyHeap( HANDLE heap )
         NtFreeVirtualMemory( NtCurrentProcess(), &addr, &size, MEM_RELEASE );
     }
     subheap_notify_free_all(&heapPtr->subheap);
-    RtlFreeHeap( GetProcessHeap(), 0, heapPtr->pending_free );
+    if (heapPtr->pending_free)
+    {
+        size = 0;
+        addr = heapPtr->pending_free;
+        NtFreeVirtualMemory( NtCurrentProcess(), &addr, &size, MEM_RELEASE );
+    }
     size = 0;
     addr = heapPtr->subheap.base;
     NtFreeVirtualMemory( NtCurrentProcess(), &addr, &size, MEM_RELEASE );
@@ -2178,7 +2162,7 @@ SIZE_T WINAPI RtlSizeHeap( HANDLE heap, ULONG flags, const void *ptr )
     if (!heapPtr)
     {
         RtlSetLastWin32ErrorAndNtStatusFromNtStatus( STATUS_INVALID_HANDLE );
-        return ~(SIZE_T)0;
+        return ~0UL;
     }
     flags &= HEAP_NO_SERIALIZE;
     flags |= heapPtr->flags;
@@ -2188,7 +2172,7 @@ SIZE_T WINAPI RtlSizeHeap( HANDLE heap, ULONG flags, const void *ptr )
     if (!validate_block_pointer( heapPtr, &subheap, pArena ))
     {
         RtlSetLastWin32ErrorAndNtStatusFromNtStatus( STATUS_INVALID_PARAMETER );
-        ret = ~(SIZE_T)0;
+        ret = ~0UL;
     }
     else if (!subheap)
     {

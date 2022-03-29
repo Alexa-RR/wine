@@ -1,7 +1,7 @@
 MODULE    = wlanapi.dll
 IMPORTLIB = wlanapi
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	main.c

@@ -26,6 +26,8 @@
 #include "shellapi.h"
 #include "psapi.h"
 
+#include "wine/unicode.h"
+
 #include "resource.h"
 
 #define MAX_PROGRAM_NAME_LENGTH 80
@@ -77,7 +79,7 @@ static WCHAR *get_program_name(HANDLE hProcess)
         return unidentified;
     }
 
-    programname = wcsrchr(image_name, '\\');
+    programname = strrchrW(image_name, '\\');
     if (programname != NULL)
         programname++;
     else
@@ -87,7 +89,7 @@ static WCHAR *get_program_name(HANDLE hProcess)
      * user-friendly program name */
 
     /* don't display a too long string to the user */
-    if (lstrlenW(programname) >= MAX_PROGRAM_NAME_LENGTH)
+    if (strlenW(programname) >= MAX_PROGRAM_NAME_LENGTH)
     {
         programname[MAX_PROGRAM_NAME_LENGTH - 4] = '.';
         programname[MAX_PROGRAM_NAME_LENGTH - 3] = '.';
@@ -158,17 +160,21 @@ static void save_crash_log( HWND hwnd )
     HANDLE handle;
     DWORD err, written;
     WCHAR *p, path[MAX_PATH], buffer[1024];
+    static const WCHAR default_name[] = { 'b','a','c','k','t','r','a','c','e','.','t','x','t',0 };
+    static const WCHAR default_ext[] = { 't','x','t',0 };
+    static const WCHAR txt_files[] = { '*','.','t','x','t',0 };
+    static const WCHAR all_files[] = { '*','.','*',0 };
 
     memset( &save, 0, sizeof(save) );
-    lstrcpyW( path, L"backtrace.txt" );
+    lstrcpyW( path, default_name );
 
     LoadStringW( GetModuleHandleW(0), IDS_TEXT_FILES, buffer, ARRAY_SIZE(buffer));
     p = buffer + lstrlenW(buffer) + 1;
-    lstrcpyW(p, L"*.txt");
+    lstrcpyW(p, txt_files);
     p += lstrlenW(p) + 1;
     LoadStringW( GetModuleHandleW(0), IDS_ALL_FILES, p, ARRAY_SIZE(buffer) - (p - buffer) );
     p += lstrlenW(p) + 1;
-    lstrcpyW(p, L"*.*");
+    lstrcpyW(p, all_files);
     p += lstrlenW(p) + 1;
     *p = '\0';
 
@@ -180,7 +186,7 @@ static void save_crash_log( HWND hwnd )
     save.nMaxFile    = MAX_PATH;
     save.Flags       = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT |
                        OFN_HIDEREADONLY | OFN_ENABLESIZING;
-    save.lpstrDefExt = L"txt";
+    save.lpstrDefExt = default_ext;
 
     if (!GetSaveFileNameW( &save )) return;
     handle = CreateFileW( save.lpstrFile, GENERIC_WRITE, FILE_SHARE_READ,
@@ -210,6 +216,7 @@ static void save_crash_log( HWND hwnd )
 
 static INT_PTR WINAPI crash_dlg_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    static const WCHAR openW[] = {'o','p','e','n',0};
     switch (msg)
     {
     case WM_INITDIALOG:
@@ -245,7 +252,7 @@ static INT_PTR WINAPI crash_dlg_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         case NM_CLICK:
         case NM_RETURN:
             if (wParam == IDC_STATIC_TXT2)
-                ShellExecuteW( NULL, L"open", ((NMLINK *)lParam)->item.szUrl, NULL, NULL, SW_SHOW );
+                ShellExecuteW( NULL, openW, ((NMLINK *)lParam)->item.szUrl, NULL, NULL, SW_SHOW );
             break;
         }
         break;
@@ -267,6 +274,7 @@ static INT_PTR WINAPI crash_dlg_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
 static INT_PTR WINAPI details_dlg_proc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam )
 {
+    static const WCHAR openW[] = {'o','p','e','n',0};
     static POINT orig_size, min_size, edit_size, text_pos, save_pos, close_pos;
 
     switch (msg)
@@ -339,7 +347,7 @@ static INT_PTR WINAPI details_dlg_proc( HWND hwnd, UINT msg, WPARAM wparam, LPAR
         case NM_CLICK:
         case NM_RETURN:
             if (wparam == IDC_STATIC_TXT2)
-                ShellExecuteW( NULL, L"open", ((NMLINK *)lparam)->item.szUrl, NULL, NULL, SW_SHOW );
+                ShellExecuteW( NULL, openW, ((NMLINK *)lparam)->item.szUrl, NULL, NULL, SW_SHOW );
             break;
         }
         break;
@@ -362,6 +370,7 @@ static INT_PTR WINAPI details_dlg_proc( HWND hwnd, UINT msg, WPARAM wparam, LPAR
 
 int display_crash_dialog(void)
 {
+    static const WCHAR winedeviceW[] = {'w','i','n','e','d','e','v','i','c','e','.','e','x','e',0};
     static const INITCOMMONCONTROLSEX init = { sizeof(init), ICC_LINK_CLASS };
 
     /* dbg_curr_process->handle is not set */
@@ -373,7 +382,7 @@ int display_crash_dialog(void)
     hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, dbg_curr_pid);
     g_ProgramName = get_program_name(hProcess);
     CloseHandle(hProcess);
-    if (!wcscmp( g_ProgramName, L"winedevice.exe" )) return TRUE;
+    if (!strcmpW( g_ProgramName, winedeviceW )) return TRUE;
     InitCommonControlsEx( &init );
     return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDD_CRASH_DLG), NULL, crash_dlg_proc);
 }

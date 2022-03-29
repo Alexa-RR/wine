@@ -20,6 +20,7 @@
  */
 
 #include "dshow.h"
+#include "wine/list.h"
 
 HRESULT WINAPI CopyMediaType(AM_MEDIA_TYPE * pDest, const AM_MEDIA_TYPE *pSrc);
 void WINAPI FreeMediaType(AM_MEDIA_TYPE * pMediaType);
@@ -36,7 +37,6 @@ struct strmbase_pin
     struct strmbase_filter *filter;
     PIN_DIRECTION dir;
     WCHAR name[128];
-    WCHAR id[128];
     IPin *peer;
     AM_MEDIA_TYPE mt;
 
@@ -106,6 +106,13 @@ struct strmbase_sink_ops
 };
 
 /* Base Pin */
+HRESULT strmbase_pin_get_media_type(struct strmbase_pin *pin, unsigned int index, AM_MEDIA_TYPE *mt);
+
+HRESULT WINAPI BaseOutputPinImpl_GetDeliveryBuffer(struct strmbase_source *pin,
+        IMediaSample **sample, REFERENCE_TIME *start, REFERENCE_TIME *stop, DWORD flags);
+HRESULT WINAPI BaseOutputPinImpl_Active(struct strmbase_source *pin);
+HRESULT WINAPI BaseOutputPinImpl_Inactive(struct strmbase_source *pin);
+HRESULT WINAPI BaseOutputPinImpl_InitAllocator(struct strmbase_source *pin, IMemAllocator **allocator);
 HRESULT WINAPI BaseOutputPinImpl_DecideAllocator(struct strmbase_source *pin, IMemInputPin *peer, IMemAllocator **allocator);
 HRESULT WINAPI BaseOutputPinImpl_AttemptConnection(struct strmbase_source *pin, IPin *peer, const AM_MEDIA_TYPE *mt);
 
@@ -123,8 +130,7 @@ struct strmbase_filter
     IUnknown IUnknown_inner;
     IUnknown *outer_unk;
     LONG refcount;
-    CRITICAL_SECTION filter_cs;
-    CRITICAL_SECTION stream_cs;
+    CRITICAL_SECTION csFilter;
 
     FILTER_STATE state;
     IReferenceClock *clock;
@@ -198,6 +204,42 @@ HRESULT WINAPI SourceSeekingImpl_SetRate(IMediaSeeking * iface, double dRate);
 HRESULT WINAPI SourceSeekingImpl_GetRate(IMediaSeeking * iface, double * dRate);
 HRESULT WINAPI SourceSeekingImpl_GetPreroll(IMediaSeeking * iface, LONGLONG * pPreroll);
 
+/* Output Queue */
+typedef struct tagOutputQueue {
+    CRITICAL_SECTION csQueue;
+
+    struct strmbase_source *pInputPin;
+
+    HANDLE hThread;
+    HANDLE hProcessQueue;
+
+    LONG lBatchSize;
+    BOOL bBatchExact;
+    BOOL bTerminate;
+    BOOL bSendAnyway;
+
+    struct list SampleList;
+
+    const struct OutputQueueFuncTable* pFuncsTable;
+} OutputQueue;
+
+typedef DWORD (WINAPI *OutputQueue_ThreadProc)(OutputQueue *This);
+
+typedef struct OutputQueueFuncTable
+{
+    OutputQueue_ThreadProc pfnThreadProc;
+} OutputQueueFuncTable;
+
+HRESULT WINAPI OutputQueue_Construct( struct strmbase_source *pin, BOOL bAuto,
+    BOOL bQueue, LONG lBatchSize, BOOL bBatchExact, DWORD dwPriority,
+    const OutputQueueFuncTable* pFuncsTable, OutputQueue **ppOutputQueue );
+HRESULT WINAPI OutputQueue_Destroy(OutputQueue *pOutputQueue);
+HRESULT WINAPI OutputQueue_ReceiveMultiple(OutputQueue *pOutputQueue, IMediaSample **ppSamples, LONG nSamples, LONG *nSamplesProcessed);
+HRESULT WINAPI OutputQueue_Receive(OutputQueue *pOutputQueue, IMediaSample *pSample);
+VOID WINAPI OutputQueue_EOS(OutputQueue *pOutputQueue);
+VOID WINAPI OutputQueue_SendAnyway(OutputQueue *pOutputQueue);
+DWORD WINAPI OutputQueueImpl_ThreadProc(OutputQueue *pOutputQueue);
+
 enum strmbase_type_id
 {
     IBasicAudio_tid,
@@ -210,7 +252,6 @@ enum strmbase_type_id
 };
 
 HRESULT strmbase_get_typeinfo(enum strmbase_type_id tid, ITypeInfo **typeinfo);
-void strmbase_release_typelibs(void);
 
 struct strmbase_passthrough
 {
@@ -229,56 +270,62 @@ struct strmbase_passthrough
 void strmbase_passthrough_init(struct strmbase_passthrough *passthrough, IUnknown *outer);
 void strmbase_passthrough_cleanup(struct strmbase_passthrough *passthrough);
 
-void strmbase_passthrough_eos(struct strmbase_passthrough *passthrough);
-void strmbase_passthrough_invalidate_time(struct strmbase_passthrough *passthrough);
-void strmbase_passthrough_update_time(struct strmbase_passthrough *passthrough, REFERENCE_TIME time);
-
 struct strmbase_renderer
 {
     struct strmbase_filter filter;
     struct strmbase_passthrough passthrough;
-    IQualityControl IQualityControl_iface;
 
     struct strmbase_sink sink;
 
+    CRITICAL_SECTION csRenderLock;
     /* Signaled when the filter has completed a state change. The filter waits
      * for this event in IBaseFilter::GetState(). */
     HANDLE state_event;
     /* Signaled when the sample presentation time occurs. The streaming thread
      * waits for this event in Receive() if applicable. */
     HANDLE advise_event;
-    /* Signaled when the filter is running. The streaming thread waits for this
-     * event in Receive() while paused. */
-    HANDLE run_event;
     /* Signaled when a flush or state change occurs, i.e. anything that needs
      * to immediately unblock the streaming thread. */
     HANDLE flush_event;
     REFERENCE_TIME stream_start;
 
-    IMediaSample *current_sample;
+    IQualityControl *pQSink;
+    struct QualityControlImpl *qcimpl;
 
-    IQualityControl *qc_sink;
-    REFERENCE_TIME last_left, avg_duration, avg_pt;
-    double avg_rate;
-
-    const struct strmbase_renderer_ops *ops;
+    const struct strmbase_renderer_ops *pFuncsTable;
 
     BOOL eos;
 };
 
+typedef HRESULT (WINAPI *BaseRenderer_CheckMediaType)(struct strmbase_renderer *iface, const AM_MEDIA_TYPE *mt);
+typedef HRESULT (WINAPI *BaseRenderer_DoRenderSample)(struct strmbase_renderer *iface, IMediaSample *sample);
+typedef HRESULT (WINAPI *BaseRenderer_ShouldDrawSampleNow)(struct strmbase_renderer *iface,
+        IMediaSample *sample, REFERENCE_TIME *start, REFERENCE_TIME *end);
+typedef HRESULT (WINAPI *BaseRenderer_PrepareReceive)(struct strmbase_renderer *iface, IMediaSample *sample);
+typedef HRESULT (WINAPI *BaseRenderer_EndOfStream)(struct strmbase_renderer *iface);
+typedef HRESULT (WINAPI *BaseRenderer_BeginFlush) (struct strmbase_renderer *iface);
+typedef HRESULT (WINAPI *BaseRenderer_EndFlush) (struct strmbase_renderer *iface);
+typedef HRESULT (WINAPI *BaseRenderer_BreakConnect) (struct strmbase_renderer *iface);
+
 struct strmbase_renderer_ops
 {
-    HRESULT (*renderer_query_accept)(struct strmbase_renderer *iface, const AM_MEDIA_TYPE *mt);
-    HRESULT (*renderer_render)(struct strmbase_renderer *iface, IMediaSample *sample);
+    BaseRenderer_CheckMediaType pfnCheckMediaType;
+    BaseRenderer_DoRenderSample pfnDoRenderSample;
     void (*renderer_init_stream)(struct strmbase_renderer *iface);
     void (*renderer_start_stream)(struct strmbase_renderer *iface);
     void (*renderer_stop_stream)(struct strmbase_renderer *iface);
+    BaseRenderer_ShouldDrawSampleNow  pfnShouldDrawSampleNow;
+    BaseRenderer_PrepareReceive pfnPrepareReceive;
     HRESULT (*renderer_connect)(struct strmbase_renderer *iface, const AM_MEDIA_TYPE *mt);
-    void (*renderer_disconnect)(struct strmbase_renderer *iface);
+    BaseRenderer_BreakConnect pfnBreakConnect;
+    BaseRenderer_EndOfStream pfnEndOfStream;
+    BaseRenderer_EndFlush pfnEndFlush;
     void (*renderer_destroy)(struct strmbase_renderer *iface);
     HRESULT (*renderer_query_interface)(struct strmbase_renderer *iface, REFIID iid, void **out);
     HRESULT (*renderer_pin_query_interface)(struct strmbase_renderer *iface, REFIID iid, void **out);
 };
+
+HRESULT WINAPI BaseRendererImpl_Receive(struct strmbase_renderer *filter, IMediaSample *sample);
 
 void strmbase_renderer_init(struct strmbase_renderer *filter, IUnknown *outer,
         const CLSID *clsid, const WCHAR *sink_name, const struct strmbase_renderer_ops *ops);

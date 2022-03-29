@@ -29,7 +29,6 @@
 #include <stdio.h>
 #include <assert.h>
 #include <windows.h>
-#include <commctrl.h>
 #include <winternl.h>
 #include <mshtml.h>
 
@@ -124,22 +123,20 @@ static char * get_file_version(char * file_name)
                 VS_FIXEDFILEINFO *pFixedVersionInfo;
                 UINT len;
                 if (VerQueryValueA(data, backslash, (LPVOID *)&pFixedVersionInfo, &len)) {
-                    sprintf(version, "%ld.%ld.%ld.%ld",
+                    sprintf(version, "%d.%d.%d.%d",
                             pFixedVersionInfo->dwFileVersionMS >> 16,
                             pFixedVersionInfo->dwFileVersionMS & 0xffff,
                             pFixedVersionInfo->dwFileVersionLS >> 16,
                             pFixedVersionInfo->dwFileVersionLS & 0xffff);
                 } else
-                    sprintf(version, "version not found");
+                    sprintf(version, "version not available");
             } else
-                sprintf(version, "version error %lu", GetLastError());
+                sprintf(version, "unknown");
             heap_free(data);
         } else
-            sprintf(version, "version error %u", ERROR_OUTOFMEMORY);
-    } else if (GetLastError() == ERROR_FILE_NOT_FOUND)
-        sprintf(version, "dll is missing");
-    else
-        sprintf(version, "version not present %lu", GetLastError());
+            sprintf(version, "failed");
+    } else
+        sprintf(version, "version not available");
 
     return version;
 }
@@ -318,8 +315,7 @@ static BOOL is_native_dll( HMODULE module )
  */
 static BOOL is_stub_dll(const char *filename)
 {
-    UINT size;
-    DWORD ver;
+    DWORD size, ver;
     BOOL isstub = FALSE;
     char *p, *data;
 
@@ -348,6 +344,8 @@ static void print_version (void)
     static const char platform[] = "i386";
 #elif defined(__x86_64__)
     static const char platform[] = "x86_64";
+#elif defined(__powerpc__)
+    static const char platform[] = "powerpc";
 #elif defined(__arm__)
     static const char platform[] = "arm";
 #elif defined(__aarch64__)
@@ -477,8 +475,6 @@ static void print_language(void)
         xprintf ("    UserDefaultUILanguage=%04x\n", pGetUserDefaultUILanguage());
     if (pGetThreadUILanguage)
         xprintf ("    ThreadUILanguage=%04x\n", pGetThreadUILanguage());
-    xprintf ("    Country=%d\n", GetUserGeoID(GEOCLASS_NATION));
-    xprintf ("    ACP=%d\n", GetACP());
 }
 
 static inline BOOL is_dot_dir(const char* x)
@@ -522,8 +518,7 @@ static const char* get_test_source_file(const char* test, const char* subtest)
     static char buffer[MAX_PATH];
     int len = strlen(test);
 
-    if (len > 4 && !strcmp( test + len - 4, ".exe" ) &&
-        strcmp( test, "ntoskrnl.exe" )) /* the one exception! */
+    if (len > 4 && !strcmp( test + len - 4, ".exe" ))
     {
         len = sprintf(buffer, "programs/%s", test) - 4;
         buffer[len] = 0;
@@ -615,12 +610,11 @@ static void append_path( const char *path)
    value of WaitForSingleObject.
  */
 static int
-run_ex (char *cmd, HANDLE out_file, const char *tempdir, DWORD ms, BOOL nocritical, DWORD* pid)
+run_ex (char *cmd, HANDLE out_file, const char *tempdir, DWORD ms, DWORD* pid)
 {
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
-    DWORD wait, status, flags;
-    UINT old_errmode;
+    DWORD wait, status;
 
     /* Flush to disk so we know which test caused Windows to crash if it does */
     if (out_file)
@@ -631,24 +625,14 @@ run_ex (char *cmd, HANDLE out_file, const char *tempdir, DWORD ms, BOOL nocritic
     si.hStdInput  = GetStdHandle( STD_INPUT_HANDLE );
     si.hStdOutput = out_file ? out_file : GetStdHandle( STD_OUTPUT_HANDLE );
     si.hStdError  = out_file ? out_file : GetStdHandle( STD_ERROR_HANDLE );
-    if (nocritical)
-    {
-        old_errmode = SetErrorMode(0);
-        SetErrorMode(old_errmode | SEM_FAILCRITICALERRORS);
-        flags = 0;
-    }
-    else
-        flags = CREATE_DEFAULT_ERROR_MODE;
 
-    if (!CreateProcessA (NULL, cmd, NULL, NULL, TRUE, flags,
+    if (!CreateProcessA (NULL, cmd, NULL, NULL, TRUE, CREATE_DEFAULT_ERROR_MODE,
                          NULL, tempdir, &si, &pi))
     {
-        if (nocritical) SetErrorMode(old_errmode);
         if (pid) *pid = 0;
         return -2;
     }
 
-    if (nocritical) SetErrorMode(old_errmode);
     CloseHandle (pi.hThread);
     if (pid) *pid = pi.dwProcessId;
     status = wait_process( pi.hProcess, ms );
@@ -734,7 +718,7 @@ get_subtests (const char *tempdir, struct wine_test *test, LPSTR res_name)
         /* We need to add the path (to the main dll) to PATH */
         append_path(test->maindllpath);
     }
-    status = run_ex (cmd, subfile, tempdir, 5000, TRUE, NULL);
+    status = run_ex (cmd, subfile, tempdir, 5000, NULL);
     err = GetLastError();
     if (test->maindllpath) {
         /* Restore PATH again */
@@ -742,12 +726,9 @@ get_subtests (const char *tempdir, struct wine_test *test, LPSTR res_name)
     }
     heap_free (cmd);
 
-    if (status)
+    if (status == -2)
     {
-        if (status == -2)
-            report (R_ERROR, "Cannot run %s error %u", test->exename, err);
-        else
-            err = status;
+        report (R_ERROR, "Cannot run %s error %u", test->exename, err);
         CloseHandle( subfile );
         goto quit;
     }
@@ -803,7 +784,7 @@ run_test (struct wine_test* test, const char* subtest, HANDLE out_file, const ch
     if (test_filtered_out( test->name, subtest ))
     {
         report (R_STEP, "Skipping: %s:%s", test->name, subtest);
-        xprintf ("%s:%s skipped %s\n", test->name, subtest, file);
+        xprintf ("%s:%s skipped %s -\n", test->name, subtest, file);
         nr_of_skips++;
     }
     else
@@ -812,9 +793,8 @@ run_test (struct wine_test* test, const char* subtest, HANDLE out_file, const ch
         DWORD pid, start = GetTickCount();
         char *cmd = strmake (NULL, "%s %s", test->exename, subtest);
         report (R_STEP, "Running: %s:%s", test->name, subtest);
-        xprintf ("%s:%s start %s\n", test->name, subtest, file);
-        status = run_ex (cmd, out_file, tempdir, 120000, FALSE, &pid);
-        if (status == -2) status = -GetLastError();
+        xprintf ("%s:%s start %s -\n", test->name, subtest, file);
+        status = run_ex (cmd, out_file, tempdir, 120000, &pid);
         heap_free (cmd);
         xprintf ("%s:%s:%04x done (%d) in %ds\n", test->name, subtest, pid, status, (GetTickCount()-start)/1000);
         if (status) failures++;
@@ -867,7 +847,7 @@ static HMODULE load_com_dll(const char *name, char **path, char *filename)
 
     if(!get_main_clsid(name, &clsid)) return NULL;
 
-    sprintf(keyname, "CLSID\\{%08lx-%04x-%04x-%02x%2x-%02x%2x%02x%2x%02x%2x}\\InprocServer32",
+    sprintf(keyname, "CLSID\\{%08x-%04x-%04x-%02x%2x-%02x%2x%02x%2x%02x%2x}\\InprocServer32",
             clsid.Data1, clsid.Data2, clsid.Data3, clsid.Data4[0], clsid.Data4[1],
             clsid.Data4[2], clsid.Data4[3], clsid.Data4[4], clsid.Data4[5],
             clsid.Data4[6], clsid.Data4[7]);
@@ -912,7 +892,6 @@ extract_test_proc (HMODULE hModule, LPCSTR lpszType, LPSTR lpszName, LONG_PTR lP
     DWORD err;
     HANDLE actctx;
     ULONG_PTR cookie;
-    BOOL run;
 
     if (aborting) return TRUE;
 
@@ -924,7 +903,6 @@ extract_test_proc (HMODULE hModule, LPCSTR lpszType, LPSTR lpszName, LONG_PTR lP
     if (test_filtered_out( lpszName, NULL ))
     {
         nr_of_skips++;
-        if (exclude_tests) xprintf ("    %s=skipped\n", dllname);
         return TRUE;
     }
     extract_test (&wine_tests[nr_of_files], tempdir, lpszName);
@@ -965,50 +943,50 @@ extract_test_proc (HMODULE hModule, LPCSTR lpszType, LPSTR lpszName, LONG_PTR lP
         else dll = 0;
     }
 
-    run = TRUE;
-    if (dll)
+    if (!dll)
     {
-        if (is_stub_dll(dllname))
+        xprintf ("    %s=dll is missing\n", dllname);
+        if (actctx != INVALID_HANDLE_VALUE)
         {
-            xprintf ("    %s=dll is a stub\n", dllname);
-            run = FALSE;
+            pDeactivateActCtx(0, cookie);
+            pReleaseActCtx(actctx);
         }
-        else if (is_native_dll(dll))
-        {
-            xprintf ("    %s=dll is native\n", dllname);
-            nr_native_dlls++;
-            run = FALSE;
-        }
-        FreeLibrary(dll);
+        return TRUE;
     }
-
-    if (run)
+    if(is_stub_dll(dllname))
     {
-        err = get_subtests( tempdir, &wine_tests[nr_of_files], lpszName );
-        switch (err)
+        FreeLibrary(dll);
+        xprintf ("    %s=dll is a stub\n", dllname);
+        if (actctx != INVALID_HANDLE_VALUE)
         {
-        case 0:
-            xprintf ("    %s=%s\n", dllname, get_file_version(filename));
-            nr_of_tests += wine_tests[nr_of_files].subtest_count;
-            nr_of_files++;
-            break;
-        case STATUS_DLL_NOT_FOUND:
-            xprintf ("    %s=dll is missing\n", dllname);
-            /* or it is a side-by-side dll but the test has no manifest */
-            break;
-        case STATUS_ORDINAL_NOT_FOUND:
-            xprintf ("    %s=dll is missing an ordinal (%s)\n", dllname, get_file_version(filename));
-            break;
-        case STATUS_ENTRYPOINT_NOT_FOUND:
-            xprintf ("    %s=dll is missing an entrypoint (%s)\n", dllname, get_file_version(filename));
-            break;
-        case ERROR_SXS_CANT_GEN_ACTCTX:
-            xprintf ("    %s=dll is missing the requested side-by-side version\n", dllname);
-            break;
-        default:
-            xprintf ("    %s=load error %u\n", dllname, err);
-            break;
+            pDeactivateActCtx(0, cookie);
+            pReleaseActCtx(actctx);
         }
+        return TRUE;
+    }
+    if (is_native_dll(dll))
+    {
+        FreeLibrary(dll);
+        xprintf ("    %s=load error Configured as native\n", dllname);
+        nr_native_dlls++;
+        if (actctx != INVALID_HANDLE_VALUE)
+        {
+            pDeactivateActCtx(0, cookie);
+            pReleaseActCtx(actctx);
+        }
+        return TRUE;
+    }
+    FreeLibrary(dll);
+
+    if (!(err = get_subtests( tempdir, &wine_tests[nr_of_files], lpszName )))
+    {
+        xprintf ("    %s=%s\n", dllname, get_file_version(filename));
+        nr_of_tests += wine_tests[nr_of_files].subtest_count;
+        nr_of_files++;
+    }
+    else
+    {
+        xprintf ("    %s=load error %u\n", dllname, err);
     }
 
     if (actctx != INVALID_HANDLE_VALUE)
@@ -1027,7 +1005,6 @@ run_tests (char *logname, char *outdir)
     DWORD strsize;
     SECURITY_ATTRIBUTES sa;
     char tmppath[MAX_PATH], tempdir[MAX_PATH+4];
-    BOOL newdir;
     DWORD needed;
     HMODULE kernel32;
 
@@ -1054,8 +1031,7 @@ run_tests (char *logname, char *outdir)
     sa.lpSecurityDescriptor = NULL;
     sa.bInheritHandle = TRUE;
 
-    logfile = strcmp(logname, "-") == 0 ? GetStdHandle( STD_OUTPUT_HANDLE ) :
-              CreateFileA( logname, GENERIC_READ|GENERIC_WRITE,
+    logfile = CreateFileA( logname, GENERIC_READ|GENERIC_WRITE,
                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            &sa, CREATE_ALWAYS, 0, NULL );
 
@@ -1069,26 +1045,22 @@ run_tests (char *logname, char *outdir)
     if (logfile == INVALID_HANDLE_VALUE)
         report (R_FATAL, "Could not open logfile: %u", GetLastError());
 
-    if (outdir)
-    {
-        /* Get a full path so it is still valid after a chdir */
-        GetFullPathNameA( outdir, ARRAY_SIZE(tempdir), tempdir, NULL );
+    /* try stable path for ZoneAlarm */
+    if (!outdir) {
+        strcpy( tempdir, tmppath );
+        strcat( tempdir, "wct" );
+
+        if (!CreateDirectoryA( tempdir, NULL ))
+        {
+            if (!GetTempFileNameA( tmppath, "wct", 0, tempdir ))
+                report (R_FATAL, "Can't name temporary dir (check %%TEMP%%).");
+            DeleteFileA( tempdir );
+            if (!CreateDirectoryA( tempdir, NULL ))
+                report (R_FATAL, "Could not create directory: %s", tempdir);
+        }
     }
     else
-    {
-        strcpy( tempdir, tmppath );
-        strcat( tempdir, "wct" ); /* try stable path for ZoneAlarm */
-    }
-    newdir = CreateDirectoryA( tempdir, NULL );
-    if (!newdir && !outdir)
-    {
-        if (!GetTempFileNameA( tmppath, "wct", 0, tempdir ))
-            report (R_FATAL, "Can't name temporary dir (check %%TEMP%%).");
-        DeleteFileA( tempdir );
-        newdir = CreateDirectoryA( tempdir, NULL );
-    }
-    if (!newdir && (!outdir || GetLastError() != ERROR_ALREADY_EXISTS))
-        report (R_FATAL, "Could not create directory %s (%d)", tempdir, GetLastError());
+        strcpy( tempdir, outdir);
 
     report (R_DIR, tempdir);
 
@@ -1179,9 +1151,9 @@ run_tests (char *logname, char *outdir)
     report (R_DELTA, 0, "Running: Done");
 
     report (R_STATUS, "Cleaning up - %u failures", failures);
-    if (strcmp(logname, "-") != 0) CloseHandle( logfile );
+    CloseHandle( logfile );
     logfile = 0;
-    if (newdir)
+    if (!outdir)
         remove_dir (tempdir);
     heap_free(wine_tests);
     heap_free(curpath);
@@ -1275,8 +1247,6 @@ int __cdecl main( int argc, char *argv[] )
     int poweroff = 0;
     int interactive = 1;
     int i;
-
-    InitCommonControls();
 
     if (!LoadStringA( 0, IDS_BUILD_ID, build_id, sizeof(build_id) )) build_id[0] = 0;
 

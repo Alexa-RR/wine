@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -27,10 +30,10 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winerror.h"
-#include "winnls.h"
 #include "winternl.h"
 
 #include "wine/exception.h"
+#include "wine/unicode.h"
 #include "kernel_private.h"
 
 #define MAX_ATOM_LEN 255
@@ -167,7 +170,7 @@ ATOM WINAPI GlobalAddAtomW( LPCWSTR str )
 
     if (!check_integral_atom( str, &atom ))
     {
-        if (!set_ntstatus( NtAddAtom( str, lstrlenW( str ) * sizeof(WCHAR), &atom ))) return 0;
+        if (!set_ntstatus( NtAddAtom( str, strlenW( str ) * sizeof(WCHAR), &atom ))) return 0;
     }
     return atom;
 }
@@ -299,7 +302,7 @@ ATOM WINAPI GlobalFindAtomW( LPCWSTR str )
 
     if (!check_integral_atom( str, &atom ))
     {
-        if (!set_ntstatus( NtFindAtom( str, lstrlenW( str ) * sizeof(WCHAR), &atom ))) return 0;
+        if (!set_ntstatus( NtFindAtom( str, strlenW( str ) * sizeof(WCHAR), &atom ))) return 0;
     }
     return atom;
 }

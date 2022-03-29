@@ -38,6 +38,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(avifile);
 
 HMODULE AVIFILE_hModule   = NULL;
 
+static BOOL    AVIFILE_bLocked;
+static UINT    AVIFILE_uUseCount;
+
 typedef struct
 {
   IClassFactory IClassFactory_iface;
@@ -70,7 +73,7 @@ static ULONG WINAPI IClassFactory_fnAddRef(IClassFactory *iface)
     IClassFactoryImpl *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref = %lu\n", This, ref);
+    TRACE("(%p) ref = %u\n", This, ref);
     return ref;
 }
 
@@ -79,7 +82,7 @@ static ULONG WINAPI IClassFactory_fnRelease(IClassFactory *iface)
     IClassFactoryImpl *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref = %lu\n", This, ref);
+    TRACE("(%p) ref = %u\n", This, ref);
 
     if(!ref)
         HeapFree(GetProcessHeap(), 0, This);
@@ -121,6 +124,8 @@ static HRESULT WINAPI IClassFactory_fnCreateInstance(IClassFactory *iface, IUnkn
 static HRESULT WINAPI IClassFactory_fnLockServer(IClassFactory *iface, BOOL dolock)
 {
   TRACE("(%p,%d)\n",iface,dolock);
+
+  AVIFILE_bLocked = dolock;
 
   return S_OK;
 }
@@ -192,11 +197,19 @@ HRESULT WINAPI DllGetClassObject(REFCLSID pclsid, REFIID piid, LPVOID *ppv)
 }
 
 /*****************************************************************************
+ *		DllCanUnloadNow		(AVIFIL32.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+  return ((AVIFILE_bLocked || AVIFILE_uUseCount) ? S_FALSE : S_OK);
+}
+
+/*****************************************************************************
  *		DllMain		[AVIFIL32.init]
  */
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
-  TRACE("(%p,%ld,%p)\n", hInstDll, fdwReason, lpvReserved);
+  TRACE("(%p,%d,%p)\n", hInstDll, fdwReason, lpvReserved);
 
   switch (fdwReason) {
   case DLL_PROCESS_ATTACH:
@@ -206,4 +219,20 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
   };
 
   return TRUE;
+}
+
+/***********************************************************************
+ *		DllRegisterServer (AVIFIL32.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( AVIFILE_hModule );
+}
+
+/***********************************************************************
+ *		DllUnregisterServer (AVIFIL32.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( AVIFILE_hModule );
 }

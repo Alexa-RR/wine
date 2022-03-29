@@ -1,3 +1,6 @@
 MODULE    = wlanui.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
+
+C_SRCS = \
+	main.c

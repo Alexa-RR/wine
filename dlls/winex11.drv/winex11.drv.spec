@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # GDI driver
 
 @ cdecl wine_get_gdi_driver(long) X11DRV_get_gdi_driver
@@ -50,8 +49,6 @@
 @ cdecl UpdateCandidatePos(long ptr) X11DRV_UpdateCandidatePos
 @ cdecl ThreadDetach() X11DRV_ThreadDetach
 
-=======
->>>>>>> master
 # WinTab32
 @ cdecl AttachEventQueueToTablet(long) X11DRV_AttachEventQueueToTablet
 @ cdecl GetCurrentPacket(ptr) X11DRV_GetCurrentPacket

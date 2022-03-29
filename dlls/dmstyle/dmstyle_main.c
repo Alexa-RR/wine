@@ -37,6 +37,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dmstyle);
 
+static HINSTANCE instance;
 LONG DMSTYLE_refCount = 0;
 
 typedef struct {
@@ -138,6 +139,21 @@ static IClassFactoryImpl AuditionTrack_CF = {{&classfactory_vtbl}, create_dmaudi
 static IClassFactoryImpl MuteTrack_CF = {{&classfactory_vtbl}, create_dmmutetrack};
 
 /******************************************************************
+ *		DllMain
+ *
+ *
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+	if (fdwReason == DLL_PROCESS_ATTACH) {
+            instance = hinstDLL;
+            DisableThreadLibraryCalls(hinstDLL);
+	}
+
+	return TRUE;
+}
+
+
+/******************************************************************
  *		DllCanUnloadNow (DMSTYLE.1)
  *
  *
@@ -191,4 +207,20 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv) {
 
     WARN("(%s, %s, %p): no interface found.\n", debugstr_dmguid(rclsid), debugstr_dmguid(riid), ppv);
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *		DllRegisterServer (DMSTYLE.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( instance );
+}
+
+/***********************************************************************
+ *		DllUnregisterServer (DMSTYLE.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( instance );
 }

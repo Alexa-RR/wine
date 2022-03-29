@@ -25,6 +25,25 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(devenum);
 
+DECLSPEC_HIDDEN LONG dll_refs;
+static HINSTANCE devenum_instance;
+
+/***********************************************************************
+ *		DllEntryPoint
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID fImpLoad)
+{
+    TRACE("%p 0x%x %p\n", hinstDLL, fdwReason, fImpLoad);
+
+    switch(fdwReason) {
+    case DLL_PROCESS_ATTACH:
+        devenum_instance = hinstDLL;
+        DisableThreadLibraryCalls(hinstDLL);
+	break;
+    }
+    return TRUE;
+}
+
 struct class_factory
 {
     IClassFactory IClassFactory_iface;
@@ -54,11 +73,13 @@ static HRESULT WINAPI ClassFactory_QueryInterface(IClassFactory *iface, REFIID i
 
 static ULONG WINAPI ClassFactory_AddRef(IClassFactory *iface)
 {
+    DEVENUM_LockModule();
     return 2;
 }
 
 static ULONG WINAPI ClassFactory_Release(IClassFactory *iface)
 {
+    DEVENUM_UnlockModule();
     return 1;
 }
 
@@ -78,7 +99,10 @@ static HRESULT WINAPI ClassFactory_CreateInstance(IClassFactory *iface,
 
 static HRESULT WINAPI ClassFactory_LockServer(IClassFactory *iface, BOOL lock)
 {
-    TRACE("iface %p, lock %d.\n", iface, lock);
+    if (lock)
+        DEVENUM_LockModule();
+    else
+        DEVENUM_UnlockModule();
     return S_OK;
 }
 
@@ -90,8 +114,8 @@ static const IClassFactoryVtbl ClassFactory_vtbl = {
     ClassFactory_LockServer
 };
 
-static struct class_factory create_devenum_cf = { { &ClassFactory_vtbl }, (IUnknown *)&devenum_factory };
-static struct class_factory device_moniker_cf = { { &ClassFactory_vtbl }, (IUnknown *)&devenum_parser };
+static struct class_factory create_devenum_cf = { { &ClassFactory_vtbl }, (IUnknown *)&DEVENUM_CreateDevEnum };
+static struct class_factory device_moniker_cf = { { &ClassFactory_vtbl }, (IUnknown *)&DEVENUM_ParseDisplayName };
 
 /***********************************************************************
  *		DllGetClassObject (DEVENUM.@)
@@ -112,6 +136,14 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void **obj)
 }
 
 /***********************************************************************
+ *		DllCanUnloadNow (DEVENUM.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return dll_refs != 0 ? S_FALSE : S_OK;
+}
+
+/***********************************************************************
  *		DllRegisterServer (DEVENUM.@)
  */
 HRESULT WINAPI DllRegisterServer(void)
@@ -122,7 +154,7 @@ HRESULT WINAPI DllRegisterServer(void)
 
     TRACE("\n");
 
-    res = __wine_register_resources();
+    res = __wine_register_resources( devenum_instance );
     if (FAILED(res))
         return res;
 
@@ -130,17 +162,27 @@ HRESULT WINAPI DllRegisterServer(void)
                            &IID_IFilterMapper2,  &mapvptr);
     if (SUCCEEDED(res))
     {
+        static const WCHAR friendlyvidcap[] = {'V','i','d','e','o',' ','C','a','p','t','u','r','e',' ','S','o','u','r','c','e','s',0};
+        static const WCHAR friendlydshow[] = {'D','i','r','e','c','t','S','h','o','w',' ','F','i','l','t','e','r','s',0};
+        static const WCHAR friendlyvidcomp[] = {'V','i','d','e','o',' ','C','o','m','p','r','e','s','s','o','r','s',0};
+        static const WCHAR friendlyaudcap[] = {'A','u','d','i','o',' ','C','a','p','t','u','r','e',' ','S','o','u','r','c','e','s',0};
+        static const WCHAR friendlyaudcomp[] = {'A','u','d','i','o',' ','C','o','m','p','r','e','s','s','o','r','s',0};
+        static const WCHAR friendlyaudrend[] = {'A','u','d','i','o',' ','R','e','n','d','e','r','e','r','s',0};
+        static const WCHAR friendlymidirend[] = {'M','i','d','i',' ','R','e','n','d','e','r','e','r','s',0};
+        static const WCHAR friendlyextrend[] = {'E','x','t','e','r','n','a','l',' ','R','e','n','d','e','r','e','r','s',0};
+        static const WCHAR friendlydevctrl[] = {'D','e','v','i','c','e',' ','C','o','n','t','r','o','l',' ','F','i','l','t','e','r','s',0};
+
         pMapper = mapvptr;
 
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioCompressorCategory, MERIT_DO_NOT_USE, L"Audio Compressors");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioInputDeviceCategory, MERIT_DO_NOT_USE, L"Audio Capture Sources");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioRendererCategory, MERIT_NORMAL, L"Audio Renderers");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_DeviceControlCategory, MERIT_DO_NOT_USE, L"Device Control Filters");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_LegacyAmFilterCategory, MERIT_NORMAL, L"DirectShow Filters");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_MidiRendererCategory, MERIT_NORMAL, L"Midi Renderers");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_TransmitCategory, MERIT_DO_NOT_USE, L"External Renderers");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_VideoInputDeviceCategory, MERIT_DO_NOT_USE, L"Video Capture Sources");
-        IFilterMapper2_CreateCategory(pMapper, &CLSID_VideoCompressorCategory, MERIT_DO_NOT_USE, L"Video Compressors");
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_VideoInputDeviceCategory, MERIT_DO_NOT_USE, friendlyvidcap);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_LegacyAmFilterCategory, MERIT_NORMAL, friendlydshow);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_VideoCompressorCategory, MERIT_DO_NOT_USE, friendlyvidcomp);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioInputDeviceCategory, MERIT_DO_NOT_USE, friendlyaudcap);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioCompressorCategory, MERIT_DO_NOT_USE, friendlyaudcomp);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_AudioRendererCategory, MERIT_NORMAL, friendlyaudrend);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_MidiRendererCategory, MERIT_NORMAL, friendlymidirend);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_TransmitCategory, MERIT_DO_NOT_USE, friendlyextrend);
+        IFilterMapper2_CreateCategory(pMapper, &CLSID_DeviceControlCategory, MERIT_DO_NOT_USE, friendlydevctrl);
 
         IFilterMapper2_Release(pMapper);
     }
@@ -154,5 +196,5 @@ HRESULT WINAPI DllRegisterServer(void)
 HRESULT WINAPI DllUnregisterServer(void)
 {
     FIXME("stub!\n");
-    return __wine_unregister_resources();
+    return __wine_unregister_resources( devenum_instance );
 }

@@ -30,7 +30,6 @@
 #include "objbase.h"
 
 #include "wine/debug.h"
-#include "wine/heap.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ole);
 
@@ -113,21 +112,41 @@ static ULONG WINAPI BindCtxImpl_AddRef(IBindCtx* iface)
     return InterlockedIncrement(&This->ref);
 }
 
+/******************************************************************************
+ *        BindCtx_Destroy    (local function)
+ *******************************************************************************/
+static HRESULT BindCtxImpl_Destroy(BindCtxImpl* This)
+{
+    TRACE("(%p)\n",This);
+
+    /* free the table space memory */
+    HeapFree(GetProcessHeap(),0,This->bindCtxTable);
+
+    /* free the bindctx structure */
+    HeapFree(GetProcessHeap(),0,This);
+
+    return S_OK;
+}
+
+/******************************************************************************
+ *        BindCtx_Release
+ ******************************************************************************/
 static ULONG WINAPI BindCtxImpl_Release(IBindCtx* iface)
 {
-    BindCtxImpl *context = impl_from_IBindCtx(iface);
-    ULONG refcount = InterlockedDecrement(&context->ref);
+    BindCtxImpl *This = impl_from_IBindCtx(iface);
+    ULONG ref;
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("(%p)\n",This);
 
-    if (!refcount)
+    ref = InterlockedDecrement(&This->ref);
+    if (ref == 0)
     {
-        BindCtxImpl_ReleaseBoundObjects(&context->IBindCtx_iface);
-        heap_free(context->bindCtxTable);
-        heap_free(context);
-    }
+        /* release all registered objects */
+        BindCtxImpl_ReleaseBoundObjects(&This->IBindCtx_iface);
 
-    return refcount;
+        BindCtxImpl_Destroy(This);
+    }
+    return ref;
 }
 
 
@@ -234,7 +253,7 @@ BindCtxImpl_SetBindOptions(IBindCtx* iface,BIND_OPTS *pbindopts)
 
     if (pbindopts->cbStruct > sizeof(This->options))
     {
-        WARN("invalid size %lu.\n", pbindopts->cbStruct);
+        WARN("invalid size %u.\n", pbindopts->cbStruct);
         return E_INVALIDARG;
     }
     memcpy(&This->options, pbindopts, pbindopts->cbStruct);
@@ -468,6 +487,8 @@ static HRESULT BindCtxImpl_ExpandTable(BindCtxImpl *This)
     return S_OK;
 }
 
+
+/* Virtual function table for the BindCtx class. */
 static const IBindCtxVtbl VT_BindCtxImpl =
 {
     BindCtxImpl_QueryInterface,
@@ -486,37 +507,73 @@ static const IBindCtxVtbl VT_BindCtxImpl =
 };
 
 /******************************************************************************
- *        CreateBindCtx (OLE32.@)
- */
-HRESULT WINAPI CreateBindCtx(DWORD reserved, IBindCtx **bind_context)
+ *         BindCtx_Construct (local function)
+ *******************************************************************************/
+static HRESULT BindCtxImpl_Construct(BindCtxImpl* This)
 {
-    BindCtxImpl *object;
+    TRACE("(%p)\n",This);
 
-    TRACE("%#lx, %p.\n", reserved, bind_context);
+    /* Initialize the virtual function table.*/
+    This->IBindCtx_iface.lpVtbl = &VT_BindCtxImpl;
+    This->ref          = 0;
 
-    if (!bind_context) return E_INVALIDARG;
+    memset(&This->options, 0, sizeof(This->options));
+    This->options.cbStruct = sizeof(This->options);
+    This->options.grfMode = STGM_READWRITE;
+    This->options.dwClassContext = CLSCTX_SERVER;
+    This->options.locale = GetThreadLocale();
 
-    *bind_context = NULL;
+    /* Initialize the bindctx table */
+    This->bindCtxTableSize=0;
+    This->bindCtxTableLastIndex=0;
+    This->bindCtxTable = NULL;
 
-    if (reserved)
+    return S_OK;
+}
+
+/******************************************************************************
+ *        CreateBindCtx (OLE32.@)
+ *
+ * Creates a bind context. A bind context encompasses information and options
+ * used when binding to a moniker.
+ *
+ * PARAMS
+ *  reserved [I] Reserved. Set to 0.
+ *  ppbc     [O] Address that receives the bind context object.
+ *
+ * RETURNS
+ *  Success: S_OK.
+ *  Failure: Any HRESULT code.
+ */
+HRESULT WINAPI CreateBindCtx(DWORD reserved, LPBC * ppbc)
+{
+    BindCtxImpl* newBindCtx;
+    HRESULT hr;
+
+    TRACE("(%d,%p)\n",reserved,ppbc);
+
+    if (!ppbc) return E_INVALIDARG;
+
+    *ppbc = NULL;
+
+    if (reserved != 0)
     {
-        WARN("reserved should be 0, not %#lx.\n", reserved);
+        ERR("reserved should be 0, not 0x%x\n", reserved);
         return E_INVALIDARG;
     }
 
-    if (!(object = heap_alloc_zero(sizeof(*object))))
+    newBindCtx = HeapAlloc(GetProcessHeap(), 0, sizeof(BindCtxImpl));
+    if (newBindCtx == 0)
         return E_OUTOFMEMORY;
 
-    object->IBindCtx_iface.lpVtbl = &VT_BindCtxImpl;
-    object->ref = 1;
-    object->options.cbStruct = sizeof(object->options);
-    object->options.grfMode = STGM_READWRITE;
-    object->options.dwClassContext = CLSCTX_SERVER;
-    object->options.locale = GetThreadLocale();
+    hr = BindCtxImpl_Construct(newBindCtx);
+    if (FAILED(hr))
+    {
+        HeapFree(GetProcessHeap(),0,newBindCtx);
+        return hr;
+    }
 
-    *bind_context = &object->IBindCtx_iface;
-
-    return S_OK;
+    return BindCtxImpl_QueryInterface(&newBindCtx->IBindCtx_iface,&IID_IBindCtx,(void**)ppbc);
 }
 
 /******************************************************************************
@@ -539,7 +596,7 @@ HRESULT WINAPI BindMoniker(LPMONIKER pmk, DWORD grfOpt, REFIID riid, LPVOID * pp
     HRESULT res;
     IBindCtx * pbc;
 
-    TRACE("%p, %lx, %s, %p.\n", pmk, grfOpt, debugstr_guid(riid), ppvResult);
+    TRACE("(%p, %x, %s, %p)\n", pmk, grfOpt, debugstr_guid(riid), ppvResult);
 
     res = CreateBindCtx(grfOpt, &pbc);
     if (SUCCEEDED(res))

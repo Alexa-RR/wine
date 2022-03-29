@@ -20,6 +20,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -330,10 +333,10 @@ SIZE_T WINAPI GlobalSize(HGLOBAL hmem)
    {
       retval=HeapSize(GetProcessHeap(), 0, hmem);
 
-      if (retval == ~(SIZE_T)0) /* It might be a GMEM_MOVEABLE data pointer */
+      if (retval == ~0ul) /* It might be a GMEM_MOVEABLE data pointer */
       {
           retval = HeapSize(GetProcessHeap(), 0, (char*)hmem - HGLOBAL_STORAGE);
-          if (retval != ~(SIZE_T)0) retval -= HGLOBAL_STORAGE;
+          if (retval != ~0ul) retval -= HGLOBAL_STORAGE;
       }
    }
    else
@@ -348,7 +351,7 @@ SIZE_T WINAPI GlobalSize(HGLOBAL hmem)
          else
          {
              retval = HeapSize(GetProcessHeap(), 0, (char *)pintern->Pointer - HGLOBAL_STORAGE );
-             if (retval != ~(SIZE_T)0) retval -= HGLOBAL_STORAGE;
+             if (retval != ~0ul) retval -= HGLOBAL_STORAGE;
          }
       }
       else
@@ -359,7 +362,7 @@ SIZE_T WINAPI GlobalSize(HGLOBAL hmem)
       }
       RtlUnlockHeap(GetProcessHeap());
    }
-   if (retval == ~(SIZE_T)0) retval = 0;
+   if (retval == ~0ul) retval = 0;
    return retval;
 }
 
@@ -543,9 +546,7 @@ VOID WINAPI GlobalMemoryStatus( LPMEMORYSTATUS lpBuffer )
 {
     MEMORYSTATUSEX memstatus;
     OSVERSIONINFOW osver;
-#ifndef _WIN64
     IMAGE_NT_HEADERS *nt = RtlImageNtHeader( GetModuleHandleW(0) );
-#endif
 
     /* Because GlobalMemoryStatus is identical to GlobalMemoryStatusEX save
        for one extra field in the struct, and the lack of a bug, we simply
@@ -563,14 +564,6 @@ VOID WINAPI GlobalMemoryStatus( LPMEMORYSTATUS lpBuffer )
     osver.dwOSVersionInfoSize = sizeof(osver);
     GetVersionExW(&osver);
 
-    lpBuffer->dwTotalPhys = memstatus.ullTotalPhys;
-    lpBuffer->dwAvailPhys = memstatus.ullAvailPhys;
-    lpBuffer->dwTotalPageFile = memstatus.ullTotalPageFile;
-    lpBuffer->dwAvailPageFile = memstatus.ullAvailPageFile;
-    lpBuffer->dwTotalVirtual = memstatus.ullTotalVirtual;
-    lpBuffer->dwAvailVirtual = memstatus.ullAvailVirtual;
-
-#ifndef _WIN64
     if ( osver.dwMajorVersion >= 5 || osver.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS )
     {
         lpBuffer->dwTotalPhys = min( memstatus.ullTotalPhys, MAXDWORD );
@@ -580,6 +573,16 @@ VOID WINAPI GlobalMemoryStatus( LPMEMORYSTATUS lpBuffer )
         lpBuffer->dwAvailPageFile = min( memstatus.ullAvailPageFile, MAXDWORD );
         lpBuffer->dwTotalVirtual = min( memstatus.ullTotalVirtual, MAXDWORD );
         lpBuffer->dwAvailVirtual = min( memstatus.ullAvailVirtual, MAXDWORD );
+
+    }
+    else /* duplicate NT bug */
+    {
+        lpBuffer->dwTotalPhys = memstatus.ullTotalPhys;
+        lpBuffer->dwAvailPhys = memstatus.ullAvailPhys;
+        lpBuffer->dwTotalPageFile = memstatus.ullTotalPageFile;
+        lpBuffer->dwAvailPageFile = memstatus.ullAvailPageFile;
+        lpBuffer->dwTotalVirtual = memstatus.ullTotalVirtual;
+        lpBuffer->dwAvailVirtual = memstatus.ullAvailVirtual;
     }
 
     /* values are limited to 2Gb unless the app has the IMAGE_FILE_LARGE_ADDRESS_AWARE flag */
@@ -603,10 +606,9 @@ VOID WINAPI GlobalMemoryStatus( LPMEMORYSTATUS lpBuffer )
         if (lpBuffer->dwTotalPageFile > MAXLONG) lpBuffer->dwTotalPageFile = MAXLONG;
         if (lpBuffer->dwAvailPageFile > MAXLONG) lpBuffer->dwAvailPageFile = MAXLONG;
     }
-#endif
 
-    TRACE("Length %lu, MemoryLoad %lu, TotalPhys %Ix, AvailPhys %Ix,"
-          " TotalPageFile %Ix, AvailPageFile %Ix, TotalVirtual %Ix, AvailVirtual %Ix\n",
+    TRACE("Length %u, MemoryLoad %u, TotalPhys %lx, AvailPhys %lx,"
+          " TotalPageFile %lx, AvailPageFile %lx, TotalVirtual %lx, AvailVirtual %lx\n",
           lpBuffer->dwLength, lpBuffer->dwMemoryLoad, lpBuffer->dwTotalPhys,
           lpBuffer->dwAvailPhys, lpBuffer->dwTotalPageFile, lpBuffer->dwAvailPageFile,
           lpBuffer->dwTotalVirtual, lpBuffer->dwAvailVirtual );

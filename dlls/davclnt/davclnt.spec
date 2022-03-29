@@ -5,7 +5,7 @@
 @ stub DavInvalidateCache
 @ stdcall DavRegisterAuthCallback(ptr long)
 @ stdcall DavUnregisterAuthCallback(long)
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
 @ stdcall -private DllMain(long long ptr)
 @ stub NPAddConnection3

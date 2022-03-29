@@ -40,18 +40,7 @@
     VK_INSTANCE_PFN(vkGetPhysicalDeviceQueueFamilyProperties) \
     VK_INSTANCE_PFN(vkGetPhysicalDeviceSparseImageFormatProperties) \
     /* Vulkan 1.1 */ \
-    VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceFeatures2) \
-    VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceProperties2) \
-    /* VK_KHR_surface */ \
-    VK_INSTANCE_PFN(vkDestroySurfaceKHR) \
-    VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceCapabilitiesKHR) \
-    VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceFormatsKHR) \
-    VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfacePresentModesKHR) \
-    VK_INSTANCE_PFN(vkGetPhysicalDeviceSurfaceSupportKHR) \
-    /* VK_KHR_win32_surface */ \
-    VK_INSTANCE_PFN(vkCreateWin32SurfaceKHR) \
-    /* VK_EXT_host_query_reset */ \
-    VK_INSTANCE_EXT_PFN(vkResetQueryPoolEXT)
+    VK_INSTANCE_EXT_PFN(vkGetPhysicalDeviceProperties2)
 
 #define VK_DEVICE_FUNCS() \
     VK_DEVICE_PFN(vkAllocateCommandBuffers) \
@@ -173,19 +162,7 @@
     VK_DEVICE_PFN(vkSetEvent) \
     VK_DEVICE_PFN(vkUnmapMemory) \
     VK_DEVICE_PFN(vkUpdateDescriptorSets) \
-    VK_DEVICE_PFN(vkWaitForFences) \
-    /* VK_EXT_transform_feedback */ \
-    VK_DEVICE_EXT_PFN(vkCmdBeginQueryIndexedEXT) \
-    VK_DEVICE_EXT_PFN(vkCmdBeginTransformFeedbackEXT) \
-    VK_DEVICE_EXT_PFN(vkCmdBindTransformFeedbackBuffersEXT) \
-    VK_DEVICE_EXT_PFN(vkCmdEndQueryIndexedEXT) \
-    VK_DEVICE_EXT_PFN(vkCmdEndTransformFeedbackEXT) \
-    /* VK_KHR_swapchain */ \
-    VK_DEVICE_PFN(vkAcquireNextImageKHR) \
-    VK_DEVICE_PFN(vkCreateSwapchainKHR) \
-    VK_DEVICE_PFN(vkDestroySwapchainKHR) \
-    VK_DEVICE_PFN(vkGetSwapchainImagesKHR) \
-    VK_DEVICE_PFN(vkQueuePresentKHR)
+    VK_DEVICE_PFN(vkWaitForFences)
 
 #define DECLARE_VK_PFN(name) PFN_##name name;
 
@@ -194,27 +171,14 @@ struct vulkan_ops
 #define VK_INSTANCE_PFN     DECLARE_VK_PFN
 #define VK_INSTANCE_EXT_PFN DECLARE_VK_PFN
 #define VK_DEVICE_PFN       DECLARE_VK_PFN
-#define VK_DEVICE_EXT_PFN   DECLARE_VK_PFN
     VK_DEVICE_FUNCS()
     VK_INSTANCE_FUNCS()
 #undef VK_INSTANCE_PFN
 #undef VK_INSTANCE_EXT_PFN
 #undef VK_DEVICE_PFN
-#undef VK_DEVICE_EXT_PFN
 
     PFN_vkCreateInstance vkCreateInstance;
     PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
-};
-
-enum wined3d_vk_extension
-{
-    WINED3D_VK_EXT_NONE,
-
-    WINED3D_VK_EXT_TRANSFORM_FEEDBACK,
-    WINED3D_VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE,
-    WINED3D_VK_EXT_HOST_QUERY_RESET,
-
-    WINED3D_VK_EXT_COUNT,
 };
 
 struct wined3d_vk_info
@@ -224,7 +188,6 @@ struct wined3d_vk_info
     VkInstance instance;
     unsigned int api_version;
 
-    BOOL supported[WINED3D_VK_EXT_COUNT];
 #ifdef USE_WIN32_VULKAN
     HMODULE vulkan_lib;
 #endif

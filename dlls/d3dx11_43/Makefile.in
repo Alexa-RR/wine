@@ -3,7 +3,7 @@ MODULE = d3dx11_43.dll
 IMPORTLIB = d3dx11
 IMPORTS   = d3dcompiler
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	async.c \

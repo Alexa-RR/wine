@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -24,6 +26,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "objbase.h"
+#include "wine/unicode.h"
 
 #include "wincodecs_private.h"
 
@@ -72,7 +75,7 @@ static ULONG WINAPI PropertyBag_AddRef(IPropertyBag2 *iface)
     PropertyBag *This = impl_from_IPropertyBag2(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -82,7 +85,7 @@ static ULONG WINAPI PropertyBag_Release(IPropertyBag2 *iface)
     PropertyBag *This = impl_from_IPropertyBag2(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
     {
@@ -114,7 +117,7 @@ static LONG find_item(PropertyBag *This, LPCOLESTR name)
 
     for (i=0; i < This->prop_count; i++)
     {
-        if (wcscmp(name, This->properties[i].pstrName) == 0)
+        if (strcmpW(name, This->properties[i].pstrName) == 0)
             return i;
     }
 
@@ -128,7 +131,7 @@ static HRESULT WINAPI PropertyBag_Read(IPropertyBag2 *iface, ULONG cProperties,
     ULONG i;
     PropertyBag *This = impl_from_IPropertyBag2(iface);
 
-    TRACE("(%p,%lu,%p,%p,%p,%p)\n", iface, cProperties, pPropBag, pErrLog, pvarValue, phrError);
+    TRACE("(%p,%u,%p,%p,%p,%p)\n", iface, cProperties, pPropBag, pErrLog, pvarValue, phrError);
 
     for (i=0; i < cProperties; i++)
     {
@@ -163,7 +166,7 @@ static HRESULT WINAPI PropertyBag_Write(IPropertyBag2 *iface, ULONG cProperties,
     ULONG i;
     PropertyBag *This = impl_from_IPropertyBag2(iface);
 
-    TRACE("(%p,%lu,%p,%p)\n", iface, cProperties, pPropBag, pvarValue);
+    TRACE("(%p,%u,%p,%p)\n", iface, cProperties, pPropBag, pvarValue);
 
     for (i=0; i < cProperties; i++)
     {
@@ -217,11 +220,11 @@ static HRESULT copy_propbag2(PROPBAG2 *dest, const PROPBAG2 *src)
     dest->dwHint = src->dwHint;
     dest->dwType = src->dwType;
     dest->vt = src->vt;
-    dest->pstrName = CoTaskMemAlloc((lstrlenW(src->pstrName)+1) * sizeof(WCHAR));
+    dest->pstrName = CoTaskMemAlloc((strlenW(src->pstrName)+1) * sizeof(WCHAR));
     if(!dest->pstrName)
         return E_OUTOFMEMORY;
 
-    lstrcpyW(dest->pstrName, src->pstrName);
+    strcpyW(dest->pstrName, src->pstrName);
 
     return S_OK;
 }
@@ -233,7 +236,7 @@ static HRESULT WINAPI PropertyBag_GetPropertyInfo(IPropertyBag2 *iface, ULONG iP
     ULONG i;
     PropertyBag *This = impl_from_IPropertyBag2(iface);
 
-    TRACE("(%p,%lu,%lu,%p,%p)\n", iface, iProperty, cProperties, pPropBag, pcProperties);
+    TRACE("(%p,%u,%u,%p,%p)\n", iface, iProperty, cProperties, pPropBag, pcProperties);
 
     if (iProperty >= This->prop_count && iProperty > 0)
         return WINCODEC_ERR_VALUEOUTOFRANGE;
@@ -260,7 +263,7 @@ static HRESULT WINAPI PropertyBag_GetPropertyInfo(IPropertyBag2 *iface, ULONG iP
 static HRESULT WINAPI PropertyBag_LoadObject(IPropertyBag2 *iface, LPCOLESTR pstrName,
     DWORD dwHint, IUnknown *pUnkObject, IErrorLog *pErrLog)
 {
-    FIXME("(%p,%s,%lu,%p,%p): stub\n", iface, debugstr_w(pstrName), dwHint, pUnkObject, pErrLog);
+    FIXME("(%p,%s,%u,%p,%p): stub\n", iface, debugstr_w(pstrName), dwHint, pUnkObject, pErrLog);
     return E_NOTIMPL;
 }
 

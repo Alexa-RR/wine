@@ -18,8 +18,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdlib.h>
-#include <sys/types.h>
 
 #include "msvcrt.h"
 #include "wine/debug.h"
@@ -34,7 +36,7 @@ static unsigned int output_format;
 /*********************************************************************
  *		_beep (MSVCRT.@)
  */
-void CDECL _beep( unsigned int freq, unsigned int duration)
+void CDECL MSVCRT__beep( unsigned int freq, unsigned int duration)
 {
     TRACE(":Freq %d, Duration %d\n",freq,duration);
     Beep(freq, duration);
@@ -43,7 +45,7 @@ void CDECL _beep( unsigned int freq, unsigned int duration)
 /*********************************************************************
  *		srand (MSVCRT.@)
  */
-void CDECL srand( unsigned int seed )
+void CDECL MSVCRT_srand( unsigned int seed )
 {
     thread_data_t *data = msvcrt_get_thread_data();
     data->random_seed = seed;
@@ -52,25 +54,25 @@ void CDECL srand( unsigned int seed )
 /*********************************************************************
  *		rand (MSVCRT.@)
  */
-int CDECL rand(void)
+int CDECL MSVCRT_rand(void)
 {
     thread_data_t *data = msvcrt_get_thread_data();
 
     /* this is the algorithm used by MSVC, according to
      * http://en.wikipedia.org/wiki/List_of_pseudorandom_number_generators */
     data->random_seed = data->random_seed * 214013 + 2531011;
-    return (data->random_seed >> 16) & RAND_MAX;
+    return (data->random_seed >> 16) & MSVCRT_RAND_MAX;
 }
 
 /*********************************************************************
  *		rand_s (MSVCRT.@)
  */
-int CDECL rand_s(unsigned int *pval)
+int CDECL MSVCRT_rand_s(unsigned int *pval)
 {
     if (!pval || !RtlGenRandom(pval, sizeof(*pval)))
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
     return 0;
 }
@@ -78,9 +80,9 @@ int CDECL rand_s(unsigned int *pval)
 /*********************************************************************
  *		_sleep (MSVCRT.@)
  */
-void CDECL _sleep(__msvcrt_ulong timeout)
+void CDECL MSVCRT__sleep(MSVCRT_ulong timeout)
 {
-  TRACE("_sleep for %ld milliseconds\n",timeout);
+  TRACE("_sleep for %d milliseconds\n",timeout);
   Sleep((timeout)?timeout:1);
 }
 
@@ -153,7 +155,8 @@ void* CDECL _lsearch(const void* match, void* start,
 /*********************************************************************
  *                  bsearch_s (msvcrt.@)
  */
-void* CDECL bsearch_s(const void *key, const void *base, size_t nmemb, size_t size,
+void* CDECL MSVCRT_bsearch_s(const void *key, const void *base,
+                             MSVCRT_size_t nmemb, MSVCRT_size_t size,
                              int (__cdecl *compare)(void *, const void *, const void *), void *ctx)
 {
     ssize_t min = 0;
@@ -185,10 +188,10 @@ static int CDECL compare_wrapper(void *ctx, const void *e1, const void *e2)
 /*********************************************************************
  *                  bsearch (msvcrt.@)
  */
-void* CDECL bsearch(const void *key, const void *base, size_t nmemb,
-        size_t size, int (__cdecl *compar)(const void *, const void *))
+void* CDECL MSVCRT_bsearch(const void *key, const void *base, MSVCRT_size_t nmemb,
+        MSVCRT_size_t size, int (__cdecl *compar)(const void *, const void *))
 {
-    return bsearch_s(key, base, nmemb, size, compare_wrapper, compar);
+    return MSVCRT_bsearch_s(key, base, nmemb, size, compare_wrapper, compar);
 }
 /*********************************************************************
  *		_chkesp (MSVCRT.@)
@@ -213,7 +216,7 @@ void* CDECL bsearch(const void *key, const void *base, size_t nmemb,
  */
 #ifdef __i386__
 
-# if defined(__GNUC__) || defined(__clang__)
+# ifdef __GNUC__
 
 __ASM_GLOBAL_FUNC(_chkesp,
                   "jnz 1f\n\t"
@@ -227,7 +230,7 @@ __ASM_GLOBAL_FUNC(_chkesp,
                   "pushl %eax\n\t"
                   "pushl %ecx\n\t"
                   "pushl %edx\n\t"
-                  "call " __ASM_NAME("chkesp_fail") "\n\t"
+                  "call " __ASM_NAME("MSVCRT_chkesp_fail") "\n\t"
                   "popl %edx\n\t"
                   "popl %ecx\n\t"
                   "popl %eax\n\t"
@@ -236,13 +239,13 @@ __ASM_GLOBAL_FUNC(_chkesp,
                   __ASM_CFI(".cfi_same_value %ebp\n\t")
                   "ret")
 
-void CDECL DECLSPEC_HIDDEN chkesp_fail(void)
+void CDECL DECLSPEC_HIDDEN MSVCRT_chkesp_fail(void)
 {
   ERR("Stack pointer incorrect after last function call - Bad prototype/spec entry?\n");
   DebugBreak();
 }
 
-# else  /* __GNUC__ || __clang__ */
+# else  /* __GNUC__ */
 
 /**********************************************************************/
 
@@ -250,11 +253,11 @@ void CDECL _chkesp(void)
 {
 }
 
-# endif  /* __GNUC__ || __clang__ */
+# endif  /* __GNUC__ */
 
 #endif  /* __i386__ */
 
-static inline void swap(char *l, char *r, size_t size)
+static inline void swap(char *l, char *r, MSVCRT_size_t size)
 {
     char tmp;
 
@@ -265,10 +268,10 @@ static inline void swap(char *l, char *r, size_t size)
     }
 }
 
-static void small_sort(void *base, size_t nmemb, size_t size,
+static void small_sort(void *base, MSVCRT_size_t nmemb, MSVCRT_size_t size,
         int (CDECL *compar)(void *, const void *, const void *), void *context)
 {
-    size_t e, i;
+    MSVCRT_size_t e, i;
     char *max, *p;
 
     for(e=nmemb; e>1; e--) {
@@ -284,11 +287,11 @@ static void small_sort(void *base, size_t nmemb, size_t size,
     }
 }
 
-static void quick_sort(void *base, size_t nmemb, size_t size,
+static void quick_sort(void *base, MSVCRT_size_t nmemb, MSVCRT_size_t size,
         int (CDECL *compar)(void *, const void *, const void *), void *context)
 {
-    size_t stack_lo[8*sizeof(size_t)], stack_hi[8*sizeof(size_t)];
-    size_t beg, end, lo, hi, med;
+    MSVCRT_size_t stack_lo[8*sizeof(MSVCRT_size_t)], stack_hi[8*sizeof(MSVCRT_size_t)];
+    MSVCRT_size_t beg, end, lo, hi, med;
     int stack_pos;
 
     stack_pos = 0;
@@ -367,10 +370,10 @@ static void quick_sort(void *base, size_t nmemb, size_t size,
  * This function is trying to sort data doing identical comparisons
  * as native does. There are still cases where it behaves differently.
  */
-void CDECL qsort_s(void *base, size_t nmemb, size_t size,
+void CDECL MSVCRT_qsort_s(void *base, MSVCRT_size_t nmemb, MSVCRT_size_t size,
     int (CDECL *compar)(void *, const void *, const void *), void *context)
 {
-    const size_t total_size = nmemb*size;
+    const MSVCRT_size_t total_size = nmemb*size;
 
     if (!MSVCRT_CHECK_PMT(base != NULL || (base == NULL && nmemb == 0))) return;
     if (!MSVCRT_CHECK_PMT(size > 0)) return;
@@ -385,16 +388,16 @@ void CDECL qsort_s(void *base, size_t nmemb, size_t size,
 /*********************************************************************
  * qsort (MSVCRT.@)
  */
-void CDECL qsort(void *base, size_t nmemb, size_t size,
+void CDECL MSVCRT_qsort(void *base, MSVCRT_size_t nmemb, MSVCRT_size_t size,
         int (CDECL *compar)(const void*, const void*))
 {
-    qsort_s(base, nmemb, size, compare_wrapper, compar);
+    MSVCRT_qsort_s(base, nmemb, size, compare_wrapper, compar);
 }
 
 /*********************************************************************
  * _get_output_format (MSVCRT.@)
  */
-unsigned int CDECL _get_output_format(void)
+unsigned int CDECL MSVCRT__get_output_format(void)
 {
    return output_format;
 }
@@ -402,11 +405,11 @@ unsigned int CDECL _get_output_format(void)
 /*********************************************************************
  * _set_output_format (MSVCRT.@)
  */
-unsigned int CDECL _set_output_format(unsigned int new_output_format)
+unsigned int CDECL MSVCRT__set_output_format(unsigned int new_output_format)
 {
     unsigned int ret = output_format;
 
-    if(!MSVCRT_CHECK_PMT(new_output_format==0 || new_output_format==_TWO_DIGIT_EXPONENT))
+    if(!MSVCRT_CHECK_PMT(new_output_format==0 || new_output_format==MSVCRT__TWO_DIGIT_EXPONENT))
         return ret;
 
     output_format = new_output_format;
@@ -416,7 +419,7 @@ unsigned int CDECL _set_output_format(unsigned int new_output_format)
 /*********************************************************************
  * _resetstkoflw (MSVCRT.@)
  */
-int CDECL _resetstkoflw(void)
+int CDECL MSVCRT__resetstkoflw(void)
 {
     int stack_addr;
     DWORD oldprot;
@@ -430,7 +433,7 @@ int CDECL _resetstkoflw(void)
 /*********************************************************************
  *  _decode_pointer (MSVCR80.@)
  */
-void * CDECL _decode_pointer(void * ptr)
+void * CDECL MSVCRT_decode_pointer(void * ptr)
 {
     return DecodePointer(ptr);
 }
@@ -438,7 +441,7 @@ void * CDECL _decode_pointer(void * ptr)
 /*********************************************************************
  *  _encode_pointer (MSVCR80.@)
  */
-void * CDECL _encode_pointer(void * ptr)
+void * CDECL MSVCRT_encode_pointer(void * ptr)
 {
     return EncodePointer(ptr);
 }
@@ -490,7 +493,7 @@ unsigned short CDECL _byteswap_ushort(unsigned short s)
 /*********************************************************************
  * _byteswap_ulong (MSVCR80.@)
  */
-__msvcrt_ulong CDECL _byteswap_ulong(__msvcrt_ulong l)
+ULONG CDECL MSVCRT__byteswap_ulong(ULONG l)
 {
     return (l<<24) + ((l<<8)&0xFF0000) + ((l>>8)&0xFF00) + (l>>24);
 }
@@ -511,22 +514,22 @@ unsigned __int64 CDECL _byteswap_uint64(unsigned __int64 i)
 /*********************************************************************
  *  __crtGetShowWindowMode (MSVCR110.@)
  */
-int CDECL __crtGetShowWindowMode(void)
+int CDECL MSVCR110__crtGetShowWindowMode(void)
 {
     STARTUPINFOW si;
 
     GetStartupInfoW(&si);
-    TRACE("flags=%lx window=%d\n", si.dwFlags, si.wShowWindow);
+    TRACE("flags=%x window=%d\n", si.dwFlags, si.wShowWindow);
     return si.dwFlags & STARTF_USESHOWWINDOW ? si.wShowWindow : SW_SHOWDEFAULT;
 }
 
 /*********************************************************************
  *  __crtInitializeCriticalSectionEx (MSVCR110.@)
  */
-BOOL CDECL __crtInitializeCriticalSectionEx(
+BOOL CDECL MSVCR110__crtInitializeCriticalSectionEx(
         CRITICAL_SECTION *cs, DWORD spin_count, DWORD flags)
 {
-    TRACE("(%p %lx %lx)\n", cs, spin_count, flags);
+    TRACE("(%p %x %x)\n", cs, spin_count, flags);
     return InitializeCriticalSectionEx(cs, spin_count, flags);
 }
 
@@ -536,9 +539,9 @@ BOOL CDECL __crtInitializeCriticalSectionEx(
 /*********************************************************************
  * _vacopy (MSVCR120.@)
  */
-void CDECL _vacopy(va_list *dest, va_list src)
+void CDECL MSVCR120__vacopy(__ms_va_list *dest, __ms_va_list src)
 {
-    va_copy(*dest, src);
+    __ms_va_copy(*dest, src);
 }
 #endif
 
@@ -546,7 +549,7 @@ void CDECL _vacopy(va_list *dest, va_list src)
 /*********************************************************************
  * _crt_debugger_hook (MSVCR80.@)
  */
-void CDECL _crt_debugger_hook(int reserved)
+void CDECL MSVCRT__crt_debugger_hook(int reserved)
 {
     WARN("(%x)\n", reserved);
 }
@@ -556,11 +559,17 @@ void CDECL _crt_debugger_hook(int reserved)
 /*********************************************************************
  *  __crtUnhandledException (MSVCR110.@)
  */
-LONG CDECL __crtUnhandledException(EXCEPTION_POINTERS *ep)
+LONG CDECL MSVCRT__crtUnhandledException(EXCEPTION_POINTERS *ep)
 {
     TRACE("(%p)\n", ep);
     SetUnhandledExceptionFilter(NULL);
     return UnhandledExceptionFilter(ep);
+}
+
+/* ?_Trace_agents@Concurrency@@YAXW4Agents_EventType@1@_JZZ */
+void WINAPIV _Trace_agents(/*enum Concurrency::Agents_EventType*/int type, __int64 id, ...)
+{
+    FIXME("(%d %s)\n", type, wine_dbgstr_longlong(id));
 }
 #endif
 
@@ -568,16 +577,16 @@ LONG CDECL __crtUnhandledException(EXCEPTION_POINTERS *ep)
 /*********************************************************************
  *		__crtSleep (MSVCR120.@)
  */
-void CDECL __crtSleep(DWORD timeout)
+void CDECL MSVCRT__crtSleep(DWORD timeout)
 {
-  TRACE("(%lu)\n", timeout);
+  TRACE("(%u)\n", timeout);
   Sleep(timeout);
 }
 
 /*********************************************************************
  * _SetWinRTOutOfMemoryExceptionCallback (MSVCR120.@)
  */
-void CDECL _SetWinRTOutOfMemoryExceptionCallback(void *callback)
+void CDECL MSVCR120__SetWinRTOutOfMemoryExceptionCallback(void *callback)
 {
     FIXME("(%p): stub\n", callback);
 }

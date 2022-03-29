@@ -149,7 +149,7 @@ static void process_detach(void)
  */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID fImpLoad)
 {
-    TRACE("%p 0x%lx %p\n", hinstDLL, fdwReason, fImpLoad);
+    TRACE("%p 0x%x %p\n", hinstDLL, fdwReason, fImpLoad);
 
     URLMON_DllMain( hinstDLL, fdwReason, fImpLoad );
 
@@ -230,7 +230,7 @@ const char *debugstr_bindstatus(ULONG status)
     X(BINDSTATUS_DISPLAYNAMEAVAILABLE);
 #undef X
     default:
-        return wine_dbg_sprintf("(invalid status %lu)", status);
+        return wine_dbg_sprintf("(invalid status %u)", status);
     }
 }
 
@@ -383,14 +383,21 @@ struct object_creation_info
     LPCWSTR protocol;
 };
 
+static const WCHAR wszFile[] = {'f','i','l','e',0};
+static const WCHAR wszFtp[]  = {'f','t','p',0};
+static const WCHAR wszGopher[]  = {'g','o','p','h','e','r',0};
+static const WCHAR wszHttp[] = {'h','t','t','p',0};
+static const WCHAR wszHttps[] = {'h','t','t','p','s',0};
+static const WCHAR wszMk[]   = {'m','k',0};
+
 static const struct object_creation_info object_creation[] =
 {
-    { &CLSID_FileProtocol,            &FileProtocolCF.IClassFactory_iface,    L"file" },
-    { &CLSID_FtpProtocol,             &FtpProtocolCF.IClassFactory_iface,     L"ftp"  },
-    { &CLSID_GopherProtocol,          &GopherProtocolCF.IClassFactory_iface,  L"gopher" },
-    { &CLSID_HttpProtocol,            &HttpProtocolCF.IClassFactory_iface,    L"http" },
-    { &CLSID_HttpSProtocol,           &HttpSProtocolCF.IClassFactory_iface,   L"https" },
-    { &CLSID_MkProtocol,              &MkProtocolCF.IClassFactory_iface,      L"mk" },
+    { &CLSID_FileProtocol,            &FileProtocolCF.IClassFactory_iface,    wszFile },
+    { &CLSID_FtpProtocol,             &FtpProtocolCF.IClassFactory_iface,     wszFtp  },
+    { &CLSID_GopherProtocol,          &GopherProtocolCF.IClassFactory_iface,  wszGopher },
+    { &CLSID_HttpProtocol,            &HttpProtocolCF.IClassFactory_iface,    wszHttp },
+    { &CLSID_HttpSProtocol,           &HttpSProtocolCF.IClassFactory_iface,   wszHttps },
+    { &CLSID_MkProtocol,              &MkProtocolCF.IClassFactory_iface,      wszMk },
     { &CLSID_InternetSecurityManager, &SecurityManagerCF.IClassFactory_iface, NULL    },
     { &CLSID_InternetZoneManager,     &ZoneManagerCF.IClassFactory_iface,     NULL    },
     { &CLSID_StdURLMoniker,           &StdURLMonikerCF.IClassFactory_iface,   NULL    },
@@ -453,7 +460,9 @@ static HRESULT register_inf(BOOL doregister)
     HRESULT (WINAPI *pRegInstall)(HMODULE hm, LPCSTR pszSection, const STRTABLEA* pstTable);
     HMODULE hAdvpack;
 
-    hAdvpack = LoadLibraryW(L"advpack.dll");
+    static const WCHAR wszAdvpack[] = {'a','d','v','p','a','c','k','.','d','l','l',0};
+
+    hAdvpack = LoadLibraryW(wszAdvpack);
     pRegInstall = (void *)GetProcAddress(hAdvpack, "RegInstall");
 
     return pRegInstall(hProxyDll, doregister ? "RegisterDll" : "UnregisterDll", NULL);
@@ -515,7 +524,7 @@ HRESULT WINAPI DllRegisterServerEx(void)
  */
 HRESULT WINAPI IsValidURL(LPBC pBC, LPCWSTR szURL, DWORD dwReserved)
 {
-    FIXME("(%p, %s, %ld): stub\n", pBC, debugstr_w(szURL), dwReserved);
+    FIXME("(%p, %s, %d): stub\n", pBC, debugstr_w(szURL), dwReserved);
 
     if (dwReserved || !szURL)
         return E_INVALIDARG;
@@ -531,7 +540,7 @@ HRESULT WINAPI IsValidURL(LPBC pBC, LPCWSTR szURL, DWORD dwReserved)
 HRESULT WINAPI FaultInIEFeature( HWND hwnd, uCLSSPEC * pClassSpec,
                                  QUERYCONTEXT *pQuery, DWORD flags )
 {
-    FIXME("%p %p %p %08lx\n", hwnd, pClassSpec, pQuery, flags);
+    FIXME("%p %p %p %08x\n", hwnd, pClassSpec, pQuery, flags);
     return E_NOTIMPL;
 }
 
@@ -543,7 +552,7 @@ HRESULT WINAPI CoGetClassObjectFromURL( REFCLSID rclsid, LPCWSTR szCodeURL, DWOR
                                         LPBINDCTX pBindCtx, DWORD dwClsContext, LPVOID pvReserved,
                                         REFIID riid, LPVOID *ppv )
 {
-    FIXME("(%s %s %ld %ld %s %p %ld %p %s %p) Stub!\n", debugstr_guid(rclsid), debugstr_w(szCodeURL),
+    FIXME("(%s %s %d %d %s %p %d %p %s %p) Stub!\n", debugstr_guid(rclsid), debugstr_w(szCodeURL),
 	dwFileVersionMS, dwFileVersionLS, debugstr_w(szContentType), pBindCtx, dwClsContext, pvReserved,
 	debugstr_guid(riid), ppv);
     return E_NOINTERFACE;
@@ -630,7 +639,7 @@ HRESULT WINAPI CopyStgMedium(const STGMEDIUM *src, STGMEDIUM *dst)
         }
         break;
     default:
-        FIXME("Unimplemented tymed %ld\n", src->tymed);
+        FIXME("Unimplemented tymed %d\n", src->tymed);
     }
 
     if(dst->pUnkForRelease)
@@ -712,7 +721,7 @@ HRESULT WINAPI GetClassFileOrMime(LPBC pBC, LPCWSTR pszFilename,
         LPVOID pBuffer, DWORD cbBuffer, LPCWSTR pszMimeType, DWORD dwReserved,
         CLSID *pclsid)
 {
-    FIXME("(%p, %s, %p, %ld, %s, 0x%08lx, %p): stub\n", pBC, debugstr_w(pszFilename), pBuffer,
+    FIXME("(%p, %s, %p, %d, %s, 0x%08x, %p): stub\n", pBC, debugstr_w(pszFilename), pBuffer,
             cbBuffer, debugstr_w(pszMimeType), dwReserved, pclsid);
     return E_NOTIMPL;
 }
@@ -768,7 +777,7 @@ BOOL WINAPI IsProtectedModeURL(const WCHAR *url)
  */
 int WINAPI LogSqmBits(DWORD unk1, DWORD unk2)
 {
-    FIXME("stub: %ld %ld\n", unk1, unk2);
+    FIXME("stub: %d %d\n", unk1, unk2);
     return 0;
 }
 
@@ -778,7 +787,7 @@ int WINAPI LogSqmBits(DWORD unk1, DWORD unk2)
  */
 void WINAPI LogSqmUXCommandOffsetInternal(DWORD unk1, DWORD unk2, DWORD unk3, DWORD unk4)
 {
-    FIXME("stub: %ld %ld %ld %ld\n", unk1, unk2, unk3, unk4);
+    FIXME("stub: %d %d %d %d\n", unk1, unk2, unk3, unk4);
 }
 
 /***********************************************************************
@@ -787,7 +796,7 @@ void WINAPI LogSqmUXCommandOffsetInternal(DWORD unk1, DWORD unk2, DWORD unk3, DW
  */
 int WINAPI MapUriToBrowserEmulationState(DWORD unk1, DWORD unk2, DWORD unk3)
 {
-    FIXME("stub: %ld %ld %ld\n", unk1, unk2, unk3);
+    FIXME("stub: %d %d %d\n", unk1, unk2, unk3);
     return 0;
 }
 
@@ -797,7 +806,7 @@ int WINAPI MapUriToBrowserEmulationState(DWORD unk1, DWORD unk2, DWORD unk3)
  */
 int WINAPI MapBrowserEmulationModeToUserAgent(DWORD unk1, DWORD unk2)
 {
-    FIXME("stub: %ld %ld\n", unk1, unk2);
+    FIXME("stub: %d %d\n", unk1, unk2);
     return 0;
 }
 
@@ -807,7 +816,7 @@ int WINAPI MapBrowserEmulationModeToUserAgent(DWORD unk1, DWORD unk2)
  */
 HRESULT WINAPI CoInternetGetBrowserProfile(DWORD unk)
 {
-    FIXME("%lx: stub\n", unk);
+    FIXME("%x: stub\n", unk);
     return E_NOTIMPL;
 }
 
@@ -836,7 +845,7 @@ HRESULT WINAPI RegisterMediaTypes(UINT types, LPCSTR *szTypes, CLIPFORMAT *cfTyp
  */
 BOOL WINAPI ShouldShowIntranetWarningSecband(DWORD unk)
 {
-    FIXME("%lx: stub\n", unk);
+    FIXME("%x: stub\n", unk);
     return FALSE;
 }
 

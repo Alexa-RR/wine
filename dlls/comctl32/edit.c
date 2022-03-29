@@ -349,7 +349,7 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData_linedef(EDITSTATE *es, HD
                                          NULL, NULL, NULL, &tabdef, NULL, &line_def->ssa);
 		if (FAILED(hr))
 		{
-			WARN("ScriptStringAnalyse failed, hr %#lx.\n", hr);
+			WARN("ScriptStringAnalyse failed (%x)\n",hr);
 			line_def->ssa = NULL;
 		}
 
@@ -406,7 +406,7 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 
 static inline INT get_vertical_line_count(EDITSTATE *es)
 {
-	INT vlc = es->line_height ? (es->format_rect.bottom - es->format_rect.top) / es->line_height : 0;
+	INT vlc = (es->format_rect.bottom - es->format_rect.top) / es->line_height;
 	return max(1,vlc);
 }
 
@@ -1543,7 +1543,7 @@ static void EDIT_UpdateScrollInfo(EDITSTATE *es)
 	si.fMask	= SIF_PAGE | SIF_POS | SIF_RANGE | SIF_DISABLENOSCROLL;
 	si.nMin		= 0;
 	si.nMax		= es->line_count - 1;
-	si.nPage	= es->line_height ? (es->format_rect.bottom - es->format_rect.top) / es->line_height : 0;
+	si.nPage	= (es->format_rect.bottom - es->format_rect.top) / es->line_height;
 	si.nPos		= es->y_offset;
 	TRACE("SB_VERT, nMin=%d, nMax=%d, nPage=%d, nPos=%d\n",
 		si.nMin, si.nMax, si.nPage, si.nPos);
@@ -1579,12 +1579,8 @@ static BOOL EDIT_EM_LineScroll_internal(EDITSTATE *es, INT dx, INT dy)
 {
 	INT nyoff;
 	INT x_offset_in_pixels;
-	INT lines_per_page;
-
-	if (!es->line_height || !es->char_width)
-		return TRUE;
-
-	lines_per_page = (es->format_rect.bottom - es->format_rect.top) / es->line_height;
+	INT lines_per_page = (es->format_rect.bottom - es->format_rect.top) /
+			      es->line_height;
 
 	if (es->style & ES_MULTILINE)
 	{
@@ -2355,7 +2351,7 @@ static HLOCAL EDIT_EM_GetHandle(EDITSTATE *es)
     /* The text buffer handle belongs to the app */
     es->hlocapp = es->hloc32W;
 
-    TRACE("Returning %p, LocalSize() = %Id\n", es->hlocapp, LocalSize(es->hlocapp));
+    TRACE("Returning %p, LocalSize() = %ld\n", es->hlocapp, LocalSize(es->hlocapp));
     return es->hlocapp;
 }
 
@@ -2514,7 +2510,7 @@ static void EDIT_EM_ReplaceSel(EDITSTATE *es, BOOL can_undo, const WCHAR *lpsz_r
 				abs(es->selection_end - es->selection_start) - strl, hrgn);
 			strl = 0;
 			e = s;
-                        SetRectRgn(hrgn, 0, 0, 0, 0);
+			hrgn = CreateRectRgn(0, 0, 0, 0);
 			EDIT_NOTIFY_PARENT(es, EN_MAXTEXT);
 		}
 	}
@@ -3031,16 +3027,19 @@ static LRESULT EDIT_WM_Char(EDITSTATE *es, WCHAR c)
 			if (es->style & ES_READONLY) {
 				EDIT_MoveHome(es, FALSE, FALSE);
 				EDIT_MoveDown_ML(es, FALSE);
-			} else
-				EDIT_EM_ReplaceSel(es, TRUE, L"\r\n", 2, TRUE, TRUE);
+			} else {
+				static const WCHAR cr_lfW[] = {'\r','\n'};
+				EDIT_EM_ReplaceSel(es, TRUE, cr_lfW, 2, TRUE, TRUE);
+			}
 		}
 		break;
 	case '\t':
 		if ((es->style & ES_MULTILINE) && !(es->style & ES_READONLY))
 		{
+			static const WCHAR tabW[] = {'\t'};
                         if (EDIT_IsInsideDialog(es))
                             break;
-			EDIT_EM_ReplaceSel(es, TRUE, L"\t", 1, TRUE, TRUE);
+			EDIT_EM_ReplaceSel(es, TRUE, tabW, 1, TRUE, TRUE);
 		}
 		break;
 	case VK_BACK:
@@ -3664,6 +3663,7 @@ static void EDIT_WM_NCPaint(HWND hwnd, HRGN region)
         OffsetRect(&r, -r.left, -r.top);
 
         dc = GetDCEx(hwnd, region, DCX_WINDOW|DCX_INTERSECTRGN);
+        OffsetRect(&r, -r.left, -r.top);
 
         if (IsThemeBackgroundPartiallyTransparent(theme, part, state))
             DrawThemeParentBackground(hwnd, dc, &r);
@@ -3673,8 +3673,6 @@ static void EDIT_WM_NCPaint(HWND hwnd, HRGN region)
 
     /* Call default proc to get the scrollbars etc. also painted */
     DefWindowProcW (hwnd, WM_NCPAINT, (WPARAM)cliprgn, 0);
-    if (cliprgn != region)
-        DeleteObject(cliprgn);
 }
 
 /*********************************************************************
@@ -3896,7 +3894,7 @@ static LRESULT  EDIT_WM_StyleChanged ( EDITSTATE *es, WPARAM which, const STYLES
         } else if (GWL_EXSTYLE == which) {
                 ; /* FIXME - what is needed here */
         } else {
-                WARN ("Invalid style change %#Ix.\n", which);
+                WARN ("Invalid style change %ld\n",which);
         }
 
         return 0;
@@ -4045,7 +4043,7 @@ static LRESULT EDIT_WM_HScroll(EDITSTATE *es, INT action, INT pos)
 		    INT fw = es->format_rect.right - es->format_rect.left;
 		    ret = es->text_width ? es->x_offset * 100 / (es->text_width - fw) : 0;
 		}
-		TRACE("EM_GETTHUMB: returning %Id\n", ret);
+		TRACE("EM_GETTHUMB: returning %ld\n", ret);
 		return ret;
 	}
 	case EM_LINESCROLL:
@@ -4168,7 +4166,7 @@ static LRESULT EDIT_WM_VScroll(EDITSTATE *es, INT action, INT pos)
 		    INT vlc = get_vertical_line_count(es);
 		    ret = es->line_count ? es->y_offset * 100 / (es->line_count - vlc) : 0;
 		}
-		TRACE("EM_GETTHUMB: returning %Id\n", ret);
+		TRACE("EM_GETTHUMB: returning %ld\n", ret);
 		return ret;
 	}
 	case EM_LINESCROLL:
@@ -4401,7 +4399,7 @@ static LRESULT EDIT_WM_NCCreate(HWND hwnd, LPCREATESTRUCTW lpcs)
 	EDITSTATE *es;
 	UINT alloc_size;
 
-    TRACE("Creating edit control, style = %#lx\n", lpcs->style);
+    TRACE("Creating edit control, style = %08x\n", lpcs->style);
 
     if (!(es = heap_alloc_zero(sizeof(*es))))
         return FALSE;
@@ -4597,10 +4595,11 @@ static LRESULT EDIT_WM_NCDestroy(EDITSTATE *es)
 static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     EDITSTATE *es = (EDITSTATE *)GetWindowLongPtrW(hwnd, 0);
+    HTHEME theme = GetWindowTheme(hwnd);
     LRESULT result = 0;
     RECT *rect;
 
-    TRACE("hwnd %p, msg %#x, wparam %Ix, lparam %Ix\n", hwnd, msg, wParam, lParam);
+    TRACE("hwnd=%p msg=%#x wparam=%lx lparam=%lx\n", hwnd, msg, wParam, lParam);
 
     if (!es && msg != WM_NCCREATE)
         return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -4904,7 +4903,7 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     case WM_ENABLE:
         es->bEnableState = (BOOL) wParam;
         EDIT_UpdateText(es, NULL, TRUE);
-        if (GetWindowTheme(hwnd))
+        if (theme)
             RedrawWindow(hwnd, NULL, NULL, RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW);
         break;
 
@@ -4934,7 +4933,7 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         break;
 
     case WM_KILLFOCUS:
-        result = EDIT_WM_KillFocus(GetWindowTheme(hwnd), es);
+        result = EDIT_WM_KillFocus(theme, es);
         break;
 
     case WM_LBUTTONDBLCLK:
@@ -4971,7 +4970,7 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         break;
 
     case WM_SETFOCUS:
-        EDIT_WM_SetFocus(GetWindowTheme(hwnd), es);
+        EDIT_WM_SetFocus(theme, es);
         break;
 
     case WM_SETFONT:
@@ -5095,9 +5094,8 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         break;
 
     case WM_THEMECHANGED:
-        CloseThemeData(GetWindowTheme(hwnd));
+        CloseThemeData (theme);
         OpenThemeData(hwnd, WC_EDITW);
-        InvalidateRect(hwnd, NULL, TRUE);
         break;
 
     default:
@@ -5108,7 +5106,7 @@ static LRESULT CALLBACK EDIT_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     if (IsWindow(hwnd) && es && msg != EM_GETHANDLE)
         EDIT_UnlockBuffer(es, FALSE);
 
-    TRACE("hwnd=%p msg=%x -- %#Ix\n", hwnd, msg, result);
+    TRACE("hwnd=%p msg=%x -- 0x%08lx\n", hwnd, msg, result);
 
     return result;
 }

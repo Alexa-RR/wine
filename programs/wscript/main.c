@@ -47,6 +47,9 @@
 #endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(wscript);
+
+static const WCHAR wscriptW[] = {'W','S','c','r','i','p','t',0};
+static const WCHAR wshW[] = {'W','S','H',0};
 WCHAR scriptFullName[MAX_PATH];
 
 ITypeInfo *host_ti;
@@ -81,9 +84,9 @@ static HRESULT WINAPI ActiveScriptSite_GetLCID(IActiveScriptSite *iface, LCID *p
 static HRESULT WINAPI ActiveScriptSite_GetItemInfo(IActiveScriptSite *iface,
         LPCOLESTR pstrName, DWORD dwReturnMask, IUnknown **ppunkItem, ITypeInfo **ppti)
 {
-    WINE_TRACE("(%s %lx %p %p)\n", wine_dbgstr_w(pstrName), dwReturnMask, ppunkItem, ppti);
+    WINE_TRACE("(%s %x %p %p)\n", wine_dbgstr_w(pstrName), dwReturnMask, ppunkItem, ppti);
 
-    if(lstrcmpW(pstrName, L"WSH") && lstrcmpW(pstrName, L"WScript"))
+    if(lstrcmpW(pstrName, wshW) && lstrcmpW(pstrName, wscriptW))
         return E_FAIL;
 
     if(dwReturnMask & SCRIPTINFO_ITYPEINFO) {
@@ -220,7 +223,9 @@ static BOOL load_typelib(void)
     ITypeLib *typelib;
     HRESULT hres;
 
-    hres = LoadTypeLib(L"wscript.exe", &typelib);
+    static const WCHAR wscript_exeW[] = {'w','s','c','r','i','p','t','.','e','x','e',0};
+
+    hres = LoadTypeLib(wscript_exeW, &typelib);
     if(FAILED(hres))
         return FALSE;
 
@@ -240,6 +245,9 @@ static BOOL get_engine_clsid(const WCHAR *ext, CLSID *clsid)
     HKEY hkey;
     HRESULT hres;
 
+    static const WCHAR script_engineW[] =
+        {'\\','S','c','r','i','p','t','E','n','g','i','n','e',0};
+
     res = RegOpenKeyW(HKEY_CLASSES_ROOT, ext, &hkey);
     if(res != ERROR_SUCCESS)
         return FALSE;
@@ -252,7 +260,7 @@ static BOOL get_engine_clsid(const WCHAR *ext, CLSID *clsid)
 
     WINE_TRACE("fileid is %s\n", wine_dbgstr_w(fileid));
 
-    lstrcatW(fileid, L"\\ScriptEngine");
+    lstrcatW(fileid, script_engineW);
     res = RegOpenKeyW(HKEY_CLASSES_ROOT, fileid, &hkey);
     if(res != ERROR_SUCCESS)
         return FALSE;
@@ -311,11 +319,11 @@ static BOOL init_engine(IActiveScript *script, IActiveScriptParse *parser)
     if(FAILED(hres))
         return FALSE;
 
-    hres = IActiveScript_AddNamedItem(script, L"WScript", SCRIPTITEM_ISVISIBLE);
+    hres = IActiveScript_AddNamedItem(script, wscriptW, SCRIPTITEM_ISVISIBLE);
     if(FAILED(hres))
         return FALSE;
 
-    hres = IActiveScript_AddNamedItem(script, L"WSH", SCRIPTITEM_ISVISIBLE);
+    hres = IActiveScript_AddNamedItem(script, wshW, SCRIPTITEM_ISVISIBLE);
     if(FAILED(hres))
         return FALSE;
 
@@ -368,17 +376,21 @@ static void run_script(const WCHAR *filename, IActiveScript *script, IActiveScri
             SCRIPTTEXT_HOSTMANAGESSOURCE|SCRIPTITEM_ISVISIBLE, NULL, NULL);
     SysFreeString(text);
     if(FAILED(hres)) {
-        WINE_FIXME("ParseScriptText failed: %08lx\n", hres);
+        WINE_FIXME("ParseScriptText failed: %08x\n", hres);
         return;
     }
 
     hres = IActiveScript_SetScriptState(script, SCRIPTSTATE_STARTED);
     if(FAILED(hres))
-        WINE_FIXME("SetScriptState failed: %08lx\n", hres);
+        WINE_FIXME("SetScriptState failed: %08x\n", hres);
 }
 
 static BOOL set_host_properties(const WCHAR *prop)
 {
+    static const WCHAR nologoW[] = {'n','o','l','o','g','o',0};
+    static const WCHAR iactive[] = {'i',0};
+    static const WCHAR batch[] = {'b',0};
+
     if(*prop == '/') {
         ++prop;
         if(*prop == '/')
@@ -387,12 +399,12 @@ static BOOL set_host_properties(const WCHAR *prop)
     else
         ++prop;
 
-    if(wcsicmp(prop, L"i") == 0)
+    if(wcsicmp(prop, iactive) == 0)
         wshInteractive = VARIANT_TRUE;
-    else if(wcsicmp(prop, L"b") == 0)
+    else if(wcsicmp(prop, batch) == 0)
         wshInteractive = VARIANT_FALSE;
-    else if(wcsicmp(prop, L"nologo") == 0)
-        WINE_FIXME("ignored %s switch\n", debugstr_w(L"nologo"));
+    else if(wcsicmp(prop, nologoW) == 0)
+        WINE_FIXME("ignored %s switch\n", debugstr_w(nologoW));
     else
     {
         WINE_FIXME("unsupported switch %s\n", debugstr_w(prop));

@@ -131,10 +131,9 @@ static UINT add_row(MSIWHEREVIEW *wv, UINT vals[])
         MSIROWENTRY **new_reorder;
         UINT newsize = wv->reorder_size * 2;
 
-        new_reorder = msi_realloc(wv->reorder, newsize * sizeof(*new_reorder));
+        new_reorder = msi_realloc_zero(wv->reorder, sizeof(MSIROWENTRY *) * newsize);
         if (!new_reorder)
             return ERROR_OUTOFMEMORY;
-        memset(new_reorder + wv->reorder_size, 0, (newsize - wv->reorder_size) * sizeof(*new_reorder));
 
         wv->reorder = new_reorder;
         wv->reorder_size = newsize;
@@ -1236,7 +1235,7 @@ UINT WHERE_CreateView( MSIDATABASE *db, MSIVIEW **view, LPWSTR tables,
     wv = msi_alloc_zero( sizeof *wv );
     if( !wv )
         return ERROR_FUNCTION_FAILED;
-
+    
     /* fill the structure */
     wv->view.ops = &where_ops;
     msiobj_addref( &db->hdr );

@@ -25,7 +25,6 @@
 
 #include <stdarg.h>
 #include <string.h>
-#include <wchar.h>
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
@@ -34,13 +33,15 @@
 #include "dde.h"
 #include "ddeml.h"
 #include "win.h"
+#include "wine/unicode.h"
 #include "wine/debug.h"
 #include "dde_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ddeml);
 
+static const WCHAR szServerNameClass[] = {'W','i','n','e','D','d','e','S','e','r','v','e','r','N','a','m','e',0};
 const char WDML_szServerConvClassA[] = "WineDdeServerConvA";
-const WCHAR WDML_szServerConvClassW[] = L"WineDdeServerConvW";
+const WCHAR WDML_szServerConvClassW[] = {'W','i','n','e','D','d','e','S','e','r','v','e','r','C','o','n','v','W',0};
 
 static LRESULT CALLBACK WDML_ServerNameProc(HWND, UINT, WPARAM, LPARAM);
 static LRESULT CALLBACK WDML_ServerConvProc(HWND, UINT, WPARAM, LPARAM);
@@ -229,12 +230,15 @@ HDDEDATA WINAPI DdeNameService(DWORD idInst, HSZ hsz1, HSZ hsz2, UINT afCmd)
 	wndclass.hCursor       = 0;
 	wndclass.hbrBackground = 0;
 	wndclass.lpszMenuName  = NULL;
-	wndclass.lpszClassName = L"WineDdeServerName";
+	wndclass.lpszClassName = szServerNameClass;
 	wndclass.hIconSm       = 0;
 
 	RegisterClassExW(&wndclass);
 
-	hwndServer = CreateWindowW(L"WineDdeServerName", NULL, WS_POPUP, 0, 0, 0, 0, 0, 0, 0, 0);
+	hwndServer = CreateWindowW(szServerNameClass, NULL,
+				   WS_POPUP, 0, 0, 0, 0,
+				   0, 0, 0, 0);
+
 	SetWindowLongPtrW(hwndServer, GWL_WDML_INSTANCE, (ULONG_PTR)pInstance);
 	SetWindowLongPtrW(hwndServer, GWL_WDML_SERVER, (ULONG_PTR)pServer);
 	TRACE("Created nameServer=%p for instance=%08x\n", hwndServer, idInst);
@@ -360,7 +364,7 @@ static WDML_CONV* WDML_CreateServerConv(WDML_INSTANCE* pInstance, HWND hwndClien
     }
     else
     {
-	NtUserDestroyWindow(hwndServerConv);
+	DestroyWindow(hwndServerConv);
     }
     return pConv;
 }
@@ -782,7 +786,7 @@ static HDDEDATA map_A_to_W( DWORD instance, void *ptr, DWORD size )
     return ret;
 }
 
-/* convert data to ANSI, unless it looks like it's not in Unicode format */
+/* convert data to ASCII, unless it looks like it's not in Unicode format */
 static HDDEDATA map_W_to_A( DWORD instance, void *ptr, DWORD size )
 {
     HDDEDATA ret;
@@ -792,7 +796,7 @@ static HDDEDATA map_W_to_A( DWORD instance, void *ptr, DWORD size )
     if (data_looks_unicode( ptr, size ))
     {
         size /= sizeof(WCHAR);
-        if ((end = wmemchr( ptr, 0, size ))) size = end + 1 - (const WCHAR *)ptr;
+        if ((end = memchrW( ptr, 0, size ))) size = end + 1 - (const WCHAR *)ptr;
         len = WideCharToMultiByte( CP_ACP, 0, ptr, size, NULL, 0, NULL, NULL );
         ret = DdeCreateDataHandle( instance, NULL, len, 0, 0, CF_TEXT, 0);
         WideCharToMultiByte( CP_ACP, 0, ptr, size, (char *)DdeAccessData(ret, NULL), len, NULL, NULL );
@@ -821,7 +825,7 @@ static	WDML_QUEUE_STATE WDML_ServerHandleExecute(WDML_CONV* pConv, WDML_XACT* pX
 	{
             if (pConv->instance->unicode)  /* Unicode server, try to map A->W */
                 hDdeData = map_A_to_W( pConv->instance->instanceID, ptr, size );
-            else if (!IsWindowUnicode( pConv->hwndClient )) /* ANSI server and client, try to map W->A */
+            else if (!IsWindowUnicode( pConv->hwndClient )) /* ASCII server and client, try to map W->A */
                 hDdeData = map_W_to_A( pConv->instance->instanceID, ptr, size );
             else
                 hDdeData = DdeCreateDataHandle(pConv->instance->instanceID, ptr, size, 0, 0, CF_TEXT, 0);

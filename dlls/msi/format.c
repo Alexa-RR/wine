@@ -341,6 +341,7 @@ static WCHAR *deformat_literal( FORMAT *format, FORMSTR *str, BOOL *propfound,
 
 static WCHAR *build_default_format( const MSIRECORD *record )
 {
+    static const WCHAR fmt[] = {'%','i',':',' ','[','%','i',']',' ',0};
     int i, count = MSI_RecordGetFieldCount( record );
     WCHAR *ret, *tmp, buf[26];
     DWORD size = 1;
@@ -350,7 +351,7 @@ static WCHAR *build_default_format( const MSIRECORD *record )
 
     for (i = 1; i <= count; i++)
     {
-        size += swprintf( buf, ARRAY_SIZE(buf), L"%d: [%d] ", i, i );
+        size += swprintf( buf, ARRAY_SIZE(buf), fmt, i, i );
         if (!(tmp = msi_realloc( ret, size * sizeof(*ret) )))
         {
             msi_free( ret );
@@ -753,7 +754,7 @@ static BOOL verify_format(LPWSTR data)
     return TRUE;
 }
 
-static DWORD deformat_string_internal(MSIPACKAGE *package, LPCWSTR ptr,
+static DWORD deformat_string_internal(MSIPACKAGE *package, LPCWSTR ptr, 
                                       WCHAR** data, DWORD *len,
                                       MSIRECORD* record)
 {
@@ -897,13 +898,14 @@ end:
     return rc;
 }
 
-UINT WINAPI MsiFormatRecordW( MSIHANDLE hInstall, MSIHANDLE hRecord, WCHAR *szResult, DWORD *sz )
+UINT WINAPI MsiFormatRecordW( MSIHANDLE hInstall, MSIHANDLE hRecord, 
+                              LPWSTR szResult, LPDWORD sz )
 {
     UINT r = ERROR_INVALID_HANDLE;
     MSIPACKAGE *package;
     MSIRECORD *record;
 
-    TRACE( "%lu, %lu, %p, %p\n", hInstall, hRecord, szResult, sz );
+    TRACE("%d %d %p %p\n", hInstall, hRecord, szResult, sz);
 
     record = msihandle2msiinfo(hRecord, MSIHANDLETYPE_RECORD);
     if (!record)
@@ -960,7 +962,7 @@ UINT WINAPI MsiFormatRecordA(MSIHANDLE hinst, MSIHANDLE hrec, char *buf, DWORD *
     DWORD len;
     UINT r;
 
-    TRACE( "%lu, %lu, %p, %p\n", hinst, hrec, buf, sz );
+    TRACE("%d %d %p %p\n", hinst, hrec, buf, sz);
 
     rec = msihandle2msiinfo(hrec, MSIHANDLETYPE_RECORD);
     if (!rec)

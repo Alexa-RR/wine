@@ -55,6 +55,15 @@ typedef struct tagPOLICYDAT
   DWORD cache;           /* cached value or 0xffffffff for invalid */
 } POLICYDATA, *LPPOLICYDATA;
 
+/* registry strings */
+static const CHAR strRegistryPolicyA[] = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies";
+static const WCHAR strRegistryPolicyW[] = {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o',
+                                           's','o','f','t','\\','W','i','n','d','o','w','s','\\',
+                                           'C','u','r','r','e','n','t','V','e','r','s','i','o','n',
+                                           '\\','P','o','l','i','c','i','e','s',0};
+static const CHAR strPolicyA[] = "Policy";
+static const WCHAR strPolicyW[] = {'P','o','l','i','c','y',0};
+
 /* application strings */
 
 static const char strExplorer[] = {"Explorer"};
@@ -844,7 +853,8 @@ DWORD WINAPI SHRestricted (RESTRICTIONS policy)
 	    return p->cache;
 	}
 
-	lstrcpyA(regstr, "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\");
+	lstrcpyA(regstr, strRegistryPolicyA);
+	lstrcatA(regstr, "\\");
 	lstrcatA(regstr, p->appstr);
 
 	/* return 0 and don't set the cache if any registry errors occur */
@@ -888,15 +898,15 @@ BOOL WINAPI SHInitRestricted(LPCVOID unused, LPCVOID inpRegKey)
 	{
 	  if (SHELL_OsIsUnicode())
 	  {
-            if (lstrcmpiW(inpRegKey, L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies") &&
-                lstrcmpiW(inpRegKey, L"Policy"))
+            if (lstrcmpiW(inpRegKey, strRegistryPolicyW) &&
+                lstrcmpiW(inpRegKey, strPolicyW))
 	      /* doesn't match, fail */
 	      return FALSE;
 	  }
 	  else
 	  {
-            if (lstrcmpiA(inpRegKey, "Software\\Microsoft\\Windows\\CurrentVersion\\Policies") &&
-                lstrcmpiA(inpRegKey, "Policy"))
+            if (lstrcmpiA(inpRegKey, strRegistryPolicyA) &&
+                lstrcmpiA(inpRegKey, strPolicyA))
 	      /* doesn't match, fail */
 	      return FALSE;
 	  }

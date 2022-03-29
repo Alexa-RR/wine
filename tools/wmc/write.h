@@ -1,5 +1,5 @@
 /*
- * Wine Message Compiler output generation
+ * Wine Message Compiler outpur generation
  *
  * Copyright 2000 Bertho A. Stultiens (BS)
  *

@@ -213,8 +213,7 @@ interface IDXGIDevice2 : IDXGIDevice1
 
 typedef enum DXGI_SCALING {
     DXGI_SCALING_STRETCH = 0,
-    DXGI_SCALING_NONE = 1,
-    DXGI_SCALING_ASPECT_RATIO_STRETCH = 2,
+    DXGI_SCALING_NONE = 1
 } DXGI_SCALING;
 
 typedef struct DXGI_SWAP_CHAIN_DESC1 {
@@ -318,7 +317,7 @@ interface IDXGIFactory2 : IDXGIFactory1
             [in]  HANDLE hResource,
             [out] LUID *pLuid);
 
-    HRESULT RegisterStereoStatusWindow(
+    HRESULT RegisterOcclusionStatusWindow(
             [in]  HWND WindowHandle,
             [in]  UINT wMsg,
             [out] DWORD *pdwCookie);
@@ -330,7 +329,7 @@ interface IDXGIFactory2 : IDXGIFactory1
     void UnregisterStereoStatus(
             [in]  DWORD dwCookie);
 
-    HRESULT RegisterOcclusionStatusWindow(
+    HRESULT RegisterStereoStatusWindow(
             [in]  HWND WindowHandle,
             [in]  UINT wMsg,
             [out] DWORD *pdwCookie);

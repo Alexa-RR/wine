@@ -17,10 +17,36 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
+#include "config.h"
 
-#include "qcap_private.h"
+#include <stdio.h>
+#include <stdarg.h>
 
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+#define COBJMACROS
+
+#include "windef.h"
+#include "winbase.h"
+#include "wingdi.h"
+#include "winerror.h"
+#include "objbase.h"
+
+#include "evcode.h"
+#include "strmif.h"
+#include "control.h"
+#include "vfwmsgs.h"
+/*
+ *#include "amvideo.h"
+ *#include "mmreg.h"
+ *#include "dshow.h"
+ *#include "ddraw.h"
+ */
+#include "uuids.h"
+#include "qcap_main.h"
+
+#include "wine/unicode.h"
+#include "wine/debug.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(qcap);
 
 /***********************************************************************
 *   ICaptureGraphBuilder & ICaptureGraphBuilder2 implementation
@@ -55,7 +81,7 @@ HRESULT capture_graph_create(IUnknown *outer, IUnknown **out)
     if (outer)
         return CLASS_E_NOAGGREGATION;
 
-    if (!(object = calloc(1, sizeof(*object))))
+    if (!(object = CoTaskMemAlloc(sizeof(*object))))
         return E_OUTOFMEMORY;
 
     object->ICaptureGraphBuilder2_iface.lpVtbl = &builder2_Vtbl;
@@ -66,6 +92,7 @@ HRESULT capture_graph_create(IUnknown *outer, IUnknown **out)
     object->csFilter.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": CaptureGraphImpl.csFilter");
 
     TRACE("Created capture graph builder %p.\n", object);
+    ObjectRefCount(TRUE);
     *out = (IUnknown *)&object->ICaptureGraphBuilder_iface;
     return S_OK;
 }
@@ -104,17 +131,16 @@ fnCaptureGraphBuilder2_AddRef(ICaptureGraphBuilder2 * iface)
     CaptureGraphImpl *This = impl_from_ICaptureGraphBuilder2(iface);
     DWORD ref = InterlockedIncrement(&This->ref);
 
-    TRACE("%p increasing refcount to %lu.\n", This, ref);
-
+    TRACE("(%p/%p)->() AddRef from %d\n", This, iface, ref - 1);
     return ref;
 }
 
 static ULONG WINAPI fnCaptureGraphBuilder2_Release(ICaptureGraphBuilder2 * iface)
 {
     CaptureGraphImpl *This = impl_from_ICaptureGraphBuilder2(iface);
-    ULONG ref = InterlockedDecrement(&This->ref);
+    DWORD ref = InterlockedDecrement(&This->ref);
 
-    TRACE("%p decreasing refcount to %lu.\n", This, ref);
+    TRACE("(%p/%p)->() Release from %d\n", This, iface, ref + 1);
 
     if (!ref)
     {
@@ -122,7 +148,8 @@ static ULONG WINAPI fnCaptureGraphBuilder2_Release(ICaptureGraphBuilder2 * iface
         DeleteCriticalSection(&This->csFilter);
         if (This->mygraph)
             IGraphBuilder_Release(This->mygraph);
-        free(This);
+        CoTaskMemFree(This);
+        ObjectRefCount(FALSE);
     }
     return ref;
 }
@@ -225,7 +252,7 @@ static BOOL pin_matches(IPin *pin, PIN_DIRECTION dir, const GUID *category,
     IPin *peer;
 
     if (FAILED(hr = IPin_QueryDirection(pin, &candidate_dir)))
-        ERR("Failed to query direction, hr %#lx.\n", hr);
+        ERR("Failed to query direction, hr %#x.\n", hr);
 
     if (dir != candidate_dir)
         return FALSE;
@@ -273,7 +300,7 @@ static HRESULT find_interface_recurse(PIN_DIRECTION dir, const GUID *category,
 
     if (FAILED(hr = IBaseFilter_EnumPins(filter, &enumpins)))
     {
-        ERR("Failed to enumerate pins, hr %#lx.\n", hr);
+        ERR("Failed to enumerate pins, hr %#x.\n", hr);
         return hr;
     }
 
@@ -342,9 +369,6 @@ static HRESULT WINAPI fnCaptureGraphBuilder2_FindInterface(ICaptureGraphBuilder2
     TRACE("graph %p, category %s, majortype %s, filter %p, iid %s, out %p.\n",
             graph, debugstr_guid(category), debugstr_guid(majortype), filter, debugstr_guid(iid), out);
 
-    if (!filter)
-        return E_POINTER;
-
     if (category && IsEqualGUID(category, &LOOK_DOWNSTREAM_ONLY))
         return find_interface_recurse(PINDIR_OUTPUT, NULL, NULL, filter, iid, out);
 
@@ -370,6 +394,9 @@ static HRESULT match_smart_tee_pin(CaptureGraphImpl *This,
                                    IUnknown *pSource,
                                    IPin **source_out)
 {
+    static const WCHAR inputW[] = {'I','n','p','u','t',0};
+    static const WCHAR captureW[] = {'C','a','p','t','u','r','e',0};
+    static const WCHAR previewW[] = {'P','r','e','v','i','e','w',0};
     IPin *capture = NULL;
     IPin *preview = NULL;
     IPin *peer = NULL;
@@ -435,7 +462,7 @@ static HRESULT match_smart_tee_pin(CaptureGraphImpl *This,
             hr = IGraphBuilder_AddFilter(This->mygraph, smartTee, NULL);
             if (SUCCEEDED(hr)) {
                 IPin *smartTeeInput = NULL;
-                hr = IBaseFilter_FindPin(smartTee, L"Input", &smartTeeInput);
+                hr = IBaseFilter_FindPin(smartTee, inputW, &smartTeeInput);
                 if (SUCCEEDED(hr)) {
                     hr = IGraphBuilder_ConnectDirect(This->mygraph, capture, smartTeeInput, NULL);
                     IPin_Release(smartTeeInput);
@@ -443,7 +470,7 @@ static HRESULT match_smart_tee_pin(CaptureGraphImpl *This,
             }
         }
         if (FAILED(hr)) {
-            TRACE("adding SmartTee failed with hr=0x%08lx\n", hr);
+            TRACE("adding SmartTee failed with hr=0x%08x\n", hr);
             hr = E_INVALIDARG;
             goto end;
         }
@@ -452,9 +479,9 @@ static HRESULT match_smart_tee_pin(CaptureGraphImpl *This,
         goto end;
     }
     if (IsEqualIID(pCategory, &PIN_CATEGORY_CAPTURE))
-        hr = IBaseFilter_FindPin(smartTee, L"Capture", source_out);
+        hr = IBaseFilter_FindPin(smartTee, captureW, source_out);
     else {
-        hr = IBaseFilter_FindPin(smartTee, L"Preview", source_out);
+        hr = IBaseFilter_FindPin(smartTee, previewW, source_out);
         if (SUCCEEDED(hr))
             hr = VFW_S_NOPREVIEWPIN;
     }
@@ -468,113 +495,87 @@ end:
         IPin_Release(peer);
     if (smartTee)
         IBaseFilter_Release(smartTee);
-    TRACE("for %s returning hr=0x%08lx, *source_out=%p\n", IsEqualIID(pCategory, &PIN_CATEGORY_CAPTURE) ? "capture" : "preview", hr, source_out ? *source_out : 0);
+    TRACE("for %s returning hr=0x%08x, *source_out=%p\n", IsEqualIID(pCategory, &PIN_CATEGORY_CAPTURE) ? "capture" : "preview", hr, source_out ? *source_out : 0);
     return hr;
 }
 
-static HRESULT find_unconnected_source_from_filter(CaptureGraphImpl *capture_graph,
-        const GUID *category, const GUID *majortype, IBaseFilter *filter, IPin **ret);
-
-static HRESULT find_unconnected_source_from_pin(CaptureGraphImpl *capture_graph,
-        const GUID *category, const GUID *majortype, IPin *pin, IPin **ret)
+static HRESULT find_unconnected_pin(CaptureGraphImpl *This,
+        const GUID *pCategory, const GUID *pType, IUnknown *pSource, IPin **out_pin)
 {
-    PIN_DIRECTION dir;
-    PIN_INFO info;
+    int index = 0;
+    IPin *source_out;
     HRESULT hr;
-    IPin *peer;
+    BOOL usedSmartTeePreviewPin = FALSE;
 
-    IPin_QueryDirection(pin, &dir);
-    if (dir != PINDIR_OUTPUT)
-        return VFW_E_INVALID_DIRECTION;
+    /* depth-first search the graph for the first unconnected pin that matches
+     * the given category and type */
+    for(;;){
+        IPin *nextpin;
 
-    if (category && (IsEqualGUID(category, &PIN_CATEGORY_CAPTURE)
-            || IsEqualGUID(category, &PIN_CATEGORY_PREVIEW)))
-    {
-        if (FAILED(hr = match_smart_tee_pin(capture_graph, category, majortype, (IUnknown *)pin, &pin)))
-            return hr;
+        if (pCategory && (IsEqualIID(pCategory, &PIN_CATEGORY_CAPTURE) || IsEqualIID(pCategory, &PIN_CATEGORY_PREVIEW))){
+            IBaseFilter *sourceFilter = NULL;
+            hr = IUnknown_QueryInterface(pSource, &IID_IBaseFilter, (void**)&sourceFilter);
+            if (SUCCEEDED(hr)) {
+                hr = match_smart_tee_pin(This, pCategory, pType, pSource, &source_out);
+                if (hr == VFW_S_NOPREVIEWPIN)
+                    usedSmartTeePreviewPin = TRUE;
+                IBaseFilter_Release(sourceFilter);
+            } else {
+                hr = ICaptureGraphBuilder2_FindPin(&This->ICaptureGraphBuilder2_iface, pSource, PINDIR_OUTPUT, pCategory, pType, FALSE, index, &source_out);
+            }
+            if (FAILED(hr))
+                return E_INVALIDARG;
+        } else {
+            hr = ICaptureGraphBuilder2_FindPin(&This->ICaptureGraphBuilder2_iface, pSource, PINDIR_OUTPUT, pCategory, pType, FALSE, index, &source_out);
+            if (FAILED(hr))
+                return E_INVALIDARG;
+        }
 
-        if (FAILED(IPin_ConnectedTo(pin, &peer)))
-        {
-            *ret = pin;
+        hr = IPin_ConnectedTo(source_out, &nextpin);
+        if(SUCCEEDED(hr)){
+            PIN_INFO info;
+
+            IPin_Release(source_out);
+
+            hr = IPin_QueryPinInfo(nextpin, &info);
+            if(FAILED(hr) || !info.pFilter){
+                WARN("QueryPinInfo failed: %08x\n", hr);
+                return hr;
+            }
+
+            hr = find_unconnected_pin(This, pCategory, pType, (IUnknown*)info.pFilter, out_pin);
+
+            IBaseFilter_Release(info.pFilter);
+
+            if(SUCCEEDED(hr))
+                return hr;
+        }else{
+            *out_pin = source_out;
+            if(usedSmartTeePreviewPin)
+                return VFW_S_NOPREVIEWPIN;
             return S_OK;
         }
-    }
-    else
-    {
-        if (FAILED(IPin_ConnectedTo(pin, &peer)))
-        {
-            if (!pin_matches(pin, PINDIR_OUTPUT, category, majortype, FALSE))
-                return E_FAIL;
 
-            IPin_AddRef(*ret = pin);
-            return S_OK;
-        }
-        IPin_AddRef(pin);
+        index++;
     }
-
-    IPin_QueryPinInfo(peer, &info);
-    hr = find_unconnected_source_from_filter(capture_graph, category, majortype, info.pFilter, ret);
-    IBaseFilter_Release(info.pFilter);
-    IPin_Release(peer);
-    IPin_Release(pin);
-    return hr;
 }
 
-static HRESULT find_unconnected_source_from_filter(CaptureGraphImpl *capture_graph,
-        const GUID *category, const GUID *majortype, IBaseFilter *filter, IPin **ret)
-{
-    IEnumPins *enumpins;
-    IPin *pin, *peer;
-    HRESULT hr;
-
-    if (category && (IsEqualGUID(category, &PIN_CATEGORY_CAPTURE)
-            || IsEqualGUID(category, &PIN_CATEGORY_PREVIEW)))
-    {
-        if (FAILED(hr = match_smart_tee_pin(capture_graph, category, majortype, (IUnknown *)filter, &pin)))
-            return hr;
-
-        if (FAILED(IPin_ConnectedTo(pin, &peer)))
-        {
-            *ret = pin;
-            return hr;
-        }
-
-        IPin_Release(peer);
-        IPin_Release(pin);
-        return E_INVALIDARG;
-    }
-
-    if (FAILED(hr = IBaseFilter_EnumPins(filter, &enumpins)))
-        return hr;
-
-    while (IEnumPins_Next(enumpins, 1, &pin, NULL) == S_OK)
-    {
-        if (SUCCEEDED(hr = find_unconnected_source_from_pin(capture_graph, category, majortype, pin, ret)))
-        {
-            IEnumPins_Release(enumpins);
-            IPin_Release(pin);
-            return hr;
-        }
-        IPin_Release(pin);
-    }
-    IEnumPins_Release(enumpins);
-
-    return E_INVALIDARG;
-}
-
-static HRESULT WINAPI fnCaptureGraphBuilder2_RenderStream(ICaptureGraphBuilder2 *iface,
-        const GUID *category, const GUID *majortype, IUnknown *source,
-        IBaseFilter *pfCompressor, IBaseFilter *pfRenderer)
+static HRESULT WINAPI
+fnCaptureGraphBuilder2_RenderStream(ICaptureGraphBuilder2 * iface,
+                                    const GUID *pCategory,
+                                    const GUID *pType,
+                                    IUnknown *pSource,
+                                    IBaseFilter *pfCompressor,
+                                    IBaseFilter *pfRenderer)
 {
     CaptureGraphImpl *This = impl_from_ICaptureGraphBuilder2(iface);
     IPin *source_out = NULL, *renderer_in;
     BOOL rendererNeedsRelease = FALSE;
     HRESULT hr, return_hr = S_OK;
-    IBaseFilter *filter;
-    IPin *pin;
 
-    TRACE("graph %p, category %s, majortype %s, source %p, intermediate %p, sink %p.\n",
-            This, debugstr_guid(category), debugstr_guid(majortype), source, pfCompressor, pfRenderer);
+    FIXME("(%p/%p)->(%s, %s, %p, %p, %p) semi-stub!\n", This, iface,
+          debugstr_guid(pCategory), debugstr_guid(pType),
+          pSource, pfCompressor, pfRenderer);
 
     if (!This->mygraph)
     {
@@ -582,27 +583,12 @@ static HRESULT WINAPI fnCaptureGraphBuilder2_RenderStream(ICaptureGraphBuilder2 
         return E_UNEXPECTED;
     }
 
-    if (category && IsEqualGUID(category, &PIN_CATEGORY_VBI))
-    {
+    if (pCategory && IsEqualIID(pCategory, &PIN_CATEGORY_VBI)) {
         FIXME("Tee/Sink-to-Sink filter not supported\n");
         return E_NOTIMPL;
     }
 
-    if (IUnknown_QueryInterface(source, &IID_IPin, (void **)&pin) == S_OK)
-    {
-        hr = find_unconnected_source_from_pin(This, category, majortype, pin, &source_out);
-        IPin_Release(pin);
-    }
-    else if (IUnknown_QueryInterface(source, &IID_IBaseFilter, (void **)&filter) == S_OK)
-    {
-        hr = find_unconnected_source_from_filter(This, category, majortype, filter, &source_out);
-        IBaseFilter_Release(filter);
-    }
-    else
-    {
-        WARN("Source object does not expose IBaseFilter or IPin.\n");
-        return E_INVALIDARG;
-    }
+    hr = find_unconnected_pin(This, pCategory, pType, pSource, &source_out);
     if (FAILED(hr))
         return hr;
     return_hr = hr;

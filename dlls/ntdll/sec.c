@@ -19,18 +19,25 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
 #include "windef.h"
 #include "ntdll_misc.h"
 #include "wine/exception.h"
+#include "wine/library.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
@@ -438,7 +445,7 @@ NTSTATUS WINAPI RtlCreateSecurityDescriptor(
 /**************************************************************************
  * RtlCopySecurityDescriptor            [NTDLL.@]
  *
- * Copies an absolute or self-relative SECURITY_DESCRIPTOR.
+ * Copies an absolute or sefl-relative SECURITY_DESCRIPTOR.
  *
  * PARAMS
  *  pSourceSD      [O] SD to copy from.
@@ -1603,7 +1610,6 @@ RtlImpersonateSelf(SECURITY_IMPERSONATION_LEVEL ImpersonationLevel)
     return Status;
 }
 
-<<<<<<< HEAD
 /******************************************************************************
  *  NtImpersonateAnonymousToken      [NTDLL.@]
  */
@@ -1809,8 +1815,6 @@ NTSTATUS WINAPI NtSetSecurityObject(HANDLE Handle,
 
     return status;
 }
-=======
->>>>>>> master
 
 /******************************************************************************
  * RtlConvertSidToUnicodeString (NTDLL.@)
@@ -1825,20 +1829,20 @@ NTSTATUS WINAPI RtlConvertSidToUnicodeString(
        PSID pSid,
        BOOLEAN AllocateString)
 {
+    static const WCHAR formatW[] = {'-','%','u',0};
     WCHAR buffer[2 + 10 + 10 + 10 * SID_MAX_SUB_AUTHORITIES];
     WCHAR *p = buffer;
     const SID *sid = pSid;
     DWORD i, len;
 
     *p++ = 'S';
-    p += swprintf( p, ARRAY_SIZE(buffer) - (p - buffer), L"-%u", sid->Revision );
-    p += swprintf( p, ARRAY_SIZE(buffer) - (p - buffer), L"-%u",
-                   MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
-                                       sid->IdentifierAuthority.Value[4] ),
-                             MAKEWORD( sid->IdentifierAuthority.Value[3],
-                                       sid->IdentifierAuthority.Value[2] )));
+    p += NTDLL_swprintf( p, formatW, sid->Revision );
+    p += NTDLL_swprintf( p, formatW, MAKELONG( MAKEWORD( sid->IdentifierAuthority.Value[5],
+                                                   sid->IdentifierAuthority.Value[4] ),
+                                         MAKEWORD( sid->IdentifierAuthority.Value[3],
+                                                   sid->IdentifierAuthority.Value[2] )));
     for (i = 0; i < sid->SubAuthorityCount; i++)
-        p += swprintf( p, ARRAY_SIZE(buffer) - (p - buffer), L"-%u", sid->SubAuthority[i] );
+        p += NTDLL_swprintf( p, formatW, sid->SubAuthority[i] );
 
     len = (p + 1 - buffer) * sizeof(WCHAR);
 
@@ -1914,7 +1918,7 @@ NTSTATUS WINAPI RtlQueryInformationAcl(
     return status;
 }
 
-NTSTATUS WINAPI RtlConvertToAutoInheritSecurityObject(
+BOOL WINAPI RtlConvertToAutoInheritSecurityObject(
         PSECURITY_DESCRIPTOR pdesc,
         PSECURITY_DESCRIPTOR cdesc,
         PSECURITY_DESCRIPTOR* ndesc,
@@ -1924,16 +1928,5 @@ NTSTATUS WINAPI RtlConvertToAutoInheritSecurityObject(
 {
     FIXME("%p %p %p %p %d %p - stub\n", pdesc, cdesc, ndesc, objtype, isdir, genmap);
 
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-/******************************************************************************
- * RtlDefaultNpAcl (NTDLL.@)
- */
-NTSTATUS WINAPI RtlDefaultNpAcl(PACL *pAcl)
-{
-    FIXME("%p - stub\n", pAcl);
-
-    *pAcl = NULL;
-    return STATUS_SUCCESS;
+    return FALSE;
 }

@@ -25,6 +25,7 @@
 #include "winerror.h"
 #include "wincrypt.h"
 #include "wine/debug.h"
+#include "wine/unicode.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 
@@ -38,15 +39,30 @@ WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 #define X509_HEADER          "-----BEGIN X509 CRL-----"
 #define X509_TRAILER         "-----END X509 CRL-----"
 
-static const WCHAR CERT_HEADER_W[] = L"-----BEGIN CERTIFICATE-----";
-static const WCHAR CERT_HEADER_START_W[] = L"-----BEGIN ";
-static const WCHAR CERT_DELIMITER_W[] = L"-----";
-static const WCHAR CERT_TRAILER_W[] = L"-----END CERTIFICATE-----";
-static const WCHAR CERT_TRAILER_START_W[] = L"-----END ";
-static const WCHAR CERT_REQUEST_HEADER_W[] = L"-----BEGIN NEW CERTIFICATE REQUEST-----";
-static const WCHAR CERT_REQUEST_TRAILER_W[] = L"-----END NEW CERTIFICATE REQUEST-----";
-static const WCHAR X509_HEADER_W[] = L"-----BEGIN X509 CRL-----";
-static const WCHAR X509_TRAILER_W[] = L"-----END X509 CRL-----";
+static const WCHAR CERT_HEADER_W[] = {
+'-','-','-','-','-','B','E','G','I','N',' ','C','E','R','T','I','F','I','C',
+'A','T','E','-','-','-','-','-',0 };
+static const WCHAR CERT_HEADER_START_W[] = {
+'-','-','-','-','-','B','E','G','I','N',' ',0 };
+static const WCHAR CERT_DELIMITER_W[] = {
+'-','-','-','-','-',0 };
+static const WCHAR CERT_TRAILER_W[] = {
+'-','-','-','-','-','E','N','D',' ','C','E','R','T','I','F','I','C','A','T',
+'E','-','-','-','-','-',0 };
+static const WCHAR CERT_TRAILER_START_W[] = {
+'-','-','-','-','-','E','N','D',' ',0 };
+static const WCHAR CERT_REQUEST_HEADER_W[] = {
+'-','-','-','-','-','B','E','G','I','N',' ','N','E','W',' ','C','E','R','T',
+'I','F','I','C','A','T','E',' ','R','E','Q','U','E','S','T','-','-','-','-','-',0 };
+static const WCHAR CERT_REQUEST_TRAILER_W[] = {
+'-','-','-','-','-','E','N','D',' ','N','E','W',' ','C','E','R','T','I','F',
+'I','C','A','T','E',' ','R','E','Q','U','E','S','T','-','-','-','-','-',0 };
+static const WCHAR X509_HEADER_W[] = {
+'-','-','-','-','-','B','E','G','I','N',' ','X','5','0','9',' ','C','R','L',
+'-','-','-','-','-',0 };
+static const WCHAR X509_TRAILER_W[] = {
+'-','-','-','-','-','E','N','D',' ','X','5','0','9',' ','C','R','L','-','-',
+'-','-','-',0 };
 
 static const char b64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -246,7 +262,7 @@ BOOL WINAPI CryptBinaryToStringA(const BYTE *pbBinary,
 {
     BinaryToStringAFunc encoder = NULL;
 
-    TRACE("(%p, %ld, %08lx, %p, %p)\n", pbBinary, cbBinary, dwFlags, pszString,
+    TRACE("(%p, %d, %08x, %p, %p)\n", pbBinary, cbBinary, dwFlags, pszString,
      pcchString);
 
     if (!pbBinary)
@@ -275,7 +291,7 @@ BOOL WINAPI CryptBinaryToStringA(const BYTE *pbBinary,
     case CRYPT_STRING_HEXASCII:
     case CRYPT_STRING_HEXADDR:
     case CRYPT_STRING_HEXASCIIADDR:
-        FIXME("Unimplemented type %ld\n", dwFlags & 0x0fffffff);
+        FIXME("Unimplemented type %d\n", dwFlags & 0x0fffffff);
         /* fall through */
     default:
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -315,7 +331,7 @@ static LONG encodeBase64W(const BYTE *in_buf, int in_len, LPCWSTR sep,
 
     TRACE("bytes is %d, pad bytes is %d\n", bytes, pad_bytes);
     needed = bytes + pad_bytes;
-    needed += (needed / 64 + (needed % 64 ? 1 : 0)) * lstrlenW(sep);
+    needed += (needed / 64 + (needed % 64 ? 1 : 0)) * strlenW(sep);
     needed++;
 
     if (needed > *out_len)
@@ -335,8 +351,8 @@ static LONG encodeBase64W(const BYTE *in_buf, int in_len, LPCWSTR sep,
     {
         if (i && i % 64 == 0)
         {
-            lstrcpyW(ptr, sep);
-            ptr += lstrlenW(sep);
+            strcpyW(ptr, sep);
+            ptr += strlenW(sep);
         }
         /* first char is the first 6 bits of the first byte*/
         *ptr++ = b64[ ( d[0] >> 2) & 0x3f ];
@@ -379,7 +395,7 @@ static LONG encodeBase64W(const BYTE *in_buf, int in_len, LPCWSTR sep,
             *ptr++ = '=';
             break;
     }
-    lstrcpyW(ptr, sep);
+    strcpyW(ptr, sep);
 
     return ERROR_SUCCESS;
 }
@@ -387,16 +403,17 @@ static LONG encodeBase64W(const BYTE *in_buf, int in_len, LPCWSTR sep,
 static BOOL BinaryToBase64W(const BYTE *pbBinary,
  DWORD cbBinary, DWORD dwFlags, LPWSTR pszString, DWORD *pcchString)
 {
+    static const WCHAR crlf[] = { '\r','\n',0 }, lf[] = { '\n',0 }, empty[] = {0};
     BOOL ret = TRUE;
     LPCWSTR header = NULL, trailer = NULL, sep;
     DWORD charsNeeded;
 
     if (dwFlags & CRYPT_STRING_NOCR)
-        sep = L"\n";
+        sep = lf;
     else if (dwFlags & CRYPT_STRING_NOCRLF)
-        sep = L"";
+        sep = empty;
     else
-        sep = L"\r\n";
+        sep = crlf;
     switch (dwFlags & 0x0fffffff)
     {
     case CRYPT_STRING_BASE64:
@@ -419,9 +436,9 @@ static BOOL BinaryToBase64W(const BYTE *pbBinary,
     charsNeeded = 0;
     encodeBase64W(pbBinary, cbBinary, sep, NULL, &charsNeeded);
     if (header)
-        charsNeeded += lstrlenW(header) + lstrlenW(sep);
+        charsNeeded += strlenW(header) + strlenW(sep);
     if (trailer)
-        charsNeeded += lstrlenW(trailer) + lstrlenW(sep);
+        charsNeeded += strlenW(trailer) + strlenW(sep);
 
     if (pszString)
     {
@@ -432,18 +449,18 @@ static BOOL BinaryToBase64W(const BYTE *pbBinary,
 
             if (header)
             {
-                lstrcpyW(ptr, header);
-                ptr += lstrlenW(ptr);
-                lstrcpyW(ptr, sep);
-                ptr += lstrlenW(sep);
+                strcpyW(ptr, header);
+                ptr += strlenW(ptr);
+                strcpyW(ptr, sep);
+                ptr += strlenW(sep);
             }
             encodeBase64W(pbBinary, cbBinary, sep, ptr, &size);
             ptr += size - 1;
             if (trailer)
             {
-                lstrcpyW(ptr, trailer);
-                ptr += lstrlenW(ptr);
-                lstrcpyW(ptr, sep);
+                strcpyW(ptr, trailer);
+                ptr += strlenW(ptr);
+                strcpyW(ptr, sep);
             }
             *pcchString = charsNeeded - 1;
         }
@@ -460,9 +477,9 @@ static BOOL BinaryToBase64W(const BYTE *pbBinary,
     return ret;
 }
 
-static BOOL BinaryToHexRawW(const BYTE *bin, DWORD nbin, DWORD flags, LPWSTR str, DWORD *nstr)
+static BOOL BinaryToHexW(const BYTE *bin, DWORD nbin, DWORD flags, LPWSTR str, DWORD *nstr)
 {
-    static const WCHAR hex[] = L"0123456789abcdef";
+    static const WCHAR hex[] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
     DWORD needed;
 
     if (flags & CRYPT_STRING_NOCRLF)
@@ -506,85 +523,12 @@ static BOOL BinaryToHexRawW(const BYTE *bin, DWORD nbin, DWORD flags, LPWSTR str
     return TRUE;
 }
 
-static BOOL binary_to_hexW(const BYTE *bin, DWORD nbin, DWORD flags, LPWSTR str, DWORD *nstr)
-{
-    static const WCHAR hex[] = L"0123456789abcdef";
-    DWORD needed, i;
-
-    needed = nbin * 3; /* spaces + terminating \0 */
-
-    if (flags & CRYPT_STRING_NOCR)
-    {
-        needed += (nbin + 7) / 16; /* space every 16 characters */
-        needed += 1; /* terminating \n */
-    }
-    else if (!(flags & CRYPT_STRING_NOCRLF))
-    {
-        needed += (nbin + 7) / 16; /* space every 16 characters */
-        needed += nbin / 16 + 1; /* LF every 16 characters + terminating \r */
-
-        if (nbin % 16)
-            needed += 1; /* terminating \n */
-    }
-
-    if (!str)
-    {
-        *nstr = needed;
-        return TRUE;
-    }
-
-    if (needed > *nstr)
-    {
-        SetLastError(ERROR_MORE_DATA);
-        return FALSE;
-    }
-
-    for (i = 0; i < nbin; i++)
-    {
-        *str++ = hex[(bin[i] >> 4) & 0xf];
-        *str++ = hex[bin[i] & 0xf];
-
-        if (i >= nbin - 1) break;
-
-        if (i && !(flags & CRYPT_STRING_NOCRLF))
-        {
-            if (!((i + 1) % 16))
-            {
-                if (flags & CRYPT_STRING_NOCR)
-                    *str++ = '\n';
-                else
-                {
-                    *str++ = '\r';
-                    *str++ = '\n';
-                }
-                continue;
-            }
-            else if (!((i + 1) % 8))
-                *str++ = ' ';
-        }
-
-        *str++ = ' ';
-    }
-
-    if (flags & CRYPT_STRING_NOCR)
-        *str++ = '\n';
-    else if (!(flags & CRYPT_STRING_NOCRLF))
-    {
-        *str++ = '\r';
-        *str++ = '\n';
-    }
-
-    *str = 0;
-    *nstr = needed - 1;
-    return TRUE;
-}
-
 BOOL WINAPI CryptBinaryToStringW(const BYTE *pbBinary,
  DWORD cbBinary, DWORD dwFlags, LPWSTR pszString, DWORD *pcchString)
 {
     BinaryToStringWFunc encoder = NULL;
 
-    TRACE("(%p, %ld, %08lx, %p, %p)\n", pbBinary, cbBinary, dwFlags, pszString,
+    TRACE("(%p, %d, %08x, %p, %p)\n", pbBinary, cbBinary, dwFlags, pszString,
      pcchString);
 
     if (!pbBinary)
@@ -610,15 +554,13 @@ BOOL WINAPI CryptBinaryToStringW(const BYTE *pbBinary,
         encoder = BinaryToBase64W;
         break;
     case CRYPT_STRING_HEXRAW:
-        encoder = BinaryToHexRawW;
+        encoder = BinaryToHexW;
         break;
     case CRYPT_STRING_HEX:
-        encoder = binary_to_hexW;
-        break;
     case CRYPT_STRING_HEXASCII:
     case CRYPT_STRING_HEXADDR:
     case CRYPT_STRING_HEXASCIIADDR:
-        FIXME("Unimplemented type %ld\n", dwFlags & 0x0fffffff);
+        FIXME("Unimplemented type %d\n", dwFlags & 0x0fffffff);
         /* fall through */
     default:
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -890,7 +832,7 @@ BOOL WINAPI CryptStringToBinaryA(LPCSTR pszString,
     StringToBinaryAFunc decoder;
     LONG ret;
 
-    TRACE("(%s, %ld, %08lx, %p, %p, %p, %p)\n", debugstr_an(pszString, cchString ? cchString : -1),
+    TRACE("(%s, %d, %08x, %p, %p, %p, %p)\n", debugstr_an(pszString, cchString ? cchString : -1),
      cchString, dwFlags, pbBinary, pcbBinary, pdwSkip, pdwFlags);
 
     if (!pszString)
@@ -931,7 +873,7 @@ BOOL WINAPI CryptStringToBinaryA(LPCSTR pszString,
     case CRYPT_STRING_HEXASCII:
     case CRYPT_STRING_HEXADDR:
     case CRYPT_STRING_HEXASCIIADDR:
-        FIXME("Unimplemented type %ld\n", dwFlags & 0x7fffffff);
+        FIXME("Unimplemented type %d\n", dwFlags & 0x7fffffff);
         /* fall through */
     default:
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -970,27 +912,27 @@ static LONG Base64WithHeaderAndTrailerToBinaryW(LPCWSTR pszString,
     LPCWSTR trailerBegins;
     size_t dataLength;
 
-    if ((lstrlenW(header) + lstrlenW(trailer)) > cchString)
+    if ((strlenW(header) + strlenW(trailer)) > cchString)
     {
         return ERROR_INVALID_DATA;
     }
 
-    if (!(headerBegins = wcsstr(pszString, header)))
+    if (!(headerBegins = strstrW(pszString, header)))
     {
         TRACE("Can't find %s in %s.\n", debugstr_w(header), debugstr_wn(pszString, cchString));
         return ERROR_INVALID_DATA;
     }
 
-    dataBegins = headerBegins + lstrlenW(header);
-    if (!(dataBegins = wcsstr(dataBegins, CERT_DELIMITER_W)))
+    dataBegins = headerBegins + strlenW(header);
+    if (!(dataBegins = strstrW(dataBegins, CERT_DELIMITER_W)))
     {
         return ERROR_INVALID_DATA;
     }
-    dataBegins += lstrlenW(CERT_DELIMITER_W);
+    dataBegins += strlenW(CERT_DELIMITER_W);
     if (*dataBegins == '\r') dataBegins++;
     if (*dataBegins == '\n') dataBegins++;
 
-    if (!(trailerBegins = wcsstr(dataBegins, trailer)))
+    if (!(trailerBegins = strstrW(dataBegins, trailer)))
     {
         return ERROR_INVALID_DATA;
     }
@@ -1101,7 +1043,7 @@ BOOL WINAPI CryptStringToBinaryW(LPCWSTR pszString,
     StringToBinaryWFunc decoder;
     LONG ret;
 
-    TRACE("(%s, %ld, %08lx, %p, %p, %p, %p)\n", debugstr_wn(pszString, cchString ? cchString : -1),
+    TRACE("(%s, %d, %08x, %p, %p, %p, %p)\n", debugstr_wn(pszString, cchString ? cchString : -1),
      cchString, dwFlags, pbBinary, pcbBinary, pdwSkip, pdwFlags);
 
     if (!pszString)
@@ -1142,14 +1084,14 @@ BOOL WINAPI CryptStringToBinaryW(LPCWSTR pszString,
     case CRYPT_STRING_HEXASCII:
     case CRYPT_STRING_HEXADDR:
     case CRYPT_STRING_HEXASCIIADDR:
-        FIXME("Unimplemented type %ld\n", dwFlags & 0x7fffffff);
+        FIXME("Unimplemented type %d\n", dwFlags & 0x7fffffff);
         /* fall through */
     default:
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
     if (!cchString)
-        cchString = lstrlenW(pszString);
+        cchString = strlenW(pszString);
     ret = decoder(pszString, cchString, pbBinary, pcbBinary, pdwSkip, pdwFlags);
     if (ret)
         SetLastError(ret);

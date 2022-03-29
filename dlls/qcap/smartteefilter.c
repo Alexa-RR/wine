@@ -18,9 +18,22 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "qcap_private.h"
+#include <stdarg.h>
 
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+#define COBJMACROS
+
+#include "windef.h"
+#include "winbase.h"
+#include "wtypes.h"
+#include "wingdi.h"
+#include "winuser.h"
+#include "dshow.h"
+
+#include "qcap_main.h"
+
+#include "wine/debug.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(qcap);
 
 typedef struct {
     struct strmbase_filter filter;
@@ -59,19 +72,13 @@ static void smart_tee_destroy(struct strmbase_filter *iface)
     strmbase_source_cleanup(&filter->capture);
     strmbase_source_cleanup(&filter->preview);
     strmbase_filter_cleanup(&filter->filter);
-    free(filter);
-}
-
-static HRESULT smart_tee_wait_state(struct strmbase_filter *iface, DWORD timeout)
-{
-    return iface->state == State_Paused ? VFW_S_CANT_CUE : S_OK;
+    CoTaskMemFree(filter);
 }
 
 static const struct strmbase_filter_ops filter_ops =
 {
     .filter_get_pin = smart_tee_get_pin,
     .filter_destroy = smart_tee_destroy,
-    .filter_wait_state = smart_tee_wait_state,
 };
 
 static HRESULT sink_query_accept(struct strmbase_pin *base, const AM_MEDIA_TYPE *pmt)
@@ -93,7 +100,7 @@ static HRESULT sink_get_media_type(struct strmbase_pin *base,
     TRACE("(%p)->(%d, %p)\n", This, iPosition, amt);
     if (iPosition)
         return S_FALSE;
-    EnterCriticalSection(&This->filter.filter_cs);
+    EnterCriticalSection(&This->filter.csFilter);
     if (This->sink.pin.peer)
     {
         CopyMediaType(amt, &This->sink.pin.mt);
@@ -101,7 +108,7 @@ static HRESULT sink_get_media_type(struct strmbase_pin *base,
     }
     else
         hr = S_FALSE;
-    LeaveCriticalSection(&This->filter.filter_cs);
+    LeaveCriticalSection(&This->filter.csFilter);
     return hr;
 }
 
@@ -211,19 +218,19 @@ static HRESULT WINAPI SmartTeeFilterInput_Receive(struct strmbase_sink *base, IM
      * that's possible. */
 
     /* FIXME: we should ideally do each of these in a separate thread */
-    EnterCriticalSection(&This->filter.filter_cs);
+    EnterCriticalSection(&This->filter.csFilter);
     if (This->capture.pin.peer)
         hrCapture = copy_sample(inputSample, This->capture.pAllocator, &captureSample);
-    LeaveCriticalSection(&This->filter.filter_cs);
+    LeaveCriticalSection(&This->filter.csFilter);
     if (SUCCEEDED(hrCapture) && This->capture.pMemInputPin)
         hrCapture = IMemInputPin_Receive(This->capture.pMemInputPin, captureSample);
     if (captureSample)
         IMediaSample_Release(captureSample);
 
-    EnterCriticalSection(&This->filter.filter_cs);
+    EnterCriticalSection(&This->filter.csFilter);
     if (This->preview.pin.peer)
         hrPreview = copy_sample(inputSample, This->preview.pAllocator, &previewSample);
-    LeaveCriticalSection(&This->filter.filter_cs);
+    LeaveCriticalSection(&This->filter.csFilter);
     /* No timestamps on preview stream: */
     if (SUCCEEDED(hrPreview))
         hrPreview = IMediaSample_SetTime(previewSample, NULL, NULL);
@@ -259,7 +266,7 @@ static HRESULT source_get_media_type(struct strmbase_pin *iface,
     SmartTeeFilter *filter = impl_from_strmbase_pin(iface);
     HRESULT hr = S_OK;
 
-    EnterCriticalSection(&filter->filter.filter_cs);
+    EnterCriticalSection(&filter->filter.csFilter);
 
     if (!filter->sink.pin.peer)
         hr = VFW_E_NOT_CONNECTED;
@@ -268,7 +275,7 @@ static HRESULT source_get_media_type(struct strmbase_pin *iface,
     else
         hr = VFW_S_NO_MORE_ITEMS;
 
-    LeaveCriticalSection(&filter->filter.filter_cs);
+    LeaveCriticalSection(&filter->filter.csFilter);
     return hr;
 }
 
@@ -316,25 +323,29 @@ static const struct strmbase_source_ops preview_ops =
 
 HRESULT smart_tee_create(IUnknown *outer, IUnknown **out)
 {
+    static const WCHAR captureW[] = {'C','a','p','t','u','r','e',0};
+    static const WCHAR previewW[] = {'P','r','e','v','i','e','w',0};
+    static const WCHAR inputW[] = {'I','n','p','u','t',0};
     SmartTeeFilter *object;
     HRESULT hr;
 
-    if (!(object = calloc(1, sizeof(*object))))
+    if (!(object = CoTaskMemAlloc(sizeof(*object))))
         return E_OUTOFMEMORY;
+    memset(object, 0, sizeof(*object));
 
     strmbase_filter_init(&object->filter, outer, &CLSID_SmartTee, &filter_ops);
-    strmbase_sink_init(&object->sink, &object->filter, L"Input", &sink_ops, NULL);
+    strmbase_sink_init(&object->sink, &object->filter, inputW, &sink_ops, NULL);
     hr = CoCreateInstance(&CLSID_MemoryAllocator, NULL, CLSCTX_INPROC_SERVER,
             &IID_IMemAllocator, (void **)&object->sink.pAllocator);
     if (FAILED(hr))
     {
         strmbase_filter_cleanup(&object->filter);
-        free(object);
+        CoTaskMemFree(object);
         return hr;
     }
 
-    strmbase_source_init(&object->capture, &object->filter, L"Capture", &capture_ops);
-    strmbase_source_init(&object->preview, &object->filter, L"Preview", &preview_ops);
+    strmbase_source_init(&object->capture, &object->filter, captureW, &capture_ops);
+    strmbase_source_init(&object->preview, &object->filter, previewW, &preview_ops);
 
     TRACE("Created smart tee %p.\n", object);
     *out = &object->filter.IUnknown_inner;

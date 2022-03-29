@@ -1,11 +1,7 @@
 MODULE    = winedevice.exe
 IMPORTS   = advapi32 ntoskrnl
 
-<<<<<<< HEAD
 EXTRADLLFLAGS = -mwindows -municode -mno-cygwin -Wl,--image-base,0x500000000000
-=======
-EXTRADLLFLAGS = -mwindows -municode
->>>>>>> master
 
 C_SRCS = \
 	device.c

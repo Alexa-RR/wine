@@ -32,6 +32,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(netcfgx);
 
+static HINSTANCE NETCFGX_hInstance;
+
 typedef HRESULT (*ClassFactoryCreateInstanceFunc)(IUnknown **);
 
 typedef struct netcfgcf
@@ -98,7 +100,7 @@ static HRESULT WINAPI netcfgcf_CreateInstance(IClassFactory *iface,LPUNKNOWN pOu
     }
     else
     {
-        WARN("Cannot create an instance object. 0x%08lx\n", hr);
+        WARN("Cannot create an instance object. 0x%08x\n", hr);
     }
     return hr;
 }
@@ -118,6 +120,26 @@ static const struct IClassFactoryVtbl netcfgcf_vtbl =
     netcfgcf_LockServer
 };
 
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(0x%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
+
+    NETCFGX_hInstance = hinstDLL;
+
+    switch (fdwReason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;    /* prefer native version */
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls(hinstDLL);
+            break;
+        default:
+            break;
+    }
+
+    return TRUE;
+}
+
 static netcfgcf netconfigcf = { {&netcfgcf_vtbl}, INetCfg_CreateInstance };
 
 HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv)
@@ -135,4 +157,19 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv)
         return CLASS_E_CLASSNOTAVAILABLE;
 
     return IClassFactory_QueryInterface(cf, riid, ppv);
+}
+
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( NETCFGX_hInstance );
+}
+
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( NETCFGX_hInstance );
+}
+
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
 }

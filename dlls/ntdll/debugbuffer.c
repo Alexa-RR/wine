@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -114,16 +117,7 @@ NTSTATUS WINAPI RtlDestroyQueryDebugBuffer(IN PDEBUG_BUFFER iBuf)
 
 NTSTATUS WINAPI RtlQueryProcessDebugInformation(IN ULONG iProcessId, IN ULONG iDebugInfoMask, IN OUT PDEBUG_BUFFER iBuf) 
 {
-    CLIENT_ID cid;
-    NTSTATUS status;
-    HANDLE process;
-
-    cid.UniqueProcess = ULongToHandle( iProcessId );
-    cid.UniqueThread = 0;
-
-    if ((status = NtOpenProcess( &process, PROCESS_QUERY_LIMITED_INFORMATION, NULL, &cid ))) return status;
-    NtClose( process );
-
+   NTSTATUS nts = STATUS_SUCCESS;
    FIXME("(%d, %x, %p): stub\n", iProcessId, iDebugInfoMask, iBuf);
    iBuf->InfoClassMask = iDebugInfoMask;
    
@@ -148,5 +142,5 @@ NTSTATUS WINAPI RtlQueryProcessDebugInformation(IN ULONG iProcessId, IN ULONG iD
    }
    TRACE("returns:%p\n", iBuf);
    dump_DEBUG_BUFFER(iBuf);
-   return status;
+   return nts;
 }

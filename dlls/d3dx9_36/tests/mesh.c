@@ -29,6 +29,16 @@
 #include "rmxftmpl.h"
 #include "rmxfguid.h"
 
+#ifndef NAN
+/* From wine/port.h */
+static inline float __port_nan(void)
+{
+    static const unsigned __nan_bytes = 0x7fc00000;
+    return *(const float *)&__nan_bytes;
+}
+#define NAN __port_nan()
+#endif
+
 /* Set the WINETEST_DEBUG environment variable to be greater than 1 for verbose
  * function call traces of ID3DXAllocateHierarchy callbacks. */
 #define TRACECALLBACK if(winetest_debug > 1) trace
@@ -425,42 +435,18 @@ static void D3DXBoundProbeTest(void)
     radius = sqrt(77.0f);
     center.x = 1.0f; center.y = 2.0f; center.z = 3.0f;
     raydirection.x = 2.0f; raydirection.y = -4.0f; raydirection.z = 2.0f;
+
     rayposition.x = 5.0f; rayposition.y = 5.0f; rayposition.z = 9.0f;
     result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == TRUE, "Got unexpected result %#x.\n", result);
+    ok(result == TRUE, "expected TRUE, received FALSE\n");
 
     rayposition.x = 45.0f; rayposition.y = -75.0f; rayposition.z = 49.0f;
     result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == FALSE, "Got unexpected result %#x.\n", result);
-
-    raydirection.x = -2.0f; raydirection.y = 4.0f; raydirection.z = -2.0f;
-    result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == TRUE, "Got unexpected result %#x.\n", result);
+    ok(result == FALSE, "expected FALSE, received TRUE\n");
 
     rayposition.x = 5.0f; rayposition.y = 11.0f; rayposition.z = 9.0f;
     result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == FALSE, "Got unexpected result %#x.\n", result);
-
-    raydirection.x = 2.0f; raydirection.y = -4.0f; raydirection.z = 2.0f;
-    result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == FALSE, "Got unexpected result %#x.\n", result);
-
-    radius = 1.0f;
-    rayposition.x = 2.0f; rayposition.y = 2.0f; rayposition.z = 3.0f;
-    result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == FALSE, "Got unexpected result %#x.\n", result);
-
-    raydirection.x = 0.0f; raydirection.y = 0.0f; raydirection.z = 1.0f;
-    result = D3DXSphereBoundProbe(&center, radius, &rayposition, &raydirection);
-    ok(result == TRUE, "Got unexpected result %#x.\n", result);
-
-    if (0)
-    {
-        /* All these crash on native. */
-        D3DXSphereBoundProbe(&center, radius, &rayposition, NULL);
-        D3DXSphereBoundProbe(&center, radius, NULL, &raydirection);
-        D3DXSphereBoundProbe(NULL, radius, &rayposition, &raydirection);
-    }
+    ok(result == FALSE, "expected FALSE, received TRUE\n");
 }
 
 static void D3DXComputeBoundingBoxTest(void)
@@ -3611,7 +3597,7 @@ static inline BOOL is_direction_similar(D3DXVECTOR2 *dir1, D3DXVECTOR2 *dir2, fl
 
 static inline D3DXVECTOR2 *unit_vec2(D3DXVECTOR2 *dir, const D3DXVECTOR2 *pt1, const D3DXVECTOR2 *pt2)
 {
-    return D3DXVec2Normalize(dir, D3DXVec2Subtract(dir, pt2, pt1));
+    return D3DXVec2Normalize(D3DXVec2Subtract(dir, pt2, pt1), dir);
 }
 
 static BOOL attempt_line_merge(struct outline *outline,
@@ -4739,9 +4725,11 @@ static void test_update_semantics(void)
     D3DVERTEXELEMENT9 *decl_ptr;
     DWORD exp_vertex_size = sizeof(*vertices);
     DWORD vertex_size = 0;
-    BYTE *decl_mem;
     int equal;
     int i = 0;
+    int *decl_mem;
+    int filler_a = 0xaaaaaaaa;
+    int filler_b = 0xbbbbbbbb;
 
     test_context = new_test_context();
     if (!test_context)
@@ -4813,20 +4801,22 @@ static void test_update_semantics(void)
     /* Check that GetDeclaration only writes up to the D3DDECL_END() marker and
      * not the full MAX_FVF_DECL_SIZE elements.
      */
-    memset(declaration, 0xaa, sizeof(declaration));
+    memset(declaration, filler_a, sizeof(declaration));
     memcpy(declaration, declaration0, sizeof(declaration0));
     hr = mesh->lpVtbl->UpdateSemantics(mesh, declaration);
     ok(hr == D3D_OK, "Test UpdateSemantics, "
        "got %#x expected D3D_OK\n", hr);
-    memset(declaration, 0xbb, sizeof(declaration));
+    memset(declaration, filler_b, sizeof(declaration));
     hr = mesh->lpVtbl->GetDeclaration(mesh, declaration);
     ok(hr == D3D_OK, "Couldn't get vertex declaration. Got %#x, expected D3D_OK\n", hr);
-    decl_mem = (BYTE *)declaration;
-    for (i = sizeof(declaration0); i < sizeof(declaration); ++i)
+    decl_mem = (int*)declaration;
+    for (i = sizeof(declaration0)/sizeof(*decl_mem); i < sizeof(declaration)/sizeof(*decl_mem); i++)
     {
-        ok(decl_mem[i] == 0xbb, "Unexpected %#x.\n", decl_mem[i]);
-        if (equal != 0)
-            break;
+        equal = memcmp(&decl_mem[i], &filler_b, sizeof(filler_b));
+        ok(equal == 0,
+           "GetDeclaration wrote past the D3DDECL_END() marker. "
+           "Got %#x, expected  %#x\n", decl_mem[i], filler_b);
+        if (equal != 0) break;
     }
 
     /* UpdateSemantics does not check for overlapping fields */
@@ -4976,20 +4966,14 @@ cleanup:
 
 static void test_create_skin_info(void)
 {
+    HRESULT hr;
+    ID3DXSkinInfo *skininfo = NULL;
     D3DVERTEXELEMENT9 empty_declaration[] = { D3DDECL_END() };
     D3DVERTEXELEMENT9 declaration_out[MAX_FVF_DECL_SIZE];
     const D3DVERTEXELEMENT9 declaration_with_nonzero_stream[] = {
         {1, 0, D3DDECLTYPE_FLOAT3, 0, D3DDECLUSAGE_POSITION, 0},
         D3DDECL_END()
     };
-    D3DVERTEXELEMENT9 declaration[MAX_FVF_DECL_SIZE];
-    DWORD exp_vertices[2], vertices[2];
-    float exp_weights[2], weights[2];
-    const char *exp_string, *string;
-    ID3DXSkinInfo *skininfo = NULL;
-    DWORD exp_fvf, fvf;
-    unsigned int i;
-    HRESULT hr;
 
     hr = D3DXCreateSkinInfo(0, empty_declaration, 0, &skininfo);
     ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
@@ -5006,7 +4990,6 @@ static void test_create_skin_info(void)
     ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
     if (skininfo)
     {
-        ID3DXSkinInfo *clone = NULL;
         DWORD dword_result;
         float flt_result;
         const char *string_result;
@@ -5039,10 +5022,6 @@ static void test_create_skin_info(void)
 
         transform = skininfo->lpVtbl->GetBoneOffsetMatrix(skininfo, -1);
         ok(transform == NULL, "Expected NULL, got %p\n", transform);
-
-        hr = skininfo->lpVtbl->Clone(skininfo, &clone);
-        ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
-        IUnknown_Release(clone);
 
         {
             /* test [GS]etBoneOffsetMatrix */
@@ -5087,7 +5066,12 @@ static void test_create_skin_info(void)
 
         {
             /* test [GS]etBoneInfluence */
+            DWORD vertices[2];
+            FLOAT weights[2];
+            int i;
             DWORD num_influences;
+            DWORD exp_vertices[2];
+            FLOAT exp_weights[2];
 
             /* vertex and weight arrays untouched when num_influences is 0 */
             vertices[0] = 0xdeadbeef;
@@ -5155,17 +5139,14 @@ static void test_create_skin_info(void)
             ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
             ok(vertices[0] == 0xdeadbeef, "expected vertex 0xdeadbeef, got %u\n", vertices[0]);
             ok(weights[0] == FLT_MAX, "expected weight %g, got %g\n", FLT_MAX, weights[0]);
-
-            hr = skininfo->lpVtbl->SetBoneInfluence(skininfo, 0, num_influences, exp_vertices, exp_weights);
-            ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
         }
 
         {
             /* test [GS]etFVF and [GS]etDeclaration */
             D3DVERTEXELEMENT9 declaration_in[MAX_FVF_DECL_SIZE];
+            DWORD fvf = D3DFVF_XYZ;
             DWORD got_fvf;
 
-            fvf = D3DFVF_XYZ;
             hr = skininfo->lpVtbl->SetDeclaration(skininfo, NULL);
             ok(hr == D3DERR_INVALIDCALL, "Expected D3DERR_INVALIDCALL, got %#x\n", hr);
 
@@ -5201,45 +5182,6 @@ static void test_create_skin_info(void)
             ok(hr == D3D_OK, "Expected D3D_OK, got %#x\n", hr);
             compare_elements(declaration_out, declaration_in, __LINE__, 0);
         }
-
-        /* Test Clone() */
-        hr = skininfo->lpVtbl->Clone(skininfo, NULL);
-        ok(hr == D3DERR_INVALIDCALL, "Got unexpected hr %#x.\n", hr);
-
-        clone = NULL;
-        hr = skininfo->lpVtbl->Clone(skininfo, &clone);
-        ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
-
-        hr = clone->lpVtbl->GetDeclaration(clone, declaration);
-        ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
-        compare_elements(declaration, declaration_out, __LINE__, 0);
-
-        hr = D3DXFVFFromDeclarator(declaration_out, &exp_fvf);
-        ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
-        fvf = clone->lpVtbl->GetFVF(clone);
-        ok(fvf == exp_fvf, "Got unexpected fvf %#x.\n", fvf);
-
-        exp_string = skininfo->lpVtbl->GetBoneName(skininfo, 0);
-        string = clone->lpVtbl->GetBoneName(clone, 0);
-        ok(!strcmp(string, exp_string), "Got unexpected bone 0 name %s.\n", debugstr_a(string));
-
-        transform = clone->lpVtbl->GetBoneOffsetMatrix(clone, 0);
-        check_matrix(transform, &identity_matrix);
-
-        hr = skininfo->lpVtbl->GetBoneInfluence(skininfo, 0, exp_vertices, exp_weights);
-        ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
-        hr = clone->lpVtbl->GetBoneInfluence(clone, 0, vertices, weights);
-        ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
-
-        for (i = 0; i < ARRAY_SIZE(vertices); ++i)
-        {
-            ok(vertices[i] == exp_vertices[i], "influence[%u]: got unexpected vertex %u, expected %u.\n",
-                    i, vertices[i], exp_vertices[i]);
-            ok(((DWORD *)weights)[i] == ((DWORD *)exp_weights)[i],
-                    "influence[%u]: got unexpected weight %.8e, expected %.8e.\n", i, weights[i], exp_weights[i]);
-        }
-
-        IUnknown_Release(clone);
     }
     if (skininfo) IUnknown_Release(skininfo);
     skininfo = NULL;
@@ -10266,17 +10208,10 @@ static void test_clone_mesh(void)
 
         hr = mesh->lpVtbl->CloneMesh(mesh, tc[i].clone_options, tc[i].new_declaration,
                                      test_context->device, &mesh_clone);
-<<<<<<< HEAD
         ok(hr == D3D_OK, "CloneMesh test case %d failed. Got %x, expected D3D_OK.\n", i, hr);
 
         hr = mesh_clone->lpVtbl->GetDeclaration(mesh_clone, new_declaration);
         ok(hr == D3D_OK, "GetDeclaration test case %d failed. Got %x, expected D3D_OK.\n", i, hr);
-=======
-        ok(hr == D3D_OK, "Test %u, got unexpected hr %#x.\n", i, hr);
-
-        hr = mesh_clone->lpVtbl->GetDeclaration(mesh_clone, new_declaration);
-        ok(hr == D3D_OK, "Test %u, got unexpected hr %#x.\n", i, hr);
->>>>>>> master
         /* Check declaration elements */
         for (j = 0; tc[i].new_declaration[j].Stream != 0xFF; j++)
         {
@@ -10462,12 +10397,8 @@ static void test_valid_mesh(void)
         }
 
         hr = D3DXValidMesh(mesh, tc[i].adjacency, &errors_and_warnings);
-<<<<<<< HEAD
         todo_wine ok(hr == tc[i].exp_hr, "D3DXValidMesh test case %d failed. "
                 "Got %x, expected %x.\n", i, hr, tc[i].exp_hr);
-=======
-        todo_wine ok(hr == tc[i].exp_hr, "Test %u, got unexpected hr %#x, expected %#x.\n", i, hr, tc[i].exp_hr);
->>>>>>> master
 
         /* Note errors_and_warnings is deliberately not checked because that
          * would require copying wast amounts of the text output. */
@@ -10631,12 +10562,8 @@ static void test_optimize_faces(void)
         hr = D3DXOptimizeFaces(tc[i].indices, tc[i].num_faces,
                                tc[i].num_vertices, tc[i].indices_are_32bit,
                                face_remap);
-<<<<<<< HEAD
         ok(hr == D3D_OK, "D3DXOptimizeFaces test case %d failed. "
                 "Got %x, expected D3D_OK.\n", i, hr);
-=======
-        ok(hr == D3D_OK, "Test %u, got unexpected hr %#x.\n", i, hr);
->>>>>>> master
 
         /* Compare face remap with expected face remap */
         for (j = 0; j < tc[i].num_faces; j++)
@@ -10653,23 +10580,15 @@ static void test_optimize_faces(void)
     hr = D3DXOptimizeFaces(tc[0].indices, tc[0].num_faces,
                            tc[0].num_vertices, tc[0].indices_are_32bit,
                            NULL);
-<<<<<<< HEAD
     ok(hr == D3DERR_INVALIDCALL, "D3DXOptimizeFaces passed NULL face_remap "
             "pointer. Got %x, expected D3DERR_INVALIDCALL.\n", hr);
-=======
-    ok(hr == D3DERR_INVALIDCALL, "Got unexpected hr %#x.\n", hr);
->>>>>>> master
 
     /* Number of faces must be smaller than 2^15 */
     hr = D3DXOptimizeFaces(tc[0].indices, 2 << 15,
                            tc[0].num_vertices, FALSE,
                            &smallest_face_remap);
-<<<<<<< HEAD
     ok(hr == D3DERR_INVALIDCALL, "D3DXOptimizeFaces should not accept 2^15 "
             "faces when using 16-bit indices. Got %x, expected D3DERR_INVALIDCALL.\n", hr);
-=======
-    ok(hr == D3DERR_INVALIDCALL, "Got unexpected hr %#x.\n", hr);
->>>>>>> master
 }
 
 static HRESULT clear_normals(ID3DXMesh *mesh)

@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <math.h>
@@ -25,6 +27,16 @@
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(twain);
+
+#ifndef SANE_VALUE_SCAN_MODE_COLOR
+#define SANE_VALUE_SCAN_MODE_COLOR		SANE_I18N("Color")
+#endif
+#ifndef SANE_VALUE_SCAN_MODE_GRAY
+#define SANE_VALUE_SCAN_MODE_GRAY		SANE_I18N("Gray")
+#endif
+#ifndef SANE_VALUE_SCAN_MODE_LINEART
+#define SANE_VALUE_SCAN_MODE_LINEART		SANE_I18N("Lineart")
+#endif
 
 static TW_UINT16 get_onevalue(pTW_CAPABILITY pCapability, TW_UINT16 *type, TW_UINT32 *value)
 {
@@ -117,6 +129,7 @@ static TW_UINT16 msg_get_enum(pTW_CAPABILITY pCapability, const TW_UINT32 *value
     return TWCC_SUCCESS;
 }
 
+#ifdef SONAME_LIBSANE
 static TW_UINT16 msg_get_range(pTW_CAPABILITY pCapability, TW_UINT16 type,
             TW_UINT32 minval, TW_UINT32 maxval, TW_UINT32 step, TW_UINT32 def,  TW_UINT32 current)
 {
@@ -142,6 +155,7 @@ static TW_UINT16 msg_get_range(pTW_CAPABILITY pCapability, TW_UINT16 type,
     GlobalUnlock(pCapability->hContainer);
     return TWCC_SUCCESS;
 }
+#endif
 
 static TW_UINT16 TWAIN_GetSupportedCaps(pTW_CAPABILITY pCapability)
 {
@@ -198,7 +212,7 @@ static TW_UINT16 SANE_ICAPXferMech (pTW_CAPABILITY pCapability, TW_UINT16 action
             if (twCC == TWCC_SUCCESS)
             {
                activeDS.capXferMech = (TW_UINT16) val;
-               FIXME("Partial Stub:  XFERMECH set to %ld, but ignored\n", val);
+               FIXME("Partial Stub:  XFERMECH set to %d, but ignored\n", val);
             }
             break;
 
@@ -242,7 +256,7 @@ static TW_UINT16 SANE_CAPXferCount (pTW_CAPABILITY pCapability, TW_UINT16 action
         case MSG_SET:
             twCC = msg_set(pCapability, &val);
             if (twCC == TWCC_SUCCESS)
-               FIXME("Partial Stub:  XFERCOUNT set to %ld, but ignored\n", val);
+               FIXME("Partial Stub:  XFERCOUNT set to %d, but ignored\n", val);
             break;
 
         case MSG_GETDEFAULT:
@@ -259,19 +273,20 @@ static TW_UINT16 SANE_CAPXferCount (pTW_CAPABILITY pCapability, TW_UINT16 action
     return twCC;
 }
 
-static BOOL pixeltype_to_sane_mode(TW_UINT16 pixeltype, char *mode, int len)
+#ifdef SONAME_LIBSANE
+static BOOL pixeltype_to_sane_mode(TW_UINT16 pixeltype, SANE_String mode, int len)
 {
-    const char *m = NULL;
+    SANE_String_Const m = NULL;
     switch (pixeltype)
     {
         case TWPT_GRAY:
-            m = "Gray";
+            m = SANE_VALUE_SCAN_MODE_GRAY;
             break;
         case TWPT_RGB:
-            m = "Color";
+            m = SANE_VALUE_SCAN_MODE_COLOR;
             break;
         case TWPT_BW:
-            m = "Lineart";
+            m = SANE_VALUE_SCAN_MODE_LINEART;
             break;
     }
     if (! m)
@@ -281,26 +296,46 @@ static BOOL pixeltype_to_sane_mode(TW_UINT16 pixeltype, char *mode, int len)
     strcpy(mode, m);
     return TRUE;
 }
+static BOOL sane_mode_to_pixeltype(SANE_String_Const mode, TW_UINT16 *pixeltype)
+{
+    if (strcmp(mode, SANE_VALUE_SCAN_MODE_LINEART) == 0)
+        *pixeltype = TWPT_BW;
+    else if (memcmp(mode, SANE_VALUE_SCAN_MODE_GRAY, strlen(SANE_VALUE_SCAN_MODE_GRAY)) == 0)
+        *pixeltype = TWPT_GRAY;
+    else if (strcmp(mode, SANE_VALUE_SCAN_MODE_COLOR) == 0)
+        *pixeltype = TWPT_RGB;
+    else
+        return FALSE;
+
+    return TRUE;
+}
+#endif
 
 /* ICAP_PIXELTYPE */
 static TW_UINT16 SANE_ICAPPixelType (pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
-    TW_UINT16 twCC;
+    TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_UINT32 possible_values[3];
     int possible_value_count;
     TW_UINT32 val;
-    BOOL reload = FALSE;
+    SANE_Status rc;
+    SANE_Int status;
+    SANE_String_Const *choices;
+    char current_mode[64];
     TW_UINT16 current_pixeltype = TWPT_BW;
-    char mode[64];
+    SANE_Char mode[64];
 
     TRACE("ICAP_PIXELTYPE\n");
 
-    twCC = sane_option_probe_mode(&current_pixeltype, possible_values, &possible_value_count);
-    if (twCC != TWCC_SUCCESS)
+    rc = sane_option_probe_mode(activeDS.deviceHandle, &choices, current_mode, sizeof(current_mode));
+    if (rc != SANE_STATUS_GOOD)
     {
         ERR("Unable to retrieve mode from sane, ICAP_PIXELTYPE unsupported\n");
         return twCC;
     }
+
+    sane_mode_to_pixeltype(current_mode, &current_pixeltype);
 
     /* Sane does not support a concept of a default mode, so we simply cache
      *   the first mode we find */
@@ -318,6 +353,12 @@ static TW_UINT16 SANE_ICAPPixelType (pTW_CAPABILITY pCapability, TW_UINT16 actio
             break;
 
         case MSG_GET:
+            for (possible_value_count = 0; choices && *choices && possible_value_count < 3; choices++)
+            {
+                TW_UINT16 pix;
+                if (sane_mode_to_pixeltype(*choices, &pix))
+                    possible_values[possible_value_count++] = pix;
+            }
             twCC = msg_get_enum(pCapability, possible_values, possible_value_count,
                     TWTY_UINT16, current_pixeltype, activeDS.defaultPixelType);
             break;
@@ -326,18 +367,22 @@ static TW_UINT16 SANE_ICAPPixelType (pTW_CAPABILITY pCapability, TW_UINT16 actio
             twCC = msg_set(pCapability, &val);
             if (twCC == TWCC_SUCCESS)
             {
-                TRACE("Setting pixeltype to %ld\n", val);
+                TRACE("Setting pixeltype to %d\n", val);
                 if (! pixeltype_to_sane_mode(val, mode, sizeof(mode)))
                     return TWCC_BADVALUE;
 
-                twCC = sane_option_set_str("mode", mode, &reload);
+                status = 0;
+                rc = sane_option_set_str(activeDS.deviceHandle, "mode", mode, &status);
                 /* Some SANE devices use 'Grayscale' instead of the standard 'Gray' */
-                if (twCC != TWCC_SUCCESS && strcmp(mode, "Gray") == 0)
+                if (rc == SANE_STATUS_INVAL && strcmp(mode, SANE_VALUE_SCAN_MODE_GRAY) == 0)
                 {
                     strcpy(mode, "Grayscale");
-                    twCC = sane_option_set_str("mode", mode, &reload);
+                    rc = sane_option_set_str(activeDS.deviceHandle, "mode", mode, &status);
                 }
-                if (reload) get_sane_params( &activeDS.frame_params );
+                if (rc != SANE_STATUS_GOOD)
+                    return sane_status_to_twcc(rc);
+                if (status & SANE_INFO_RELOAD_PARAMS)
+                    psane_get_parameters (activeDS.deviceHandle, &activeDS.sane_param);
             }
             break;
 
@@ -350,15 +395,18 @@ static TW_UINT16 SANE_ICAPPixelType (pTW_CAPABILITY pCapability, TW_UINT16 actio
             if (! pixeltype_to_sane_mode(current_pixeltype, mode, sizeof(mode)))
                 return TWCC_BADVALUE;
 
-            twCC = sane_option_set_str("mode", mode, &reload);
+            status = 0;
+            rc = sane_option_set_str(activeDS.deviceHandle, "mode", mode, &status);
             /* Some SANE devices use 'Grayscale' instead of the standard 'Gray' */
-            if (twCC != TWCC_SUCCESS && strcmp(mode, "Gray") == 0)
+            if (rc == SANE_STATUS_INVAL && strcmp(mode, SANE_VALUE_SCAN_MODE_GRAY) == 0)
             {
                 strcpy(mode, "Grayscale");
-                twCC = sane_option_set_str("mode", mode, &reload);
+                rc = sane_option_set_str(activeDS.deviceHandle, "mode", mode, &status);
             }
-            if (twCC != TWCC_SUCCESS) break;
-            if (reload) get_sane_params( &activeDS.frame_params );
+            if (rc != SANE_STATUS_GOOD)
+                return sane_status_to_twcc(rc);
+            if (status & SANE_INFO_RELOAD_PARAMS)
+                psane_get_parameters (activeDS.deviceHandle, &activeDS.sane_param);
 
             /* .. fall through intentional .. */
 
@@ -368,6 +416,7 @@ static TW_UINT16 SANE_ICAPPixelType (pTW_CAPABILITY pCapability, TW_UINT16 actio
             break;
     }
 
+#endif
     return twCC;
 }
 
@@ -418,11 +467,12 @@ static TW_UINT16 SANE_ICAPUnits (pTW_CAPABILITY pCapability, TW_UINT16 action)
 static TW_UINT16 SANE_ICAPBitDepth(pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_UINT32 possible_values[1];
 
     TRACE("ICAP_BITDEPTH\n");
 
-    possible_values[0] = activeDS.frame_params.depth;
+    possible_values[0] = activeDS.sane_param.depth;
 
     switch (action)
     {
@@ -433,17 +483,18 @@ static TW_UINT16 SANE_ICAPBitDepth(pTW_CAPABILITY pCapability, TW_UINT16 action)
 
         case MSG_GET:
             twCC = msg_get_enum(pCapability, possible_values, ARRAY_SIZE(possible_values),
-                    TWTY_UINT16, activeDS.frame_params.depth, activeDS.frame_params.depth);
+                    TWTY_UINT16, activeDS.sane_param.depth, activeDS.sane_param.depth);
             break;
 
         case MSG_GETDEFAULT:
             /* .. Fall through intentional .. */
 
         case MSG_GETCURRENT:
-            TRACE("Returning current bitdepth of %d\n", activeDS.frame_params.depth);
-            twCC = set_onevalue(pCapability, TWTY_UINT16, activeDS.frame_params.depth);
+            TRACE("Returning current bitdepth of %d\n", activeDS.sane_param.depth);
+            twCC = set_onevalue(pCapability, TWTY_UINT16, activeDS.sane_param.depth);
             break;
     }
+#endif
     return twCC;
 }
 
@@ -493,7 +544,7 @@ static TW_UINT16 SANE_ICAPCompression (pTW_CAPABILITY pCapability, TW_UINT16 act
         case MSG_SET:
             twCC = msg_set(pCapability, &val);
             if (twCC == TWCC_SUCCESS)
-               FIXME("Partial Stub:  COMPRESSION set to %ld, but ignored\n", val);
+               FIXME("Partial Stub:  COMPRESSION set to %d, but ignored\n", val);
             break;
 
         case MSG_GETDEFAULT:
@@ -514,11 +565,14 @@ static TW_UINT16 SANE_ICAPCompression (pTW_CAPABILITY pCapability, TW_UINT16 act
 static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 action,  TW_UINT16 cap)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_UINT32 val;
-    int current_resolution;
+    SANE_Int current_resolution;
     TW_FIX32 *default_res;
     const char *best_option_name;
-    int minval, maxval, quantval;
+    SANE_Int minval, maxval, quantval;
+    SANE_Status sane_rc;
+    SANE_Int set_status;
 
     TRACE("ICAP_%cRESOLUTION\n", cap == ICAP_XRESOLUTION ? 'X' : 'Y');
 
@@ -533,10 +587,10 @@ static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 acti
         best_option_name = "y-resolution";
         default_res = &activeDS.defaultYResolution;
     }
-    if (sane_option_get_int(best_option_name, &current_resolution) != TWCC_SUCCESS)
+    if (sane_option_get_int(activeDS.deviceHandle, best_option_name, &current_resolution) != SANE_STATUS_GOOD)
     {
         best_option_name = "resolution";
-        if (sane_option_get_int(best_option_name, &current_resolution) != TWCC_SUCCESS)
+        if (sane_option_get_int(activeDS.deviceHandle, best_option_name, &current_resolution) != SANE_STATUS_GOOD)
             return TWCC_BADCAP;
     }
 
@@ -565,8 +619,10 @@ static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 acti
             break;
 
         case MSG_GET:
-            twCC = sane_option_probe_resolution(best_option_name, &minval, &maxval, &quantval);
-            if (twCC == TWCC_SUCCESS)
+            sane_rc = sane_option_probe_resolution(activeDS.deviceHandle, best_option_name, &minval, &maxval, &quantval);
+            if (sane_rc != SANE_STATUS_GOOD)
+                twCC = TWCC_BADCAP;
+            else
                 twCC = msg_get_range(pCapability, TWTY_FIX32,
                                 minval, maxval, quantval == 0 ? 1 : quantval, default_res->Whole, current_resolution);
             break;
@@ -576,10 +632,15 @@ static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 acti
             if (twCC == TWCC_SUCCESS)
             {
                 TW_FIX32 f32;
-                BOOL reload = FALSE;
                 memcpy(&f32, &val, sizeof(f32));
-                twCC = sane_option_set_int(best_option_name, f32.Whole, &reload);
-                if (reload) twCC = TWCC_CHECKSTATUS;
+                sane_rc = sane_option_set_int(activeDS.deviceHandle, best_option_name, f32.Whole, &set_status);
+                if (sane_rc != SANE_STATUS_GOOD)
+                {
+                    FIXME("Status of %d not expected or handled\n", sane_rc);
+                    twCC = TWCC_BADCAP;
+                }
+                else if (set_status == SANE_INFO_INEXACT)
+                    twCC = TWCC_CHECKSTATUS;
             }
             break;
 
@@ -588,8 +649,9 @@ static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 acti
             break;
 
         case MSG_RESET:
-            twCC = sane_option_set_int(best_option_name, default_res->Whole, NULL);
-            if (twCC != TWCC_SUCCESS) return twCC;
+            sane_rc = sane_option_set_int(activeDS.deviceHandle, best_option_name, default_res->Whole, NULL);
+            if (sane_rc != SANE_STATUS_GOOD)
+                return TWCC_BADCAP;
 
             /* .. fall through intentional .. */
 
@@ -597,22 +659,38 @@ static TW_UINT16 SANE_ICAPResolution (pTW_CAPABILITY pCapability, TW_UINT16 acti
             twCC = set_onevalue(pCapability, TWTY_FIX32, current_resolution);
             break;
     }
+#endif
     return twCC;
 }
 
 /* ICAP_PHYSICALHEIGHT, ICAP_PHYSICALWIDTH */
 static TW_UINT16 SANE_ICAPPhysical (pTW_CAPABILITY pCapability, TW_UINT16 action,  TW_UINT16 cap)
 {
-    TW_UINT16 twCC;
+    TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_FIX32 res;
-    int tlx, tly, brx, bry;
+    char option_name[64];
+    SANE_Fixed lower, upper;
+    SANE_Unit lowerunit, upperunit;
+    SANE_Status status;
 
     TRACE("ICAP_PHYSICAL%s\n", cap == ICAP_PHYSICALHEIGHT? "HEIGHT" : "WIDTH");
 
-    twCC = sane_option_get_max_scan_area( &tlx, &tly, &brx, &bry );
-    if (twCC != TWCC_SUCCESS) return twCC;
+    sprintf(option_name, "tl-%c", cap == ICAP_PHYSICALHEIGHT ? 'y' : 'x');
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, option_name, NULL, &lowerunit, &lower, NULL, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
 
-    res = convert_sane_res_to_twain( (cap == ICAP_PHYSICALHEIGHT) ? bry - tly : brx - tlx );
+    sprintf(option_name, "br-%c", cap == ICAP_PHYSICALHEIGHT ? 'y' : 'x');
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, option_name, NULL, &upperunit, NULL, &upper, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+
+    if (upperunit != lowerunit)
+        return TWCC_BADCAP;
+
+    if (! convert_sane_res_to_twain(SANE_UNFIX(upper) - SANE_UNFIX(lower), upperunit, &res, TWUN_INCHES))
+        return TWCC_BADCAP;
 
     switch (action)
     {
@@ -630,6 +708,7 @@ static TW_UINT16 SANE_ICAPPhysical (pTW_CAPABILITY pCapability, TW_UINT16 action
             twCC = set_onevalue(pCapability, TWTY_FIX32, res.Whole | (res.Frac << 16));
             break;
     }
+#endif
     return twCC;
 }
 
@@ -637,9 +716,10 @@ static TW_UINT16 SANE_ICAPPhysical (pTW_CAPABILITY pCapability, TW_UINT16 action
 static TW_UINT16 SANE_ICAPPixelFlavor (pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     static const TW_UINT32 possible_values[] = { TWPF_CHOCOLATE, TWPF_VANILLA };
     TW_UINT32 val;
-    TW_UINT32 flavor = activeDS.frame_params.depth == 1 ? TWPF_VANILLA : TWPF_CHOCOLATE;
+    TW_UINT32 flavor = activeDS.sane_param.depth == 1 ? TWPF_VANILLA : TWPF_CHOCOLATE;
 
     TRACE("ICAP_PIXELFLAVOR\n");
 
@@ -659,7 +739,7 @@ static TW_UINT16 SANE_ICAPPixelFlavor (pTW_CAPABILITY pCapability, TW_UINT16 act
             twCC = msg_set(pCapability, &val);
             if (twCC == TWCC_SUCCESS)
             {
-               FIXME("Stub:  PIXELFLAVOR set to %ld, but ignored\n", val);
+               FIXME("Stub:  PIXELFLAVOR set to %d, but ignored\n", val);
             }
             break;
 
@@ -674,28 +754,73 @@ static TW_UINT16 SANE_ICAPPixelFlavor (pTW_CAPABILITY pCapability, TW_UINT16 act
             twCC = set_onevalue(pCapability, TWTY_UINT16, flavor);
             break;
     }
+#endif
     return twCC;
 }
 
+#ifdef SONAME_LIBSANE
 static TW_UINT16 get_width_height(double *width, double *height, BOOL max)
 {
-    TW_UINT16 rc;
-    int tlx, tly, brx, bry;
+    SANE_Status status;
 
-    if (max) rc = sane_option_get_max_scan_area( &tlx, &tly, &brx, &bry );
-    else rc = sane_option_get_scan_area( &tlx, &tly, &brx, &bry );
+    SANE_Fixed tlx_current, tlx_min, tlx_max;
+    SANE_Fixed tly_current, tly_min, tly_max;
+    SANE_Fixed brx_current, brx_min, brx_max;
+    SANE_Fixed bry_current, bry_min, bry_max;
 
-    if (rc == TWCC_SUCCESS)
-    {
-        *width = (brx - tlx) / 65536.0;
-        *height = (bry - tly) / 65536.0;
-    }
-    return rc;
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, "tl-x", &tlx_current, NULL, &tlx_min, &tlx_max, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, "tl-y", &tly_current, NULL, &tly_min, &tly_max, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, "br-x", &brx_current, NULL, &brx_min, &brx_max, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+
+    status = sane_option_probe_scan_area(activeDS.deviceHandle, "br-y", &bry_current, NULL, &bry_min, &bry_max, NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+
+    if (max)
+        *width = SANE_UNFIX(brx_max) - SANE_UNFIX(tlx_min);
+    else
+        *width = SANE_UNFIX(brx_current) - SANE_UNFIX(tlx_current);
+
+    if (max)
+        *height = SANE_UNFIX(bry_max) - SANE_UNFIX(tly_min);
+    else
+        *height = SANE_UNFIX(bry_current) - SANE_UNFIX(tly_current);
+
+    return(TWCC_SUCCESS);
+}
+
+static TW_UINT16 set_one_coord(const char *name, double coord)
+{
+    SANE_Status status;
+    status = sane_option_set_fixed(activeDS.deviceHandle, name, SANE_FIX(coord), NULL);
+    if (status != SANE_STATUS_GOOD)
+        return sane_status_to_twcc(status);
+    return TWCC_SUCCESS;
 }
 
 static TW_UINT16 set_width_height(double width, double height)
 {
-    return sane_option_set_scan_area( 0, 0, width * 65536, height * 65536, NULL );
+    TW_UINT16 rc = TWCC_SUCCESS;
+    rc = set_one_coord("tl-x", 0);
+    if (rc != TWCC_SUCCESS)
+        return rc;
+    rc = set_one_coord("br-x", width);
+    if (rc != TWCC_SUCCESS)
+        return rc;
+    rc = set_one_coord("tl-y", 0);
+    if (rc != TWCC_SUCCESS)
+        return rc;
+    rc = set_one_coord("br-y", height);
+
+    return rc;
 }
 
 typedef struct
@@ -786,11 +911,13 @@ static TW_UINT16 get_current_paper_size(const supported_size_t *s, int n)
 
     return TWSS_NONE;
 }
+#endif
 
 /* ICAP_SUPPORTEDSIZES */
 static TW_UINT16 SANE_ICAPSupportedSizes (pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
 
     static TW_UINT32 possible_values[ARRAY_SIZE(supported_sizes)];
     unsigned int i;
@@ -822,7 +949,7 @@ static TW_UINT16 SANE_ICAPSupportedSizes (pTW_CAPABILITY pCapability, TW_UINT16 
                     if (supported_sizes[i].size == val)
                         return set_width_height(supported_sizes[i].x, supported_sizes[i].y);
 
-            ERR("Unsupported size %ld\n", val);
+            ERR("Unsupported size %d\n", val);
             twCC = TWCC_BADCAP;
             break;
 
@@ -848,6 +975,7 @@ static TW_UINT16 SANE_ICAPSupportedSizes (pTW_CAPABILITY pCapability, TW_UINT16 
             break;
     }
 
+#endif
     return twCC;
 }
 
@@ -855,12 +983,14 @@ static TW_UINT16 SANE_ICAPSupportedSizes (pTW_CAPABILITY pCapability, TW_UINT16 
 static TW_UINT16 SANE_CAPAutofeed (pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_UINT32 val;
-    BOOL autofeed;
+    SANE_Bool autofeed;
+    SANE_Status status;
 
     TRACE("CAP_AUTOFEED\n");
 
-    if (sane_option_get_bool("batch-scan", &autofeed) != TWCC_SUCCESS)
+    if (sane_option_get_bool(activeDS.deviceHandle, "batch-scan", &autofeed, NULL) != SANE_STATUS_GOOD)
         return TWCC_BADCAP;
 
     switch (action)
@@ -877,23 +1007,40 @@ static TW_UINT16 SANE_CAPAutofeed (pTW_CAPABILITY pCapability, TW_UINT16 action)
         case MSG_SET:
             twCC = msg_set(pCapability, &val);
             if (twCC == TWCC_SUCCESS)
-                twCC = sane_option_set_bool("batch-scan", !!val);
+            {
+                if (val)
+                    autofeed = SANE_TRUE;
+                else
+                    autofeed = SANE_FALSE;
+
+                status = sane_option_set_bool(activeDS.deviceHandle, "batch-scan", autofeed, NULL);
+                if (status != SANE_STATUS_GOOD)
+                {
+                    ERR("Error %s: Could not set batch-scan to %d\n", psane_strstatus(status), autofeed);
+                    return sane_status_to_twcc(status);
+                }
+            }
             break;
 
         case MSG_GETDEFAULT:
-            twCC = set_onevalue(pCapability, TWTY_BOOL, TRUE);
+            twCC = set_onevalue(pCapability, TWTY_BOOL, SANE_TRUE);
             break;
 
         case MSG_RESET:
-            autofeed = TRUE;
-            twCC = sane_option_set_bool("batch-scan", autofeed);
-            if (twCC != TWCC_SUCCESS) break;
+            autofeed = SANE_TRUE;
+            status = sane_option_set_bool(activeDS.deviceHandle, "batch-scan", autofeed, NULL);
+            if (status != SANE_STATUS_GOOD)
+            {
+                ERR("Error %s: Could not reset batch-scan to SANE_TRUE\n", psane_strstatus(status));
+                return sane_status_to_twcc(status);
+            }
             /* .. fall through intentional .. */
 
         case MSG_GETCURRENT:
             twCC = set_onevalue(pCapability, TWTY_BOOL, autofeed);
             break;
     }
+#endif
     return twCC;
 }
 
@@ -901,13 +1048,15 @@ static TW_UINT16 SANE_CAPAutofeed (pTW_CAPABILITY pCapability, TW_UINT16 action)
 static TW_UINT16 SANE_CAPFeederEnabled (pTW_CAPABILITY pCapability, TW_UINT16 action)
 {
     TW_UINT16 twCC = TWCC_BADCAP;
+#ifdef SONAME_LIBSANE
     TW_UINT32 val;
     TW_BOOL enabled;
-    char source[64];
+    SANE_Status status;
+    SANE_Char source[64];
 
     TRACE("CAP_FEEDERENABLED\n");
 
-    if (sane_option_get_str("source", source, sizeof(source)) != TWCC_SUCCESS)
+    if (sane_option_get_str(activeDS.deviceHandle, SANE_NAME_SCAN_SOURCE, source, sizeof(source), NULL) != SANE_STATUS_GOOD)
         return TWCC_BADCAP;
 
     if (strcmp(source, "Auto") == 0 || strcmp(source, "ADF") == 0)
@@ -931,11 +1080,16 @@ static TW_UINT16 SANE_CAPFeederEnabled (pTW_CAPABILITY pCapability, TW_UINT16 ac
             if (twCC == TWCC_SUCCESS)
             {
                 strcpy(source, "ADF");
-                twCC = sane_option_set_str("source", source, NULL);
-                if (twCC != TWCC_SUCCESS)
+                status = sane_option_set_str(activeDS.deviceHandle, SANE_NAME_SCAN_SOURCE, source, NULL);
+                if (status != SANE_STATUS_GOOD)
                 {
                     strcpy(source, "Auto");
-                    twCC = sane_option_set_str("source", source, NULL);
+                    status = sane_option_set_str(activeDS.deviceHandle, SANE_NAME_SCAN_SOURCE, source, NULL);
+                }
+                if (status != SANE_STATUS_GOOD)
+                {
+                    ERR("Error %s: Could not set source to either ADF or Auto\n", psane_strstatus(status));
+                    return sane_status_to_twcc(status);
                 }
             }
             break;
@@ -946,7 +1100,7 @@ static TW_UINT16 SANE_CAPFeederEnabled (pTW_CAPABILITY pCapability, TW_UINT16 ac
 
         case MSG_RESET:
             strcpy(source, "Auto");
-            if (sane_option_set_str("source", source, NULL) == TWCC_SUCCESS)
+            if (sane_option_set_str(activeDS.deviceHandle, SANE_NAME_SCAN_SOURCE, source, NULL) == SANE_STATUS_GOOD)
                 enabled = TRUE;
             /* .. fall through intentional .. */
 
@@ -954,6 +1108,7 @@ static TW_UINT16 SANE_CAPFeederEnabled (pTW_CAPABILITY pCapability, TW_UINT16 ac
             twCC = set_onevalue(pCapability, TWTY_BOOL, enabled);
             break;
     }
+#endif
     return twCC;
 }
 
@@ -1055,6 +1210,7 @@ TW_UINT16 SANE_SaneCapability (pTW_CAPABILITY pCapability, TW_UINT16 action)
     return twCC;
 }
 
+#ifdef SONAME_LIBSANE
 TW_UINT16 SANE_SaneSetDefaults (void)
 {
     TW_CAPABILITY cap;
@@ -1082,3 +1238,4 @@ TW_UINT16 SANE_SaneSetDefaults (void)
 
    return TWCC_SUCCESS;
 }
+#endif

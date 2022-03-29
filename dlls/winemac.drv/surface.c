@@ -117,7 +117,7 @@ static void macdrv_surface_unlock(struct window_surface *window_surface)
  *              macdrv_surface_get_bitmap_info
  */
 static void *macdrv_surface_get_bitmap_info(struct window_surface *window_surface,
-                                                  BITMAPINFO *info)
+                                            BITMAPINFO *info)
 {
     struct macdrv_window_surface *surface = get_mac_surface(window_surface);
 
@@ -264,7 +264,7 @@ struct window_surface *create_surface(macdrv_window window, const RECT *rect,
 
     surface->info.bmiHeader.biSize        = sizeof(surface->info.bmiHeader);
     surface->info.bmiHeader.biWidth       = width;
-    surface->info.bmiHeader.biHeight      = -height; /* top-down */
+    surface->info.bmiHeader.biHeight      = height; /* bottom-up */
     surface->info.bmiHeader.biPlanes      = 1;
     surface->info.bmiHeader.biBitCount    = 32;
     surface->info.bmiHeader.biSizeImage   = get_dib_image_size(&surface->info);
@@ -342,21 +342,18 @@ int get_surface_blit_rects(void *window_surface, const CGRect **rects, int *coun
 {
     struct macdrv_window_surface *surface = get_mac_surface(window_surface);
 
-    if (rects && count)
+    if (surface->blit_data)
     {
-        if (surface->blit_data)
-        {
-            *rects = (const CGRect*)surface->blit_data->Buffer;
-            *count = surface->blit_data->rdh.nCount;
-        }
-        else
-        {
-            *rects = NULL;
-            *count = 0;
-        }
+        *rects = (const CGRect*)surface->blit_data->Buffer;
+        *count = surface->blit_data->rdh.nCount;
+    }
+    else
+    {
+        *rects = NULL;
+        *count = 0;
     }
 
-    return (surface->blit_data != NULL && surface->blit_data->rdh.nCount > 0);
+    return (surface->blit_data != NULL);
 }
 
 /***********************************************************************
@@ -374,8 +371,7 @@ int get_surface_blit_rects(void *window_surface, const CGRect **rects, int *coun
  *            must not use Win32 or Wine functions, including debug
  *            logging.
  */
-CGImageRef create_surface_image(void *window_surface, CGRect *rect, int copy_data, int color_keyed,
-        CGFloat key_red, CGFloat key_green, CGFloat key_blue)
+CGImageRef create_surface_image(void *window_surface, CGRect *rect, int copy_data)
 {
     CGImageRef cgimage = NULL;
     struct macdrv_window_surface *surface = get_mac_surface(window_surface);
@@ -396,7 +392,7 @@ CGImageRef create_surface_image(void *window_surface, CGRect *rect, int copy_dat
 
         colorspace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         bytes_per_row = get_dib_stride(width, 32);
-        offset = CGRectGetMinX(visrect) * 4 + CGRectGetMinY(visrect) * bytes_per_row;
+        offset = CGRectGetMinX(visrect) * 4 + (height - CGRectGetMaxY(visrect)) * bytes_per_row;
         size = min(CGRectGetHeight(visrect) * bytes_per_row,
                    surface->info.bmiHeader.biSizeImage - offset);
 
@@ -416,20 +412,6 @@ CGImageRef create_surface_image(void *window_surface, CGRect *rect, int copy_dat
                                 provider, NULL, retina_on, kCGRenderingIntentDefault);
         CGDataProviderRelease(provider);
         CGColorSpaceRelease(colorspace);
-
-        if (color_keyed)
-        {
-            CGImageRef maskedImage;
-            CGFloat components[] = { key_red   - 0.5, key_red   + 0.5,
-                                     key_green - 0.5, key_green + 0.5,
-                                     key_blue  - 0.5, key_blue  + 0.5 };
-            maskedImage = CGImageCreateWithMaskingColors(cgimage, components);
-            if (maskedImage)
-            {
-                CGImageRelease(cgimage);
-                cgimage = maskedImage;
-            }
-        }
     }
 
     return cgimage;

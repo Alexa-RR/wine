@@ -78,27 +78,53 @@ typedef struct {
 static struct list port_handles = LIST_INIT( port_handles );
 static struct list xcv_handles = LIST_INIT( xcv_handles );
 
-static const WCHAR WinNT_CV_PortsW[] = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Ports";
-static const WCHAR WinNT_CV_WindowsW[] = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows";
+/* ############################### */
 
-HINSTANCE localspl_instance;
+static const WCHAR cmd_AddPortW[] = {'A','d','d','P','o','r','t',0};
+static const WCHAR cmd_DeletePortW[] = {'D','e','l','e','t','e','P','o','r','t',0};
+static const WCHAR cmd_ConfigureLPTPortCommandOKW[] = {'C','o','n','f','i','g','u','r','e',
+                                    'L','P','T','P','o','r','t',
+                                    'C','o','m','m','a','n','d','O','K',0};
 
-/*****************************************************
- *      DllMain
- */
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-{
-    TRACE("(%p, %ld, %p)\n",hinstDLL, fdwReason, lpvReserved);
+static const WCHAR cmd_GetDefaultCommConfigW[] = {'G','e','t',
+                                    'D','e','f','a','u','l','t',
+                                    'C','o','m','m','C','o','n','f','i','g',0};
 
-    switch(fdwReason)
-    {
-        case DLL_PROCESS_ATTACH:
-            DisableThreadLibraryCalls( hinstDLL );
-            localspl_instance = hinstDLL;
-            break;
-    }
-    return TRUE;
-}
+static const WCHAR cmd_GetTransmissionRetryTimeoutW[] = {'G','e','t',
+                                    'T','r','a','n','s','m','i','s','s','i','o','n',
+                                    'R','e','t','r','y','T','i','m','e','o','u','t',0};
+
+static const WCHAR cmd_MonitorUIW[] = {'M','o','n','i','t','o','r','U','I',0};
+static const WCHAR cmd_PortIsValidW[] = {'P','o','r','t','I','s','V','a','l','i','d',0};
+static const WCHAR cmd_SetDefaultCommConfigW[] = {'S','e','t',
+                                    'D','e','f','a','u','l','t',
+                                    'C','o','m','m','C','o','n','f','i','g',0};
+
+static const WCHAR dllnameuiW[] = {'l','o','c','a','l','u','i','.','d','l','l',0};
+static const WCHAR emptyW[] = {0};
+static const WCHAR LocalPortW[] = {'L','o','c','a','l',' ','P','o','r','t',0};
+
+static const WCHAR portname_LPT[]  = {'L','P','T',0};
+static const WCHAR portname_COM[]  = {'C','O','M',0};
+static const WCHAR portname_FILE[] = {'F','I','L','E',':',0};
+static const WCHAR portname_CUPS[] = {'C','U','P','S',':',0};
+static const WCHAR portname_LPR[]  = {'L','P','R',':',0};
+
+static const WCHAR TransmissionRetryTimeoutW[] = {'T','r','a','n','s','m','i','s','s','i','o','n',
+                                    'R','e','t','r','y','T','i','m','e','o','u','t',0};
+
+static const WCHAR WinNT_CV_PortsW[] = {'S','o','f','t','w','a','r','e','\\',
+                                        'M','i','c','r','o','s','o','f','t','\\',
+                                        'W','i','n','d','o','w','s',' ','N','T','\\',
+                                        'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+                                        'P','o','r','t','s',0};
+
+static const WCHAR WinNT_CV_WindowsW[] = {'S','o','f','t','w','a','r','e','\\',
+                                        'M','i','c','r','o','s','o','f','t','\\',
+                                        'W','i','n','d','o','w','s',' ','N','T','\\',
+                                        'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+                                        'W','i','n','d','o','w','s',0};
+
 
 /******************************************************************
  * does_port_exist (internal)
@@ -127,7 +153,7 @@ static BOOL does_port_exist(LPCWSTR myname)
         for (id = 0; id < returned; id++)
         {
             if (lstrcmpiW(myname, pi[id].pName) == 0) {
-                TRACE("(%lu) found %s\n", id, debugstr_w(pi[id].pName));
+                TRACE("(%u) found %s\n", id, debugstr_w(pi[id].pName));
                 heap_free(pi);
                 return TRUE;
             }
@@ -166,7 +192,7 @@ static DWORD get_ports_from_reg(DWORD level, LPBYTE pPorts, DWORD cbBuf, LPDWORD
     DWORD   entrysize;
     DWORD   id = 0;
 
-    TRACE("(%ld, %p, %ld, %p)\n", level, pPorts, cbBuf, lpreturned);
+    TRACE("(%d, %p, %d, %p)\n", level, pPorts, cbBuf, lpreturned);
 
     entrysize = (level == 1) ? sizeof(PORT_INFO_1W) : sizeof(PORT_INFO_2W);
 
@@ -185,8 +211,8 @@ static DWORD get_ports_from_reg(DWORD level, LPBYTE pPorts, DWORD cbBuf, LPDWORD
     }
 
     /* "+1" for '\0' */
-    reslen_MonitorW = LoadStringW(localspl_instance, IDS_LOCALMONITOR, res_MonitorW, IDS_LOCALMONITOR_MAXLEN) + 1;
-    reslen_PortW = LoadStringW(localspl_instance, IDS_LOCALPORT, res_PortW, IDS_LOCALPORT_MAXLEN) + 1;
+    reslen_MonitorW = LoadStringW(LOCALSPL_hInstance, IDS_LOCALMONITOR, res_MonitorW, IDS_LOCALMONITOR_MAXLEN) + 1;  
+    reslen_PortW = LoadStringW(LOCALSPL_hInstance, IDS_LOCALPORT, res_PortW, IDS_LOCALPORT_MAXLEN) + 1;  
 
     res = RegOpenKeyW(HKEY_LOCAL_MACHINE, WinNT_CV_PortsW, &hroot);
     if (res == ERROR_SUCCESS) {
@@ -210,7 +236,7 @@ static DWORD get_ports_from_reg(DWORD level, LPBYTE pPorts, DWORD cbBuf, LPDWORD
                 if (pPorts && (cbBuf >= needed)){
                     out = (LPPORT_INFO_2W) pPorts;
                     pPorts += entrysize;
-                    TRACE("%p: writing PORT_INFO_%ldW #%ld (%s)\n", out, level, numentries, debugstr_w(portname));
+                    TRACE("%p: writing PORT_INFO_%dW #%d (%s)\n", out, level, numentries, debugstr_w(portname));
                     out->pPortName = ptr;
                     lstrcpyW(ptr, portname);            /* Name of the Port */
                     ptr += (len + 1);
@@ -234,13 +260,13 @@ static DWORD get_ports_from_reg(DWORD level, LPBYTE pPorts, DWORD cbBuf, LPDWORD
     }
     else
     {
-        ERR("failed with %ld for %s\n", res, debugstr_w(WinNT_CV_PortsW));
+        ERR("failed with %d for %s\n", res, debugstr_w(WinNT_CV_PortsW));
         SetLastError(res);
     }
 
 getports_cleanup:
     *lpreturned = numentries;
-    TRACE("need %ld byte for %ld entries (%ld)\n", needed, numentries, GetLastError());
+    TRACE("need %d byte for %d entries (%d)\n", needed, numentries, GetLastError());
     return needed;
 }
 
@@ -253,13 +279,13 @@ static DWORD get_type_from_name(LPCWSTR name)
 {
     HANDLE  hfile;
 
-    if (!wcsncmp(name, L"LPT", ARRAY_SIZE(L"LPT") - 1))
+    if (!wcsncmp(name, portname_LPT, ARRAY_SIZE(portname_LPT) - 1))
         return PORT_IS_LPT;
 
-    if (!wcsncmp(name, L"COM", ARRAY_SIZE(L"COM") - 1))
+    if (!wcsncmp(name, portname_COM, ARRAY_SIZE(portname_COM) - 1))
         return PORT_IS_COM;
 
-    if (!lstrcmpW(name, L"FILE:"))
+    if (!lstrcmpW(name, portname_FILE))
         return PORT_IS_FILE;
 
     if (name[0] == '/')
@@ -268,10 +294,10 @@ static DWORD get_type_from_name(LPCWSTR name)
     if (name[0] == '|')
         return PORT_IS_PIPE;
 
-    if (!wcsncmp(name, L"CUPS:", ARRAY_SIZE(L"CUPS:") - 1))
+    if (!wcsncmp(name, portname_CUPS, ARRAY_SIZE(portname_CUPS) - 1))
         return PORT_IS_CUPS;
 
-    if (!wcsncmp(name, L"LPR:", ARRAY_SIZE(L"LPR:") - 1))
+    if (!wcsncmp(name, portname_LPR, ARRAY_SIZE(portname_LPR) - 1))
         return PORT_IS_LPR;
 
     /* Must be a file or a directory. Does the file exist ? */
@@ -316,7 +342,7 @@ static DWORD get_type_from_local_name(LPCWSTR nameW)
         while ((myname == NULL) && (id < numentries))
         {
             if (lstrcmpiW(nameW, pi[id].pName) == 0) {
-                TRACE("(%lu) found %s\n", id, debugstr_w(pi[id].pName));
+                TRACE("(%u) found %s\n", id, debugstr_w(pi[id].pName));
                 myname = pi[id].pName;
             }
             id++;
@@ -355,11 +381,11 @@ static BOOL WINAPI localmon_AddPortExW(LPWSTR pName, DWORD level, LPBYTE pBuffer
     DWORD res;
 
     pi = (PORT_INFO_1W *) pBuffer;
-    TRACE("(%s, %ld, %p, %s) => %s\n", debugstr_w(pName), level, pBuffer,
+    TRACE("(%s, %d, %p, %s) => %s\n", debugstr_w(pName), level, pBuffer,
             debugstr_w(pMonitorName), debugstr_w(pi ? pi->pName : NULL));
 
 
-    if ((pMonitorName == NULL) || (lstrcmpiW(pMonitorName, L"Local Port") != 0 ) ||
+    if ((pMonitorName == NULL) || (lstrcmpiW(pMonitorName, LocalPortW) != 0 ) ||
         (pi == NULL) || (pi->pName == NULL) || (pi->pName[0] == '\0') ) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -378,11 +404,11 @@ static BOOL WINAPI localmon_AddPortExW(LPWSTR pName, DWORD level, LPBYTE pBuffer
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        res = RegSetValueExW(hroot, pi->pName, 0, REG_SZ, (const BYTE *) L"", sizeof(L""));
+        res = RegSetValueExW(hroot, pi->pName, 0, REG_SZ, (const BYTE *) emptyW, sizeof(emptyW));
         RegCloseKey(hroot);
     }
     if (res != ERROR_SUCCESS) SetLastError(ERROR_INVALID_PARAMETER);
-    TRACE("=> %u with %lu\n", (res == ERROR_SUCCESS), GetLastError());
+    TRACE("=> %u with %u\n", (res == ERROR_SUCCESS), GetLastError());
     return (res == ERROR_SUCCESS);
 }
 
@@ -444,7 +470,7 @@ static BOOL WINAPI localmon_EnumPortsW(LPWSTR pName, DWORD level, LPBYTE pPorts,
     DWORD   needed;
     DWORD   numentries;
 
-    TRACE("(%s, %ld, %p, %ld, %p, %p)\n",
+    TRACE("(%s, %d, %p, %d, %p, %p)\n",
           debugstr_w(pName), level, pPorts, cbBuf, pcbNeeded, pcReturned);
 
     numentries = 0;
@@ -464,7 +490,7 @@ static BOOL WINAPI localmon_EnumPortsW(LPWSTR pName, DWORD level, LPBYTE pPorts,
 cleanup:
     if (pcbNeeded)  *pcbNeeded = needed;
 
-    TRACE("returning %d with %ld (%ld byte for %ld entries)\n",
+    TRACE("returning %d with %d (%d byte for %d entries)\n", 
             res, GetLastError(), needed, numentries);
 
     return (res);
@@ -576,11 +602,11 @@ static DWORD WINAPI localmon_XcvDataPort(HANDLE hXcv, LPCWSTR pszDataName, PBYTE
     DWORD   needed;
     HKEY    hroot;
 
-    TRACE("(%p, %s, %p, %ld, %p, %ld, %p)\n", hXcv, debugstr_w(pszDataName),
+    TRACE("(%p, %s, %p, %d, %p, %d, %p)\n", hXcv, debugstr_w(pszDataName),
           pInputData, cbInputData, pOutputData, cbOutputData, pcbOutputNeeded);
 
-    if (!lstrcmpW(pszDataName, L"AddPort")) {
-        TRACE("InputData (%ld): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
+    if (!lstrcmpW(pszDataName, cmd_AddPortW)) {
+        TRACE("InputData (%d): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
         res = RegOpenKeyW(HKEY_LOCAL_MACHINE, WinNT_CV_PortsW, &hroot);
         if (res == ERROR_SUCCESS) {
             if (does_port_exist((LPWSTR) pInputData)) {
@@ -588,45 +614,45 @@ static DWORD WINAPI localmon_XcvDataPort(HANDLE hXcv, LPCWSTR pszDataName, PBYTE
                 TRACE("=> %u\n", ERROR_ALREADY_EXISTS);
                 return ERROR_ALREADY_EXISTS;
             }
-            res = RegSetValueExW(hroot, (LPWSTR)pInputData, 0, REG_SZ, (const BYTE*)L"", sizeof(L""));
+            res = RegSetValueExW(hroot, (LPWSTR) pInputData, 0, REG_SZ, (const BYTE *) emptyW, sizeof(emptyW));
             RegCloseKey(hroot);
         }
-        TRACE("=> %lu\n", res);
+        TRACE("=> %u\n", res);
         return res;
     }
 
 
-    if (!lstrcmpW(pszDataName, L"ConfigureLPTPortCommandOK")) {
-        TRACE("InputData (%ld): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
+    if (!lstrcmpW(pszDataName, cmd_ConfigureLPTPortCommandOKW)) {
+        TRACE("InputData (%d): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
         res = RegCreateKeyW(HKEY_LOCAL_MACHINE, WinNT_CV_WindowsW, &hroot);
         if (res == ERROR_SUCCESS) {
-            res = RegSetValueExW(hroot, L"TransmissionRetryTimeout", 0, REG_SZ, pInputData, cbInputData);
+            res = RegSetValueExW(hroot, TransmissionRetryTimeoutW, 0, REG_SZ, pInputData, cbInputData);
             RegCloseKey(hroot);
         }
         return res;
     }
 
-    if (!lstrcmpW(pszDataName, L"DeletePort")) {
-        TRACE("InputData (%ld): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
+    if (!lstrcmpW(pszDataName, cmd_DeletePortW)) {
+        TRACE("InputData (%d): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
         res = RegOpenKeyW(HKEY_LOCAL_MACHINE, WinNT_CV_PortsW, &hroot);
         if (res == ERROR_SUCCESS) {
             res = RegDeleteValueW(hroot, (LPWSTR) pInputData);
             RegCloseKey(hroot);
-            TRACE("=> %lu with %lu\n", res, GetLastError() );
+            TRACE("=> %u with %u\n", res, GetLastError() );
             return res;
         }
         return ERROR_FILE_NOT_FOUND;
     }
 
-    if (!lstrcmpW(pszDataName, L"GetDefaultCommConfig")) {
-        TRACE("InputData (%ld): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
+    if (!lstrcmpW(pszDataName, cmd_GetDefaultCommConfigW)) {
+        TRACE("InputData (%d): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
         *pcbOutputNeeded = cbOutputData;
         res = GetDefaultCommConfigW((LPWSTR) pInputData, (LPCOMMCONFIG) pOutputData, pcbOutputNeeded);
-        TRACE("got %lu with %lu\n", res, GetLastError() );
+        TRACE("got %u with %u\n", res, GetLastError() );
         return res ? ERROR_SUCCESS : GetLastError();
     }
 
-    if (!lstrcmpW(pszDataName, L"GetTransmissionRetryTimeout")) {
+    if (!lstrcmpW(pszDataName, cmd_GetTransmissionRetryTimeoutW)) {
         * pcbOutputNeeded = sizeof(DWORD);
         if (cbOutputData >= sizeof(DWORD)) {
             /* the w2k resource kit documented a default of 90, but that's wrong */
@@ -635,7 +661,7 @@ static DWORD WINAPI localmon_XcvDataPort(HANDLE hXcv, LPCWSTR pszDataName, PBYTE
             res = RegOpenKeyW(HKEY_LOCAL_MACHINE, WinNT_CV_WindowsW, &hroot);
             if (res == ERROR_SUCCESS) {
                 needed = sizeof(buffer) - sizeof(WCHAR);
-                res = RegQueryValueExW(hroot, L"TransmissionRetryTimeout", NULL, NULL, (BYTE*)buffer, &needed);
+                res = RegQueryValueExW(hroot, TransmissionRetryTimeoutW, NULL, NULL, (LPBYTE) buffer, &needed);
                 if ((res == ERROR_SUCCESS) && (buffer[0])) {
                     *((LPDWORD) pOutputData) = wcstoul(buffer, NULL, 0);
                 }
@@ -647,28 +673,28 @@ static DWORD WINAPI localmon_XcvDataPort(HANDLE hXcv, LPCWSTR pszDataName, PBYTE
     }
 
 
-    if (!lstrcmpW(pszDataName, L"MonitorUI")) {
-        * pcbOutputNeeded = sizeof(L"localui.dll");
-        if (cbOutputData >= sizeof(L"localui.dll")) {
-            memcpy(pOutputData, L"localui.dll", sizeof(L"localui.dll"));
+    if (!lstrcmpW(pszDataName, cmd_MonitorUIW)) {
+        * pcbOutputNeeded = sizeof(dllnameuiW);
+        if (cbOutputData >= sizeof(dllnameuiW)) {
+            memcpy(pOutputData, dllnameuiW, sizeof(dllnameuiW));
             return ERROR_SUCCESS;
         }
         return ERROR_INSUFFICIENT_BUFFER;
     }
 
-    if (!lstrcmpW(pszDataName, L"PortIsValid")) {
-        TRACE("InputData (%ld): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
+    if (!lstrcmpW(pszDataName, cmd_PortIsValidW)) {
+        TRACE("InputData (%d): %s\n", cbInputData, debugstr_w( (LPWSTR) pInputData));
         res = get_type_from_name((LPCWSTR) pInputData);
-        TRACE("detected as %lu\n",  res);
+        TRACE("detected as %u\n",  res);
         /* names, that we have recognized, are valid */
         if (res) return ERROR_SUCCESS;
 
         /* ERROR_ACCESS_DENIED, ERROR_PATH_NOT_FOUND or something else */
-        TRACE("=> %lu\n", GetLastError());
+        TRACE("=> %u\n", GetLastError());
         return GetLastError();
     }
 
-    if (!lstrcmpW(pszDataName, L"SetDefaultCommConfig")) {
+    if (!lstrcmpW(pszDataName, cmd_SetDefaultCommConfigW)) {
         /* get the portname from the Handle */
         ptr =  wcschr(((xcv_t *)hXcv)->nameW, ' ');
         if (ptr) {
@@ -681,7 +707,7 @@ static DWORD WINAPI localmon_XcvDataPort(HANDLE hXcv, LPCWSTR pszDataName, PBYTE
         lstrcpynW(buffer, ptr, ARRAY_SIZE(buffer));
         if (buffer[0]) buffer[lstrlenW(buffer)-1] = '\0';  /* remove the ':' */
         res = SetDefaultCommConfigW(buffer, (LPCOMMCONFIG) pInputData, cbInputData);
-        TRACE("got %lu with %lu\n", res, GetLastError() );
+        TRACE("got %u with %u\n", res, GetLastError() );
         return res ? ERROR_SUCCESS : GetLastError();
     }
 
@@ -708,7 +734,7 @@ static BOOL WINAPI localmon_XcvOpenPort(LPCWSTR pName, ACCESS_MASK GrantedAccess
 {
     xcv_t * xcv;
 
-    TRACE("%s, 0x%lx, %p)\n", debugstr_w(pName), GrantedAccess, phXcv);
+    TRACE("%s, 0x%x, %p)\n", debugstr_w(pName), GrantedAccess, phXcv);
     /* No checks for any field is done in Windows */
     xcv = heap_alloc(FIELD_OFFSET(xcv_t, nameW[lstrlenW(pName) + 1]));
     if (xcv) {

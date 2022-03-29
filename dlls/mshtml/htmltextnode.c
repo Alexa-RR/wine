@@ -18,6 +18,7 @@
 
 
 #include <stdarg.h>
+#include <assert.h>
 
 #define COBJMACROS
 
@@ -128,16 +129,8 @@ static HRESULT WINAPI HTMLDOMTextNode_get_data(IHTMLDOMTextNode *iface, BSTR *p)
 static HRESULT WINAPI HTMLDOMTextNode_toString(IHTMLDOMTextNode *iface, BSTR *String)
 {
     HTMLDOMTextNode *This = impl_from_IHTMLDOMTextNode(iface);
-
-    TRACE("(%p)->(%p)\n", This, String);
-
-    if(!String)
-        return E_INVALIDARG;
-
-    if(dispex_compat_mode(&This->node.event_target.dispex) < COMPAT_MODE_IE9)
-        return IHTMLDOMTextNode_get_data(&This->IHTMLDOMTextNode_iface, String);
-
-    return dispex_to_string(&This->node.event_target.dispex, String);
+    FIXME("(%p)->(%p)\n", This, String);
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI HTMLDOMTextNode_get_length(IHTMLDOMTextNode *iface, LONG *p)
@@ -150,7 +143,7 @@ static HRESULT WINAPI HTMLDOMTextNode_get_length(IHTMLDOMTextNode *iface, LONG *
 
     nsres = nsIDOMText_GetLength(This->nstext, &length);
     if(NS_FAILED(nsres))
-        ERR("GetLength failed: %08lx\n", nsres);
+        ERR("GetLength failed: %08x\n", nsres);
 
     *p = length;
     return S_OK;
@@ -164,11 +157,11 @@ static HRESULT WINAPI HTMLDOMTextNode_splitText(IHTMLDOMTextNode *iface, LONG of
     nsresult nsres;
     HRESULT hres;
 
-    TRACE("(%p)->(%ld %p)\n", This, offset, pRetNode);
+    TRACE("(%p)->(%d %p)\n", This, offset, pRetNode);
 
     nsres = nsIDOMText_SplitText(This->nstext, offset, &text);
     if(NS_FAILED(nsres)) {
-        ERR("SplitText failed: %lx08x\n", nsres);
+        ERR("SplitText failed: %x08x\n", nsres);
         return E_FAIL;
     }
 
@@ -260,7 +253,7 @@ static HRESULT WINAPI HTMLDOMTextNode2_Invoke(IHTMLDOMTextNode2 *iface, DISPID d
 static HRESULT WINAPI HTMLDOMTextNode2_substringData(IHTMLDOMTextNode2 *iface, LONG offset, LONG count, BSTR *string)
 {
     HTMLDOMTextNode *This = impl_from_IHTMLDOMTextNode2(iface);
-    FIXME("(%p)->(%ld %ld %p)\n", This, offset, count, string);
+    FIXME("(%p)->(%d %d %p)\n", This, offset, count, string);
     return E_NOTIMPL;
 }
 
@@ -276,7 +269,7 @@ static HRESULT WINAPI HTMLDOMTextNode2_appendData(IHTMLDOMTextNode2 *iface, BSTR
     nsres = nsIDOMText_AppendData(This->nstext, &nsstr);
     nsAString_Finish(&nsstr);
     if(NS_FAILED(nsres)) {
-        ERR("AppendData failed: %08lx\n", nsres);
+        ERR("AppendData failed: %08x\n", nsres);
         return E_FAIL;
     }
 
@@ -286,21 +279,21 @@ static HRESULT WINAPI HTMLDOMTextNode2_appendData(IHTMLDOMTextNode2 *iface, BSTR
 static HRESULT WINAPI HTMLDOMTextNode2_insertData(IHTMLDOMTextNode2 *iface, LONG offset, BSTR string)
 {
     HTMLDOMTextNode *This = impl_from_IHTMLDOMTextNode2(iface);
-    FIXME("(%p)->(%ld %s)\n", This, offset, debugstr_w(string));
+    FIXME("(%p)->(%d %s)\n", This, offset, debugstr_w(string));
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI HTMLDOMTextNode2_deleteData(IHTMLDOMTextNode2 *iface, LONG offset, LONG count)
 {
     HTMLDOMTextNode *This = impl_from_IHTMLDOMTextNode2(iface);
-    FIXME("(%p)->(%ld %ld)\n", This, offset, count);
+    FIXME("(%p)->(%d %d)\n", This, offset, count);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI HTMLDOMTextNode2_replaceData(IHTMLDOMTextNode2 *iface, LONG offset, LONG count, BSTR string)
 {
     HTMLDOMTextNode *This = impl_from_IHTMLDOMTextNode2(iface);
-    FIXME("(%p)->(%ld %ld %s)\n", This, offset, count, debugstr_w(string));
+    FIXME("(%p)->(%d %d %s)\n", This, offset, count, debugstr_w(string));
     return E_NOTIMPL;
 }
 
@@ -366,7 +359,6 @@ static const tid_t HTMLDOMTextNode_iface_tids[] = {
     0
 };
 static dispex_static_data_t HTMLDOMTextNode_dispex = {
-    L"Text",
     NULL,
     DispHTMLDOMTextNode_tid,
     HTMLDOMTextNode_iface_tids,

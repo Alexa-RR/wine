@@ -54,7 +54,7 @@ void* __cdecl _Gettnames(void);
 unsigned int __cdecl ___lc_codepage_func(void);
 int __cdecl ___lc_collate_cp_func(void);
 const unsigned short* __cdecl __pctype_func(void);
-const locale_facet* __thiscall locale__Getfacet(const locale*, size_t);
+const locale_facet* __thiscall locale__Getfacet(const locale*, MSVCP_size_t);
 const locale* __cdecl locale_classic(void);
 
 #if _MSVCP_VER >= 110
@@ -90,15 +90,15 @@ LCID* __cdecl ___lc_handle_func(void);
 typedef int category;
 
 typedef struct {
-    size_t id;
+    MSVCP_size_t id;
 } locale_id;
 
 typedef struct _locale__Locimp {
     locale_facet facet;
     locale_facet **facetvec;
-    size_t facet_cnt;
+    MSVCP_size_t facet_cnt;
     category catmask;
-    bool transparent;
+    MSVCP_bool transparent;
     locale_string name;
 } locale__Locimp;
 
@@ -273,11 +273,11 @@ locale_facet* __thiscall locale_facet_vector_dtor(locale_facet *this, unsigned i
 
         for(i=*ptr-1; i>=0; i--)
             locale_facet_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         locale_facet_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -295,7 +295,12 @@ static struct list lazy_facets = LIST_INIT(lazy_facets);
 /* ?facet_Register@facet@locale@std@@CAXPEAV123@@Z */
 void __cdecl locale_facet_register(locale_facet *add)
 {
-    facets_elem *head = operator_new(sizeof(*head));
+    facets_elem *head = MSVCRT_operator_new(sizeof(*head));
+    if(!head) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
+
     head->fac = add;
     list_add_head(&lazy_facets, &head->entry);
 }
@@ -312,14 +317,14 @@ void __thiscall locale_facet__Register(locale_facet *this)
 
 /* Not exported from msvcp90 */
 /* ??_7facet@locale@std@@6B@ */
-extern const vtable_ptr locale_facet_vtable;
+extern const vtable_ptr MSVCP_locale_facet_vtable;
 
 /* ??0id@locale@std@@QAE@I@Z */
 /* ??0id@locale@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(locale_id_ctor_id, 8)
-locale_id* __thiscall locale_id_ctor_id(locale_id *this, size_t id)
+locale_id* __thiscall locale_id_ctor_id(locale_id *this, MSVCP_size_t id)
 {
-    TRACE("(%p %Iu)\n", this, id);
+    TRACE("(%p %lu)\n", this, id);
 
     this->id = id;
     return this;
@@ -339,7 +344,7 @@ locale_id* __thiscall locale_id_ctor(locale_id *this)
 /* ??Bid@locale@std@@QAEIXZ */
 /* ??Bid@locale@std@@QEAA_KXZ */
 DEFINE_THISCALL_WRAPPER(locale_id_operator_size_t, 4)
-size_t __thiscall locale_id_operator_size_t(locale_id *this)
+MSVCP_size_t __thiscall locale_id_operator_size_t(locale_id *this)
 {
     _Lockit lock;
 
@@ -368,7 +373,7 @@ DEFINE_THISCALL_WRAPPER(locale_facet_ctor, 4)
 locale_facet* __thiscall locale_facet_ctor(locale_facet *this)
 {
     TRACE("(%p)\n", this);
-    this->vtable = &locale_facet_vtable;
+    this->vtable = &MSVCP_locale_facet_vtable;
     this->refs = 0;
     return this;
 }
@@ -376,10 +381,10 @@ locale_facet* __thiscall locale_facet_ctor(locale_facet *this)
 /* ??0facet@locale@std@@IAE@I@Z */
 /* ??0facet@locale@std@@IEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(locale_facet_ctor_refs, 8)
-locale_facet* __thiscall locale_facet_ctor_refs(locale_facet *this, size_t refs)
+locale_facet* __thiscall locale_facet_ctor_refs(locale_facet *this, MSVCP_size_t refs)
 {
-    TRACE("(%p %Iu)\n", this, refs);
-    this->vtable = &locale_facet_vtable;
+    TRACE("(%p %lu)\n", this, refs);
+    this->vtable = &MSVCP_locale_facet_vtable;
     this->refs = refs;
     return this;
 }
@@ -435,7 +440,7 @@ locale_facet* __thiscall locale_facet__Decref(locale_facet *this)
 
 /* ?_Getcat@facet@locale@std@@SAIPAPBV123@PBV23@@Z */
 /* ?_Getcat@facet@locale@std@@SA_KPEAPEBV123@PEBV23@@Z */
-size_t __cdecl locale_facet__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl locale_facet__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
     return -1;
@@ -443,7 +448,7 @@ size_t __cdecl locale_facet__Getcat(const locale_facet **facet, const locale *lo
 
 /* ?_Getcat@facet@locale@std@@SAIPAPBV123@@Z */
 /* ?_Getcat@facet@locale@std@@SA_KPEAPEBV123@@Z */
-size_t __cdecl locale_facet__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl locale_facet__Getcat_old(const locale_facet **facet)
 {
     TRACE("(%p)\n", facet);
     return -1;
@@ -520,7 +525,7 @@ _Locinfo* __cdecl _Locinfo__Locinfo_ctor_cat_cstr(_Locinfo *locinfo, int categor
     FIXME("(%p %d %s) semi-stub\n", locinfo, category, locstr);
 
     if(!locstr)
-        _Xruntime_error("bad locale name");
+        throw_exception(EXCEPTION_RUNTIME_ERROR, "bad locale name");
 
     _Lockit_ctor_locktype(&locinfo->lock, _LOCK_LOCALE);
     locale_string_char_ctor(&locinfo->days);
@@ -625,7 +630,7 @@ _Locinfo* __cdecl _Locinfo__Locinfo_Addcats(_Locinfo *locinfo, int category, con
     /* This function is probably modifying more global objects */
     FIXME("(%p %d %s) semi-stub\n", locinfo, category, locstr);
     if(!locstr)
-        _Xruntime_error("bad locale name");
+        throw_exception(EXCEPTION_RUNTIME_ERROR, "bad locale name");
 
     locale_string_char_dtor(&locinfo->newlocname);
 
@@ -664,23 +669,20 @@ static _Collvec* getcoll(_Collvec *ret)
 }
 
 /* _Getcoll */
-#if defined(__i386__)
-/* Work around a gcc bug */
+#if defined(__i386__) || _MSVCP_VER<110
 ULONGLONG __cdecl _Getcoll(void)
 {
-    C_ASSERT(sizeof(_Collvec) == sizeof(ULONGLONG));
     ULONGLONG ret;
+
+    C_ASSERT(sizeof(_Collvec) <= sizeof(ULONGLONG));
 
     getcoll((_Collvec*)&ret);
     return ret;
 }
 #else
-_Collvec __cdecl _Getcoll(void)
+_Collvec* __cdecl _Getcoll(_Collvec *ret)
 {
-    _Collvec ret;
-
-    getcoll(&ret);
-    return ret;
+    return getcoll(ret);
 }
 #endif
 
@@ -693,33 +695,34 @@ _Collvec* __thiscall _Locinfo__Getcoll(const _Locinfo *this, _Collvec *ret)
 }
 
 /* _Getctype */
-_Ctypevec __cdecl _Getctype(void)
+_Ctypevec* __cdecl _Getctype(_Ctypevec *ret)
 {
-    _Ctypevec ret;
     short *table;
 #if _MSVCP_VER >= 110
     wchar_t *name;
-    size_t size;
+    MSVCP_size_t size;
 #endif
 
     TRACE("\n");
 
-    ret.page = ___lc_codepage_func();
+    ret->page = ___lc_codepage_func();
 #if _MSVCP_VER < 110
-    ret.handle = ___lc_handle_func()[LC_COLLATE];
+    ret->handle = ___lc_handle_func()[LC_COLLATE];
 #else
     if((name = ___lc_locale_name_func()[LC_COLLATE])) {
         size = wcslen(name)+1;
-        ret.name = operator_new(size*sizeof(*name));
-        memcpy(ret.name, name, size*sizeof(*name));
+        ret->name = malloc(size*sizeof(*name));
+        if(!ret->name) throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+        memcpy(ret->name, name, size*sizeof(*name));
     } else {
-        ret.name = NULL;
+        ret->name = NULL;
     }
 #endif
-    ret.delfl = TRUE;
-    table = operator_new(sizeof(short[256]));
+    ret->delfl = TRUE;
+    table = malloc(sizeof(short[256]));
+    if(!table) throw_exception(EXCEPTION_BAD_ALLOC, NULL);
     memcpy(table, __pctype_func(), sizeof(short[256]));
-    ret.table = table;
+    ret->table = table;
     return ret;
 }
 
@@ -728,16 +731,13 @@ _Ctypevec __cdecl _Getctype(void)
 DEFINE_THISCALL_WRAPPER(_Locinfo__Getctype, 8)
 _Ctypevec* __thiscall _Locinfo__Getctype(const _Locinfo *this, _Ctypevec *ret)
 {
-    *ret = _Getctype();
-    return ret;
+    return _Getctype(ret);
 }
 
 /* _Getcvt */
-#if _MSVCP_VER < 110 && defined(__i386__)
-/* Work around a gcc bug */
+#if _MSVCP_VER < 110
 ULONGLONG __cdecl _Getcvt(void)
 {
-    C_ASSERT(sizeof(_Cvtvec) == sizeof(ULONGLONG));
     union {
         _Cvtvec cvtvec;
         ULONGLONG ull;
@@ -749,32 +749,20 @@ ULONGLONG __cdecl _Getcvt(void)
     ret.cvtvec.handle = ___lc_handle_func()[LC_CTYPE];
     return ret.ull;
 }
-#elif _MSVCP_VER < 110
-_Cvtvec __cdecl _Getcvt(void)
-{
-    _Cvtvec ret;
-
-    TRACE("\n");
-
-    ret.page = ___lc_codepage_func();
-    ret.handle = ___lc_handle_func()[LC_CTYPE];
-    return ret;
-}
 #else
-_Cvtvec __cdecl _Getcvt(void)
+_Cvtvec* __cdecl _Getcvt(_Cvtvec *ret)
 {
-    _Cvtvec ret;
     int i;
 
     TRACE("\n");
 
-    memset(&ret, 0, sizeof(ret));
-    ret.page = ___lc_codepage_func();
-    ret.mb_max = ___mb_cur_max_func();
+    memset(ret, 0, sizeof(*ret));
+    ret->page = ___lc_codepage_func();
+    ret->mb_max = ___mb_cur_max_func();
 
-    if(ret.mb_max > 1) {
+    if(ret->mb_max > 1) {
         for(i=0; i<256; i++)
-            if(_ismbblead(i)) ret.isleadbyte[i/8] |= 1 << (i&7);
+            if(_ismbblead(i)) ret->isleadbyte[i/8] |= 1 << (i&7);
     }
     return ret;
 }
@@ -785,14 +773,14 @@ _Cvtvec __cdecl _Getcvt(void)
 DEFINE_THISCALL_WRAPPER(_Locinfo__Getcvt, 8)
 _Cvtvec* __thiscall _Locinfo__Getcvt(const _Locinfo *this, _Cvtvec *ret)
 {
-#if _MSVCP_VER < 110 && defined(__i386__)
-    ULONGLONG cvtvec;
+#if _MSVCP_VER < 110
+    ULONGLONG ull = _Getcvt();
+    memcpy(ret, &ull, sizeof(ull));
 #else
     _Cvtvec cvtvec;
-#endif
-
-    cvtvec = _Getcvt();
+    _Getcvt(&cvtvec);
     memcpy(ret, &cvtvec, sizeof(cvtvec));
+#endif
     return ret;
 }
 
@@ -977,7 +965,7 @@ _Timevec*__thiscall _Locinfo__Gettnames(const _Locinfo *this, _Timevec *ret)
 locale_id collate_char_id = {0};
 
 /* ??_7?$collate@D@std@@6B@ */
-extern const vtable_ptr collate_char_vtable;
+extern const vtable_ptr MSVCP_collate_char_vtable;
 
 /* ?_Init@?$collate@D@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$collate@D@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -991,14 +979,14 @@ void __thiscall collate_char__Init(collate *this, const _Locinfo *locinfo)
 /* ??0?$collate@D@std@@IAE@PBDI@Z */
 /* ??0?$collate@D@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_char_ctor_name, 12)
-collate* __thiscall collate_char_ctor_name(collate *this, const char *name, size_t refs)
+collate* __thiscall collate_char_ctor_name(collate *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, name, refs);
+    TRACE("(%p %s %lu)\n", this, name, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &collate_char_vtable;
+    this->facet.vtable = &MSVCP_collate_char_vtable;
 
     _Locinfo_ctor_cstr(&locinfo, name);
     collate_char__Init(this, &locinfo);
@@ -1009,12 +997,12 @@ collate* __thiscall collate_char_ctor_name(collate *this, const char *name, size
 /* ??0?$collate@D@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$collate@D@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_char_ctor_locinfo, 12)
-collate* __thiscall collate_char_ctor_locinfo(collate *this, const _Locinfo *locinfo, size_t refs)
+collate* __thiscall collate_char_ctor_locinfo(collate *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &collate_char_vtable;
+    this->facet.vtable = &MSVCP_collate_char_vtable;
     collate_char__Init(this, locinfo);
     return this;
 }
@@ -1022,7 +1010,7 @@ collate* __thiscall collate_char_ctor_locinfo(collate *this, const _Locinfo *loc
 /* ??0?$collate@D@std@@QAE@I@Z */
 /* ??0?$collate@D@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_char_ctor_refs, 8)
-collate* __thiscall collate_char_ctor_refs(collate *this, size_t refs)
+collate* __thiscall collate_char_ctor_refs(collate *this, MSVCP_size_t refs)
 {
     return collate_char_ctor_name(this, "C", refs);
 }
@@ -1047,11 +1035,11 @@ collate* __thiscall collate_char_vector_dtor(collate *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             collate_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         collate_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -1067,12 +1055,17 @@ collate* __thiscall collate_char_ctor(collate *this)
 
 /* ?_Getcat@?$collate@D@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$collate@D@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl collate_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl collate_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(collate));
+        *facet = MSVCRT_operator_new(sizeof(collate));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         collate_char_ctor_name((collate*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0);
     }
@@ -1082,7 +1075,7 @@ size_t __cdecl collate_char__Getcat(const locale_facet **facet, const locale *lo
 
 /* ?_Getcat@?$collate@D@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$collate@D@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl collate_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl collate_char__Getcat_old(const locale_facet **facet)
 {
     return collate_char__Getcat(facet, locale_classic());
 }
@@ -1218,9 +1211,9 @@ locale_id collate_wchar_id = {0};
 locale_id collate_short_id = {0};
 
 /* ??_7?$collate@_W@std@@6B@ */
-extern const vtable_ptr collate_wchar_vtable;
+extern const vtable_ptr MSVCP_collate_wchar_vtable;
 /* ??_7?$collate@G@std@@6B@ */
-extern const vtable_ptr collate_short_vtable;
+extern const vtable_ptr MSVCP_collate_short_vtable;
 
 /* ?_Init@?$collate@_W@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$collate@_W@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -1236,14 +1229,14 @@ void __thiscall collate_wchar__Init(collate *this, const _Locinfo *locinfo)
 /* ??0?$collate@_W@std@@IAE@PBDI@Z */
 /* ??0?$collate@_W@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_wchar_ctor_name, 12)
-collate* __thiscall collate_wchar_ctor_name(collate *this, const char *name, size_t refs)
+collate* __thiscall collate_wchar_ctor_name(collate *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, name, refs);
+    TRACE("(%p %s %lu)\n", this, name, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &collate_wchar_vtable;
+    this->facet.vtable = &MSVCP_collate_wchar_vtable;
 
     _Locinfo_ctor_cstr(&locinfo, name);
     collate_wchar__Init(this, &locinfo);
@@ -1254,22 +1247,22 @@ collate* __thiscall collate_wchar_ctor_name(collate *this, const char *name, siz
 /* ??0?$collate@G@std@@IAE@PBDI@Z */
 /* ??0?$collate@G@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_short_ctor_name, 12)
-collate* __thiscall collate_short_ctor_name(collate *this, const char *name, size_t refs)
+collate* __thiscall collate_short_ctor_name(collate *this, const char *name, MSVCP_size_t refs)
 {
     collate *ret = collate_wchar_ctor_name(this, name, refs);
-    ret->facet.vtable = &collate_short_vtable;
+    ret->facet.vtable = &MSVCP_collate_short_vtable;
     return ret;
 }
 
 /* ??0?$collate@_W@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$collate@_W@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_wchar_ctor_locinfo, 12)
-collate* __thiscall collate_wchar_ctor_locinfo(collate *this, const _Locinfo *locinfo, size_t refs)
+collate* __thiscall collate_wchar_ctor_locinfo(collate *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &collate_wchar_vtable;
+    this->facet.vtable = &MSVCP_collate_wchar_vtable;
     collate_wchar__Init(this, locinfo);
     return this;
 }
@@ -1277,17 +1270,17 @@ collate* __thiscall collate_wchar_ctor_locinfo(collate *this, const _Locinfo *lo
 /* ??0?$collate@G@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$collate@G@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_short_ctor_locinfo, 12)
-collate* __thiscall collate_short_ctor_locinfo(collate *this, const _Locinfo *locinfo, size_t refs)
+collate* __thiscall collate_short_ctor_locinfo(collate *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
     collate *ret = collate_wchar_ctor_locinfo(this, locinfo, refs);
-    ret->facet.vtable = &collate_short_vtable;
+    ret->facet.vtable = &MSVCP_collate_short_vtable;
     return ret;
 }
 
 /* ??0?$collate@_W@std@@QAE@I@Z */
 /* ??0?$collate@_W@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_wchar_ctor_refs, 8)
-collate* __thiscall collate_wchar_ctor_refs(collate *this, size_t refs)
+collate* __thiscall collate_wchar_ctor_refs(collate *this, MSVCP_size_t refs)
 {
     return collate_wchar_ctor_name(this, "C", refs);
 }
@@ -1295,10 +1288,10 @@ collate* __thiscall collate_wchar_ctor_refs(collate *this, size_t refs)
 /* ??0?$collate@G@std@@QAE@I@Z */
 /* ??0?$collate@G@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(collate_short_ctor_refs, 8)
-collate* __thiscall collate_short_ctor_refs(collate *this, size_t refs)
+collate* __thiscall collate_short_ctor_refs(collate *this, MSVCP_size_t refs)
 {
     collate *ret = collate_wchar_ctor_refs(this, refs);
-    ret->facet.vtable = &collate_short_vtable;
+    ret->facet.vtable = &MSVCP_collate_short_vtable;
     return ret;
 }
 
@@ -1324,11 +1317,11 @@ collate* __thiscall collate_wchar_vector_dtor(collate *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             collate_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         collate_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -1348,18 +1341,23 @@ DEFINE_THISCALL_WRAPPER(collate_short_ctor, 4)
 collate* __thiscall collate_short_ctor(collate *this)
 {
     collate *ret = collate_wchar_ctor(this);
-    ret->facet.vtable = &collate_short_vtable;
+    ret->facet.vtable = &MSVCP_collate_short_vtable;
     return ret;
 }
 
 /* ?_Getcat@?$collate@_W@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$collate@_W@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl collate_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl collate_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(collate));
+        *facet = MSVCRT_operator_new(sizeof(collate));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         collate_wchar_ctor_name((collate*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0);
     }
@@ -1369,7 +1367,7 @@ size_t __cdecl collate_wchar__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$collate@_W@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$collate@_W@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl collate_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl collate_wchar__Getcat_old(const locale_facet **facet)
 {
     return collate_wchar__Getcat(facet, locale_classic());
 }
@@ -1404,11 +1402,11 @@ static collate* collate_wchar_use_facet(const locale *loc)
 
 /* ?_Getcat@?$collate@G@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$collate@G@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl collate_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl collate_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     if(facet && !*facet) {
         collate_wchar__Getcat(facet, loc);
-        (*(locale_facet**)facet)->vtable = &collate_short_vtable;
+        (*(locale_facet**)facet)->vtable = &MSVCP_collate_short_vtable;
     }
 
     return LC_COLLATE;
@@ -1416,7 +1414,7 @@ size_t __cdecl collate_short__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$collate@G@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$collate@G@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl collate_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl collate_short__Getcat_old(const locale_facet **facet)
 {
     return collate_short__Getcat(facet, locale_classic());
 }
@@ -1558,16 +1556,16 @@ basic_string_wchar* __thiscall collate_wchar_transform(const collate *this,
 }
 
 /* ??_7ctype_base@std@@6B@ */
-extern const vtable_ptr ctype_base_vtable;
+extern const vtable_ptr MSVCP_ctype_base_vtable;
 
 /* ??0ctype_base@std@@QAE@I@Z */
 /* ??0ctype_base@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_base_ctor_refs, 8)
-ctype_base* __thiscall ctype_base_ctor_refs(ctype_base *this, size_t refs)
+ctype_base* __thiscall ctype_base_ctor_refs(ctype_base *this, MSVCP_size_t refs)
 {
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &ctype_base_vtable;
+    this->facet.vtable = &MSVCP_ctype_base_vtable;
     return this;
 }
 
@@ -1578,7 +1576,7 @@ ctype_base* __thiscall ctype_base_ctor(ctype_base *this)
 {
     TRACE("(%p)\n", this);
     locale_facet_ctor_refs(&this->facet, 0);
-    this->facet.vtable = &ctype_base_vtable;
+    this->facet.vtable = &MSVCP_ctype_base_vtable;
     return this;
 }
 
@@ -1600,11 +1598,11 @@ ctype_base* __thiscall ctype_base_vector_dtor(ctype_base *this, unsigned int fla
 
         for(i=*ptr-1; i>=0; i--)
             ctype_base_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         ctype_base_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -1613,17 +1611,17 @@ ctype_base* __thiscall ctype_base_vector_dtor(ctype_base *this, unsigned int fla
 /* ?_Xran@ctype_base@std@@KAXXZ */
 void __cdecl ctype_base__Xran(void)
 {
-    _Xout_of_range("out of range in ctype<T>");
+    throw_exception(EXCEPTION_OUT_OF_RANGE, "out of range in ctype<T>");
 }
 
 /* ?id@?$ctype@D@std@@2V0locale@2@A */
 locale_id ctype_char_id = {0};
 /* ?table_size@?$ctype@D@std@@2IB */
 /* ?table_size@?$ctype@D@std@@2_KB */
-size_t ctype_char_table_size = 256;
+MSVCP_size_t ctype_char_table_size = 256;
 
 /* ??_7?$ctype@D@std@@6B@ */
-extern const vtable_ptr ctype_char_vtable;
+extern const vtable_ptr MSVCP_ctype_char_vtable;
 
 /* ?_Id_func@?$ctype@D@std@@SAAAVid@locale@2@XZ */
 /* ?_Id_func@?$ctype@D@std@@SAAEAVid@locale@2@XZ */
@@ -1671,11 +1669,11 @@ const short* __cdecl ctype_char_classic_table(void)
 /* ??0?$ctype@D@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char_ctor_locinfo, 12)
 ctype_char* __thiscall ctype_char_ctor_locinfo(ctype_char *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     ctype_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &ctype_char_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_char_vtable;
     ctype_char__Init(this, locinfo);
     return this;
 }
@@ -1684,14 +1682,14 @@ ctype_char* __thiscall ctype_char_ctor_locinfo(ctype_char *this,
 /* ??0?$ctype@D@std@@QEAA@PEBF_N_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char_ctor_table, 16)
 ctype_char* __thiscall ctype_char_ctor_table(ctype_char *this,
-        const short *table, bool delete, size_t refs)
+        const short *table, MSVCP_bool delete, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %p %d %Iu)\n", this, table, delete, refs);
+    TRACE("(%p %p %d %lu)\n", this, table, delete, refs);
 
     ctype_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &ctype_char_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_char_vtable;
 
     _Locinfo_ctor(&locinfo);
     ctype_char__Init(this, &locinfo);
@@ -1734,11 +1732,11 @@ ctype_char* __thiscall ctype_char_vector_dtor(ctype_char *this, unsigned int fla
 
         for(i=*ptr-1; i>=0; i--)
             ctype_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         ctype_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -1791,12 +1789,12 @@ const char* __thiscall ctype_char_do_narrow(const ctype_char *this,
 /* ?_Do_narrow_s@?$ctype@D@std@@MEBAPEBDPEBD0DPEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char__Do_narrow_s, 24)
 #define call_ctype_char__Do_narrow_s(this, first, last, unused, dest, size) CALL_VTBL_FUNC(this, 40, \
-        const char*, (const ctype_char*, const char*, const char*, char, char*, size_t), \
+        const char*, (const ctype_char*, const char*, const char*, char, char*, MSVCP_size_t), \
         (this, first, last, unused, dest, size))
 const char* __thiscall ctype_char__Do_narrow_s(const ctype_char *this, const char *first,
-        const char *last, char unused, char *dest, size_t size)
+        const char *last, char unused, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     memcpy_s(dest, size, first, last-first);
     return last;
 }
@@ -1824,9 +1822,9 @@ const char* __thiscall ctype_char_narrow(const ctype_char *this,
 /* ?_Narrow_s@?$ctype@D@std@@QEBAPEBDPEBD0DPEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char__Narrow_s, 24)
 const char* __thiscall ctype_char__Narrow_s(const ctype_char *this, const char *first,
-        const char *last, char dflt, char *dest, size_t size)
+        const char *last, char dflt, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     return call_ctype_char__Do_narrow_s(this, first, last, dflt, dest, size);
 }
 
@@ -1870,12 +1868,12 @@ const char* __thiscall ctype_char_do_widen(const ctype_char *this,
 /* ?_Do_widen_s@?$ctype@D@std@@MEBAPEBDPEBD0PEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char__Do_widen_s, 20)
 #define call_ctype_char__Do_widen_s(this, first, last, dest, size) CALL_VTBL_FUNC(this, 28, \
-        const char*, (const ctype_char*, const char*, const char*, char*, size_t), \
+        const char*, (const ctype_char*, const char*, const char*, char*, MSVCP_size_t), \
         (this, first, last, dest, size))
 const char* __thiscall ctype_char__Do_widen_s(const ctype_char *this,
-        const char *first, const char *last, char *dest, size_t size)
+        const char *first, const char *last, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     memcpy_s(dest, size, first, last-first);
     return last;
 }
@@ -1903,22 +1901,28 @@ const char* __thiscall ctype_char_widen(const ctype_char *this,
 /* ?_Widen_s@?$ctype@D@std@@QEBAPEBDPEBD0PEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char__Widen_s, 20)
 const char* __thiscall ctype_char__Widen_s(const ctype_char *this,
-        const char *first, const char *last, char *dest, size_t size)
+        const char *first, const char *last, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     return call_ctype_char__Do_widen_s(this, first, last, dest, size);
 }
 
 /* ?_Getcat@?$ctype@D@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$ctype@D@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl ctype_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl ctype_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(ctype_char));
+        *facet = MSVCRT_operator_new(sizeof(ctype_char));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         ctype_char_ctor_locinfo((ctype_char*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -1929,7 +1933,7 @@ size_t __cdecl ctype_char__Getcat(const locale_facet **facet, const locale *loc)
 
 /* ?_Getcat@?$ctype@D@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$ctype@D@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl ctype_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl ctype_char__Getcat_old(const locale_facet **facet)
 {
     return ctype_char__Getcat(facet, locale_classic());
 }
@@ -2158,7 +2162,7 @@ const char* __thiscall ctype_char_toupper(const ctype_char *this, char *first, c
 /* ?is@?$ctype@D@std@@QBE_NFD@Z */
 /* ?is@?$ctype@D@std@@QEBA_NFD@Z */
 DEFINE_THISCALL_WRAPPER(ctype_char_is_ch, 12)
-bool __thiscall ctype_char_is_ch(const ctype_char *this, short mask, char ch)
+MSVCP_bool __thiscall ctype_char_is_ch(const ctype_char *this, short mask, char ch)
 {
     TRACE("(%p %x %c)\n", this, mask, ch);
     return (this->ctype.table[(unsigned char)ch] & mask) != 0;
@@ -2214,9 +2218,9 @@ locale_id ctype_wchar_id = {0};
 locale_id ctype_short_id = {0};
 
 /* ??_7?$ctype@_W@std@@6B@ */
-extern const vtable_ptr ctype_wchar_vtable;
+extern const vtable_ptr MSVCP_ctype_wchar_vtable;
 /* ??_7?$ctype@G@std@@6B@ */
-extern const vtable_ptr ctype_short_vtable;
+extern const vtable_ptr MSVCP_ctype_short_vtable;
 
 /* ?_Id_func@?$ctype@_W@std@@SAAAVid@locale@2@XZ */
 /* ?_Id_func@?$ctype@_W@std@@SAAEAVid@locale@2@XZ */
@@ -2250,11 +2254,11 @@ void __thiscall ctype_wchar__Init(ctype_wchar *this, const _Locinfo *locinfo)
 /* ??0?$ctype@_W@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar_ctor_locinfo, 12)
 ctype_wchar* __thiscall ctype_wchar_ctor_locinfo(ctype_wchar *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     ctype_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &ctype_wchar_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_wchar_vtable;
     ctype_wchar__Init(this, locinfo);
     return this;
 }
@@ -2263,24 +2267,24 @@ ctype_wchar* __thiscall ctype_wchar_ctor_locinfo(ctype_wchar *this,
 /* ??0?$ctype@G@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_short_ctor_locinfo, 12)
 ctype_wchar* __thiscall ctype_short_ctor_locinfo(ctype_wchar *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
     ctype_wchar *ret = ctype_wchar_ctor_locinfo(this, locinfo, refs);
-    this->base.facet.vtable = &ctype_short_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_short_vtable;
     return ret;
 }
 
 /* ??0?$ctype@_W@std@@QAE@I@Z */
 /* ??0?$ctype@_W@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar_ctor_refs, 8)
-ctype_wchar* __thiscall ctype_wchar_ctor_refs(ctype_wchar *this, size_t refs)
+ctype_wchar* __thiscall ctype_wchar_ctor_refs(ctype_wchar *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     ctype_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &ctype_wchar_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_wchar_vtable;
 
     _Locinfo_ctor(&locinfo);
     ctype_wchar__Init(this, &locinfo);
@@ -2291,10 +2295,10 @@ ctype_wchar* __thiscall ctype_wchar_ctor_refs(ctype_wchar *this, size_t refs)
 /* ??0?$ctype@G@std@@QAE@I@Z */
 /* ??0?$ctype@G@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_short_ctor_refs, 8)
-ctype_wchar* __thiscall ctype_short_ctor_refs(ctype_wchar *this, size_t refs)
+ctype_wchar* __thiscall ctype_short_ctor_refs(ctype_wchar *this, MSVCP_size_t refs)
 {
     ctype_wchar *ret = ctype_wchar_ctor_refs(this, refs);
-    this->base.facet.vtable = &ctype_short_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_short_vtable;
     return ret;
 }
 
@@ -2302,14 +2306,14 @@ ctype_wchar* __thiscall ctype_short_ctor_refs(ctype_wchar *this, size_t refs)
 /* ??0?$ctype@G@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_short_ctor_name, 12)
 ctype_wchar* __thiscall ctype_short_ctor_name(ctype_wchar *this,
-    const char *name, size_t refs)
+    const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, debugstr_a(name), refs);
+    TRACE("(%p %s %lu)\n", this, debugstr_a(name), refs);
 
     ctype_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &ctype_short_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_short_vtable;
 
     _Locinfo_ctor_cstr(&locinfo, name);
     ctype_wchar__Init(this, &locinfo);
@@ -2332,7 +2336,7 @@ DEFINE_THISCALL_WRAPPER(ctype_short_ctor, 4)
 ctype_wchar* __thiscall ctype_short_ctor(ctype_wchar *this)
 {
     ctype_wchar *ret = ctype_wchar_ctor(this);
-    this->base.facet.vtable = &ctype_short_vtable;
+    this->base.facet.vtable = &MSVCP_ctype_short_vtable;
     return ret;
 }
 
@@ -2363,11 +2367,11 @@ ctype_wchar* __thiscall ctype_wchar_vector_dtor(ctype_wchar *this, unsigned int 
 
         for(i=*ptr-1; i>=0; i--)
             ctype_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         ctype_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -2472,12 +2476,12 @@ const wchar_t* __thiscall ctype_wchar_do_narrow(const ctype_wchar *this,
 /* ?_Do_narrow_s@?$ctype@G@std@@MEBAPEBGPEBG0DPEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar__Do_narrow_s, 24)
 #define call_ctype_wchar__Do_narrow_s(this, first, last, dflt, dest, size) CALL_VTBL_FUNC(this, 56, \
-        const wchar_t*, (const ctype_wchar*, const wchar_t*, const wchar_t*, char, char*, size_t), \
+        const wchar_t*, (const ctype_wchar*, const wchar_t*, const wchar_t*, char, char*, MSVCP_size_t), \
         (this, first, last, dflt, dest, size))
 const wchar_t* __thiscall ctype_wchar__Do_narrow_s(const ctype_wchar *this,
-        const wchar_t *first, const wchar_t *last, char dflt, char *dest, size_t size)
+        const wchar_t *first, const wchar_t *last, char dflt, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %d %p %Iu)\n", this, first, last, dflt, dest, size);
+    TRACE("(%p %p %p %d %p %lu)\n", this, first, last, dflt, dest, size);
     /* This function converts all multi-byte characters to dflt,
      * thanks to it result size is known before converting */
     if(last-first > size)
@@ -2514,20 +2518,20 @@ const wchar_t* __thiscall ctype_wchar_narrow(const ctype_wchar *this,
 /* ?_Narrow_s@?$ctype@G@std@@QEBAPEBGPEBG0DPEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar__Narrow_s, 24)
 const wchar_t* __thiscall ctype_wchar__Narrow_s(const ctype_wchar *this, const wchar_t *first,
-        const wchar_t *last, char dflt, char *dest, size_t size)
+        const wchar_t *last, char dflt, char *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %d %p %Iu)\n", this, first, last, dflt, dest, size);
+    TRACE("(%p %p %p %d %p %lu)\n", this, first, last, dflt, dest, size);
     return call_ctype_wchar__Do_narrow_s(this, first, last, dflt, dest, size);
 }
 
 /* _Mbrtowc */
-int __cdecl _Mbrtowc(wchar_t *out, const char *in, size_t len, _Mbstatet *state, const _Cvtvec *cvt)
+int __cdecl _Mbrtowc(wchar_t *out, const char *in, MSVCP_size_t len, _Mbstatet *state, const _Cvtvec *cvt)
 {
     int i, cp;
     CPINFO cp_info;
     BOOL is_lead;
 
-    TRACE("(%p %p %Iu %p %p)\n", out, in, len, state, cvt);
+    TRACE("(%p %p %lu %p %p)\n", out, in, len, state, cvt);
 
     if(!len)
         return 0;
@@ -2660,12 +2664,12 @@ const char* __thiscall ctype_wchar_do_widen(const ctype_wchar *this,
 /* ?_Do_widen_s@?$ctype@G@std@@MEBAPEBDPEBD0PEAG_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar__Do_widen_s, 20)
 #define call_ctype_wchar__Do_widen_s(this, first, last, dest, size) CALL_VTBL_FUNC(this, 44, \
-        const char*, (const ctype_wchar*, const char*, const char*, wchar_t*, size_t), \
+        const char*, (const ctype_wchar*, const char*, const char*, wchar_t*, MSVCP_size_t), \
         (this, first, last, dest, size))
 const char* __thiscall ctype_wchar__Do_widen_s(const ctype_wchar *this,
-        const char *first, const char *last, wchar_t *dest, size_t size)
+        const char *first, const char *last, wchar_t *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     /* This function converts all multi-byte characters to WEOF,
      * thanks to it result size is known before converting */
     if(size < last-first)
@@ -2702,22 +2706,28 @@ const char* __thiscall ctype_wchar_widen(const ctype_wchar *this,
 /* ?_Widen_s@?$ctype@G@std@@QEBAPEBDPEBD0PEAG_K@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar__Widen_s, 20)
 const char* __thiscall ctype_wchar__Widen_s(const ctype_wchar *this,
-        const char *first, const char *last, wchar_t *dest, size_t size)
+        const char *first, const char *last, wchar_t *dest, MSVCP_size_t size)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, first, last, dest, size);
+    TRACE("(%p %p %p %p %lu)\n", this, first, last, dest, size);
     return call_ctype_wchar__Do_widen_s(this, first, last, dest, size);
 }
 
 /* ?_Getcat@?$ctype@_W@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$ctype@_W@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl ctype_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl ctype_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(ctype_wchar));
+        *facet = MSVCRT_operator_new(sizeof(ctype_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         ctype_wchar_ctor_locinfo((ctype_wchar*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -2728,18 +2738,18 @@ size_t __cdecl ctype_wchar__Getcat(const locale_facet **facet, const locale *loc
 
 /* ?_Getcat@?$ctype@_W@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$ctype@_W@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl ctype_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl ctype_wchar__Getcat_old(const locale_facet **facet)
 {
     return ctype_wchar__Getcat(facet, locale_classic());
 }
 
 /* ?_Getcat@?$ctype@G@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$ctype@G@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl ctype_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl ctype_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     if(facet && !*facet) {
         ctype_wchar__Getcat(facet, loc);
-        (*(locale_facet**)facet)->vtable = &ctype_short_vtable;
+        (*(locale_facet**)facet)->vtable = &MSVCP_ctype_short_vtable;
     }
 
     return LC_CTYPE;
@@ -2747,7 +2757,7 @@ size_t __cdecl ctype_short__Getcat(const locale_facet **facet, const locale *loc
 
 /* ?_Getcat@?$ctype@G@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$ctype@G@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl ctype_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl ctype_short__Getcat_old(const locale_facet **facet)
 {
     return ctype_short__Getcat(facet, locale_classic());
 }
@@ -2972,12 +2982,12 @@ short __cdecl _Getwctype(wchar_t ch, const _Ctypevec *ctype)
 DEFINE_THISCALL_WRAPPER(ctype_wchar_do_is_ch, 12)
 #if _MSVCP_VER <= 100
 #define call_ctype_wchar_do_is_ch(this, mask, ch) CALL_VTBL_FUNC(this, 8, \
-        bool, (const ctype_wchar*, short, wchar_t), (this, mask, ch))
+        MSVCP_bool, (const ctype_wchar*, short, wchar_t), (this, mask, ch))
 #else
 #define call_ctype_wchar_do_is_ch(this, mask, ch) CALL_VTBL_FUNC(this, 16, \
-        bool, (const ctype_wchar*, short, wchar_t), (this, mask, ch))
+        MSVCP_bool, (const ctype_wchar*, short, wchar_t), (this, mask, ch))
 #endif
-bool __thiscall ctype_wchar_do_is_ch(const ctype_wchar *this, short mask, wchar_t ch)
+MSVCP_bool __thiscall ctype_wchar_do_is_ch(const ctype_wchar *this, short mask, wchar_t ch)
 {
     TRACE("(%p %x %d)\n", this, mask, ch);
     return (_Getwctype(ch, &this->ctype) & mask) != 0;
@@ -3009,7 +3019,7 @@ const wchar_t* __thiscall ctype_wchar_do_is(const ctype_wchar *this,
 /* ?is@?$ctype@G@std@@QBE_NFG@Z */
 /* ?is@?$ctype@G@std@@QEBA_NFG@Z */
 DEFINE_THISCALL_WRAPPER(ctype_wchar_is_ch, 12)
-bool __thiscall ctype_wchar_is_ch(const ctype_wchar *this, short mask, wchar_t ch)
+MSVCP_bool __thiscall ctype_wchar_is_ch(const ctype_wchar *this, short mask, wchar_t ch)
 {
     TRACE("(%p %x %d)\n", this, mask, ch);
     return call_ctype_wchar_do_is_ch(this, mask, ch);
@@ -3100,16 +3110,16 @@ const wchar_t* __thiscall ctype_wchar_scan_not(const ctype_wchar *this,
 }
 
 /* ??_7codecvt_base@std@@6B@ */
-extern const vtable_ptr codecvt_base_vtable;
+extern const vtable_ptr MSVCP_codecvt_base_vtable;
 
 /* ??0codecvt_base@std@@QAE@I@Z */
 /* ??0codecvt_base@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_base_ctor_refs, 8)
-codecvt_base* __thiscall codecvt_base_ctor_refs(codecvt_base *this, size_t refs)
+codecvt_base* __thiscall codecvt_base_ctor_refs(codecvt_base *this, MSVCP_size_t refs)
 {
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &codecvt_base_vtable;
+    this->facet.vtable = &MSVCP_codecvt_base_vtable;
     return this;
 }
 
@@ -3140,11 +3150,11 @@ codecvt_base* __thiscall codecvt_base_vector_dtor(codecvt_base *this, unsigned i
 
         for(i=*ptr-1; i>=0; i--)
             codecvt_base_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         codecvt_base_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -3154,13 +3164,13 @@ codecvt_base* __thiscall codecvt_base_vector_dtor(codecvt_base *this, unsigned i
 /* ?do_always_noconv@codecvt_base@std@@MEBA_NXZ */
 #if _MSVCP_VER <= 100
 #define call_codecvt_base_do_always_noconv(this) CALL_VTBL_FUNC(this, 4, \
-        bool, (const codecvt_base*), (this))
+        MSVCP_bool, (const codecvt_base*), (this))
 #else
 #define call_codecvt_base_do_always_noconv(this) CALL_VTBL_FUNC(this, 12, \
-        bool, (const codecvt_base*), (this))
+        MSVCP_bool, (const codecvt_base*), (this))
 #endif
 DEFINE_THISCALL_WRAPPER(codecvt_base_do_always_noconv, 4)
-bool __thiscall codecvt_base_do_always_noconv(const codecvt_base *this)
+MSVCP_bool __thiscall codecvt_base_do_always_noconv(const codecvt_base *this)
 {
     TRACE("(%p)\n", this);
     return _MSVCP_VER <= 100;
@@ -3169,7 +3179,7 @@ bool __thiscall codecvt_base_do_always_noconv(const codecvt_base *this)
 /* ?always_noconv@codecvt_base@std@@QBE_NXZ */
 /* ?always_noconv@codecvt_base@std@@QEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(codecvt_base_always_noconv, 4)
-bool __thiscall codecvt_base_always_noconv(const codecvt_base *this)
+MSVCP_bool __thiscall codecvt_base_always_noconv(const codecvt_base *this)
 {
     TRACE("(%p)\n", this);
     return call_codecvt_base_do_always_noconv(this);
@@ -3229,7 +3239,7 @@ int __thiscall codecvt_base_encoding(const codecvt_base *this)
 locale_id codecvt_char_id = {0};
 
 /* ??_7?$codecvt@DDH@std@@6B@ */
-extern const vtable_ptr codecvt_char_vtable;
+extern const vtable_ptr MSVCP_codecvt_char_vtable;
 
 /* ?_Init@?$codecvt@DDH@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$codecvt@DDH@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -3242,18 +3252,18 @@ void __thiscall codecvt_char__Init(codecvt_char *this, const _Locinfo *locinfo)
 /* ??0?$codecvt@DDH@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$codecvt@DDH@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_char_ctor_locinfo, 12)
-codecvt_char* __thiscall codecvt_char_ctor_locinfo(codecvt_char *this, const _Locinfo *locinfo, size_t refs)
+codecvt_char* __thiscall codecvt_char_ctor_locinfo(codecvt_char *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     codecvt_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &codecvt_char_vtable;
+    this->base.facet.vtable = &MSVCP_codecvt_char_vtable;
     return this;
 }
 
 /* ??0?$codecvt@DDH@std@@QAE@I@Z */
 /* ??0?$codecvt@DDH@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_char_ctor_refs, 8)
-codecvt_char* __thiscall codecvt_char_ctor_refs(codecvt_char *this, size_t refs)
+codecvt_char* __thiscall codecvt_char_ctor_refs(codecvt_char *this, MSVCP_size_t refs)
 {
     return codecvt_char_ctor_locinfo(this, NULL, refs);
 }
@@ -3287,11 +3297,11 @@ codecvt_char* __thiscall codecvt_char_vector_dtor(codecvt_char *this, unsigned i
 
         for(i=*ptr-1; i>=0; i--)
             codecvt_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         codecvt_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -3299,12 +3309,17 @@ codecvt_char* __thiscall codecvt_char_vector_dtor(codecvt_char *this, unsigned i
 
 /* ?_Getcat@?$codecvt@DDH@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$codecvt@DDH@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl codecvt_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl codecvt_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(codecvt_char));
+        *facet = MSVCRT_operator_new(sizeof(codecvt_char));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         codecvt_char_ctor((codecvt_char*)*facet);
     }
 
@@ -3313,7 +3328,7 @@ size_t __cdecl codecvt_char__Getcat(const locale_facet **facet, const locale *lo
 
 /* ?_Getcat@?$codecvt@DDH@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$codecvt@DDH@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl codecvt_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl codecvt_char__Getcat_old(const locale_facet **facet)
 {
     return codecvt_char__Getcat(facet, locale_classic());
 }
@@ -3349,7 +3364,7 @@ codecvt_char* codecvt_char_use_facet(const locale *loc)
 /* ?do_always_noconv@?$codecvt@DDH@std@@MBE_NXZ */
 /* ?do_always_noconv@?$codecvt@DDH@std@@MEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(codecvt_char_do_always_noconv, 4)
-bool __thiscall codecvt_char_do_always_noconv(const codecvt_char *this)
+MSVCP_bool __thiscall codecvt_char_do_always_noconv(const codecvt_char *this)
 {
     TRACE("(%p)\n", this);
     return TRUE;
@@ -3463,18 +3478,18 @@ int __thiscall codecvt_char_unshift(const codecvt_char *this,
 /* ?do_length@?$codecvt@DDH@std@@MEBAHAEBHPEBD1_K@Z */
 #if _MSVCP_VER <= 100
 #define call_codecvt_char_do_length(this, state, from, from_end, max) CALL_VTBL_FUNC(this, 28, \
-        int, (const codecvt_char*, const _Mbstatet*, const char*, const char*, size_t), \
+        int, (const codecvt_char*, const _Mbstatet*, const char*, const char*, MSVCP_size_t), \
         (this, state, from, from_end, max))
 #else
 #define call_codecvt_char_do_length(this, state, from, from_end, max) CALL_VTBL_FUNC(this, 36, \
-        int, (const codecvt_char*, const _Mbstatet*, const char*, const char*, size_t), \
+        int, (const codecvt_char*, const _Mbstatet*, const char*, const char*, MSVCP_size_t), \
         (this, state, from, from_end, max))
 #endif
 DEFINE_THISCALL_WRAPPER(codecvt_char_do_length, 20)
 int __thiscall codecvt_char_do_length(const codecvt_char *this, const _Mbstatet *state,
-        const char *from, const char *from_end, size_t max)
+        const char *from, const char *from_end, MSVCP_size_t max)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, state, from, from_end, max);
+    TRACE("(%p %p %p %p %lu)\n", this, state, from, from_end, max);
     return (from_end-from > max ? max : from_end-from);
 }
 
@@ -3482,9 +3497,9 @@ int __thiscall codecvt_char_do_length(const codecvt_char *this, const _Mbstatet 
 /* ?length@?$codecvt@DDH@std@@QEBAHAEBHPEBD1_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_char_length, 20)
 int __thiscall codecvt_char_length(const codecvt_char *this, const _Mbstatet *state,
-        const char *from, const char *from_end, size_t max)
+        const char *from, const char *from_end, MSVCP_size_t max)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, state, from, from_end, max);
+    TRACE("(%p %p %p %p %lu)\n", this, state, from, from_end, max);
     return call_codecvt_char_do_length(this, state, from, from_end, max);
 }
 
@@ -3494,9 +3509,9 @@ locale_id codecvt_wchar_id = {0};
 locale_id codecvt_short_id = {0};
 
 /* ??_7?$codecvt@_WDH@std@@6B@ */
-extern const vtable_ptr codecvt_wchar_vtable;
+extern const vtable_ptr MSVCP_codecvt_wchar_vtable;
 /* ??_7?$codecvt@GDH@std@@6B@ */
-extern const vtable_ptr codecvt_short_vtable;
+extern const vtable_ptr MSVCP_codecvt_short_vtable;
 
 /* ?_Init@?$codecvt@GDH@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$codecvt@GDH@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -3512,12 +3527,12 @@ void __thiscall codecvt_wchar__Init(codecvt_wchar *this, const _Locinfo *locinfo
 /* ??0?$codecvt@_WDH@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$codecvt@_WDH@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_wchar_ctor_locinfo, 12)
-codecvt_wchar* __thiscall codecvt_wchar_ctor_locinfo(codecvt_wchar *this, const _Locinfo *locinfo, size_t refs)
+codecvt_wchar* __thiscall codecvt_wchar_ctor_locinfo(codecvt_wchar *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %ld)\n", this, locinfo, refs);
 
     codecvt_base_ctor_refs(&this->base, refs);
-    this->base.facet.vtable = &codecvt_wchar_vtable;
+    this->base.facet.vtable = &MSVCP_codecvt_wchar_vtable;
 
     codecvt_wchar__Init(this, locinfo);
     return this;
@@ -3526,23 +3541,23 @@ codecvt_wchar* __thiscall codecvt_wchar_ctor_locinfo(codecvt_wchar *this, const 
 /* ??0?$codecvt@GDH@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$codecvt@GDH@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_short_ctor_locinfo, 12)
-codecvt_wchar* __thiscall codecvt_short_ctor_locinfo(codecvt_wchar *this, const _Locinfo *locinfo, size_t refs)
+codecvt_wchar* __thiscall codecvt_short_ctor_locinfo(codecvt_wchar *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %ld)\n", this, locinfo, refs);
 
     codecvt_wchar_ctor_locinfo(this, locinfo, refs);
-    this->base.facet.vtable = &codecvt_short_vtable;
+    this->base.facet.vtable = &MSVCP_codecvt_short_vtable;
     return this;
 }
 
 /* ??0?$codecvt@_WDH@std@@QAE@I@Z */
 /* ??0?$codecvt@_WDH@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_wchar_ctor_refs, 8)
-codecvt_wchar* __thiscall codecvt_wchar_ctor_refs(codecvt_wchar *this, size_t refs)
+codecvt_wchar* __thiscall codecvt_wchar_ctor_refs(codecvt_wchar *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %ld)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     codecvt_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -3553,11 +3568,11 @@ codecvt_wchar* __thiscall codecvt_wchar_ctor_refs(codecvt_wchar *this, size_t re
 /* ??0?$codecvt@GDH@std@@QAE@I@Z */
 /* ??0?$codecvt@GDH@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_short_ctor_refs, 8)
-codecvt_wchar* __thiscall codecvt_short_ctor_refs(codecvt_wchar *this, size_t refs)
+codecvt_wchar* __thiscall codecvt_short_ctor_refs(codecvt_wchar *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %ld)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     codecvt_short_ctor_locinfo(this, &locinfo, refs);
@@ -3568,11 +3583,11 @@ codecvt_wchar* __thiscall codecvt_short_ctor_refs(codecvt_wchar *this, size_t re
 /* ??0?$codecvt@GDH@std@@IAE@PBDI@Z */
 /* ??0?$codecvt@GDH@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_short_ctor_name, 12)
-codecvt_wchar* __thiscall codecvt_short_ctor_name(codecvt_wchar *this, const char *name, size_t refs)
+codecvt_wchar* __thiscall codecvt_short_ctor_name(codecvt_wchar *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, name, refs);
+    TRACE("(%p %s %ld)\n", this, name, refs);
 
     _Locinfo_ctor_cstr(&locinfo, name);
     codecvt_short_ctor_locinfo(this, &locinfo, refs);
@@ -3619,11 +3634,11 @@ codecvt_wchar* __thiscall codecvt_wchar_vector_dtor(codecvt_wchar *this, unsigne
 
         for(i=*ptr-1; i>=0; i--)
             codecvt_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         codecvt_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -3631,14 +3646,20 @@ codecvt_wchar* __thiscall codecvt_wchar_vector_dtor(codecvt_wchar *this, unsigne
 
 /* ?_Getcat@?$codecvt@_WDH@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$codecvt@_WDH@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl codecvt_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl codecvt_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(codecvt_wchar));
+        *facet = MSVCRT_operator_new(sizeof(codecvt_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         codecvt_wchar_ctor_locinfo((codecvt_wchar*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -3649,7 +3670,7 @@ size_t __cdecl codecvt_wchar__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$codecvt@_WDH@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$codecvt@_WDH@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl codecvt_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl codecvt_wchar__Getcat_old(const locale_facet **facet)
 {
     return codecvt_wchar__Getcat(facet, locale_classic());
 }
@@ -3684,14 +3705,20 @@ codecvt_wchar* codecvt_wchar_use_facet(const locale *loc)
 
 /* ?_Getcat@?$codecvt@GDH@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$codecvt@GDH@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl codecvt_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl codecvt_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(codecvt_wchar));
+        *facet = MSVCRT_operator_new(sizeof(codecvt_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         codecvt_short_ctor((codecvt_wchar*)*facet);
         _Locinfo_dtor(&locinfo);
@@ -3702,7 +3729,7 @@ size_t __cdecl codecvt_short__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$codecvt@GDH@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$codecvt@GDH@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl codecvt_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl codecvt_short__Getcat_old(const locale_facet **facet)
 {
     return codecvt_short__Getcat(facet, locale_classic());
 }
@@ -3756,7 +3783,7 @@ locale_id* __cdecl codecvt_short__Id_func(void)
 /* ?do_always_noconv@?$codecvt@_WDH@std@@MBE_NXZ */
 /* ?do_always_noconv@?$codecvt@_WDH@std@@MEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(codecvt_wchar_do_always_noconv, 4)
-bool __thiscall codecvt_wchar_do_always_noconv(const codecvt_wchar *this)
+MSVCP_bool __thiscall codecvt_wchar_do_always_noconv(const codecvt_wchar *this)
 {
     TRACE("(%p)\n", this);
     return FALSE;
@@ -3950,21 +3977,21 @@ int __thiscall codecvt_wchar_unshift(const codecvt_wchar *this,
 /* ?do_length@?$codecvt@_WDH@std@@MEBAHAEBHPEBD1_K@Z */
 #if _MSVCP_VER <= 100
 #define call_codecvt_wchar_do_length(this, state, from, from_end, max) CALL_VTBL_FUNC(this, 28, \
-        int, (const codecvt_wchar*, const _Mbstatet*, const char*, const char*, size_t), \
+        int, (const codecvt_wchar*, const _Mbstatet*, const char*, const char*, MSVCP_size_t), \
         (this, state, from, from_end, max))
 #else
 #define call_codecvt_wchar_do_length(this, state, from, from_end, max) CALL_VTBL_FUNC(this, 36, \
-        int, (const codecvt_wchar*, const _Mbstatet*, const char*, const char*, size_t), \
+        int, (const codecvt_wchar*, const _Mbstatet*, const char*, const char*, MSVCP_size_t), \
         (this, state, from, from_end, max))
 #endif
 DEFINE_THISCALL_WRAPPER(codecvt_wchar_do_length, 20)
 int __thiscall codecvt_wchar_do_length(const codecvt_wchar *this, const _Mbstatet *state,
-        const char *from, const char *from_end, size_t max)
+        const char *from, const char *from_end, MSVCP_size_t max)
 {
     _Mbstatet tmp_state = *state;
     int ret=0;
 
-    TRACE("(%p %p %p %p %Iu)\n", this, state, from, from_end, max);
+    TRACE("(%p %p %p %p %ld)\n", this, state, from, from_end, max);
 
     while(ret<max && from!=from_end) {
         switch(_Mbrtowc(NULL, from, from_end-from, &tmp_state, &this->cvt)) {
@@ -3990,9 +4017,9 @@ int __thiscall codecvt_wchar_do_length(const codecvt_wchar *this, const _Mbstate
 /* ?length@?$codecvt@_WDH@std@@QEBAHAEBHPEBD1_K@Z */
 DEFINE_THISCALL_WRAPPER(codecvt_wchar_length, 20)
 int __thiscall codecvt_wchar_length(const codecvt_wchar *this, const _Mbstatet *state,
-        const char *from, const char *from_end, size_t max)
+        const char *from, const char *from_end, MSVCP_size_t max)
 {
-    TRACE("(%p %p %p %p %Iu)\n", this, state, from, from_end, max);
+    TRACE("(%p %p %p %p %ld)\n", this, state, from, from_end, max);
     return call_codecvt_wchar_do_length(this, state, from, from_end, max);
 }
 
@@ -4000,28 +4027,31 @@ int __thiscall codecvt_wchar_length(const codecvt_wchar *this, const _Mbstatet *
 locale_id numpunct_char_id = {0};
 
 /* ??_7?$numpunct@D@std@@6B@ */
-extern const vtable_ptr numpunct_char_vtable;
+extern const vtable_ptr MSVCP_numpunct_char_vtable;
 
 /* ?_Init@?$numpunct@D@std@@IAEXABV_Locinfo@2@_N@Z */
 /* ?_Init@?$numpunct@D@std@@IEAAXAEBV_Locinfo@2@_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_char__Init, 12)
-void __thiscall numpunct_char__Init(numpunct_char *this, const _Locinfo *locinfo, bool isdef)
+void __thiscall numpunct_char__Init(numpunct_char *this, const _Locinfo *locinfo, MSVCP_bool isdef)
 {
     int len;
 
     TRACE("(%p %p %d)\n", this, locinfo, isdef);
 
     len = strlen(_Locinfo__Getfalse(locinfo))+1;
-    this->false_name = operator_new(len);
-    memcpy((char*)this->false_name, _Locinfo__Getfalse(locinfo), len);
+    this->false_name = MSVCRT_operator_new(len);
+    if(this->false_name)
+        memcpy((char*)this->false_name, _Locinfo__Getfalse(locinfo), len);
 
     len = strlen(_Locinfo__Gettrue(locinfo))+1;
-    this->true_name = operator_new(len);
-    memcpy((char*)this->true_name, _Locinfo__Gettrue(locinfo), len);
+    this->true_name = MSVCRT_operator_new(len);
+    if(this->true_name)
+        memcpy((char*)this->true_name, _Locinfo__Gettrue(locinfo), len);
 
     if(isdef) {
-        this->grouping = operator_new(1);
-        *(char*)this->grouping = 0;
+        this->grouping = MSVCRT_operator_new(1);
+        if(this->grouping)
+            *(char*)this->grouping = 0;
 
         this->dp = '.';
         this->sep = ',';
@@ -4029,11 +4059,21 @@ void __thiscall numpunct_char__Init(numpunct_char *this, const _Locinfo *locinfo
         const struct lconv *lc = _Locinfo__Getlconv(locinfo);
 
         len = strlen(lc->grouping)+1;
-        this->grouping = operator_new(len);
-        memcpy((char*)this->grouping, lc->grouping, len);
+        this->grouping = MSVCRT_operator_new(len);
+        if(this->grouping)
+            memcpy((char*)this->grouping, lc->grouping, len);
 
         this->dp = lc->decimal_point[0];
         this->sep = lc->thousands_sep[0];
+    }
+
+    if(!this->false_name || !this->true_name || !this->grouping) {
+        MSVCRT_operator_delete((char*)this->grouping);
+        MSVCRT_operator_delete((char*)this->false_name);
+        MSVCRT_operator_delete((char*)this->true_name);
+
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
     }
 }
 
@@ -4044,20 +4084,20 @@ void __thiscall numpunct_char__Tidy(numpunct_char *this)
 {
     TRACE("(%p)\n", this);
 
-    operator_delete((char*)this->grouping);
-    operator_delete((char*)this->false_name);
-    operator_delete((char*)this->true_name);
+    MSVCRT_operator_delete((char*)this->grouping);
+    MSVCRT_operator_delete((char*)this->false_name);
+    MSVCRT_operator_delete((char*)this->true_name);
 }
 
 /* ??0?$numpunct@D@std@@QAE@ABV_Locinfo@1@I_N@Z */
 /* ??0?$numpunct@D@std@@QEAA@AEBV_Locinfo@1@_K_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_char_ctor_locinfo, 16)
 numpunct_char* __thiscall numpunct_char_ctor_locinfo(numpunct_char *this,
-        const _Locinfo *locinfo, size_t refs, bool usedef)
+        const _Locinfo *locinfo, MSVCP_size_t refs, MSVCP_bool usedef)
 {
-    TRACE("(%p %p %Iu %d)\n", this, locinfo, refs, usedef);
+    TRACE("(%p %p %lu %d)\n", this, locinfo, refs, usedef);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &numpunct_char_vtable;
+    this->facet.vtable = &MSVCP_numpunct_char_vtable;
     numpunct_char__Init(this, locinfo, usedef);
     return this;
 }
@@ -4066,13 +4106,13 @@ numpunct_char* __thiscall numpunct_char_ctor_locinfo(numpunct_char *this,
 /* ??0?$numpunct@D@std@@IEAA@PEBD_K_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_char_ctor_name, 16)
 numpunct_char* __thiscall numpunct_char_ctor_name(numpunct_char *this,
-        const char *name, size_t refs, bool usedef)
+        const char *name, MSVCP_size_t refs, MSVCP_bool usedef)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu %d)\n", this, debugstr_a(name), refs, usedef);
+    TRACE("(%p %s %lu %d)\n", this, debugstr_a(name), refs, usedef);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &numpunct_char_vtable;
+    this->facet.vtable = &MSVCP_numpunct_char_vtable;
 
     _Locinfo_ctor_cstr(&locinfo, name);
     numpunct_char__Init(this, &locinfo, usedef);
@@ -4083,9 +4123,9 @@ numpunct_char* __thiscall numpunct_char_ctor_name(numpunct_char *this,
 /* ??0?$numpunct@D@std@@QAE@I@Z */
 /* ??0?$numpunct@D@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_char_ctor_refs, 8)
-numpunct_char* __thiscall numpunct_char_ctor_refs(numpunct_char *this, size_t refs)
+numpunct_char* __thiscall numpunct_char_ctor_refs(numpunct_char *this, MSVCP_size_t refs)
 {
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
     return numpunct_char_ctor_name(this, "C", refs, FALSE);
 }
 
@@ -4118,11 +4158,11 @@ numpunct_char* __thiscall numpunct_char_vector_dtor(numpunct_char *this, unsigne
 
         for(i=*ptr-1; i>=0; i--)
             numpunct_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         numpunct_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -4130,12 +4170,17 @@ numpunct_char* __thiscall numpunct_char_vector_dtor(numpunct_char *this, unsigne
 
 /* ?_Getcat@?$numpunct@D@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$numpunct@D@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl numpunct_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl numpunct_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(numpunct_char));
+        *facet = MSVCRT_operator_new(sizeof(numpunct_char));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         numpunct_char_ctor_name((numpunct_char*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0, TRUE);
     }
@@ -4145,7 +4190,7 @@ size_t __cdecl numpunct_char__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$numpunct@D@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$numpunct@D@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl numpunct_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl numpunct_char__Getcat_old(const locale_facet **facet)
 {
     return numpunct_char__Getcat(facet, locale_classic());
 }
@@ -4312,9 +4357,9 @@ locale_id numpunct_wchar_id = {0};
 locale_id numpunct_short_id = {0};
 
 /* ??_7?$numpunct@_W@std@@6B@ */
-extern const vtable_ptr numpunct_wchar_vtable;
+extern const vtable_ptr MSVCP_numpunct_wchar_vtable;
 /* ??_7?$numpunct@G@std@@6B@ */
-extern const vtable_ptr numpunct_short_vtable;
+extern const vtable_ptr MSVCP_numpunct_short_vtable;
 
 /* ?_Init@?$numpunct@_W@std@@IAEXABV_Locinfo@2@_N@Z */
 /* ?_Init@?$numpunct@_W@std@@IEAAXAEBV_Locinfo@2@_N@Z */
@@ -4322,7 +4367,7 @@ extern const vtable_ptr numpunct_short_vtable;
 /* ?_Init@?$numpunct@G@std@@IEAAXAEBV_Locinfo@2@_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_wchar__Init, 12)
 void __thiscall numpunct_wchar__Init(numpunct_wchar *this,
-        const _Locinfo *locinfo, bool isdef)
+        const _Locinfo *locinfo, MSVCP_bool isdef)
 {
     const char *to_convert;
     _Cvtvec cvt;
@@ -4334,19 +4379,22 @@ void __thiscall numpunct_wchar__Init(numpunct_wchar *this,
 
     to_convert = _Locinfo__Getfalse(locinfo);
     len = MultiByteToWideChar(cvt.page, 0, to_convert, -1, NULL, 0);
-    this->false_name = operator_new(len*sizeof(WCHAR));
-    MultiByteToWideChar(cvt.page, 0, to_convert, -1,
-            (wchar_t*)this->false_name, len);
+    this->false_name = MSVCRT_operator_new(len*sizeof(WCHAR));
+    if(this->false_name)
+        MultiByteToWideChar(cvt.page, 0, to_convert, -1,
+                (wchar_t*)this->false_name, len);
 
     to_convert = _Locinfo__Gettrue(locinfo);
     len = MultiByteToWideChar(cvt.page, 0, to_convert, -1, NULL, 0);
-    this->true_name = operator_new(len*sizeof(WCHAR));
-    MultiByteToWideChar(cvt.page, 0, to_convert, -1,
-            (wchar_t*)this->true_name, len);
+    this->true_name = MSVCRT_operator_new(len*sizeof(WCHAR));
+    if(this->true_name)
+        MultiByteToWideChar(cvt.page, 0, to_convert, -1,
+                (wchar_t*)this->true_name, len);
 
     if(isdef) {
-        this->grouping = operator_new(1);
-        *(char*)this->grouping = 0;
+        this->grouping = MSVCRT_operator_new(1);
+        if(this->grouping)
+            *(char*)this->grouping = 0;
 
         this->dp = '.';
         this->sep = ',';
@@ -4354,11 +4402,21 @@ void __thiscall numpunct_wchar__Init(numpunct_wchar *this,
         const struct lconv *lc = _Locinfo__Getlconv(locinfo);
 
         len = strlen(lc->grouping)+1;
-        this->grouping = operator_new(len);
-        memcpy((char*)this->grouping, lc->grouping, len);
+        this->grouping = MSVCRT_operator_new(len);
+        if(this->grouping)
+            memcpy((char*)this->grouping, lc->grouping, len);
 
         this->dp = mb_to_wc(lc->decimal_point[0], &cvt);
         this->sep = mb_to_wc(lc->thousands_sep[0], &cvt);
+    }
+
+    if(!this->false_name || !this->true_name || !this->grouping) {
+        MSVCRT_operator_delete((char*)this->grouping);
+        MSVCRT_operator_delete((wchar_t*)this->false_name);
+        MSVCRT_operator_delete((wchar_t*)this->true_name);
+
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
     }
 }
 
@@ -4371,20 +4429,20 @@ void __thiscall numpunct_wchar__Tidy(numpunct_wchar *this)
 {
     TRACE("(%p)\n", this);
 
-    operator_delete((char*)this->grouping);
-    operator_delete((wchar_t*)this->false_name);
-    operator_delete((wchar_t*)this->true_name);
+    MSVCRT_operator_delete((char*)this->grouping);
+    MSVCRT_operator_delete((wchar_t*)this->false_name);
+    MSVCRT_operator_delete((wchar_t*)this->true_name);
 }
 
 /* ??0?$numpunct@_W@std@@QAE@ABV_Locinfo@1@I_N@Z */
 /* ??0?$numpunct@_W@std@@QEAA@AEBV_Locinfo@1@_K_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_wchar_ctor_locinfo, 16)
 numpunct_wchar* __thiscall numpunct_wchar_ctor_locinfo(numpunct_wchar *this,
-        const _Locinfo *locinfo, size_t refs, bool usedef)
+        const _Locinfo *locinfo, MSVCP_size_t refs, MSVCP_bool usedef)
 {
-    TRACE("(%p %p %Iu %d)\n", this, locinfo, refs, usedef);
+    TRACE("(%p %p %lu %d)\n", this, locinfo, refs, usedef);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &numpunct_wchar_vtable;
+    this->facet.vtable = &MSVCP_numpunct_wchar_vtable;
     numpunct_wchar__Init(this, locinfo, usedef);
     return this;
 }
@@ -4393,10 +4451,10 @@ numpunct_wchar* __thiscall numpunct_wchar_ctor_locinfo(numpunct_wchar *this,
 /* ??0?$numpunct@G@std@@QEAA@AEBV_Locinfo@1@_K_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_short_ctor_locinfo, 16)
 numpunct_wchar* __thiscall numpunct_short_ctor_locinfo(numpunct_wchar *this,
-        const _Locinfo *locinfo, size_t refs, bool usedef)
+        const _Locinfo *locinfo, MSVCP_size_t refs, MSVCP_bool usedef)
 {
     numpunct_wchar_ctor_locinfo(this, locinfo, refs, usedef);
-    this->facet.vtable = &numpunct_short_vtable;
+    this->facet.vtable = &MSVCP_numpunct_short_vtable;
     return this;
 }
 
@@ -4404,13 +4462,13 @@ numpunct_wchar* __thiscall numpunct_short_ctor_locinfo(numpunct_wchar *this,
 /* ??0?$numpunct@_W@std@@IEAA@PEBD_K_N@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_wchar_ctor_name, 16)
 numpunct_wchar* __thiscall numpunct_wchar_ctor_name(numpunct_wchar *this,
-        const char *name, size_t refs, bool usedef)
+        const char *name, MSVCP_size_t refs, MSVCP_bool usedef)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu %d)\n", this, debugstr_a(name), refs, usedef);
+    TRACE("(%p %s %lu %d)\n", this, debugstr_a(name), refs, usedef);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &numpunct_wchar_vtable;
+    this->facet.vtable = &MSVCP_numpunct_wchar_vtable;
 
     _Locinfo_ctor_cstr(&locinfo, name);
     numpunct_wchar__Init(this, &locinfo, usedef);
@@ -4422,29 +4480,29 @@ numpunct_wchar* __thiscall numpunct_wchar_ctor_name(numpunct_wchar *this,
 /* ??0?$numpunct@G@std@@IEAA@PEBD_K_N@Z */
     DEFINE_THISCALL_WRAPPER(numpunct_short_ctor_name, 16)
 numpunct_wchar* __thiscall numpunct_short_ctor_name(numpunct_wchar *this,
-        const char *name, size_t refs, bool usedef)
+        const char *name, MSVCP_size_t refs, MSVCP_bool usedef)
 {
     numpunct_wchar_ctor_name(this, name, refs, usedef);
-    this->facet.vtable = &numpunct_short_vtable;
+    this->facet.vtable = &MSVCP_numpunct_short_vtable;
     return this;
 }
 
 /* ??0?$numpunct@_W@std@@QAE@I@Z */
 /* ??0?$numpunct@_W@std@@QEAA@_K@Z */
     DEFINE_THISCALL_WRAPPER(numpunct_wchar_ctor_refs, 8)
-numpunct_wchar* __thiscall numpunct_wchar_ctor_refs(numpunct_wchar *this, size_t refs)
+numpunct_wchar* __thiscall numpunct_wchar_ctor_refs(numpunct_wchar *this, MSVCP_size_t refs)
 {
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
     return numpunct_wchar_ctor_name(this, "C", refs, FALSE);
 }
 
 /* ??0?$numpunct@G@std@@QAE@I@Z */
 /* ??0?$numpunct@G@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(numpunct_short_ctor_refs, 8)
-numpunct_wchar* __thiscall numpunct_short_ctor_refs(numpunct_wchar *this, size_t refs)
+numpunct_wchar* __thiscall numpunct_short_ctor_refs(numpunct_wchar *this, MSVCP_size_t refs)
 {
     numpunct_wchar_ctor_refs(this, refs);
-    this->facet.vtable = &numpunct_short_vtable;
+    this->facet.vtable = &MSVCP_numpunct_short_vtable;
     return this;
 }
 
@@ -4487,11 +4545,11 @@ numpunct_wchar* __thiscall numpunct_wchar_vector_dtor(numpunct_wchar *this, unsi
 
         for(i=*ptr-1; i>=0; i--)
             numpunct_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         numpunct_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -4499,12 +4557,17 @@ numpunct_wchar* __thiscall numpunct_wchar_vector_dtor(numpunct_wchar *this, unsi
 
 /* ?_Getcat@?$numpunct@_W@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$numpunct@_W@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl numpunct_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl numpunct_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(numpunct_wchar));
+        *facet = MSVCRT_operator_new(sizeof(numpunct_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         numpunct_wchar_ctor_name((numpunct_wchar*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0, TRUE);
     }
@@ -4514,7 +4577,7 @@ size_t __cdecl numpunct_wchar__Getcat(const locale_facet **facet, const locale *
 
 /* ?_Getcat@?$numpunct@_W@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$numpunct@_W@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl numpunct_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl numpunct_wchar__Getcat_old(const locale_facet **facet)
 {
     return numpunct_wchar__Getcat(facet, locale_classic());
 }
@@ -4549,12 +4612,17 @@ static numpunct_wchar* numpunct_wchar_use_facet(const locale *loc)
 
 /* ?_Getcat@?$numpunct@G@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$numpunct@G@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl numpunct_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl numpunct_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(numpunct_wchar));
+        *facet = MSVCRT_operator_new(sizeof(numpunct_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         numpunct_short_ctor_name((numpunct_wchar*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0, TRUE);
     }
@@ -4564,7 +4632,7 @@ size_t __cdecl numpunct_short__Getcat(const locale_facet **facet, const locale *
 
 /* ?_Getcat@?$numpunct@G@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$numpunct@G@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl numpunct_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl numpunct_short__Getcat_old(const locale_facet **facet)
 {
     return numpunct_short__Getcat(facet, locale_classic());
 }
@@ -4850,9 +4918,9 @@ locale_id num_get_wchar_id = {0};
 locale_id num_get_short_id = {0};
 
 /* ??_7?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_get_wchar_vtable;
+extern const vtable_ptr MSVCP_num_get_wchar_vtable;
 /* ??_7?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_get_short_vtable;
+extern const vtable_ptr MSVCP_num_get_short_vtable;
 
 /* ?_Init@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -4871,12 +4939,12 @@ void __thiscall num_get_wchar__Init(num_get *this, const _Locinfo *locinfo)
 /* ??0?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_wchar_ctor_locinfo, 12)
 num_get* __thiscall num_get_wchar_ctor_locinfo(num_get *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &num_get_wchar_vtable;
+    this->facet.vtable = &MSVCP_num_get_wchar_vtable;
 
     num_get_wchar__Init(this, locinfo);
     return this;
@@ -4886,21 +4954,21 @@ num_get* __thiscall num_get_wchar_ctor_locinfo(num_get *this,
 /* ??0?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_short_ctor_locinfo, 12)
 num_get* __thiscall num_get_short_ctor_locinfo(num_get *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
     num_get_wchar_ctor_locinfo(this, locinfo, refs);
-    this->facet.vtable = &num_get_short_vtable;
+    this->facet.vtable = &MSVCP_num_get_short_vtable;
     return this;
 }
 
 /* ??0?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_wchar_ctor_refs, 8)
-num_get* __thiscall num_get_wchar_ctor_refs(num_get *this, size_t refs)
+num_get* __thiscall num_get_wchar_ctor_refs(num_get *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     num_get_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -4911,10 +4979,10 @@ num_get* __thiscall num_get_wchar_ctor_refs(num_get *this, size_t refs)
 /* ??0?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_short_ctor_refs, 8)
-num_get* __thiscall num_get_short_ctor_refs(num_get *this, size_t refs)
+num_get* __thiscall num_get_short_ctor_refs(num_get *this, MSVCP_size_t refs)
 {
     num_get_wchar_ctor_refs(this, refs);
-    this->facet.vtable = &num_get_short_vtable;
+    this->facet.vtable = &MSVCP_num_get_short_vtable;
     return this;
 }
 
@@ -4957,11 +5025,11 @@ num_get* __thiscall num_get_wchar_vector_dtor(num_get *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             num_get_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         num_get_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -4969,14 +5037,20 @@ num_get* __thiscall num_get_wchar_vector_dtor(num_get *this, unsigned int flags)
 
 /* ?_Getcat@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_get_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_get_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(num_get));
+        *facet = MSVCRT_operator_new(sizeof(num_get));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         num_get_wchar_ctor_locinfo((num_get*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -4987,7 +5061,7 @@ size_t __cdecl num_get_wchar__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_get_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_get_wchar__Getcat_old(const locale_facet **facet)
 {
     return num_get_wchar__Getcat(facet, locale_classic());
 }
@@ -5022,11 +5096,11 @@ num_get* num_get_wchar_use_facet(const locale *loc)
 
 /* ?_Getcat@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_get_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_get_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     if(facet && !*facet) {
         num_get_wchar__Getcat(facet, loc);
-        (*(locale_facet**)facet)->vtable = &num_get_short_vtable;
+        (*(locale_facet**)facet)->vtable = &MSVCP_num_get_short_vtable;
     }
 
     return LC_NUMERIC;
@@ -5034,7 +5108,7 @@ size_t __cdecl num_get_short__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_get_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_get_short__Getcat_old(const locale_facet **facet)
 {
     return num_get_short__Getcat(facet, locale_classic());
 }
@@ -5931,7 +6005,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_uint(const num_get *t
     istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, unsigned int *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
-    return num_get_wchar_do_get_ulong(this, ret, first, last, base, state, (ULONG*)pval);
+    return num_get_wchar_do_get_ulong(this, ret, first, last, base, state, pval);
 }
 
 /* ?do_get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@MBE?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AAVios_base@2@AAHAAI@Z */
@@ -5941,7 +6015,7 @@ istreambuf_iterator_wchar *__thiscall num_get_short_do_get_uint(const num_get *t
     istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, unsigned int *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
-    return num_get_short_do_get_ulong(this, ret, first, last, base, state, (ULONG*)pval);
+    return num_get_short_do_get_ulong(this, ret, first, last, base, state, pval);
 }
 
 /* ?get@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QBE?AV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@0AAVios_base@2@AAHAAI@Z */
@@ -6021,7 +6095,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_get_ushort(const num_get *th
 static istreambuf_iterator_wchar* num_get_do_get_bool(const num_get *this,
         istreambuf_iterator_wchar *ret, istreambuf_iterator_wchar first,
         istreambuf_iterator_wchar last, ios_base *base, int *state,
-        bool *pval, numpunct_wchar *numpunct)
+        MSVCP_bool *pval, numpunct_wchar *numpunct)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
 
@@ -6088,16 +6162,16 @@ static istreambuf_iterator_wchar* num_get_do_get_bool(const num_get *this,
 /* ?do_get@?$num_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@0AEAVios_base@2@AEAHAEA_N@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_wchar_do_get_bool(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 44, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, bool*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, MSVCP_bool*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_wchar_do_get_bool(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 52, istreambuf_iterator_wchar*, \
-        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, bool*), \
+        (const num_get*, istreambuf_iterator_wchar*, istreambuf_iterator_wchar, istreambuf_iterator_wchar, ios_base*, int*, MSVCP_bool*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_wchar_do_get_bool,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_bool(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, bool *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, MSVCP_bool *pval)
 {
     return num_get_do_get_bool(this, ret, first, last, base,
             state, pval, numpunct_wchar_use_facet(IOS_LOCALE(base)));
@@ -6107,7 +6181,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_do_get_bool(const num_get *t
 /* ?do_get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_N@Z */
 DEFINE_THISCALL_WRAPPER(num_get_short_do_get_bool,36)
 istreambuf_iterator_wchar *__thiscall num_get_short_do_get_bool(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, bool *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, MSVCP_bool *pval)
 {
     return num_get_do_get_bool(this, ret, first, last, base,
             state, pval, numpunct_short_use_facet(IOS_LOCALE(base)));
@@ -6119,7 +6193,7 @@ istreambuf_iterator_wchar *__thiscall num_get_short_do_get_bool(const num_get *t
 /* ?get@?$num_get@GV?$istreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@GU?$char_traits@G@std@@@2@V32@0AEAVios_base@2@AEAHAEA_N@Z */
 DEFINE_THISCALL_WRAPPER(num_get_wchar_get_bool,36)
 istreambuf_iterator_wchar *__thiscall num_get_wchar_get_bool(const num_get *this, istreambuf_iterator_wchar *ret,
-    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, bool *pval)
+    istreambuf_iterator_wchar first, istreambuf_iterator_wchar last, ios_base *base, int *state, MSVCP_bool *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_wchar_do_get_bool(this, ret, first, last, base, state, pval);
@@ -6129,7 +6203,7 @@ istreambuf_iterator_wchar *__thiscall num_get_wchar_get_bool(const num_get *this
 locale_id num_get_char_id = {0};
 
 /* ??_7?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_get_char_vtable;
+extern const vtable_ptr MSVCP_num_get_char_vtable;
 
 /* ?_Init@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -6146,12 +6220,12 @@ void __thiscall num_get_char__Init(num_get *this, const _Locinfo *locinfo)
 /* ??0?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_char_ctor_locinfo, 12)
 num_get* __thiscall num_get_char_ctor_locinfo(num_get *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &num_get_char_vtable;
+    this->facet.vtable = &MSVCP_num_get_char_vtable;
 
     num_get_char__Init(this, locinfo);
     return this;
@@ -6160,11 +6234,11 @@ num_get* __thiscall num_get_char_ctor_locinfo(num_get *this,
 /* ??0?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_get_char_ctor_refs, 8)
-num_get* __thiscall num_get_char_ctor_refs(num_get *this, size_t refs)
+num_get* __thiscall num_get_char_ctor_refs(num_get *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     num_get_char_ctor_locinfo(this, &locinfo, refs);
@@ -6201,11 +6275,11 @@ num_get* __thiscall num_get_char_vector_dtor(num_get *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             num_get_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         num_get_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -6213,14 +6287,20 @@ num_get* __thiscall num_get_char_vector_dtor(num_get *this, unsigned int flags)
 
 /* ?_Getcat@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_get_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_get_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(num_get));
+        *facet = MSVCRT_operator_new(sizeof(num_get));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         num_get_char_ctor_locinfo((num_get*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -6231,7 +6311,7 @@ size_t __cdecl num_get_char__Getcat(const locale_facet **facet, const locale *lo
 
 /* ?_Getcat@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_get_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_get_char__Getcat_old(const locale_facet **facet)
 {
     return num_get_char__Getcat(facet, locale_classic());
 }
@@ -6921,7 +7001,7 @@ istreambuf_iterator_char *__thiscall num_get_char_do_get_uint(const num_get *thi
     istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, unsigned int *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
-    return num_get_char_do_get_ulong(this, ret, first, last, base, state, (ULONG*)pval);
+    return num_get_char_do_get_ulong(this, ret, first, last, base, state, pval);
 }
 
 /* ?get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QBE?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AAVios_base@2@AAHAAI@Z */
@@ -6988,16 +7068,16 @@ istreambuf_iterator_char *__thiscall num_get_char_get_ushort(const num_get *this
 /* ?do_get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@MEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_N@Z */
 #if _MSVCP_VER <= 100
 #define call_num_get_char_do_get_bool(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 44, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, bool*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, MSVCP_bool*), \
         (this, ret, first, last, base, state, pval))
 #else
 #define call_num_get_char_do_get_bool(this, ret, first, last, base, state, pval) CALL_VTBL_FUNC(this, 52, istreambuf_iterator_char*, \
-        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, bool*), \
+        (const num_get*, istreambuf_iterator_char*, istreambuf_iterator_char, istreambuf_iterator_char, ios_base*, int*, MSVCP_bool*), \
         (this, ret, first, last, base, state, pval))
 #endif
 DEFINE_THISCALL_WRAPPER(num_get_char_do_get_bool,36)
 istreambuf_iterator_char *__thiscall num_get_char_do_get_bool(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, bool *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, MSVCP_bool *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
 
@@ -7065,7 +7145,7 @@ istreambuf_iterator_char *__thiscall num_get_char_do_get_bool(const num_get *thi
 /* ?get@?$num_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEBA?AV?$istreambuf_iterator@DU?$char_traits@D@std@@@2@V32@0AEAVios_base@2@AEAHAEA_N@Z */
 DEFINE_THISCALL_WRAPPER(num_get_char_get_bool,36)
 istreambuf_iterator_char *__thiscall num_get_char_get_bool(const num_get *this, istreambuf_iterator_char *ret,
-    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, bool *pval)
+    istreambuf_iterator_char first, istreambuf_iterator_char last, ios_base *base, int *state, MSVCP_bool *pval)
 {
     TRACE("(%p %p %p %p %p)\n", this, ret, base, state, pval);
     return call_num_get_char_do_get_bool(this, ret, first, last, base, state, pval);
@@ -7075,7 +7155,7 @@ istreambuf_iterator_char *__thiscall num_get_char_get_bool(const num_get *this, 
 locale_id num_put_char_id = {0};
 
 /* num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_put_char_vtable;
+extern const vtable_ptr MSVCP_num_put_char_vtable;
 
 /* ?_Init@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -7091,12 +7171,12 @@ void __thiscall num_put_char__Init(num_put *this, const _Locinfo *locinfo)
 /* ??0?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_char_ctor_locinfo, 12)
-num_put* __thiscall num_put_char_ctor_locinfo(num_put *this, const _Locinfo *locinfo, size_t refs)
+num_put* __thiscall num_put_char_ctor_locinfo(num_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %ld)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &num_put_char_vtable;
+    this->facet.vtable = &MSVCP_num_put_char_vtable;
 
     num_put_char__Init(this, locinfo);
     return this;
@@ -7105,11 +7185,11 @@ num_put* __thiscall num_put_char_ctor_locinfo(num_put *this, const _Locinfo *loc
 /* ??0?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_char_ctor_refs, 8)
-num_put* __thiscall num_put_char_ctor_refs(num_put *this, size_t refs)
+num_put* __thiscall num_put_char_ctor_refs(num_put *this, MSVCP_size_t refs)
 {
      _Locinfo locinfo;
 
-     TRACE("(%p %Iu)\n", this, refs);
+     TRACE("(%p %lu)\n", this, refs);
 
      _Locinfo_ctor(&locinfo);
      num_put_char_ctor_locinfo(this, &locinfo, refs);
@@ -7146,11 +7226,11 @@ num_put* __thiscall num_put_char_vector_dtor(num_put *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             num_put_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         num_put_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -7158,14 +7238,20 @@ num_put* __thiscall num_put_char_vector_dtor(num_put *this, unsigned int flags)
 
 /* ?_Getcat@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_put_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_put_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(num_put));
+        *facet = MSVCRT_operator_new(sizeof(num_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         num_put_char_ctor_locinfo((num_put*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -7176,7 +7262,7 @@ size_t __cdecl num_put_char__Getcat(const locale_facet **facet, const locale *lo
 
 /* ?_Getcat@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_put_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_put_char__Getcat_old(const locale_facet **facet)
 {
     return num_put_char__Getcat(facet, locale_classic());
 }
@@ -7212,9 +7298,9 @@ num_put* num_put_char_use_facet(const locale *loc)
 /* ?_Put@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PBDI@Z */
 /* ?_Put@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PEBD_K@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Put(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, const char *ptr, size_t count)
+        ostreambuf_iterator_char dest, const char *ptr, MSVCP_size_t count)
 {
-    TRACE("(%p %p %p %Iu)\n", this, ret, ptr, count);
+    TRACE("(%p %p %p %ld)\n", this, ret, ptr, count);
 
     for(; count>0; count--)
         ostreambuf_iterator_char_put(&dest, *ptr++);
@@ -7226,9 +7312,9 @@ ostreambuf_iterator_char* __cdecl num_put_char__Put(const num_put *this, ostream
 /* ?_Putc@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PBDI@Z */
 /* ?_Putc@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PEBD_K@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Putc(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, const char *ptr, size_t count)
+        ostreambuf_iterator_char dest, const char *ptr, MSVCP_size_t count)
 {
-    TRACE("(%p %p %p %Iu)\n", this, ret, ptr, count);
+    TRACE("(%p %p %p %ld)\n", this, ret, ptr, count);
 
     for(; count>0; count--)
         ostreambuf_iterator_char_put(&dest, *ptr++);
@@ -7240,18 +7326,18 @@ ostreambuf_iterator_char* __cdecl num_put_char__Putc(const num_put *this, ostrea
 /* ?_Putgrouped@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PBDID@Z */
 /* ?_Putgrouped@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@PEBD_KD@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Putgrouped(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, const char *ptr, size_t count, char delim)
+        ostreambuf_iterator_char dest, const char *ptr, MSVCP_size_t count, char delim)
 {
-    FIXME("(%p %p %p %Iu %d) stub\n", this, ret, ptr, count, delim);
+    FIXME("(%p %p %p %ld %d) stub\n", this, ret, ptr, count, delim);
     return NULL;
 }
 
 /* ?_Rep@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@DI@Z */
 /* ?_Rep@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@D_K@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Rep(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, char c, size_t count)
+        ostreambuf_iterator_char dest, char c, MSVCP_size_t count)
 {
-    TRACE("(%p %p %d %Iu)\n", this, ret, c, count);
+    TRACE("(%p %p %d %ld)\n", this, ret, c, count);
 
     for(; count>0; count--)
         ostreambuf_iterator_char_put(&dest, c);
@@ -7295,17 +7381,17 @@ char* __cdecl num_put_char__Ffmt(const num_put *this, char *fmt, char spec, int 
 /* ?_Fput@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@AAVios_base@2@DPBDIIII@Z */
 /* ?_Fput@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@AEAVios_base@2@DPEBD_K333@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Fput(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, ios_base *base, char fill, const char *buf, size_t bef_point,
-        size_t aft_point, size_t trailing, size_t count)
+        ostreambuf_iterator_char dest, ios_base *base, char fill, const char *buf, MSVCP_size_t bef_point,
+        MSVCP_size_t aft_point, MSVCP_size_t trailing, MSVCP_size_t count)
 {
-    FIXME("(%p %p %p %d %p %Iu %Iu %Iu %Iu) stub\n", this, ret, base,
+    FIXME("(%p %p %p %d %p %ld %ld %ld %ld) stub\n", this, ret, base,
             fill, buf, bef_point, aft_point, trailing, count);
     return NULL;
 }
 
 /* TODO: This function should be removed when num_put_char__Fput is implemented */
 static ostreambuf_iterator_char* num_put_char_fput(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, ios_base *base, char fill, char *buf, size_t count)
+        ostreambuf_iterator_char dest, ios_base *base, char fill, char *buf, MSVCP_size_t count)
 {
     numpunct_char *numpunct = numpunct_char_use_facet(IOS_LOCALE(base));
     basic_string_char grouping_bstr;
@@ -7313,9 +7399,9 @@ static ostreambuf_iterator_char* num_put_char_fput(const num_put *this, ostreamb
     char *p, sep = 0, dec_point = *localeconv()->decimal_point;
     int cur_group = 0, group_size = 0;
     int adjustfield = base->fmtfl & FMTFLAG_adjustfield;
-    size_t pad;
+    MSVCP_size_t pad;
 
-    TRACE("(%p %p %p %d %s %Iu)\n", this, ret, base, fill, buf, count);
+    TRACE("(%p %p %p %d %s %ld)\n", this, ret, base, fill, buf, count);
 
     /* Change decimal point */
     for(p=buf; p<buf+count; p++) {
@@ -7399,7 +7485,7 @@ char* __cdecl num_put_char__Ifmt(const num_put *this, char *fmt, const char *spe
 /* ?_Iput@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@AAVios_base@2@DPADI@Z */
 /* ?_Iput@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@AEAVios_base@2@DPEAD_K@Z */
 ostreambuf_iterator_char* __cdecl num_put_char__Iput(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, ios_base *base, char fill, char *buf, size_t count)
+        ostreambuf_iterator_char dest, ios_base *base, char fill, char *buf, MSVCP_size_t count)
 {
     numpunct_char *numpunct = numpunct_char_use_facet(IOS_LOCALE(base));
     basic_string_char grouping_bstr;
@@ -7407,9 +7493,9 @@ ostreambuf_iterator_char* __cdecl num_put_char__Iput(const num_put *this, ostrea
     char *p, sep = 0;
     int cur_group = 0, group_size = 0;
     int adjustfield = base->fmtfl & FMTFLAG_adjustfield;
-    size_t pad;
+    MSVCP_size_t pad;
 
-    TRACE("(%p %p %p %d %s %Iu)\n", this, ret, base, fill, buf, count);
+    TRACE("(%p %p %p %d %s %ld)\n", this, ret, base, fill, buf, count);
 
     /* Add separators to number */
     numpunct_char_grouping(numpunct, &grouping_bstr);
@@ -7476,7 +7562,7 @@ ostreambuf_iterator_char* __thiscall num_put_char_do_put_long(const num_put *thi
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_char__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_char__Ifmt(this, fmt, "ld", base->fmtfl), v));
@@ -7492,7 +7578,7 @@ DEFINE_THISCALL_WRAPPER(num_put_char_put_long, 32)
 ostreambuf_iterator_char* __thiscall num_put_char_put_long(const num_put *this, ostreambuf_iterator_char *ret,
         ostreambuf_iterator_char dest, ios_base *base, char fill, LONG v)
 {
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_char_do_put_long(this, ret, dest, base, fill, v);
 }
 
@@ -7518,7 +7604,7 @@ ostreambuf_iterator_char* __thiscall num_put_char_do_put_ulong(const num_put *th
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_char__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_char__Ifmt(this, fmt, "lu", base->fmtfl), v));
@@ -7534,7 +7620,7 @@ DEFINE_THISCALL_WRAPPER(num_put_char_put_ulong, 32)
 ostreambuf_iterator_char* __thiscall num_put_char_put_ulong(const num_put *this, ostreambuf_iterator_char *ret,
         ostreambuf_iterator_char dest, ios_base *base, char fill, ULONG v)
 {
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_char_do_put_ulong(this, ret, dest, base, fill, v);
 }
 
@@ -7585,9 +7671,13 @@ ostreambuf_iterator_char* __thiscall num_put_char_do_put_double(const num_put *t
     size = _scprintf(fmt, prec, v);
 
     /* TODO: don't use dynamic allocation */
-    tmp = operator_new(size*2);
+    tmp = MSVCRT_operator_new(size*2);
+    if(!tmp) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     num_put_char_fput(this, ret, dest, base, fill, tmp, sprintf(tmp, fmt, prec, v));
-    operator_delete(tmp);
+    MSVCRT_operator_delete(tmp);
     return ret;
 }
 
@@ -7747,11 +7837,11 @@ ostreambuf_iterator_char* __thiscall num_put_char_put_uint64(const num_put *this
 /* ?do_put@?$num_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@MEBA?AV?$ostreambuf_iterator@DU?$char_traits@D@std@@@2@V32@AEAVios_base@2@D_N@Z */
 #if _MSVCP_VER <= 100
 #define call_num_put_char_do_put_bool(this, ret, dest, base, fill, v) CALL_VTBL_FUNC(this, 32, ostreambuf_iterator_char*, \
-        (const num_put*, ostreambuf_iterator_char*, ostreambuf_iterator_char, ios_base*, char, bool), \
+        (const num_put*, ostreambuf_iterator_char*, ostreambuf_iterator_char, ios_base*, char, MSVCP_bool), \
         (this, ret, dest, base, fill, v))
 #else
 #define call_num_put_char_do_put_bool(this, ret, dest, base, fill, v) CALL_VTBL_FUNC(this, 40, ostreambuf_iterator_char*, \
-        (const num_put*, ostreambuf_iterator_char*, ostreambuf_iterator_char, ios_base*, char, bool), \
+        (const num_put*, ostreambuf_iterator_char*, ostreambuf_iterator_char, ios_base*, char, MSVCP_bool), \
         (this, ret, dest, base, fill, v))
 #endif
 #if _MSVCP_VER != 80
@@ -7760,14 +7850,14 @@ DEFINE_THISCALL_WRAPPER(num_put_char_do_put_bool, 28)
 DEFINE_THISCALL_WRAPPER(num_put_char_do_put_bool, 32)
 #endif
 ostreambuf_iterator_char* __thiscall num_put_char_do_put_bool(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, ios_base *base, char fill, bool v)
+        ostreambuf_iterator_char dest, ios_base *base, char fill, MSVCP_bool v)
 {
     TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     if(base->fmtfl & FMTFLAG_boolalpha) {
         numpunct_char *numpunct = numpunct_char_use_facet(IOS_LOCALE(base));
         basic_string_char str;
-        size_t pad, len;
+        MSVCP_size_t pad, len;
 
         if(v)
             numpunct_char_truename(numpunct, &str);
@@ -7798,7 +7888,7 @@ DEFINE_THISCALL_WRAPPER(num_put_char_put_bool, 28)
 DEFINE_THISCALL_WRAPPER(num_put_char_put_bool, 32)
 #endif
 ostreambuf_iterator_char* __thiscall num_put_char_put_bool(const num_put *this, ostreambuf_iterator_char *ret,
-        ostreambuf_iterator_char dest, ios_base *base, char fill, bool v)
+        ostreambuf_iterator_char dest, ios_base *base, char fill, MSVCP_bool v)
 {
     TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_char_do_put_bool(this, ret, dest, base, fill, v);
@@ -7810,9 +7900,9 @@ locale_id num_put_wchar_id = {0};
 locale_id num_put_short_id = {0};
 
 /* num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_put_wchar_vtable;
+extern const vtable_ptr MSVCP_num_put_wchar_vtable;
 /* num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@6B@ */
-extern const vtable_ptr num_put_short_vtable;
+extern const vtable_ptr MSVCP_num_put_short_vtable;
 
 /* ?_Init@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -7828,12 +7918,12 @@ void __thiscall num_put_wchar__Init(num_put *this, const _Locinfo *locinfo)
 /* ??0?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_wchar_ctor_locinfo, 12)
-num_put* __thiscall num_put_wchar_ctor_locinfo(num_put *this, const _Locinfo *locinfo, size_t refs)
+num_put* __thiscall num_put_wchar_ctor_locinfo(num_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %ld)\n", this, locinfo, refs);
 
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &num_put_wchar_vtable;
+    this->facet.vtable = &MSVCP_num_put_wchar_vtable;
 
     num_put_wchar__Init(this, locinfo);
     return this;
@@ -7842,21 +7932,21 @@ num_put* __thiscall num_put_wchar_ctor_locinfo(num_put *this, const _Locinfo *lo
 /* ??0?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_short_ctor_locinfo, 12)
-num_put* __thiscall num_put_short_ctor_locinfo(num_put *this, const _Locinfo *locinfo, size_t refs)
+num_put* __thiscall num_put_short_ctor_locinfo(num_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
     num_put_wchar_ctor_locinfo(this, locinfo, refs);
-    this->facet.vtable = &num_put_short_vtable;
+    this->facet.vtable = &MSVCP_num_put_short_vtable;
     return this;
 }
 
 /* ??0?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_wchar_ctor_refs, 8)
-num_put* __thiscall num_put_wchar_ctor_refs(num_put *this, size_t refs)
+num_put* __thiscall num_put_wchar_ctor_refs(num_put *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     num_put_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -7867,10 +7957,10 @@ num_put* __thiscall num_put_wchar_ctor_refs(num_put *this, size_t refs)
 /* ??0?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(num_put_short_ctor_refs, 8)
-num_put* __thiscall num_put_short_ctor_refs(num_put *this, size_t refs)
+num_put* __thiscall num_put_short_ctor_refs(num_put *this, MSVCP_size_t refs)
 {
     num_put_wchar_ctor_refs(this, refs);
-    this->facet.vtable = &num_put_short_vtable;
+    this->facet.vtable = &MSVCP_num_put_short_vtable;
     return this;
 }
 
@@ -7913,11 +8003,11 @@ num_put* __thiscall num_put_wchar_vector_dtor(num_put *this, unsigned int flags)
 
         for(i=*ptr-1; i>=0; i--)
             num_put_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         num_put_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -7925,14 +8015,20 @@ num_put* __thiscall num_put_wchar_vector_dtor(num_put *this, unsigned int flags)
 
 /* ?_Getcat@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_put_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_put_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(num_put));
+        *facet = MSVCRT_operator_new(sizeof(num_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         num_put_wchar_ctor_locinfo((num_put*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -7943,21 +8039,27 @@ size_t __cdecl num_put_wchar__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_put_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_put_wchar__Getcat_old(const locale_facet **facet)
 {
     return num_put_wchar__Getcat(facet, locale_classic());
 }
 
 /* ?_Getcat@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl num_put_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl num_put_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(num_put));
+        *facet = MSVCRT_operator_new(sizeof(num_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         num_put_short_ctor_locinfo((num_put*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -7968,7 +8070,7 @@ size_t __cdecl num_put_short__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl num_put_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl num_put_short__Getcat_old(const locale_facet **facet)
 {
     return num_put_short__Getcat(facet, locale_classic());
 }
@@ -8034,9 +8136,9 @@ num_put* num_put_short_use_facet(const locale *loc)
 /* ?_Put@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PBGI@Z */
 /* ?_Put@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PEBG_K@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Put(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, const wchar_t *ptr, size_t count)
+        ostreambuf_iterator_wchar dest, const wchar_t *ptr, MSVCP_size_t count)
 {
-    TRACE("(%p %p %s %Iu)\n", this, ret, debugstr_wn(ptr, count), count);
+    TRACE("(%p %p %s %ld)\n", this, ret, debugstr_wn(ptr, count), count);
 
     for(; count>0; count--)
         ostreambuf_iterator_wchar_put(&dest, *ptr++);
@@ -8051,12 +8153,12 @@ ostreambuf_iterator_wchar* __cdecl num_put_wchar__Put(const num_put *this, ostre
 /* ?_Putc@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PBDI@Z */
 /* ?_Putc@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PEBD_K@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Putc(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, const char *ptr, size_t count)
+        ostreambuf_iterator_wchar dest, const char *ptr, MSVCP_size_t count)
 {
     _Mbstatet state;
     wchar_t ch;
 
-    TRACE("(%p %p %s %Iu)\n", this, ret, debugstr_an(ptr, count), count);
+    TRACE("(%p %p %s %ld)\n", this, ret, debugstr_an(ptr, count), count);
 
     memset(&state, 0, sizeof(state));
     for(; count>0; count--) {
@@ -8074,9 +8176,9 @@ ostreambuf_iterator_wchar* __cdecl num_put_wchar__Putc(const num_put *this, ostr
 /* ?_Putgrouped@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PBDIG@Z */
 /* ?_Putgrouped@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@PEBD_KG@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Putgrouped(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, const char *ptr, size_t count, wchar_t delim)
+        ostreambuf_iterator_wchar dest, const char *ptr, MSVCP_size_t count, wchar_t delim)
 {
-    FIXME("(%p %p %p %Iu %d) stub\n", this, ret, ptr, count, delim);
+    FIXME("(%p %p %p %ld %d) stub\n", this, ret, ptr, count, delim);
     return NULL;
 }
 
@@ -8085,9 +8187,9 @@ ostreambuf_iterator_wchar* __cdecl num_put_wchar__Putgrouped(const num_put *this
 /* ?_Rep@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@GI@Z */
 /* ?_Rep@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@G_K@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Rep(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, wchar_t c, size_t count)
+        ostreambuf_iterator_wchar dest, wchar_t c, MSVCP_size_t count)
 {
-    TRACE("(%p %p %d %Iu)\n", this, ret, c, count);
+    TRACE("(%p %p %d %ld)\n", this, ret, c, count);
 
     for(; count>0; count--)
         ostreambuf_iterator_wchar_put(&dest, c);
@@ -8133,10 +8235,10 @@ char* __cdecl num_put_wchar__Ffmt(const num_put *this, char *fmt, char spec, int
 /* ?_Fput@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@AAVios_base@2@_WPBDIIII@Z */
 /* ?_Fput@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@AEAVios_base@2@_WPEBD_K444@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Fput(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, const char *buf, size_t bef_point,
-        size_t aft_point, size_t trailing, size_t count)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, const char *buf, MSVCP_size_t bef_point,
+        MSVCP_size_t aft_point, MSVCP_size_t trailing, MSVCP_size_t count)
 {
-    FIXME("(%p %p %p %d %p %Iu %Iu %Iu %Iu) stub\n", this, ret, base,
+    FIXME("(%p %p %p %d %p %ld %ld %ld %ld) stub\n", this, ret, base,
             fill, buf, bef_point, aft_point, trailing, count);
     return NULL;
 }
@@ -8144,10 +8246,10 @@ ostreambuf_iterator_wchar* __cdecl num_put_wchar__Fput(const num_put *this, ostr
 /* ?_Fput@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@AAVios_base@2@GPBDIIII@Z */
 /* ?_Fput@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@AEAVios_base@2@GPEBD_K333@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_short__Fput(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, const char *buf, size_t bef_point,
-        size_t aft_point, size_t trailing, size_t count)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, const char *buf, MSVCP_size_t bef_point,
+        MSVCP_size_t aft_point, MSVCP_size_t trailing, MSVCP_size_t count)
 {
-    FIXME("(%p %p %p %d %p %Iu %Iu %Iu %Iu) stub\n", this, ret, base,
+    FIXME("(%p %p %p %d %p %ld %ld %ld %ld) stub\n", this, ret, base,
             fill, buf, bef_point, aft_point, trailing, count);
     return NULL;
 }
@@ -8155,17 +8257,17 @@ ostreambuf_iterator_wchar* __cdecl num_put_short__Fput(const num_put *this, ostr
 #if _MSVCP_VER < 110
 static void num_put_wchar_wide_put(const num_put *this,
         ostreambuf_iterator_wchar *dest, ios_base *base,
-        const char *buf, size_t count)
+        const char *buf, MSVCP_size_t count)
 {
     num_put_wchar__Putc(this, dest, *dest, buf, count);
 }
 #else
 static void num_put_wchar_wide_put(const num_put *this,
         ostreambuf_iterator_wchar *dest, ios_base *base,
-                const char *buf, size_t count)
+                const char *buf, MSVCP_size_t count)
 {
     ctype_wchar *ctype;
-    size_t i;
+    MSVCP_size_t i;
 
     ctype = ctype_wchar_use_facet(IOS_LOCALE(base));
     for(i=0; i<count; i++)
@@ -8176,7 +8278,7 @@ static void num_put_wchar_wide_put(const num_put *this,
 /* TODO: This function should be removed when num_put_wchar__Fput is implemented */
 static ostreambuf_iterator_wchar* num_put__fput(const num_put *this, ostreambuf_iterator_wchar *ret,
         ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf,
-        size_t count, numpunct_wchar *numpunct)
+        MSVCP_size_t count, numpunct_wchar *numpunct)
 {
     basic_string_char grouping_bstr;
     const char *grouping;
@@ -8184,9 +8286,9 @@ static ostreambuf_iterator_wchar* num_put__fput(const num_put *this, ostreambuf_
     wchar_t sep = 0;
     int cur_group = 0, group_size = 0;
     int adjustfield = base->fmtfl & FMTFLAG_adjustfield;
-    size_t i, pad;
+    MSVCP_size_t i, pad;
 
-    TRACE("(%p %p %p %d %s %Iu)\n", this, ret, base, fill, buf, count);
+    TRACE("(%p %p %p %d %s %ld)\n", this, ret, base, fill, buf, count);
 
     for(p=buf; p<buf+count; p++) {
         if(*p == dec_point)
@@ -8277,7 +8379,7 @@ char* __cdecl num_put_wchar__Ifmt(const num_put *this, char *fmt, const char *sp
 
 static ostreambuf_iterator_wchar* num_put__Iput(const num_put *this, ostreambuf_iterator_wchar *ret,
         ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf,
-        size_t count, numpunct_wchar *numpunct)
+        MSVCP_size_t count, numpunct_wchar *numpunct)
 {
     basic_string_char grouping_bstr;
     const char *grouping;
@@ -8285,9 +8387,9 @@ static ostreambuf_iterator_wchar* num_put__Iput(const num_put *this, ostreambuf_
     wchar_t sep;
     int cur_group = 0, group_size = 0;
     int adjustfield = base->fmtfl & FMTFLAG_adjustfield;
-    size_t i, pad;
+    MSVCP_size_t i, pad;
 
-    TRACE("(%p %p %p %d %s %Iu)\n", this, ret, base, fill, buf, count);
+    TRACE("(%p %p %p %d %s %ld)\n", this, ret, base, fill, buf, count);
 
     /* Add separators to number */
     numpunct_wchar_grouping(numpunct, &grouping_bstr);
@@ -8340,7 +8442,7 @@ static ostreambuf_iterator_wchar* num_put__Iput(const num_put *this, ostreambuf_
 /* ?_Iput@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@AAVios_base@2@_WPADI@Z */
 /* ?_Iput@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@AEAVios_base@2@_WPEAD_K@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_wchar__Iput(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf, size_t count)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf, MSVCP_size_t count)
 {
     return num_put__Iput(this, ret, dest, base, fill, buf, count, numpunct_wchar_use_facet(IOS_LOCALE(base)));
 }
@@ -8348,7 +8450,7 @@ ostreambuf_iterator_wchar* __cdecl num_put_wchar__Iput(const num_put *this, ostr
 /* ?_Iput@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@ABA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@AAVios_base@2@GPADI@Z */
 /* ?_Iput@?$num_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@AEBA?AV?$ostreambuf_iterator@GU?$char_traits@G@std@@@2@V32@AEAVios_base@2@GPEAD_K@Z */
 ostreambuf_iterator_wchar* __cdecl num_put_short__Iput(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf, size_t count)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, char *buf, MSVCP_size_t count)
 {
     return num_put__Iput(this, ret, dest, base, fill, buf, count, numpunct_short_use_facet(IOS_LOCALE(base)));
 }
@@ -8375,7 +8477,7 @@ ostreambuf_iterator_wchar* __thiscall num_put_wchar_do_put_long(const num_put *t
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_wchar__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_wchar__Ifmt(this, fmt, "ld", base->fmtfl), v));
@@ -8394,7 +8496,7 @@ ostreambuf_iterator_wchar* __thiscall num_put_short_do_put_long(const num_put *t
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_short__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_wchar__Ifmt(this, fmt, "ld", base->fmtfl), v));
@@ -8412,7 +8514,7 @@ DEFINE_THISCALL_WRAPPER(num_put_wchar_put_long, 32)
 ostreambuf_iterator_wchar* __thiscall num_put_wchar_put_long(const num_put *this, ostreambuf_iterator_wchar *ret,
         ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, LONG v)
 {
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_wchar_do_put_long(this, ret, dest, base, fill, v);
 }
 
@@ -8438,7 +8540,7 @@ ostreambuf_iterator_wchar* __thiscall num_put_wchar_do_put_ulong(const num_put *
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_wchar__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_wchar__Ifmt(this, fmt, "lu", base->fmtfl), v));
@@ -8457,7 +8559,7 @@ ostreambuf_iterator_wchar* __thiscall num_put_short_do_put_ulong(const num_put *
     char tmp[48]; /* 22(8^22>2^64)*2(separators between every digit) + 3(strlen("+0x"))+1 */
     char fmt[7]; /* strlen("%+#lld")+1 */
 
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     return num_put_short__Iput(this, ret, dest, base, fill, tmp,
             sprintf(tmp, num_put_wchar__Ifmt(this, fmt, "lu", base->fmtfl), v));
@@ -8475,7 +8577,7 @@ DEFINE_THISCALL_WRAPPER(num_put_wchar_put_ulong, 32)
 ostreambuf_iterator_wchar* __thiscall num_put_wchar_put_ulong(const num_put *this, ostreambuf_iterator_wchar *ret,
         ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, ULONG v)
 {
-    TRACE("(%p %p %p %d %ld)\n", this, ret, base, fill, v);
+    TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_wchar_do_put_ulong(this, ret, dest, base, fill, v);
 }
 
@@ -8518,10 +8620,14 @@ ostreambuf_iterator_wchar* __thiscall num_put_wchar_do_put_double(const num_put 
     size = _scprintf(fmt, prec, v);
 
     /* TODO: don't use dynamic allocation */
-    tmp = operator_new(size*2);
+    tmp = MSVCRT_operator_new(size*2);
+    if(!tmp) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     num_put__fput(this, ret, dest, base, fill, tmp, sprintf(tmp, fmt, prec, v),
             numpunct_wchar_use_facet(IOS_LOCALE(base)));
-    operator_delete(tmp);
+    MSVCRT_operator_delete(tmp);
     return ret;
 }
 
@@ -8549,10 +8655,14 @@ ostreambuf_iterator_wchar* __thiscall num_put_short_do_put_double(const num_put 
     size = _scprintf(fmt, prec, v);
 
     /* TODO: don't use dynamic allocation */
-    tmp = operator_new(size*2);
+    tmp = MSVCRT_operator_new(size*2);
+    if(!tmp) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     num_put__fput(this, ret, dest, base, fill, tmp, sprintf(tmp, fmt, prec, v),
             numpunct_short_use_facet(IOS_LOCALE(base)));
-    operator_delete(tmp);
+    MSVCRT_operator_delete(tmp);
     return ret;
 }
 
@@ -8777,11 +8887,11 @@ ostreambuf_iterator_wchar* __thiscall num_put_wchar_put_uint64(const num_put *th
 /* ?do_put@?$num_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@MEBA?AV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@2@V32@AEAVios_base@2@_W_N@Z */
 #if _MSVCP_VER <= 100
 #define call_num_put_wchar_do_put_bool(this, ret, dest, base, fill, v) CALL_VTBL_FUNC(this, 32, ostreambuf_iterator_wchar*, \
-        (const num_put*, ostreambuf_iterator_wchar*, ostreambuf_iterator_wchar, ios_base*, wchar_t, bool), \
+        (const num_put*, ostreambuf_iterator_wchar*, ostreambuf_iterator_wchar, ios_base*, wchar_t, MSVCP_bool), \
         (this, ret, dest, base, fill, v))
 #else
 #define call_num_put_wchar_do_put_bool(this, ret, dest, base, fill, v) CALL_VTBL_FUNC(this, 40, ostreambuf_iterator_wchar*, \
-        (const num_put*, ostreambuf_iterator_wchar*, ostreambuf_iterator_wchar, ios_base*, wchar_t, bool), \
+        (const num_put*, ostreambuf_iterator_wchar*, ostreambuf_iterator_wchar, ios_base*, wchar_t, MSVCP_bool), \
         (this, ret, dest, base, fill, v))
 #endif
 #if _MSVCP_VER != 80
@@ -8790,14 +8900,14 @@ DEFINE_THISCALL_WRAPPER(num_put_wchar_do_put_bool, 28)
 DEFINE_THISCALL_WRAPPER(num_put_wchar_do_put_bool, 32)
 #endif
 ostreambuf_iterator_wchar* __thiscall num_put_wchar_do_put_bool(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, bool v)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, MSVCP_bool v)
 {
     TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     if(base->fmtfl & FMTFLAG_boolalpha) {
         numpunct_wchar *numpunct = numpunct_wchar_use_facet(IOS_LOCALE(base));
         basic_string_wchar str;
-        size_t pad, len;
+        MSVCP_size_t pad, len;
 
         if(v)
             numpunct_wchar_truename(numpunct, &str);
@@ -8828,14 +8938,14 @@ DEFINE_THISCALL_WRAPPER(num_put_short_do_put_bool, 28)
 DEFINE_THISCALL_WRAPPER(num_put_short_do_put_bool, 32)
 #endif
 ostreambuf_iterator_wchar* __thiscall num_put_short_do_put_bool(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, bool v)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, MSVCP_bool v)
 {
     TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
 
     if(base->fmtfl & FMTFLAG_boolalpha) {
         numpunct_wchar *numpunct = numpunct_short_use_facet(IOS_LOCALE(base));
         basic_string_wchar str;
-        size_t pad, len;
+        MSVCP_size_t pad, len;
 
         if(v)
             numpunct_wchar_truename(numpunct, &str);
@@ -8868,7 +8978,7 @@ DEFINE_THISCALL_WRAPPER(num_put_wchar_put_bool, 28)
 DEFINE_THISCALL_WRAPPER(num_put_wchar_put_bool, 32)
 #endif
 ostreambuf_iterator_wchar* __thiscall num_put_wchar_put_bool(const num_put *this, ostreambuf_iterator_wchar *ret,
-        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, bool v)
+        ostreambuf_iterator_wchar dest, ios_base *base, wchar_t fill, MSVCP_bool v)
 {
     TRACE("(%p %p %p %d %d)\n", this, ret, base, fill, v);
     return call_num_put_wchar_do_put_bool(this, ret, dest, base, fill, v);
@@ -8878,7 +8988,7 @@ ostreambuf_iterator_wchar* __thiscall num_put_wchar_put_bool(const num_put *this
 locale_id time_put_char_id = {0};
 
 /* ??_7?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@6B@ */
-extern const vtable_ptr time_put_char_vtable;
+extern const vtable_ptr MSVCP_time_put_char_vtable;
 
 /* ?_Init@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -8895,11 +9005,11 @@ void __thiscall time_put_char__Init(time_put *this, const _Locinfo *locinfo)
 /* ??0?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_char_ctor_locinfo, 12)
-time_put* __thiscall time_put_char_ctor_locinfo(time_put *this, const _Locinfo *locinfo, size_t refs)
+time_put* __thiscall time_put_char_ctor_locinfo(time_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &time_put_char_vtable;
+    this->facet.vtable = &MSVCP_time_put_char_vtable;
     time_put_char__Init(this, locinfo);
     return this;
 }
@@ -8907,11 +9017,11 @@ time_put* __thiscall time_put_char_ctor_locinfo(time_put *this, const _Locinfo *
 /* ??0?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_char_ctor_refs, 8)
-time_put* __thiscall time_put_char_ctor_refs(time_put *this, size_t refs)
+time_put* __thiscall time_put_char_ctor_refs(time_put *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     time_put_char_ctor_locinfo(this, &locinfo, refs);
@@ -8946,11 +9056,11 @@ time_put* __thiscall time_put_char_vector_dtor(time_put *this, unsigned int flag
 
         for(i=*ptr-1; i>=0; i--)
             time_put_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         time_put_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -8958,14 +9068,20 @@ time_put* __thiscall time_put_char_vector_dtor(time_put *this, unsigned int flag
 
 /* ?_Getcat@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl time_put_char__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl time_put_char__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(time_put));
+        *facet = MSVCRT_operator_new(sizeof(time_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         time_put_char_ctor_locinfo((time_put*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -8976,7 +9092,7 @@ size_t __cdecl time_put_char__Getcat(const locale_facet **facet, const locale *l
 
 /* ?_Getcat@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$time_put@DV?$ostreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl time_put_char__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl time_put_char__Getcat_old(const locale_facet **facet)
 {
     return time_put_char__Getcat(facet, locale_classic());
 }
@@ -9031,7 +9147,7 @@ ostreambuf_iterator_char* __thiscall time_put_char_do_put(const time_put *this, 
         ostreambuf_iterator_char dest, ios_base *base, char fill, const struct tm *t, char spec, char mod)
 {
     char buf[64], fmt[4], *p = fmt;
-    size_t i, len;
+    MSVCP_size_t i, len;
 
     TRACE("(%p %p %p %c %p %c %c)\n", this, ret, base, fill, t, spec, mod);
 
@@ -9113,7 +9229,7 @@ ostreambuf_iterator_char* __thiscall time_put_char_do_put(const time_put *this, 
         ostreambuf_iterator_char dest, ios_base *base, const struct tm *t, char spec, char mod)
 {
     char buf[64], fmt[4], *p = fmt;
-    size_t i, len;
+    MSVCP_size_t i, len;
 
     TRACE("(%p %p %p %p %c %c)\n", this, ret, base, t, spec, mod);
 
@@ -9183,9 +9299,9 @@ locale_id time_put_wchar_id = {0};
 locale_id time_put_short_id = {0};
 
 /* ??_7?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@6B@ */
-extern const vtable_ptr time_put_wchar_vtable;
+extern const vtable_ptr MSVCP_time_put_wchar_vtable;
 /* ??_7?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@6B@ */
-extern const vtable_ptr time_put_short_vtable;
+extern const vtable_ptr MSVCP_time_put_short_vtable;
 
 /* ?_Init@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -9204,11 +9320,11 @@ void __thiscall time_put_wchar__Init(time_put *this, const _Locinfo *locinfo)
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_wchar_ctor_locinfo, 12)
-time_put* __thiscall time_put_wchar_ctor_locinfo(time_put *this, const _Locinfo *locinfo, size_t refs)
+time_put* __thiscall time_put_wchar_ctor_locinfo(time_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &time_put_wchar_vtable;
+    this->facet.vtable = &MSVCP_time_put_wchar_vtable;
     time_put_wchar__Init(this, locinfo);
     return this;
 }
@@ -9216,21 +9332,21 @@ time_put* __thiscall time_put_wchar_ctor_locinfo(time_put *this, const _Locinfo 
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QAE@ABV_Locinfo@1@I@Z */
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_short_ctor_locinfo, 12)
-time_put* __thiscall time_put_short_ctor_locinfo(time_put *this, const _Locinfo *locinfo, size_t refs)
+time_put* __thiscall time_put_short_ctor_locinfo(time_put *this, const _Locinfo *locinfo, MSVCP_size_t refs)
 {
     time_put_wchar_ctor_locinfo(this, locinfo, refs);
-    this->facet.vtable = &time_put_short_vtable;
+    this->facet.vtable = &MSVCP_time_put_short_vtable;
     return this;
 }
 
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IAE@PBDI@Z */
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_wchar_ctor_name, 12)
-time_put* __thiscall time_put_wchar_ctor_name(time_put *this, const char *name, size_t refs)
+time_put* __thiscall time_put_wchar_ctor_name(time_put *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, debugstr_a(name), refs);
+    TRACE("(%p %s %lu)\n", this, debugstr_a(name), refs);
 
     _Locinfo_ctor_cstr(&locinfo, name);
     time_put_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -9241,21 +9357,21 @@ time_put* __thiscall time_put_wchar_ctor_name(time_put *this, const char *name, 
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@IAE@PBDI@Z */
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_short_ctor_name, 12)
-time_put* __thiscall time_put_short_ctor_name(time_put *this, const char *name, size_t refs)
+time_put* __thiscall time_put_short_ctor_name(time_put *this, const char *name, MSVCP_size_t refs)
 {
     time_put_wchar_ctor_name(this, name, refs);
-    this->facet.vtable = &time_put_short_vtable;
+    this->facet.vtable = &MSVCP_time_put_short_vtable;
     return this;
 }
 
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_wchar_ctor_refs, 8)
-time_put* __thiscall time_put_wchar_ctor_refs(time_put *this, size_t refs)
+time_put* __thiscall time_put_wchar_ctor_refs(time_put *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     time_put_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -9266,10 +9382,10 @@ time_put* __thiscall time_put_wchar_ctor_refs(time_put *this, size_t refs)
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_put_short_ctor_refs, 8)
-time_put* __thiscall time_put_short_ctor_refs(time_put *this, size_t refs)
+time_put* __thiscall time_put_short_ctor_refs(time_put *this, MSVCP_size_t refs)
 {
     time_put_wchar_ctor_refs(this, refs);
-    this->facet.vtable = &time_put_short_vtable;
+    this->facet.vtable = &MSVCP_time_put_short_vtable;
     return this;
 }
 
@@ -9287,7 +9403,7 @@ DEFINE_THISCALL_WRAPPER(time_put_short_ctor, 4)
 time_put* __thiscall time_put_short_ctor(time_put *this)
 {
     time_put_wchar_ctor(this);
-    this->facet.vtable = &time_put_short_vtable;
+    this->facet.vtable = &MSVCP_time_put_short_vtable;
     return this;
 }
 
@@ -9312,11 +9428,11 @@ time_put* __thiscall time_put_wchar_vector_dtor(time_put *this, unsigned int fla
 
         for(i=*ptr-1; i>=0; i--)
             time_put_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         time_put_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -9324,12 +9440,17 @@ time_put* __thiscall time_put_wchar_vector_dtor(time_put *this, unsigned int fla
 
 /* ?_Getcat@?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl time_put_wchar__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl time_put_wchar__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(time_put));
+        *facet = MSVCRT_operator_new(sizeof(time_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         time_put_wchar_ctor_name((time_put*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0);
     }
@@ -9339,7 +9460,7 @@ size_t __cdecl time_put_wchar__Getcat(const locale_facet **facet, const locale *
 
 /* ?_Getcat@?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$time_put@_WV?$ostreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl time_put_wchar__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl time_put_wchar__Getcat_old(const locale_facet **facet)
 {
     return time_put_wchar__Getcat(facet, locale_classic());
 }
@@ -9374,12 +9495,17 @@ static time_put* time_put_wchar_use_facet(const locale *loc)
 
 /* ?_Getcat@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@PBV42@@Z */
 /* ?_Getcat@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@PEBV42@@Z */
-size_t __cdecl time_put_short__Getcat(const locale_facet **facet, const locale *loc)
+MSVCP_size_t __cdecl time_put_short__Getcat(const locale_facet **facet, const locale *loc)
 {
     TRACE("(%p %p)\n", facet, loc);
 
     if(facet && !*facet) {
-        *facet = operator_new(sizeof(time_put));
+        *facet = MSVCRT_operator_new(sizeof(time_put));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
         time_put_short_ctor_name((time_put*)*facet,
                 locale_string_char_c_str(&loc->ptr->name), 0);
     }
@@ -9389,7 +9515,7 @@ size_t __cdecl time_put_short__Getcat(const locale_facet **facet, const locale *
 
 /* ?_Getcat@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SAIPAPBVfacet@locale@2@@Z */
 /* ?_Getcat@?$time_put@GV?$ostreambuf_iterator@GU?$char_traits@G@std@@@std@@@std@@SA_KPEAPEBVfacet@locale@2@@Z */
-size_t __cdecl time_put_short__Getcat_old(const locale_facet **facet)
+MSVCP_size_t __cdecl time_put_short__Getcat_old(const locale_facet **facet)
 {
     return time_put_short__Getcat(facet, locale_classic());
 }
@@ -9447,7 +9573,7 @@ ostreambuf_iterator_wchar* __thiscall time_put_wchar_do_put(const time_put *this
         wchar_t fill, const struct tm *t, char spec, char mod)
 {
     char buf[64], fmt[4], *p = fmt;
-    size_t i, len;
+    MSVCP_size_t i, len;
     const _Cvtvec *cvt;
     wchar_t c;
 
@@ -9559,7 +9685,7 @@ ostreambuf_iterator_wchar* __thiscall time_put_wchar_do_put(const time_put *this
         const struct tm *t, char spec, char mod)
 {
     char buf[64], fmt[4], *p = fmt;
-    size_t i, len;
+    MSVCP_size_t i, len;
     wchar_t c;
 
     TRACE("(%p %p %p %p %c %c)\n", this, ret, base, t, spec, mod);
@@ -9637,7 +9763,7 @@ ostreambuf_iterator_wchar* __thiscall time_put_wchar_put_format(const time_put *
 locale_id time_get_char_id = {0};
 
 /* ??_7?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@6B@ */
-extern const vtable_ptr time_get_char_vtable;
+extern const vtable_ptr MSVCP_time_get_char_vtable;
 
 /* ?_Init@?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IAEXABV_Locinfo@2@@Z */
 /* ?_Init@?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IEAAXAEBV_Locinfo@2@@Z */
@@ -9652,12 +9778,24 @@ void __thiscall time_get_char__Init(time_get_char *this, const _Locinfo *locinfo
 
     days = _Locinfo__Getdays(locinfo);
     len = strlen(days)+1;
-    this->days = operator_new(len);
+    this->days = MSVCRT_operator_new(len);
+    if(!this->days)
+    {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     memcpy((char*)this->days, days, len);
 
     months = _Locinfo__Getmonths(locinfo);
     len = strlen(months)+1;
-    this->months = operator_new(len);
+    this->months = MSVCRT_operator_new(len);
+    if(!this->months)
+    {
+        MSVCRT_operator_delete((char*)this->days);
+
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     memcpy((char*)this->months, months, len);
 
     this->dateorder = _Locinfo__Getdateorder(locinfo);
@@ -9668,11 +9806,11 @@ void __thiscall time_get_char__Init(time_get_char *this, const _Locinfo *locinfo
 /* ??0?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_char_ctor_locinfo, 12)
 time_get_char* __thiscall time_get_char_ctor_locinfo(time_get_char *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &time_get_char_vtable;
+    this->facet.vtable = &MSVCP_time_get_char_vtable;
     time_get_char__Init(this, locinfo);
     return this;
 }
@@ -9680,11 +9818,11 @@ time_get_char* __thiscall time_get_char_ctor_locinfo(time_get_char *this,
 /* ??0?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IAE@PBDI@Z */
 /* ??0?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_char_ctor_name, 12)
-time_get_char* __thiscall time_get_char_ctor_name(time_get_char *this, const char *name, size_t refs)
+time_get_char* __thiscall time_get_char_ctor_name(time_get_char *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, name, refs);
+    TRACE("(%p %s %lu)\n", this, name, refs);
 
     _Locinfo_ctor_cstr(&locinfo, name);
     time_get_char_ctor_locinfo(this, &locinfo, refs);
@@ -9695,11 +9833,11 @@ time_get_char* __thiscall time_get_char_ctor_name(time_get_char *this, const cha
 /* ??0?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_char_ctor_refs, 8)
-time_get_char* __thiscall time_get_char_ctor_refs(time_get_char *this, size_t refs)
+time_get_char* __thiscall time_get_char_ctor_refs(time_get_char *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     time_get_char_ctor_locinfo(this, &locinfo, refs);
@@ -9722,8 +9860,8 @@ void __thiscall time_get_char__Tidy(time_get_char *this)
 {
     TRACE("(%p)\n", this);
 
-    operator_delete((char*)this->days);
-    operator_delete((char*)this->months);
+    MSVCRT_operator_delete((char*)this->days);
+    MSVCRT_operator_delete((char*)this->months);
 }
 
 /* ??1?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@MAE@XZ */
@@ -9746,11 +9884,11 @@ time_get_char* __thiscall time_get_char_vector_dtor(time_get_char *this, unsigne
 
         for(i=*ptr-1; i>=0; i--)
             time_get_char_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         time_get_char_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -9765,7 +9903,13 @@ unsigned int __cdecl time_get_char__Getcat(const locale_facet **facet, const loc
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(time_get_char));
+        *facet = MSVCRT_operator_new(sizeof(time_get_char));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         time_get_char_ctor_locinfo((time_get_char*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -10494,7 +10638,7 @@ istreambuf_iterator_char* __thiscall time_get_char_get_fmt(const time_get_char *
 locale_id time_get_wchar_id = {0};
 
 /* ??_7?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@6B@ */
-extern const vtable_ptr time_get_wchar_vtable;
+extern const vtable_ptr MSVCP_time_get_wchar_vtable;
 
 #if _MSVCP_VER >=110
 static wchar_t* create_time_get_str(const wchar_t *str)
@@ -10503,8 +10647,9 @@ static wchar_t* create_time_get_str(const wchar_t *str)
     int len;
 
     len = lstrlenW(str)+1;
-    ret = operator_new(len * sizeof(wchar_t));
-    memcpy(ret, str, len*sizeof(wchar_t));
+    ret = MSVCRT_operator_new(len * sizeof(wchar_t));
+    if(ret)
+        memcpy(ret, str, len*sizeof(wchar_t));
     return ret;
 }
 #else
@@ -10516,8 +10661,9 @@ static wchar_t* create_time_get_str(const char *str, const _Locinfo *locinfo)
 
     _Locinfo__Getcvt(locinfo, &cvt);
     len = MultiByteToWideChar(cvt.page, 0, str, -1, NULL, 0);
-    ret = operator_new(len*sizeof(WCHAR));
-    MultiByteToWideChar(cvt.page, 0, str, -1, ret, len);
+    ret = MSVCRT_operator_new(len*sizeof(WCHAR));
+    if(ret)
+        MultiByteToWideChar(cvt.page, 0, str, -1, ret, len);
     return ret;
 }
 #endif
@@ -10534,12 +10680,24 @@ void __thiscall time_get_wchar__Init(time_get_wchar *this, const _Locinfo *locin
 #else
     this->days = create_time_get_str(_Locinfo__Getdays(locinfo), locinfo);
 #endif
+    if(!this->days)
+    {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
 
 #if _MSVCP_VER >=110
     this->months = create_time_get_str(_Locinfo__W_Getmonths(locinfo));
 #else
     this->months = create_time_get_str(_Locinfo__Getmonths(locinfo), locinfo);
 #endif
+    if(!this->months)
+    {
+        MSVCRT_operator_delete((wchar_t*)this->days);
+
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
 
     this->dateorder = _Locinfo__Getdateorder(locinfo);
     _Locinfo__Getcvt(locinfo, &this->cvt);
@@ -10549,11 +10707,11 @@ void __thiscall time_get_wchar__Init(time_get_wchar *this, const _Locinfo *locin
 /* ??0?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@AEBV_Locinfo@1@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_wchar_ctor_locinfo, 12)
 time_get_wchar* __thiscall time_get_wchar_ctor_locinfo(time_get_wchar *this,
-        const _Locinfo *locinfo, size_t refs)
+        const _Locinfo *locinfo, MSVCP_size_t refs)
 {
-    TRACE("(%p %p %Iu)\n", this, locinfo, refs);
+    TRACE("(%p %p %lu)\n", this, locinfo, refs);
     locale_facet_ctor_refs(&this->facet, refs);
-    this->facet.vtable = &time_get_wchar_vtable;
+    this->facet.vtable = &MSVCP_time_get_wchar_vtable;
     time_get_wchar__Init(this, locinfo);
     return this;
 }
@@ -10561,11 +10719,11 @@ time_get_wchar* __thiscall time_get_wchar_ctor_locinfo(time_get_wchar *this,
 /* ??0?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IAE@PBDI@Z */
 /* ??0?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@IEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_wchar_ctor_name, 12)
-time_get_wchar* __thiscall time_get_wchar_ctor_name(time_get_wchar *this, const char *name, size_t refs)
+time_get_wchar* __thiscall time_get_wchar_ctor_name(time_get_wchar *this, const char *name, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %s %Iu)\n", this, name, refs);
+    TRACE("(%p %s %lu)\n", this, name, refs);
 
     _Locinfo_ctor_cstr(&locinfo, name);
     time_get_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -10576,11 +10734,11 @@ time_get_wchar* __thiscall time_get_wchar_ctor_name(time_get_wchar *this, const 
 /* ??0?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QAE@I@Z */
 /* ??0?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@QEAA@_K@Z */
 DEFINE_THISCALL_WRAPPER(time_get_wchar_ctor_refs, 8)
-time_get_wchar* __thiscall time_get_wchar_ctor_refs(time_get_wchar *this, size_t refs)
+time_get_wchar* __thiscall time_get_wchar_ctor_refs(time_get_wchar *this, MSVCP_size_t refs)
 {
     _Locinfo locinfo;
 
-    TRACE("(%p %Iu)\n", this, refs);
+    TRACE("(%p %lu)\n", this, refs);
 
     _Locinfo_ctor(&locinfo);
     time_get_wchar_ctor_locinfo(this, &locinfo, refs);
@@ -10603,8 +10761,8 @@ void __thiscall time_get_wchar__Tidy(time_get_wchar *this)
 {
     TRACE("(%p)\n", this);
 
-    operator_delete((wchar_t*)this->days);
-    operator_delete((wchar_t*)this->months);
+    MSVCRT_operator_delete((wchar_t*)this->days);
+    MSVCRT_operator_delete((wchar_t*)this->months);
 }
 
 /* ??1?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@MAE@XZ */
@@ -10627,11 +10785,11 @@ time_get_wchar* __thiscall time_get_wchar_vector_dtor(time_get_wchar *this, unsi
 
         for(i=*ptr-1; i>=0; i--)
             time_get_wchar_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         time_get_wchar_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -10646,7 +10804,13 @@ unsigned int __cdecl time_get_wchar__Getcat(const locale_facet **facet, const lo
     if(facet && !*facet) {
         _Locinfo locinfo;
 
-        *facet = operator_new(sizeof(time_get_wchar));
+        *facet = MSVCRT_operator_new(sizeof(time_get_wchar));
+        if(!*facet) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return 0;
+        }
+
         _Locinfo_ctor_cstr(&locinfo, locale_string_char_c_str(&loc->ptr->name));
         time_get_wchar_ctor_locinfo((time_get_wchar*)*facet, &locinfo, 0);
         _Locinfo_dtor(&locinfo);
@@ -11372,18 +11536,18 @@ istreambuf_iterator_wchar* __thiscall time_get_wchar_get_fmt(const time_get_wcha
 }
 
 /* ??_7_Locimp@locale@std@@6B@ */
-extern const vtable_ptr locale__Locimp_vtable;
+extern const vtable_ptr MSVCP_locale__Locimp_vtable;
 
 /* ??0_Locimp@locale@std@@AAE@_N@Z */
 /* ??0_Locimp@locale@std@@AEAA@_N@Z */
 DEFINE_THISCALL_WRAPPER(locale__Locimp_ctor_transparent, 8)
-locale__Locimp* __thiscall locale__Locimp_ctor_transparent(locale__Locimp *this, bool transparent)
+locale__Locimp* __thiscall locale__Locimp_ctor_transparent(locale__Locimp *this, MSVCP_bool transparent)
 {
     TRACE("(%p %d)\n", this, transparent);
 
     memset(this, 0, sizeof(locale__Locimp));
     locale_facet_ctor_refs(&this->facet, 1);
-    this->facet.vtable = &locale__Locimp_vtable;
+    this->facet.vtable = &MSVCP_locale__Locimp_vtable;
     this->transparent = transparent;
     locale_string_char_ctor_cstr(&this->name, "*");
     return this;
@@ -11403,16 +11567,22 @@ DEFINE_THISCALL_WRAPPER(locale__Locimp_copy_ctor, 8)
 locale__Locimp* __thiscall locale__Locimp_copy_ctor(locale__Locimp *this, const locale__Locimp *copy)
 {
     _Lockit lock;
-    size_t i;
+    MSVCP_size_t i;
 
     TRACE("(%p %p)\n", this, copy);
 
     _Lockit_ctor_locktype(&lock, _LOCK_LOCALE);
     memcpy(this, copy, sizeof(locale__Locimp));
     locale_facet_ctor_refs(&this->facet, 1);
-    this->facet.vtable = &locale__Locimp_vtable;
+    this->facet.vtable = &MSVCP_locale__Locimp_vtable;
     if(copy->facetvec) {
-        this->facetvec = operator_new(copy->facet_cnt*sizeof(locale_facet*));
+        this->facetvec = MSVCRT_operator_new(copy->facet_cnt*sizeof(locale_facet*));
+        if(!this->facetvec) {
+            _Lockit_dtor(&lock);
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return NULL;
+        }
         for(i=0; i<this->facet_cnt; i++)
         {
             this->facetvec[i] = copy->facetvec[i];
@@ -11437,7 +11607,7 @@ locale__Locimp* __cdecl locale__Locimp__Locimp_ctor(locale__Locimp *this, const 
 DEFINE_THISCALL_WRAPPER(locale__Locimp_dtor, 4)
 void __thiscall locale__Locimp_dtor(locale__Locimp *this)
 {
-    size_t i;
+    MSVCP_size_t i;
 
     TRACE("(%p)\n", this);
 
@@ -11446,7 +11616,7 @@ void __thiscall locale__Locimp_dtor(locale__Locimp *this)
         if(this->facetvec[i] && call_locale_facet__Decref(this->facetvec[i]))
             call_locale_facet_vector_dtor(this->facetvec[i], 1);
 
-    operator_delete(this->facetvec);
+    MSVCRT_operator_delete(this->facetvec);
     locale_string_char_dtor(&this->name);
 }
 
@@ -11467,11 +11637,11 @@ locale__Locimp* __thiscall locale__Locimp_vector_dtor(locale__Locimp *this, unsi
 
         for(i=*ptr-1; i>=0; i--)
             locale__Locimp_dtor(this+i);
-        operator_delete(ptr);
+        MSVCRT_operator_delete(ptr);
     } else {
         locale__Locimp_dtor(this);
         if(flags & 1)
-            operator_delete(this);
+            MSVCRT_operator_delete(this);
     }
 
     return this;
@@ -11485,42 +11655,59 @@ locale__Locimp* __cdecl locale__Locimp__New_Locimp(const locale__Locimp *copy)
 
     TRACE("(%p)\n", copy);
 
-    ret = operator_new(sizeof(locale__Locimp));
+    ret = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!ret) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+        return NULL;
+    }
     return locale__Locimp_copy_ctor(ret, copy);
 }
 
 /* ?_New_Locimp@_Locimp@locale@std@@CAPAV123@_N@Z */
 /* ?_New_Locimp@_Locimp@locale@std@@CAPEAV123@_N@Z */
-locale__Locimp* __cdecl locale__Locimp__New_Locimp_transparent(bool transparent)
+locale__Locimp* __cdecl locale__Locimp__New_Locimp_transparent(MSVCP_bool transparent)
 {
     locale__Locimp *ret;
 
     TRACE("(%x)\n", transparent);
 
-    ret = operator_new(sizeof(locale__Locimp));
+    ret = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!ret) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+        return NULL;
+    }
     return locale__Locimp_ctor_transparent(ret, transparent);
 }
 
 /* ?_Locimp_Addfac@_Locimp@locale@std@@CAXPAV123@PAVfacet@23@I@Z */
 /* ?_Locimp_Addfac@_Locimp@locale@std@@CAXPEAV123@PEAVfacet@23@_K@Z */
-void __cdecl locale__Locimp__Locimp_Addfac(locale__Locimp *locimp, locale_facet *facet, size_t id)
+void __cdecl locale__Locimp__Locimp_Addfac(locale__Locimp *locimp, locale_facet *facet, MSVCP_size_t id)
 {
     _Lockit lock;
 
-    TRACE("(%p %p %Iu)\n", locimp, facet, id);
+    TRACE("(%p %p %lu)\n", locimp, facet, id);
 
     _Lockit_ctor_locktype(&lock, _LOCK_LOCALE);
     if(id >= locimp->facet_cnt) {
-        size_t new_size = id+1;
+        MSVCP_size_t new_size = id+1;
         locale_facet **new_facetvec;
 
         if(new_size < 40)
             new_size = 40;
 
-        new_facetvec = operator_new(sizeof(locale_facet*)*new_size);
+        new_facetvec = MSVCRT_operator_new(sizeof(locale_facet*)*new_size);
+        if(!new_facetvec) {
+            _Lockit_dtor(&lock);
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return;
+        }
+
         memset(new_facetvec, 0, sizeof(locale_facet*)*new_size);
         memcpy(new_facetvec, locimp->facetvec, sizeof(locale_facet*)*locimp->facet_cnt);
-        operator_delete(locimp->facetvec);
+        MSVCRT_operator_delete(locimp->facetvec);
         locimp->facetvec = new_facetvec;
         locimp->facet_cnt = new_size;
     }
@@ -11537,7 +11724,7 @@ void __cdecl locale__Locimp__Locimp_Addfac(locale__Locimp *locimp, locale_facet 
 /* ?_Addfac@_Locimp@locale@std@@AAEXPAVfacet@23@I@Z */
 /* ?_Addfac@_Locimp@locale@std@@AEAAXPEAVfacet@23@_K@Z */
 DEFINE_THISCALL_WRAPPER(locale__Locimp__Addfac, 12)
-void __thiscall locale__Locimp__Addfac(locale__Locimp *this, locale_facet *facet, size_t id)
+void __thiscall locale__Locimp__Addfac(locale__Locimp *this, locale_facet *facet, MSVCP_size_t id)
 {
     locale__Locimp__Locimp_Addfac(this, facet, id);
 }
@@ -11565,7 +11752,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             ctype = ctype_short_use_facet(loc);
         }else {
-            ctype = operator_new(sizeof(ctype_wchar));
+            ctype = MSVCRT_operator_new(sizeof(ctype_wchar));
+            if(!ctype) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             ctype_short_ctor_locinfo(ctype, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &ctype->base.facet, locale_id_operator_size_t(&ctype_short_id));
@@ -11577,7 +11768,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             numget = num_get_short_use_facet(loc);
         }else {
-            numget = operator_new(sizeof(num_get));
+            numget = MSVCRT_operator_new(sizeof(num_get));
+            if(!numget) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_get_short_ctor_locinfo(numget, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numget->facet, locale_id_operator_size_t(&num_get_short_id));
@@ -11589,7 +11784,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             numput = num_put_short_use_facet(loc);
         }else {
-            numput = operator_new(sizeof(num_put));
+            numput = MSVCRT_operator_new(sizeof(num_put));
+            if(!numput) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_put_short_ctor_locinfo(numput, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numput->facet, locale_id_operator_size_t(&num_put_short_id));
@@ -11601,7 +11800,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             numpunct = numpunct_short_use_facet(loc);
         }else {
-            numpunct = operator_new(sizeof(numpunct_wchar));
+            numpunct = MSVCRT_operator_new(sizeof(numpunct_wchar));
+            if(!numpunct) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             numpunct_short_ctor_locinfo(numpunct, locinfo, 0, FALSE);
         }
         locale__Locimp__Addfac(locimp, &numpunct->facet, locale_id_operator_size_t(&numpunct_short_id));
@@ -11613,7 +11816,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             c = collate_short_use_facet(loc);
         }else {
-            c = operator_new(sizeof(collate));
+            c = MSVCRT_operator_new(sizeof(collate));
+            if(!c) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             collate_short_ctor_locinfo(c, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &c->facet, locale_id_operator_size_t(&collate_short_id));
@@ -11625,7 +11832,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
          if(loc) {
              t = time_put_short_use_facet(loc);
          }else {
-             t = operator_new(sizeof(time_put));
+             t = MSVCRT_operator_new(sizeof(time_put));
+             if(!t) {
+                 ERR("Out of memory\n");
+                 throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+             }
              time_put_short_ctor_locinfo(t, locinfo, 0);
          }
          locale__Locimp__Addfac(locimp, &t->facet, locale_id_operator_size_t(&time_put_short_id));
@@ -11637,7 +11848,11 @@ void __cdecl locale__Locimp__Makeushloc(const _Locinfo *locinfo, category cat, l
         if(loc) {
             codecvt = codecvt_short_use_facet(loc);
         }else {
-            codecvt = operator_new(sizeof(codecvt_wchar));
+            codecvt = MSVCRT_operator_new(sizeof(codecvt_wchar));
+            if(!codecvt) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             codecvt_short_ctor_locinfo(codecvt, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &codecvt->base.facet, locale_id_operator_size_t(&codecvt_short_id));
@@ -11659,7 +11874,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             ctype = ctype_wchar_use_facet(loc);
         }else {
-            ctype = operator_new(sizeof(ctype_wchar));
+            ctype = MSVCRT_operator_new(sizeof(ctype_wchar));
+            if(!ctype) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             ctype_wchar_ctor_locinfo(ctype, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &ctype->base.facet, locale_id_operator_size_t(&ctype_wchar_id));
@@ -11671,7 +11890,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numget = num_get_wchar_use_facet(loc);
         }else {
-            numget = operator_new(sizeof(num_get));
+            numget = MSVCRT_operator_new(sizeof(num_get));
+            if(!numget) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_get_wchar_ctor_locinfo(numget, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numget->facet, locale_id_operator_size_t(&num_get_wchar_id));
@@ -11683,7 +11906,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numput = num_put_wchar_use_facet(loc);
         }else {
-            numput = operator_new(sizeof(num_put));
+            numput = MSVCRT_operator_new(sizeof(num_put));
+            if(!numput) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_put_wchar_ctor_locinfo(numput, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numput->facet, locale_id_operator_size_t(&num_put_wchar_id));
@@ -11695,7 +11922,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numpunct = numpunct_wchar_use_facet(loc);
         }else {
-            numpunct = operator_new(sizeof(numpunct_wchar));
+            numpunct = MSVCRT_operator_new(sizeof(numpunct_wchar));
+            if(!numpunct) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             numpunct_wchar_ctor_locinfo(numpunct, locinfo, 0, FALSE);
         }
         locale__Locimp__Addfac(locimp, &numpunct->facet, locale_id_operator_size_t(&numpunct_wchar_id));
@@ -11707,7 +11938,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             c = collate_wchar_use_facet(loc);
         }else {
-            c = operator_new(sizeof(collate));
+            c = MSVCRT_operator_new(sizeof(collate));
+            if(!c) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             collate_wchar_ctor_locinfo(c, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &c->facet, locale_id_operator_size_t(&collate_wchar_id));
@@ -11719,7 +11954,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             t = time_get_wchar_use_facet(loc);
         }else {
-            t = operator_new(sizeof(time_get_wchar));
+            t = MSVCRT_operator_new(sizeof(time_get_wchar));
+            if(!t) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             time_get_wchar_ctor_locinfo(t, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &t->facet, locale_id_operator_size_t(&time_get_wchar_id));
@@ -11731,7 +11970,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             t = time_put_wchar_use_facet(loc);
         }else {
-            t = operator_new(sizeof(time_put));
+            t = MSVCRT_operator_new(sizeof(time_put));
+            if(!t) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             time_put_wchar_ctor_locinfo(t, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &t->facet, locale_id_operator_size_t(&time_put_wchar_id));
@@ -11743,7 +11986,11 @@ void __cdecl locale__Locimp__Makewloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             codecvt = codecvt_wchar_use_facet(loc);
         }else {
-            codecvt = operator_new(sizeof(codecvt_wchar));
+            codecvt = MSVCRT_operator_new(sizeof(codecvt_wchar));
+            if(!codecvt) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             codecvt_wchar_ctor_locinfo(codecvt, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &codecvt->base.facet, locale_id_operator_size_t(&codecvt_wchar_id));
@@ -11765,7 +12012,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             ctype = ctype_char_use_facet(loc);
         }else {
-            ctype = operator_new(sizeof(ctype_char));
+            ctype = MSVCRT_operator_new(sizeof(ctype_char));
+            if(!ctype) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             ctype_char_ctor_locinfo(ctype, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &ctype->base.facet, locale_id_operator_size_t(&ctype_char_id));
@@ -11777,7 +12028,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numget = num_get_char_use_facet(loc);
         }else {
-            numget = operator_new(sizeof(num_get));
+            numget = MSVCRT_operator_new(sizeof(num_get));
+            if(!numget) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_get_char_ctor_locinfo(numget, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numget->facet, locale_id_operator_size_t(&num_get_char_id));
@@ -11789,7 +12044,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numput = num_put_char_use_facet(loc);
         }else {
-            numput = operator_new(sizeof(num_put));
+            numput = MSVCRT_operator_new(sizeof(num_put));
+            if(!numput) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             num_put_char_ctor_locinfo(numput, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &numput->facet, locale_id_operator_size_t(&num_put_char_id));
@@ -11801,7 +12060,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             numpunct = numpunct_char_use_facet(loc);
         }else {
-            numpunct = operator_new(sizeof(numpunct_char));
+            numpunct = MSVCRT_operator_new(sizeof(numpunct_char));
+            if(!numpunct) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             numpunct_char_ctor_locinfo(numpunct, locinfo, 0, FALSE);
         }
         locale__Locimp__Addfac(locimp, &numpunct->facet, locale_id_operator_size_t(&numpunct_char_id));
@@ -11813,7 +12076,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             c = collate_char_use_facet(loc);
         }else {
-            c = operator_new(sizeof(collate));
+            c = MSVCRT_operator_new(sizeof(collate));
+            if(!c) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             collate_char_ctor_locinfo(c, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &c->facet, locale_id_operator_size_t(&collate_char_id));
@@ -11825,7 +12092,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             t = time_get_char_use_facet(loc);
         }else {
-            t = operator_new(sizeof(time_get_char));
+            t = MSVCRT_operator_new(sizeof(time_get_char));
+            if(!t) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             time_get_char_ctor_locinfo(t, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &t->facet, locale_id_operator_size_t(&time_get_char_id));
@@ -11837,7 +12108,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             t = time_put_char_use_facet(loc);
         }else {
-            t = operator_new(sizeof(time_put));
+            t = MSVCRT_operator_new(sizeof(time_put));
+            if(!t) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             time_put_char_ctor_locinfo(t, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &t->facet, locale_id_operator_size_t(&time_put_char_id));
@@ -11849,7 +12124,11 @@ void __cdecl locale__Locimp__Makexloc(const _Locinfo *locinfo, category cat, loc
         if(loc) {
             codecvt = codecvt_char_use_facet(loc);
         }else {
-            codecvt = operator_new(sizeof(codecvt_char));
+            codecvt = MSVCRT_operator_new(sizeof(codecvt_char));
+            if(!codecvt) {
+                ERR("Out of memory\n");
+                throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            }
             codecvt_char_ctor_locinfo(codecvt, locinfo, 0);
         }
         locale__Locimp__Addfac(locimp, &codecvt->base.facet, locale_id_operator_size_t(&codecvt_char_id));
@@ -11896,7 +12175,14 @@ locale__Locimp* __cdecl locale__Init(void)
         return global_locale;
     }
 
-    global_locale = operator_new(sizeof(locale__Locimp));
+    global_locale = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!global_locale) {
+        _Lockit_dtor(&lock);
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+        return NULL;
+    }
+
     locale__Locimp_ctor(global_locale);
     global_locale->catmask = (1<<(LC_MAX+1))-1;
     locale_string_char_dtor(&global_locale->name);
@@ -11912,7 +12198,7 @@ locale__Locimp* __cdecl locale__Init(void)
 
 /* ?_Init@locale@std@@CAPAV_Locimp@12@_N@Z */
 /* ?_Init@locale@std@@CAPEAV_Locimp@12@_N@Z */
-locale__Locimp* __cdecl locale__Init_ref(bool inc_ref)
+locale__Locimp* __cdecl locale__Init_ref(MSVCP_bool inc_ref)
 {
     locale__Locimp *ret;
     _Lockit lock;
@@ -11934,7 +12220,7 @@ locale__Locimp* __cdecl locale__Init_ref(bool inc_ref)
 /* ?_Iscloc@locale@std@@QBE_NXZ */
 /* ?_Iscloc@locale@std@@QEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(locale__Iscloc, 4)
-bool __thiscall locale__Iscloc(const locale *this)
+MSVCP_bool __thiscall locale__Iscloc(const locale *this)
 {
     TRACE("(%p)\n", this);
     return this->ptr == locale__Locimp__Clocptr;
@@ -11949,7 +12235,11 @@ locale* __thiscall locale_ctor_locale_locale(locale *this, const locale *loc, co
 
     TRACE("(%p %p %p %d)\n", this, loc, other, cat);
 
-    this->ptr = operator_new(sizeof(locale__Locimp));
+    this->ptr = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!this->ptr) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     locale__Locimp_copy_ctor(this->ptr, loc->ptr);
 
     _Locinfo_ctor_cat_cstr(&locinfo, loc->ptr->catmask, locale_string_char_c_str(&loc->ptr->name));
@@ -11983,11 +12273,16 @@ locale* __thiscall locale_ctor_locale_cstr(locale *this, const locale *loc, cons
     _Locinfo_ctor_cat_cstr(&locinfo, cat, locname);
     if(!memcmp(locale_string_char_c_str(&locinfo.newlocname), "*", 2)) {
         _Locinfo_dtor(&locinfo);
-        operator_delete(this->ptr);
-        _Xruntime_error("bad locale name");
+        MSVCRT_operator_delete(this->ptr);
+        throw_exception(EXCEPTION_RUNTIME_ERROR, "bad locale name");
     }
 
-    this->ptr = operator_new(sizeof(locale__Locimp));
+    this->ptr = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!this->ptr) {
+        ERR("Out of memory\n");
+        _Locinfo_dtor(&locinfo);
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     locale__Locimp_copy_ctor(this->ptr, loc->ptr);
 
     locale__Locimp__Makeloc(&locinfo, cat, this->ptr, NULL);
@@ -12004,7 +12299,11 @@ locale* __thiscall locale_ctor_cstr(locale *this, const char *locname, category 
 
     TRACE("(%p %s %d)\n", this, locname, cat);
 
-    this->ptr = operator_new(sizeof(locale__Locimp));
+    this->ptr = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!this->ptr) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     locale__Locimp_ctor(this->ptr);
 
     locale__Init();
@@ -12012,8 +12311,8 @@ locale* __thiscall locale_ctor_cstr(locale *this, const char *locname, category 
     _Locinfo_ctor_cat_cstr(&locinfo, cat, locname);
     if(!memcmp(locale_string_char_c_str(&locinfo.newlocname), "*", 2)) {
         _Locinfo_dtor(&locinfo);
-        operator_delete(this->ptr);
-        _Xruntime_error("bad locale name");
+        MSVCRT_operator_delete(this->ptr);
+        throw_exception(EXCEPTION_RUNTIME_ERROR, "bad locale name");
     }
 
     locale__Locimp__Makeloc(&locinfo, cat, this->ptr, NULL);
@@ -12052,7 +12351,7 @@ void __thiscall locale_dtor(locale *this)
     if(this->ptr && call_locale_facet__Decref(&this->ptr->facet))
     {
         locale__Locimp_dtor(this->ptr);
-        operator_delete(this->ptr);
+        MSVCRT_operator_delete(this->ptr);
     }
 }
 
@@ -12068,7 +12367,7 @@ locale* __thiscall locale_operator_assign(locale *this, const locale *loc)
 /* ??8locale@std@@QBE_NABV01@@Z */
 /* ??8locale@std@@QEBA_NAEBV01@@Z */
 DEFINE_THISCALL_WRAPPER(locale_operator_equal, 8)
-bool __thiscall locale_operator_equal(const locale *this, const locale *loc)
+MSVCP_bool __thiscall locale_operator_equal(const locale *this, const locale *loc)
 {
     FIXME("(%p %p) stub\n", this, loc);
     return 0;
@@ -12077,7 +12376,7 @@ bool __thiscall locale_operator_equal(const locale *this, const locale *loc)
 /* ??9locale@std@@QBE_NABV01@@Z */
 /* ??9locale@std@@QEBA_NAEBV01@@Z */
 DEFINE_THISCALL_WRAPPER(locale_operator_not_equal, 8)
-bool __thiscall locale_operator_not_equal(const locale *this, locale const *loc)
+MSVCP_bool __thiscall locale_operator_not_equal(const locale *this, locale const *loc)
 {
     FIXME("(%p %p) stub\n", this, loc);
     return 0;
@@ -12086,12 +12385,17 @@ bool __thiscall locale_operator_not_equal(const locale *this, locale const *loc)
 /* ?_Addfac@locale@std@@QAEAAV12@PAVfacet@12@II@Z */
 /* ?_Addfac@locale@std@@QEAAAEAV12@PEAVfacet@12@_K1@Z */
 DEFINE_THISCALL_WRAPPER(locale__Addfac, 16)
-locale* __thiscall locale__Addfac(locale *this, locale_facet *facet, size_t id, size_t catmask)
+locale* __thiscall locale__Addfac(locale *this, locale_facet *facet, MSVCP_size_t id, MSVCP_size_t catmask)
 {
-    TRACE("(%p %p %Iu %Iu)\n", this, facet, id, catmask);
+    TRACE("(%p %p %lu %lu)\n", this, facet, id, catmask);
 
     if(this->ptr->facet.refs > 1) {
-        locale__Locimp *new_ptr = operator_new(sizeof(locale__Locimp));
+        locale__Locimp *new_ptr = MSVCRT_operator_new(sizeof(locale__Locimp));
+        if(!new_ptr) {
+            ERR("Out of memory\n");
+            throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+            return NULL;
+        }
         locale__Locimp_copy_ctor(new_ptr, this->ptr);
         call_locale_facet__Decref(&this->ptr->facet);
         this->ptr = new_ptr;
@@ -12110,11 +12414,11 @@ locale* __thiscall locale__Addfac(locale *this, locale_facet *facet, size_t id, 
 /* ?_Getfacet@locale@std@@QEBAPEBVfacet@12@_K_N@Z */
 DEFINE_THISCALL_WRAPPER(locale__Getfacet_bool, 12)
 const locale_facet* __thiscall locale__Getfacet_bool(const locale *this,
-        size_t id, bool allow_transparent)
+        MSVCP_size_t id, MSVCP_bool allow_transparent)
 {
     locale_facet *fac;
 
-    TRACE("(%p %Iu)\n", this, id);
+    TRACE("(%p %lu)\n", this, id);
 
     fac = id < this->ptr->facet_cnt ? this->ptr->facetvec[id] : NULL;
     if(fac || !this->ptr->transparent || !allow_transparent)
@@ -12126,7 +12430,7 @@ const locale_facet* __thiscall locale__Getfacet_bool(const locale *this,
 /* ?_Getfacet@locale@std@@QBEPBVfacet@12@I@Z */
 /* ?_Getfacet@locale@std@@QEBAPEBVfacet@12@_K@Z */
 DEFINE_THISCALL_WRAPPER(locale__Getfacet, 8)
-const locale_facet* __thiscall locale__Getfacet(const locale *this, size_t id)
+const locale_facet* __thiscall locale__Getfacet(const locale *this, MSVCP_size_t id)
 {
     return locale__Getfacet_bool( this, id, TRUE );
 }
@@ -12163,7 +12467,11 @@ locale* __cdecl locale_empty(locale *ret)
 
     locale__Init();
 
-    ret->ptr = operator_new(sizeof(locale__Locimp));
+    ret->ptr = MSVCRT_operator_new(sizeof(locale__Locimp));
+    if(!ret->ptr) {
+        ERR("Out of memory\n");
+        throw_exception(EXCEPTION_BAD_ALLOC, NULL);
+    }
     locale__Locimp_ctor_transparent(ret->ptr, TRUE);
     return ret;
 }
@@ -12355,11 +12663,10 @@ int __cdecl _To_wide(const char *src, wchar_t *dst)
     return MultiByteToWideChar(CP_ACP, 0, src, -1, dst, MAX_PATH);
 }
 
-size_t __cdecl _Strxfrm(char *dest, char *dest_end,
-        const char *src, const char *src_end, _Collvec *coll)
+MSVCP_size_t __cdecl _Strxfrm(char *dest, char *dest_end, const char *src, const char *src_end, _Collvec *coll)
 {
-    size_t dest_len = dest_end - dest;
-    size_t src_len = src_end - src;
+    MSVCP_size_t dest_len = dest_end - dest;
+    MSVCP_size_t src_len = src_end - src;
     _Collvec cv;
     WCHAR *buf;
     LCID lcid;
@@ -12384,52 +12691,13 @@ size_t __cdecl _Strxfrm(char *dest, char *dest_end,
     }
 
     len = MultiByteToWideChar(cv.page, MB_ERR_INVALID_CHARS, src, src_len, NULL, 0);
-    if (!len) return INT_MAX;
+    if (!len) return 0;
     buf = heap_alloc(len * sizeof(WCHAR));
-    if (!buf) return INT_MAX;
+    if (!buf) return 0;
     MultiByteToWideChar(cv.page, MB_ERR_INVALID_CHARS, src, src_len, buf, len);
 
-    len = LCMapStringW(lcid, LCMAP_SORTKEY, buf, len, NULL, 0);
-    if (len <= dest_len)
-        LCMapStringW(lcid, LCMAP_SORTKEY, buf, len, (WCHAR*)dest, dest_len);
+    len = LCMapStringW(lcid, LCMAP_SORTKEY, buf, len, (WCHAR*)dest, dest_len);
     heap_free(buf);
-    return len;
-}
-
-size_t __cdecl _Wcsxfrm(wchar_t *dest, wchar_t *dest_end,
-        const wchar_t *src, const wchar_t *src_end, _Collvec *coll)
-{
-    size_t dest_len = dest_end - dest;
-    size_t src_len = src_end - src;
-    _Collvec cv;
-    LCID lcid;
-    int i, len;
-
-    TRACE("(%p %p %p %p %p)\n", dest, dest_end, src, src_end, coll);
-
-    if (coll) cv = *coll;
-    else getcoll(&cv);
-
-#if _MSVCP_VER < 110
-    lcid = cv.handle;
-#else
-    lcid = LocaleNameToLCID(cv.lc_name, 0);
-#endif
-
-    if (!lcid)
-    {
-        if (src_len > dest_len) return src_len;
-        memcpy(dest, src, src_len * sizeof(wchar_t));
-        return src_len;
-    }
-
-    len = LCMapStringW(lcid, LCMAP_SORTKEY, src, src_len, NULL, 0);
-    if (!len) return INT_MAX;
-    if (len > dest_len) return len;
-
-    LCMapStringW(lcid, LCMAP_SORTKEY, src, src_len, dest, dest_len);
-    for (i = len - 1; i >= 0; i--)
-        dest[i] = ((BYTE*)dest)[i];
     return len;
 }
 
@@ -12469,7 +12737,9 @@ DEFINE_RTTI_DATA1(time_base, 0, &locale_facet_rtti_base_descriptor, ".?AUtime_ba
 DEFINE_RTTI_DATA2(time_get_char, 0, &time_base_rtti_base_descriptor, &locale_facet_rtti_base_descriptor, ".?AV?$time_get@DV?$istreambuf_iterator@DU?$char_traits@D@std@@@std@@@std@@")
 DEFINE_RTTI_DATA2(time_get_wchar, 0, &time_base_rtti_base_descriptor, &locale_facet_rtti_base_descriptor, ".?AV?$time_get@_WV?$istreambuf_iterator@_WU?$char_traits@_W@std@@@std@@@std@@")
 
-__ASM_BLOCK_BEGIN(locale_vtables)
+#ifndef __GNUC__
+void __asm_dummy_vtables(void) {
+#endif
     __ASM_VTABLE(_Facet_base,
             VTABLE_ADD_FUNC(locale_facet_vector_dtor)
             VTABLE_ADD_FUNC(locale_facet__Incref)
@@ -12834,7 +13104,9 @@ __ASM_BLOCK_BEGIN(locale_vtables)
             VTABLE_ADD_FUNC(time_get_wchar_do_get)
 #endif
             );
-__ASM_BLOCK_END
+#ifndef __GNUC__
+}
+#endif
 
 void init_locale(void *base)
 {
@@ -12878,13 +13150,13 @@ void free_locale(void)
     if(global_locale) {
         locale_dtor(&classic_locale);
         locale__Locimp_dtor(global_locale);
-        operator_delete(global_locale);
+        MSVCRT_operator_delete(global_locale);
     }
 
     LIST_FOR_EACH_ENTRY_SAFE(iter, safe, &lazy_facets, facets_elem, entry) {
         list_remove(&iter->entry);
         if(call_locale_facet__Decref(iter->fac))
             call_locale_facet_vector_dtor(iter->fac, 1);
-        operator_delete(iter);
+        MSVCRT_operator_delete(iter);
     }
 }

@@ -18,5 +18,4 @@ C_SRCS = \
 RC_SRCS = resource.rc
 
 FONT_SRCS = \
-	wine_longname.sfd \
-	wine_testfont0.sfd
+	wine_longname.sfd

@@ -1,7 +1,7 @@
 /*
- * Windows Rights Management Client
+ * msdrm.dll
  *
- * Copyright 2021 Vijay Kiran Kamuju
+ * Copyright 2016 Austin English
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,13 +22,17 @@
 
 #include "windef.h"
 #include "winbase.h"
-#include "wine/debug.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(msdrm);
-
-HRESULT WINAPI DRMRegisterContent(BOOL value)
+BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
 {
-     FIXME("(%u): stub\n", value);
+    switch (reason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;    /* prefer native version */
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls(instance);
+            break;
+    }
 
-     return S_OK;
+    return TRUE;
 }

@@ -1,8 +1,10 @@
 MODULE    = ole32.dll
 IMPORTLIB = ole32
-IMPORTS   = uuid advapi32 user32 gdi32 combase rpcrt4 kernelbase
+IMPORTS   = uuid advapi32 user32 gdi32 rpcrt4
 DELAYIMPORTS = oleaut32
 EXTRADEFS = -D_OLE32_
+
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	antimoniker.c \
@@ -15,23 +17,29 @@ C_SRCS = \
 	datacache.c \
 	defaulthandler.c \
 	dictionary.c \
+	errorinfo.c \
 	filelockbytes.c \
 	filemoniker.c \
 	ftmarshal.c \
 	git.c \
+	hglobalstream.c \
+	ifs.c \
 	itemmoniker.c \
 	marshal.c \
 	memlockbytes.c \
 	moniker.c \
 	ole2.c \
+	ole2impl.c \
 	ole2stubs.c \
 	ole32_main.c \
 	oleobj.c \
 	oleproxy.c \
 	pointermoniker.c \
+	rpc.c \
 	stg_prop.c \
 	stg_stream.c \
 	storage32.c \
+	stubmanager.c \
 	usrmarshal.c
 
 RC_SRCS = ole32res.rc
@@ -39,6 +47,7 @@ RC_SRCS = ole32res.rc
 IDL_SRCS = \
 	dcom.idl \
 	irot.idl \
+	irpcss.idl \
 	ole32_objidl.idl \
 	ole32_oleidl.idl \
 	ole32_unknwn.idl

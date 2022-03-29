@@ -97,15 +97,6 @@ public class WineActivity extends Activity
         return null;
     }
 
-    private String get_so_dir( String abi )
-    {
-        if (abi.equals( "x86" )) return "/i386-unix";
-        if (abi.equals( "x86_64" )) return "/x86_64-unix";
-        if (abi.equals( "armeabi-v7a" )) return "/arm-unix";
-        if (abi.equals( "arm64-v8a" )) return "/aarch64-unix";
-        return "";
-    }
-
     private void loadWine( String cmdline )
     {
         copyAssetFiles();
@@ -131,7 +122,7 @@ public class WineActivity extends Activity
         if (cmdline == null)
         {
             if (new File( prefix, "drive_c/winestart.cmd" ).exists()) cmdline = "c:\\winestart.cmd";
-            else cmdline = "c:\\windows\\system32\\wineconsole.exe";
+            else cmdline = "wineconsole.exe";
         }
 
         String winedebug = readFileString( new File( prefix, "winedebug" ));
@@ -147,7 +138,14 @@ public class WineActivity extends Activity
 
         createProgressDialog( 0, "Setting up the Windows environment..." );
 
-        System.load( dlldir.toString() + get_so_dir(wine_abi) + "/ntdll.so" );
+        try
+        {
+            System.loadLibrary( "wine" );
+        }
+        catch (java.lang.UnsatisfiedLinkError e)
+        {
+            System.load( libdir.toString() + "/libwine.so" );
+        }
         prefix.mkdirs();
 
         runWine( cmdline, env );
@@ -164,7 +162,7 @@ public class WineActivity extends Activity
         }
 
         String[] cmd = { environ.get( "WINELOADER" ),
-                         "c:\\windows\\system32\\explorer.exe",
+                         "explorer.exe",
                          "/desktop=shell,,android",
                          cmdline };
 

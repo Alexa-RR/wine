@@ -80,7 +80,7 @@
 @ stub CreateVssExpressWriterInternal
 @ stub CreateWriter
 @ stub CreateWriterEx
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
 @ stub GetProviderMgmtInterface
 @ stub GetProviderMgmtInterfaceInternal

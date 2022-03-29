@@ -166,8 +166,8 @@ static int __cdecl WCMD_dir_sort (const void *a, const void *b)
       WCHAR extB[MAX_PATH];
 
       /* Split into components */
-      _wsplitpath(filea->cFileName, drive, dir, fname, extA);
-      _wsplitpath(fileb->cFileName, drive, dir, fname, extB);
+      WCMD_splitpath(filea->cFileName, drive, dir, fname, extA);
+      WCMD_splitpath(fileb->cFileName, drive, dir, fname, extB);
       result = lstrcmpiW(extA, extB);
   }
 
@@ -252,6 +252,11 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
   int concurrentDirs = 0;
   BOOL done_header = FALSE;
 
+  static const WCHAR fmt2[]  = {'%','1','!','-','1','3','s','!','\0'};
+  static const WCHAR fmt3[]  = {'%','1','!','-','2','3','s','!','\0'};
+  static const WCHAR fmt4[]  = {'%','1','\0'};
+  static const WCHAR fmt5[]  = {'%','1','%','2','\0'};
+
   dir_count = 0;
   file_count = 0;
   entry_count = 0;
@@ -305,7 +310,7 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
 
     /* Output the results */
     if (!bare) {
-       if (level != 0 && (entry_count > 0)) WCMD_output_asis(L"\r\n");
+       if (level != 0 && (entry_count > 0)) WCMD_output_asis (newlineW);
        if (!recurse || ((entry_count > 0) && done_header==FALSE)) {
            WCMD_output (L"Directory of %1\n\n", real_path);
            done_header = TRUE;
@@ -392,7 +397,7 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
         if ((cur_width + widest) > max_width) {
             cur_width = 0;
         } else {
-            WCMD_output(L"%1!*s!", cur_width - tmp_width, L"");
+            WCMD_output(L"%1!*s!", cur_width - tmp_width, nullW);
         }
 
       } else if (fd[i].dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
@@ -400,13 +405,13 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
 
         if (!bare) {
            WCMD_output (L"%1!10s!  %2!8s!  <DIR>         ", datestring, timestring);
-           if (shortname) WCMD_output(L"%1!-13s!", fd[i].cAlternateFileName);
-           if (usernames) WCMD_output(L"%1!-23s!", username);
-           WCMD_output(L"%1",fd[i].cFileName);
+           if (shortname) WCMD_output (fmt2, fd[i].cAlternateFileName);
+           if (usernames) WCMD_output (fmt3, username);
+           WCMD_output(fmt4,fd[i].cFileName);
         } else {
-           if (!((lstrcmpW(fd[i].cFileName, L".") == 0) ||
-                 (lstrcmpW(fd[i].cFileName, L"..") == 0))) {
-              WCMD_output(L"%1%2", recurse ? inputparms->dirName : L"", fd[i].cFileName);
+           if (!((lstrcmpW(fd[i].cFileName, dotW) == 0) ||
+                 (lstrcmpW(fd[i].cFileName, dotdotW) == 0))) {
+              WCMD_output (fmt5, recurse?inputparms->dirName:nullW, fd[i].cFileName);
            } else {
               addNewLine = FALSE;
            }
@@ -420,15 +425,15 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
         if (!bare) {
            WCMD_output (L"%1!10s!  %2!8s!    %3!10s!  ", datestring, timestring,
                         WCMD_filesize64(file_size.QuadPart));
-           if (shortname) WCMD_output(L"%1!-13s!", fd[i].cAlternateFileName);
-           if (usernames) WCMD_output(L"%1!-23s!", username);
-           WCMD_output(L"%1",fd[i].cFileName);
+           if (shortname) WCMD_output (fmt2, fd[i].cAlternateFileName);
+           if (usernames) WCMD_output (fmt3, username);
+           WCMD_output(fmt4,fd[i].cFileName);
         } else {
-           WCMD_output(L"%1%2", recurse ? inputparms->dirName : L"", fd[i].cFileName);
+           WCMD_output (fmt5, recurse?inputparms->dirName:nullW, fd[i].cFileName);
         }
       }
      }
-     if (addNewLine) WCMD_output_asis(L"\r\n");
+     if (addNewLine) WCMD_output_asis (newlineW);
      cur_width = 0;
     }
 
@@ -462,15 +467,15 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
 
     /* Build path to search */
     lstrcpyW(string, inputparms->dirName);
-    lstrcatW(string, L"*");
+    lstrcatW(string, starW);
 
     WINE_TRACE("Recursive, looking for '%s'\n", wine_dbgstr_w(string));
     hff = FindFirstFileW(string, &finddata);
     if (hff != INVALID_HANDLE_VALUE) {
       do {
         if ((finddata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
-            (lstrcmpW(finddata.cFileName, L"..") != 0) &&
-            (lstrcmpW(finddata.cFileName, L".") != 0)) {
+            (lstrcmpW(finddata.cFileName, dotdotW) != 0) &&
+            (lstrcmpW(finddata.cFileName, dotW) != 0)) {
 
           DIRECTORY_STACK *thisDir;
           int              dirsToCopy = concurrentDirs;
@@ -483,7 +488,7 @@ static DIRECTORY_STACK *WCMD_list_directory (DIRECTORY_STACK *inputparms, int le
             /* Work out search parameter in sub dir */
             lstrcpyW (string, inputparms->dirName);
             lstrcatW (string, finddata.cFileName);
-            lstrcatW(string, L"\\");
+            lstrcatW (string, slashW);
             WINE_TRACE("Recursive, Adding to search list '%s'\n", wine_dbgstr_w(string));
 
             /* Allocate memory, add to list */
@@ -536,7 +541,7 @@ static void WCMD_dir_trailer(WCHAR drive) {
 
     driveName[0] = drive;
     status = GetDiskFreeSpaceExW(driveName, &avail, &total, &freebytes);
-    WINE_TRACE("Writing trailer for '%s' gave %ld(%ld)\n", wine_dbgstr_w(driveName),
+    WINE_TRACE("Writing trailer for '%s' gave %d(%d)\n", wine_dbgstr_w(driveName),
                status, GetLastError());
 
     if (errorlevel==0 && !bare) {
@@ -727,7 +732,7 @@ void WCMD_directory (WCHAR *args)
                 p++;
               }
               p = p - 1; /* So when step on, move to '/' */
-              WINE_TRACE("Result: showattrs %lx, bits %lx\n", showattrs, attrsbits);
+              WINE_TRACE("Result: showattrs %x, bits %x\n", showattrs, attrsbits);
               break;
     default:
               SetLastError(ERROR_INVALID_PARAMETER);
@@ -757,7 +762,7 @@ void WCMD_directory (WCHAR *args)
   argno         = 0;
   argN          = args;
   GetCurrentDirectoryW(MAX_PATH, cwd);
-  lstrcatW(cwd, L"\\");
+  lstrcatW(cwd, slashW);
 
   /* Loop through all args, calculating full effective directory */
   fullParms = NULL;
@@ -776,7 +781,7 @@ void WCMD_directory (WCHAR *args)
         if (!GetEnvironmentVariableW(envvar, fullname, MAX_PATH)) {
           wsprintfW(fullname, L"%c:", thisArg[0]);
         }
-        lstrcatW(fullname, L"\\");
+        lstrcatW(fullname, slashW);
         lstrcatW(fullname, &thisArg[2]);
       } else if (thisArg[0] == '\\') {
         memcpy(fullname, cwd, 2 * sizeof(WCHAR));
@@ -787,7 +792,7 @@ void WCMD_directory (WCHAR *args)
       }
       WINE_TRACE("Using location '%s'\n", wine_dbgstr_w(fullname));
 
-      if (!WCMD_get_fullpath(fullname, ARRAY_SIZE(path), path, NULL)) continue;
+      status = GetFullPathNameW(fullname, ARRAY_SIZE(path), path, NULL);
 
       /*
        *  If the path supplied does not include a wildcard, and the endpoint of the
@@ -797,13 +802,13 @@ void WCMD_directory (WCHAR *args)
       if ((wcschr(path, '*') == NULL) && (wcschr(path, '%') == NULL)) {
         status = GetFileAttributesW(path);
         if ((status != INVALID_FILE_ATTRIBUTES) && (status & FILE_ATTRIBUTE_DIRECTORY)) {
-          if (!ends_with_backslash(path)) lstrcatW(path, L"\\");
-          lstrcatW(path, L"*");
+          if (!ends_with_backslash( path )) lstrcatW( path, slashW );
+          lstrcatW (path, starW);
         }
       } else {
         /* Special case wildcard search with no extension (ie parameters ending in '.') as
            GetFullPathName strips off the additional '.'                                  */
-        if (fullname[lstrlenW(fullname)-1] == '.') lstrcatW(path, L".");
+        if (fullname[lstrlenW(fullname)-1] == '.') lstrcatW(path, dotW);
       }
 
       WINE_TRACE("Using path '%s'\n", wine_dbgstr_w(path));
@@ -814,7 +819,7 @@ void WCMD_directory (WCHAR *args)
       thisEntry->next = NULL;
 
       /* Split into components */
-      _wsplitpath(path, drive, dir, fname, ext);
+      WCMD_splitpath(path, drive, dir, fname, ext);
       WINE_TRACE("Path Parts: drive: '%s' dir: '%s' name: '%s' ext:'%s'\n",
                  wine_dbgstr_w(drive), wine_dbgstr_w(dir),
                  wine_dbgstr_w(fname), wine_dbgstr_w(ext));
@@ -836,7 +841,7 @@ void WCMD_directory (WCHAR *args)
     fullParms = heap_xalloc(sizeof(DIRECTORY_STACK));
     fullParms->next = NULL;
     fullParms->dirName = heap_strdupW(cwd);
-    fullParms->fileName = heap_strdupW(L"*");
+    fullParms->fileName = heap_strdupW(starW);
   }
 
   lastDrive = '?';

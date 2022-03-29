@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -27,7 +28,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
-#include <sys/types.h>
 #ifdef HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
 #endif
@@ -50,27 +50,24 @@ struct namespace
 };
 
 
-struct type_descr no_type =
-{
-    { NULL, 0 },                /* name */
-    STANDARD_RIGHTS_REQUIRED,   /* valid_access */
-    {                           /* mapping */
-        STANDARD_RIGHTS_READ,
-        STANDARD_RIGHTS_WRITE,
-        STANDARD_RIGHTS_EXECUTE,
-        STANDARD_RIGHTS_REQUIRED
-    },
-};
-
 #ifdef DEBUG_OBJECTS
 static struct list object_list = LIST_INIT(object_list);
+static struct list static_object_list = LIST_INIT(static_object_list);
 
 void dump_objects(void)
 {
-    struct object *ptr;
+    struct list *p;
 
-    LIST_FOR_EACH_ENTRY( ptr, &object_list, struct object, obj_list )
+    LIST_FOR_EACH( p, &static_object_list )
     {
+        struct object *ptr = LIST_ENTRY( p, struct object, obj_list );
+        fprintf( stderr, "%p:%d: ", ptr, ptr->refcount );
+        dump_object_name( ptr );
+        ptr->ops->dump( ptr, 1 );
+    }
+    LIST_FOR_EACH( p, &object_list )
+    {
+        struct object *ptr = LIST_ENTRY( p, struct object, obj_list );
         fprintf( stderr, "%p:%d: ", ptr, ptr->refcount );
         dump_object_name( ptr );
         ptr->ops->dump( ptr, 1 );
@@ -79,20 +76,16 @@ void dump_objects(void)
 
 void close_objects(void)
 {
-    /* release the permanent objects */
-    for (;;)
-    {
-        struct object *obj;
-        int found = 0;
+    struct list *ptr;
 
-        LIST_FOR_EACH_ENTRY( obj, &object_list, struct object, obj_list )
-        {
-            if (!(found = obj->is_permanent)) continue;
-            obj->is_permanent = 0;
-            release_object( obj );
-            break;
-        }
-        if (!found) break;
+    /* release the static objects */
+    while ((ptr = list_head( &static_object_list )))
+    {
+        struct object *obj = LIST_ENTRY( ptr, struct object, obj_list );
+        /* move it back to the standard list before freeing */
+        list_remove( &obj->obj_list );
+        list_add_head( &object_list, &obj->obj_list );
+        release_object( obj );
     }
 
     dump_objects();  /* dump any remaining objects */
@@ -165,7 +158,7 @@ const WCHAR *get_object_name( struct object *obj, data_size_t *len )
 }
 
 /* get the full path name of an existing object */
-WCHAR *default_get_full_name( struct object *obj, data_size_t *ret_len )
+WCHAR *get_object_full_name( struct object *obj, data_size_t *ret_len )
 {
     static const WCHAR backslash = '\\';
     struct object *ptr = obj;
@@ -201,7 +194,6 @@ void *alloc_object( const struct object_ops *ops )
     {
         obj->refcount     = 1;
         obj->handle_count = 0;
-        obj->is_permanent = 0;
         obj->ops          = ops;
         obj->name         = NULL;
         obj->sd           = NULL;
@@ -209,8 +201,6 @@ void *alloc_object( const struct object_ops *ops )
 #ifdef DEBUG_OBJECTS
         list_add_head( &object_list, &obj->obj_list );
 #endif
-        obj->ops->type->obj_count++;
-        obj->ops->type->obj_max = max( obj->ops->type->obj_max, obj->ops->type->obj_count );
         return obj;
     }
     return NULL;
@@ -220,7 +210,6 @@ void *alloc_object( const struct object_ops *ops )
 static void free_object( struct object *obj )
 {
     free( obj->sd );
-    obj->ops->type->obj_count--;
 #ifdef DEBUG_OBJECTS
     list_remove( &obj->obj_list );
     memset( obj, 0xaa, obj->ops->size );
@@ -256,14 +245,14 @@ struct object *lookup_named_object( struct object *root, const struct unicode_st
         /* skip leading backslash */
         name_tmp.str++;
         name_tmp.len -= sizeof(WCHAR);
-        parent = root = get_root_directory();
+        parent = get_root_directory();
     }
 
     if (!name_tmp.len) ptr = NULL;  /* special case for empty path */
 
     clear_error();
 
-    while ((obj = parent->ops->lookup_name( parent, ptr, attr, root )))
+    while ((obj = parent->ops->lookup_name( parent, ptr, attr )))
     {
         /* move to the next element */
         release_object ( parent );
@@ -289,8 +278,7 @@ data_size_t get_path_element( const WCHAR *name, data_size_t len )
 }
 
 static struct object *create_object( struct object *parent, const struct object_ops *ops,
-                                     const struct unicode_str *name, unsigned int attributes,
-                                     const struct security_descriptor *sd )
+                                     const struct unicode_str *name, const struct security_descriptor *sd )
 {
     struct object *obj;
     struct object_name *name_ptr;
@@ -331,7 +319,7 @@ void *create_named_object( struct object *parent, const struct object_ops *ops,
             free_object( new_obj );
             return NULL;
         }
-        goto done;
+        return new_obj;
     }
 
     if (!(obj = lookup_named_object( parent, name, attributes, &new_name ))) return NULL;
@@ -352,15 +340,8 @@ void *create_named_object( struct object *parent, const struct object_ops *ops,
         return obj;
     }
 
-    new_obj = create_object( obj, ops, &new_name, attributes, sd );
+    new_obj = create_object( obj, ops, &new_name, sd );
     release_object( obj );
-
-done:
-    if (attributes & OBJ_PERMANENT)
-    {
-        make_object_permanent( new_obj );
-        grab_object( new_obj );
-    }
     return new_obj;
 }
 
@@ -415,6 +396,15 @@ void unlink_named_object( struct object *obj )
     obj->ops->unlink_name( obj, name_ptr );
     if (name_ptr->parent) release_object( name_ptr->parent );
     free( name_ptr );
+}
+
+/* mark an object as being stored statically, i.e. only released at shutdown */
+void make_object_static( struct object *obj )
+{
+#ifdef DEBUG_OBJECTS
+    list_remove( &obj->obj_list );
+    list_add_head( &static_object_list, &obj->obj_list );
+#endif
 }
 
 /* grab an object (i.e. increment its refcount) and return the object */
@@ -506,6 +496,11 @@ struct namespace *create_namespace( unsigned int hash_size )
 
 /* functions for unimplemented/default object operations */
 
+struct object_type *no_get_type( struct object *obj )
+{
+    return NULL;
+}
+
 int no_add_queue( struct object *obj, struct wait_queue_entry *entry )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
@@ -528,9 +523,13 @@ struct fd *no_get_fd( struct object *obj )
     return NULL;
 }
 
-unsigned int default_map_access( struct object *obj, unsigned int access )
+unsigned int no_map_access( struct object *obj, unsigned int access )
 {
-    return map_access( access, &obj->ops->type->mapping );
+    if (access & GENERIC_READ)    access |= STANDARD_RIGHTS_READ;
+    if (access & GENERIC_WRITE)   access |= STANDARD_RIGHTS_WRITE;
+    if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE;
+    if (access & GENERIC_ALL)     access |= STANDARD_RIGHTS_ALL;
+    return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
 
 struct security_descriptor *default_get_sd( struct object *obj )
@@ -544,9 +543,9 @@ struct security_descriptor *set_sd_from_token_internal( const struct security_de
 {
     struct security_descriptor new_sd, *new_sd_ptr;
     int present;
-    const struct sid *owner = NULL, *group = NULL;
-    const struct acl *sacl, *dacl;
-    struct acl *replaced_sacl = NULL;
+    const SID *owner = NULL, *group = NULL;
+    const ACL *sacl, *dacl;
+    ACL *replaced_sacl = NULL;
     char *ptr;
 
     new_sd.control = sd->control & ~SE_SELF_RELATIVE;
@@ -564,7 +563,7 @@ struct security_descriptor *set_sd_from_token_internal( const struct security_de
     else if (token)
     {
         owner = token_get_user( token );
-        new_sd.owner_len = sid_len( owner );
+        new_sd.owner_len = security_sid_len( owner );
     }
     else new_sd.owner_len = 0;
 
@@ -581,7 +580,7 @@ struct security_descriptor *set_sd_from_token_internal( const struct security_de
     else if (token)
     {
         group = token_get_primary_group( token );
-        new_sd.group_len = sid_len( group );
+        new_sd.group_len = security_sid_len( group );
     }
     else new_sd.group_len = 0;
 
@@ -593,17 +592,11 @@ struct security_descriptor *set_sd_from_token_internal( const struct security_de
     }
     else if (set_info & LABEL_SECURITY_INFORMATION && present)
     {
-<<<<<<< HEAD
         const ACL *old_sacl = NULL;
         if (old_sd && old_sd->control & SE_SACL_PRESENT) old_sacl = sd_get_sacl( old_sd, &present );
         if (!(replaced_sacl = replace_security_labels( old_sacl, sacl ))) return NULL;
-=======
-        const struct acl *old_sacl = NULL;
-        if (obj->sd && obj->sd->control & SE_SACL_PRESENT) old_sacl = sd_get_sacl( obj->sd, &present );
-        if (!(replaced_sacl = replace_security_labels( old_sacl, sacl ))) return 0;
->>>>>>> master
         new_sd.control |= SE_SACL_PRESENT;
-        new_sd.sacl_len = replaced_sacl->size;
+        new_sd.sacl_len = replaced_sacl->AclSize;
         sacl = replaced_sacl;
     }
     else
@@ -638,7 +631,7 @@ struct security_descriptor *set_sd_from_token_internal( const struct security_de
         {
             dacl = token_get_default_dacl( token );
             new_sd.control |= SE_DACL_PRESENT;
-            new_sd.dacl_len = dacl->size;
+            new_sd.dacl_len = dacl->AclSize;
         }
         else new_sd.dacl_len = 0;
     }
@@ -691,13 +684,8 @@ int default_set_sd( struct object *obj, const struct security_descriptor *sd,
     return set_sd_defaults_from_token( obj, sd, set_info, current->process->token );
 }
 
-WCHAR *no_get_full_name( struct object *obj, data_size_t *ret_len )
-{
-    return NULL;
-}
-
 struct object *no_lookup_name( struct object *obj, struct unicode_str *name,
-                               unsigned int attr, struct object *root )
+                               unsigned int attr )
 {
     if (!name) set_error( STATUS_OBJECT_TYPE_MISMATCH );
     return NULL;

@@ -1,7 +1,6 @@
-EXTRADEFS = -D_CRTIMP=
+EXTRADEFS = -D_MT -D_MSVCR_VER=90
 MODULE    = msvcr90.dll
 IMPORTLIB = msvcr90
-IMPORTS   = ntdll
 DELAYIMPORTS = advapi32 user32
 PARENTSRC = ../msvcrt
 
@@ -32,7 +31,6 @@ C_SRCS = \
 	onexit.c \
 	process.c \
 	scanf.c \
-	sincos.c \
 	string.c \
 	thread.c \
 	time.c \

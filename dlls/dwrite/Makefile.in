@@ -1,6 +1,5 @@
 MODULE    = dwrite.dll
 IMPORTLIB = dwrite
-UNIXLIB   = dwrite.so
 IMPORTS   = user32 gdi32 advapi32
 EXTRAINCL = $(FREETYPE_CFLAGS)
 
@@ -10,7 +9,6 @@ C_SRCS = \
 	bracket.c \
 	direction.c \
 	font.c \
-	format.c \
 	freetype.c \
 	gdiinterop.c \
 	layout.c \
@@ -19,6 +17,4 @@ C_SRCS = \
 	mirror.c \
 	opentype.c \
 	scripts.c \
-	shape.c \
-	shapers/arabic.c \
-	shapers/arabic_table.c
+	shape.c

@@ -21,18 +21,17 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
 
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
-<<<<<<< HEAD
 #include "winuser.h"
 #include "user_private.h"
 
-=======
-#include "ntuser.h"
->>>>>>> master
 #include "wine/server.h"
 #include "wine/debug.h"
 
@@ -58,7 +57,7 @@ static void CARET_DisplayCaret( HWND hwnd, const RECT *r )
     HDC hCompDC;
 
     /* do not use DCX_CACHE here, for x,y,width,height are in logical units */
-    if (!(hdc = NtUserGetDCEx( hwnd, 0, DCX_USESTYLE /*| DCX_CACHE*/ ))) return;
+    if (!(hdc = GetDCEx( hwnd, 0, DCX_USESTYLE /*| DCX_CACHE*/ ))) return;
     hCompDC = CreateCompatibleDC(hdc);
     if (hCompDC)
     {
@@ -69,7 +68,7 @@ static void CARET_DisplayCaret( HWND hwnd, const RECT *r )
 	SelectObject(hCompDC, hPrevBmp);
 	DeleteDC(hCompDC);
     }
-    NtUserReleaseDC( hwnd, hdc );
+    ReleaseDC( hwnd, hdc );
 }
 
 
@@ -162,7 +161,7 @@ BOOL WINAPI CreateCaret( HWND hwnd, HBITMAP bitmap, INT width, INT height )
 		}
 		DeleteDC(hMemDC);
 	    }
-	    NtUserReleaseDC(hwnd, hdc);
+	    ReleaseDC(hwnd, hdc);
 	}
     }
     if (!hBmp) return FALSE;
@@ -280,12 +279,8 @@ BOOL WINAPI SetCaretPos( INT x, INT y )
         r.left = x;
         r.top = y;
         CARET_DisplayCaret( hwnd, &r );
-<<<<<<< HEAD
         USER_Driver->pUpdateCandidatePos( hwnd, &r );
         SetSystemTimer( hwnd, TIMERID, Caret.timeout, CARET_Callback );
-=======
-        NtUserSetSystemTimer( hwnd, TIMERID, Caret.timeout, CARET_Callback );
->>>>>>> master
     }
     return ret;
 }
@@ -363,12 +358,8 @@ BOOL WINAPI ShowCaret( HWND hwnd )
     if (ret && (hidden == 1))  /* hidden was 1 so it's now 0 */
     {
         CARET_DisplayCaret( hwnd, &r );
-<<<<<<< HEAD
         USER_Driver->pUpdateCandidatePos( hwnd, &r );
         SetSystemTimer( hwnd, TIMERID, Caret.timeout, CARET_Callback );
-=======
-        NtUserSetSystemTimer( hwnd, TIMERID, Caret.timeout, CARET_Callback );
->>>>>>> master
     }
     return ret;
 }

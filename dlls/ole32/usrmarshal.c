@@ -48,11 +48,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(ole);
   ( (DWORD)'U'         | ( (DWORD)'s' << 8 ) | \
   ( (DWORD)'e' << 16 ) | ( (DWORD)'r' << 24 ) )
 
-ULONG __RPC_USER WdtpInterfacePointer_UserSize(ULONG *pFlags, ULONG RealFlags, ULONG StartingSize, IUnknown *punk, REFIID riid);
-unsigned char * WINAPI WdtpInterfacePointer_UserMarshal(ULONG *pFlags, ULONG RealFlags, unsigned char *pBuffer,
-        IUnknown *punk, REFIID riid);
-unsigned char * WINAPI WdtpInterfacePointer_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, IUnknown **ppunk, REFIID riid);
-
 static const char* debugstr_user_flags(ULONG *pFlags)
 {
     char buf[12];
@@ -83,6 +78,805 @@ static const char* debugstr_user_flags(ULONG *pFlags)
 }
 
 /******************************************************************************
+ *           CLIPFORMAT_UserSize [OLE32.@]
+ *
+ * Calculates the buffer size required to marshal a clip format.
+ *
+ * PARAMS
+ *  pFlags       [I] Flags. See notes.
+ *  StartingSize [I] Starting size of the buffer. This value is added on to
+ *                   the buffer size required for the clip format.
+ *  pCF          [I] Clip format to size.
+ *
+ * RETURNS
+ *  The buffer size required to marshal a clip format plus the starting size.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an unsigned
+ *  long in pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an unsigned long.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+ULONG __RPC_USER CLIPFORMAT_UserSize(ULONG *pFlags, ULONG size, CLIPFORMAT *pCF)
+{
+    TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), size, pCF);
+
+    ALIGN_LENGTH(size, 3);
+
+    size += 8;
+
+    /* only need to marshal the name if it is not a pre-defined type and
+     * we are going remote */
+    if ((*pCF >= 0xc000) && (LOWORD(*pFlags) == MSHCTX_DIFFERENTMACHINE))
+    {
+        WCHAR format[255];
+        INT ret;
+        size += 3 * sizeof(UINT);
+        /* urg! this function is badly designed because it won't tell us how
+         * much space is needed without doing a dummy run of storing the
+         * name into a buffer */
+        ret = GetClipboardFormatNameW(*pCF, format, ARRAY_SIZE(format)-1);
+        if (!ret)
+            RaiseException(DV_E_CLIPFORMAT, 0, 0, NULL);
+        size += (ret + 1) * sizeof(WCHAR);
+    }
+    return size;
+}
+
+/******************************************************************************
+ *           CLIPFORMAT_UserMarshal [OLE32.@]
+ *
+ * Marshals a clip format into a buffer.
+ *
+ * PARAMS
+ *  pFlags  [I] Flags. See notes.
+ *  pBuffer [I] Buffer to marshal the clip format into.
+ *  pCF     [I] Clip format to marshal.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an unsigned
+ *  long in pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an unsigned long.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER CLIPFORMAT_UserMarshal(ULONG *pFlags, unsigned char *pBuffer, CLIPFORMAT *pCF)
+{
+    TRACE("(%s, %p, &0x%04x\n", debugstr_user_flags(pFlags), pBuffer, *pCF);
+
+    ALIGN_POINTER(pBuffer, 3);
+
+    /* only need to marshal the name if it is not a pre-defined type and
+     * we are going remote */
+    if ((*pCF >= 0xc000) && (LOWORD(*pFlags) == MSHCTX_DIFFERENTMACHINE))
+    {
+        WCHAR format[255];
+        UINT len;
+
+        *(DWORD *)pBuffer = WDT_REMOTE_CALL;
+        pBuffer += 4;
+        *(DWORD *)pBuffer = *pCF;
+        pBuffer += 4;
+
+        len = GetClipboardFormatNameW(*pCF, format, ARRAY_SIZE(format)-1);
+        if (!len)
+            RaiseException(DV_E_CLIPFORMAT, 0, 0, NULL);
+        len += 1;
+        *(UINT *)pBuffer = len;
+        pBuffer += sizeof(UINT);
+        *(UINT *)pBuffer = 0;
+        pBuffer += sizeof(UINT);
+        *(UINT *)pBuffer = len;
+        pBuffer += sizeof(UINT);
+        TRACE("marshaling format name %s\n", debugstr_w(format));
+        memcpy(pBuffer, format, len * sizeof(WCHAR));
+        pBuffer += len * sizeof(WCHAR);
+    }
+    else
+    {
+        *(DWORD *)pBuffer = WDT_INPROC_CALL;
+        pBuffer += 4;
+        *(DWORD *)pBuffer = *pCF;
+        pBuffer += 4;
+    }
+
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           CLIPFORMAT_UserUnmarshal [OLE32.@]
+ *
+ * Unmarshals a clip format from a buffer.
+ *
+ * PARAMS
+ *  pFlags  [I] Flags. See notes.
+ *  pBuffer [I] Buffer to marshal the clip format from.
+ *  pCF     [O] Address that receive the unmarshaled clip format.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an unsigned
+ *  long in pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an unsigned long.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER CLIPFORMAT_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, CLIPFORMAT *pCF)
+{
+    LONG fContext;
+
+    TRACE("(%s, %p, %p\n", debugstr_user_flags(pFlags), pBuffer, pCF);
+
+    ALIGN_POINTER(pBuffer, 3);
+
+    fContext = *(DWORD *)pBuffer;
+    pBuffer += 4;
+
+    if (fContext == WDT_INPROC_CALL)
+    {
+        *pCF = *(CLIPFORMAT *)pBuffer;
+        pBuffer += 4;
+    }
+    else if (fContext == WDT_REMOTE_CALL)
+    {
+        CLIPFORMAT cf;
+        UINT len;
+
+        /* pointer ID for registered clip format string */
+        if (*(DWORD *)pBuffer == 0)
+            RaiseException(RPC_S_INVALID_BOUND, 0, 0, NULL);
+        pBuffer += 4;
+
+        len = *(UINT *)pBuffer;
+        pBuffer += sizeof(UINT);
+        if (*(UINT *)pBuffer != 0)
+            RaiseException(RPC_S_INVALID_BOUND, 0, 0, NULL);
+        pBuffer += sizeof(UINT);
+        if (*(UINT *)pBuffer != len)
+            RaiseException(RPC_S_INVALID_BOUND, 0, 0, NULL);
+        pBuffer += sizeof(UINT);
+        if (((WCHAR *)pBuffer)[len - 1] != '\0')
+            RaiseException(RPC_S_INVALID_BOUND, 0, 0, NULL);
+        TRACE("unmarshaling clip format %s\n", debugstr_w((LPCWSTR)pBuffer));
+        cf = RegisterClipboardFormatW((LPCWSTR)pBuffer);
+        pBuffer += len * sizeof(WCHAR);
+        if (!cf)
+            RaiseException(DV_E_CLIPFORMAT, 0, 0, NULL);
+        *pCF = cf;
+    }
+    else
+        /* code not really appropriate, but nearest I can find */
+        RaiseException(RPC_S_INVALID_TAG, 0, 0, NULL);
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           CLIPFORMAT_UserFree [OLE32.@]
+ *
+ * Frees an unmarshaled clip format.
+ *
+ * PARAMS
+ *  pFlags  [I] Flags. See notes.
+ *  pCF     [I] Clip format to free.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an unsigned
+ *  long in pFlags, it actually takes a pointer to a USER_MARSHAL_CB
+ *  structure, of which the first parameter is an unsigned long.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+void __RPC_USER CLIPFORMAT_UserFree(ULONG *pFlags, CLIPFORMAT *pCF)
+{
+    /* there is no inverse of the RegisterClipboardFormat function,
+     * so nothing to do */
+}
+
+static ULONG handle_UserSize(ULONG *pFlags, ULONG StartingSize, HANDLE *handle)
+{
+    if (LOWORD(*pFlags) == MSHCTX_DIFFERENTMACHINE)
+    {
+        ERR("can't remote a local handle\n");
+        RaiseException(RPC_S_INVALID_TAG, 0, 0, NULL);
+        return StartingSize;
+    }
+
+    ALIGN_LENGTH(StartingSize, 3);
+    return StartingSize + sizeof(RemotableHandle);
+}
+
+static unsigned char * handle_UserMarshal(ULONG *pFlags, unsigned char *pBuffer, HANDLE *handle)
+{
+    RemotableHandle *remhandle;
+    if (LOWORD(*pFlags) == MSHCTX_DIFFERENTMACHINE)
+    {
+        ERR("can't remote a local handle\n");
+        RaiseException(RPC_S_INVALID_TAG, 0, 0, NULL);
+        return pBuffer;
+    }
+
+    ALIGN_POINTER(pBuffer, 3);
+    remhandle = (RemotableHandle *)pBuffer;
+    remhandle->fContext = WDT_INPROC_CALL;
+    remhandle->u.hInproc = (LONG_PTR)*handle;
+    return pBuffer + sizeof(RemotableHandle);
+}
+
+static unsigned char * handle_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, HANDLE *handle)
+{
+    RemotableHandle *remhandle;
+
+    ALIGN_POINTER(pBuffer, 3);
+    remhandle = (RemotableHandle *)pBuffer;
+    if (remhandle->fContext != WDT_INPROC_CALL)
+        RaiseException(RPC_X_BAD_STUB_DATA, 0, 0, NULL);
+    *handle = (HANDLE)(LONG_PTR)remhandle->u.hInproc;
+    return pBuffer + sizeof(RemotableHandle);
+}
+
+static void handle_UserFree(ULONG *pFlags, HANDLE *handle)
+{
+    /* nothing to do */
+}
+
+#define IMPL_WIREM_HANDLE(type) \
+    ULONG __RPC_USER type##_UserSize(ULONG *pFlags, ULONG StartingSize, type *handle) \
+    { \
+        TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), StartingSize, handle); \
+        return handle_UserSize(pFlags, StartingSize, (HANDLE *)handle); \
+    } \
+    \
+    unsigned char * __RPC_USER type##_UserMarshal(ULONG *pFlags, unsigned char *pBuffer, type *handle) \
+    { \
+        TRACE("(%s, %p, &%p\n", debugstr_user_flags(pFlags), pBuffer, *handle); \
+        return handle_UserMarshal(pFlags, pBuffer, (HANDLE *)handle); \
+    } \
+    \
+    unsigned char * __RPC_USER type##_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, type *handle) \
+    { \
+        TRACE("(%s, %p, %p\n", debugstr_user_flags(pFlags), pBuffer, handle); \
+        return handle_UserUnmarshal(pFlags, pBuffer, (HANDLE *)handle); \
+    } \
+    \
+    void __RPC_USER type##_UserFree(ULONG *pFlags, type *handle) \
+    { \
+        TRACE("(%s, &%p\n", debugstr_user_flags(pFlags), *handle); \
+        handle_UserFree(pFlags, (HANDLE *)handle); \
+    }
+
+IMPL_WIREM_HANDLE(HACCEL)
+IMPL_WIREM_HANDLE(HMENU)
+IMPL_WIREM_HANDLE(HWND)
+IMPL_WIREM_HANDLE(HDC)
+IMPL_WIREM_HANDLE(HICON)
+IMPL_WIREM_HANDLE(HBRUSH)
+
+/******************************************************************************
+ *           HGLOBAL_UserSize [OLE32.@]
+ *
+ * Calculates the buffer size required to marshal an HGLOBAL.
+ *
+ * PARAMS
+ *  pFlags       [I] Flags. See notes.
+ *  StartingSize [I] Starting size of the buffer. This value is added on to
+ *                   the buffer size required for the clip format.
+ *  phGlobal     [I] HGLOBAL to size.
+ *
+ * RETURNS
+ *  The buffer size required to marshal an HGLOBAL plus the starting size.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+ULONG __RPC_USER HGLOBAL_UserSize(ULONG *pFlags, ULONG StartingSize, HGLOBAL *phGlobal)
+{
+    ULONG size = StartingSize;
+
+    TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), StartingSize, phGlobal);
+
+    ALIGN_LENGTH(size, 3);
+
+    size += sizeof(ULONG);
+
+    if (LOWORD(*pFlags) == MSHCTX_INPROC)
+        size += sizeof(HGLOBAL);
+    else
+    {
+        size += sizeof(ULONG);
+        if (*phGlobal)
+        {
+            SIZE_T ret;
+            size += 3 * sizeof(ULONG);
+            ret = GlobalSize(*phGlobal);
+            size += (ULONG)ret;
+        }
+    }
+    
+    return size;
+}
+
+/******************************************************************************
+ *           HGLOBAL_UserMarshal [OLE32.@]
+ *
+ * Marshals an HGLOBAL into a buffer.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  pBuffer  [I] Buffer to marshal the clip format into.
+ *  phGlobal [I] HGLOBAL to marshal.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER HGLOBAL_UserMarshal(ULONG *pFlags, unsigned char *pBuffer, HGLOBAL *phGlobal)
+{
+    TRACE("(%s, %p, &%p\n", debugstr_user_flags(pFlags), pBuffer, *phGlobal);
+
+    ALIGN_POINTER(pBuffer, 3);
+
+    if (LOWORD(*pFlags) == MSHCTX_INPROC)
+    {
+        if (sizeof(*phGlobal) == 8)
+            *(ULONG *)pBuffer = WDT_INPROC64_CALL;
+        else
+            *(ULONG *)pBuffer = WDT_INPROC_CALL;
+        pBuffer += sizeof(ULONG);
+        *(HGLOBAL *)pBuffer = *phGlobal;
+        pBuffer += sizeof(HGLOBAL);
+    }
+    else
+    {
+        *(ULONG *)pBuffer = WDT_REMOTE_CALL;
+        pBuffer += sizeof(ULONG);
+        *(ULONG *)pBuffer = HandleToULong(*phGlobal);
+        pBuffer += sizeof(ULONG);
+        if (*phGlobal)
+        {
+            const unsigned char *memory;
+            SIZE_T size = GlobalSize(*phGlobal);
+            *(ULONG *)pBuffer = (ULONG)size;
+            pBuffer += sizeof(ULONG);
+            *(ULONG *)pBuffer = HandleToULong(*phGlobal);
+            pBuffer += sizeof(ULONG);
+            *(ULONG *)pBuffer = (ULONG)size;
+            pBuffer += sizeof(ULONG);
+
+            memory = GlobalLock(*phGlobal);
+            memcpy(pBuffer, memory, size);
+            pBuffer += size;
+            GlobalUnlock(*phGlobal);
+        }
+    }
+
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           HGLOBAL_UserUnmarshal [OLE32.@]
+ *
+ * Unmarshals an HGLOBAL from a buffer.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  pBuffer  [I] Buffer to marshal the clip format from.
+ *  phGlobal [O] Address that receive the unmarshaled HGLOBAL.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER HGLOBAL_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, HGLOBAL *phGlobal)
+{
+    ULONG fContext;
+
+    TRACE("(%s, %p, &%p\n", debugstr_user_flags(pFlags), pBuffer, *phGlobal);
+
+    ALIGN_POINTER(pBuffer, 3);
+
+    fContext = *(ULONG *)pBuffer;
+    pBuffer += sizeof(ULONG);
+
+    if (((fContext == WDT_INPROC_CALL) && (sizeof(*phGlobal) < 8)) ||
+        ((fContext == WDT_INPROC64_CALL) && (sizeof(*phGlobal) == 8)))
+    {
+        *phGlobal = *(HGLOBAL *)pBuffer;
+        pBuffer += sizeof(*phGlobal);
+    }
+    else if (fContext == WDT_REMOTE_CALL)
+    {
+        ULONG handle;
+
+        handle = *(ULONG *)pBuffer;
+        pBuffer += sizeof(ULONG);
+
+        if (handle)
+        {
+            ULONG size;
+            void *memory;
+
+            size = *(ULONG *)pBuffer;
+            pBuffer += sizeof(ULONG);
+            /* redundancy is bad - it means you have to check consistency like
+             * this: */
+            if (*(ULONG *)pBuffer != handle)
+            {
+                RaiseException(RPC_X_BAD_STUB_DATA, 0, 0, NULL);
+                return pBuffer;
+            }
+            pBuffer += sizeof(ULONG);
+            /* redundancy is bad - it means you have to check consistency like
+             * this: */
+            if (*(ULONG *)pBuffer != size)
+            {
+                RaiseException(RPC_X_BAD_STUB_DATA, 0, 0, NULL);
+                return pBuffer;
+            }
+            pBuffer += sizeof(ULONG);
+
+            /* FIXME: check size is not too big */
+
+            *phGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
+            memory = GlobalLock(*phGlobal);
+            memcpy(memory, pBuffer, size);
+            pBuffer += size;
+            GlobalUnlock(*phGlobal);
+        }
+        else
+            *phGlobal = NULL;
+    }
+    else
+        RaiseException(RPC_S_INVALID_TAG, 0, 0, NULL);
+
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           HGLOBAL_UserFree [OLE32.@]
+ *
+ * Frees an unmarshaled HGLOBAL.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  phGlobal [I] HGLOBAL to free.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of
+ *  which the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+void __RPC_USER HGLOBAL_UserFree(ULONG *pFlags, HGLOBAL *phGlobal)
+{
+    TRACE("(%s, &%p\n", debugstr_user_flags(pFlags), *phGlobal);
+
+    if (LOWORD(*pFlags) != MSHCTX_INPROC && *phGlobal)
+        GlobalFree(*phGlobal);
+}
+
+/******************************************************************************
+ *           HBITMAP_UserSize [OLE32.@]
+ *
+ * Calculates the buffer size required to marshal a bitmap.
+ *
+ * PARAMS
+ *  pFlags       [I] Flags. See notes.
+ *  StartingSize [I] Starting size of the buffer. This value is added on to
+ *                   the buffer size required for the clip format.
+ *  phBmp        [I] Bitmap to size.
+ *
+ * RETURNS
+ *  The buffer size required to marshal an bitmap plus the starting size.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+ULONG __RPC_USER HBITMAP_UserSize(ULONG *flags, ULONG size, HBITMAP *bmp)
+{
+    TRACE("(%s, %d, %p)\n", debugstr_user_flags(flags), size, *bmp);
+
+    ALIGN_LENGTH(size, 3);
+
+    size += sizeof(ULONG);
+    if (LOWORD(*flags) == MSHCTX_INPROC)
+        size += sizeof(ULONG);
+    else
+    {
+        size += sizeof(ULONG);
+
+        if (*bmp)
+        {
+            size += sizeof(ULONG);
+            size += FIELD_OFFSET(userBITMAP, cbSize);
+            size += GetBitmapBits(*bmp, 0, NULL);
+        }
+    }
+
+    return size;
+}
+
+/******************************************************************************
+*           HBITMAP_UserMarshal [OLE32.@]
+*
+* Marshals a bitmap into a buffer.
+*
+* PARAMS
+*  pFlags  [I] Flags. See notes.
+*  pBuffer [I] Buffer to marshal the clip format into.
+*  phBmp   [I] Bitmap to marshal.
+*
+* RETURNS
+*  The end of the marshaled data in the buffer.
+*
+* NOTES
+*  Even though the function is documented to take a pointer to a ULONG in
+*  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+*  the first parameter is a ULONG.
+*  This function is only intended to be called by the RPC runtime.
+*/
+unsigned char * __RPC_USER HBITMAP_UserMarshal(ULONG *flags, unsigned char *buffer, HBITMAP *bmp)
+{
+    TRACE("(%s, %p, %p)\n", debugstr_user_flags(flags), buffer, *bmp);
+
+    ALIGN_POINTER(buffer, 3);
+
+    if (LOWORD(*flags) == MSHCTX_INPROC)
+    {
+        *(ULONG *)buffer = WDT_INPROC_CALL;
+        buffer += sizeof(ULONG);
+        *(ULONG *)buffer = (ULONG)(ULONG_PTR)*bmp;
+        buffer += sizeof(ULONG);
+    }
+    else
+    {
+        *(ULONG *)buffer = WDT_REMOTE_CALL;
+        buffer += sizeof(ULONG);
+        *(ULONG *)buffer = (ULONG)(ULONG_PTR)*bmp;
+        buffer += sizeof(ULONG);
+
+        if (*bmp)
+        {
+            static const ULONG header_size = FIELD_OFFSET(userBITMAP, cbSize);
+            BITMAP bitmap;
+            ULONG bitmap_size;
+
+            bitmap_size = GetBitmapBits(*bmp, 0, NULL);
+            *(ULONG *)buffer = bitmap_size;
+            buffer += sizeof(ULONG);
+
+            GetObjectW(*bmp, sizeof(BITMAP), &bitmap);
+            memcpy(buffer, &bitmap, header_size);
+            buffer += header_size;
+
+            GetBitmapBits(*bmp, bitmap_size, buffer);
+            buffer += bitmap_size;
+        }
+    }
+    return buffer;
+}
+
+/******************************************************************************
+ *           HBITMAP_UserUnmarshal [OLE32.@]
+ *
+ * Unmarshals a bitmap from a buffer.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  pBuffer  [I] Buffer to marshal the clip format from.
+ *  phBmp    [O] Address that receive the unmarshaled bitmap.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER HBITMAP_UserUnmarshal(ULONG *flags, unsigned char *buffer, HBITMAP *bmp)
+{
+    ULONG context;
+
+    TRACE("(%s, %p, %p)\n", debugstr_user_flags(flags), buffer, bmp);
+
+    ALIGN_POINTER(buffer, 3);
+
+    context = *(ULONG *)buffer;
+    buffer += sizeof(ULONG);
+
+    if (context == WDT_INPROC_CALL)
+    {
+        *bmp = *(HBITMAP *)buffer;
+        buffer += sizeof(*bmp);
+    }
+    else if (context == WDT_REMOTE_CALL)
+    {
+        ULONG handle = *(ULONG *)buffer;
+        buffer += sizeof(ULONG);
+
+        if (handle)
+        {
+            static const ULONG header_size = FIELD_OFFSET(userBITMAP, cbSize);
+            BITMAP bitmap;
+            ULONG bitmap_size;
+            unsigned char *bits;
+
+            bitmap_size = *(ULONG *)buffer;
+            buffer += sizeof(ULONG);
+            bits = HeapAlloc(GetProcessHeap(), 0, bitmap_size);
+
+            memcpy(&bitmap, buffer, header_size);
+            buffer += header_size;
+
+            memcpy(bits, buffer, bitmap_size);
+            buffer += bitmap_size;
+
+            bitmap.bmBits = bits;
+            *bmp = CreateBitmapIndirect(&bitmap);
+
+            HeapFree(GetProcessHeap(), 0, bits);
+        }
+        else
+            *bmp = NULL;
+    }
+    else
+        RaiseException(RPC_S_INVALID_TAG, 0, 0, NULL);
+
+    return buffer;
+}
+
+/******************************************************************************
+ *           HBITMAP_UserFree [OLE32.@]
+ *
+ * Frees an unmarshaled bitmap.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  phBmp    [I] Bitmap to free.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of
+ *  which the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+void __RPC_USER HBITMAP_UserFree(ULONG *flags, HBITMAP *bmp)
+{
+    TRACE("(%s, %p)\n", debugstr_user_flags(flags), *bmp);
+
+    if (LOWORD(*flags) != MSHCTX_INPROC)
+        DeleteObject(*bmp);
+}
+
+/******************************************************************************
+ *           HPALETTE_UserSize [OLE32.@]
+ *
+ * Calculates the buffer size required to marshal a palette.
+ *
+ * PARAMS
+ *  pFlags       [I] Flags. See notes.
+ *  StartingSize [I] Starting size of the buffer. This value is added on to
+ *                   the buffer size required for the clip format.
+ *  phPal        [I] Palette to size.
+ *
+ * RETURNS
+ *  The buffer size required to marshal a palette plus the starting size.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+ULONG __RPC_USER HPALETTE_UserSize(ULONG *pFlags, ULONG StartingSize, HPALETTE *phPal)
+{
+    FIXME(":stub\n");
+    return StartingSize;
+}
+
+/******************************************************************************
+ *           HPALETTE_UserMarshal [OLE32.@]
+ *
+ * Marshals a palette into a buffer.
+ *
+ * PARAMS
+ *  pFlags  [I] Flags. See notes.
+ *  pBuffer [I] Buffer to marshal the clip format into.
+ *  phPal   [I] Palette to marshal.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER HPALETTE_UserMarshal(ULONG *pFlags, unsigned char *pBuffer, HPALETTE *phPal)
+{
+    FIXME(":stub\n");
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           HPALETTE_UserUnmarshal [OLE32.@]
+ *
+ * Unmarshals a palette from a buffer.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  pBuffer  [I] Buffer to marshal the clip format from.
+ *  phPal    [O] Address that receive the unmarshaled palette.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+unsigned char * __RPC_USER HPALETTE_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, HPALETTE *phPal)
+{
+    FIXME(":stub\n");
+    return pBuffer;
+}
+
+/******************************************************************************
+ *           HPALETTE_UserFree [OLE32.@]
+ *
+ * Frees an unmarshaled palette.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  phPal    [I] Palette to free.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of
+ *  which the first parameter is a ULONG.
+ *  This function is only intended to be called by the RPC runtime.
+ */
+void __RPC_USER HPALETTE_UserFree(ULONG *pFlags, HPALETTE *phPal)
+{
+    FIXME(":stub\n");
+}
+
+
+/******************************************************************************
  *           HMETAFILE_UserSize [OLE32.@]
  *
  * Calculates the buffer size required to marshal a metafile.
@@ -106,7 +900,7 @@ ULONG __RPC_USER HMETAFILE_UserSize(ULONG *pFlags, ULONG StartingSize, HMETAFILE
 {
     ULONG size = StartingSize;
 
-    TRACE("%s, %lu, &%p.\n", debugstr_user_flags(pFlags), StartingSize, *phmf);
+    TRACE("(%s, %d, &%p\n", debugstr_user_flags(pFlags), StartingSize, *phmf);
 
     ALIGN_LENGTH(size, 3);
 
@@ -302,7 +1096,7 @@ void __RPC_USER HMETAFILE_UserFree(ULONG *pFlags, HMETAFILE *phmf)
 */
 ULONG __RPC_USER HENHMETAFILE_UserSize(ULONG *pFlags, ULONG size, HENHMETAFILE *phEmf)
 {
-    TRACE("%s, %lu, %p.\n", debugstr_user_flags(pFlags), size, *phEmf);
+    TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), size, *phEmf);
 
     ALIGN_LENGTH(size, 3);
 
@@ -498,7 +1292,7 @@ void __RPC_USER HENHMETAFILE_UserFree(ULONG *pFlags, HENHMETAFILE *phEmf)
  */
 ULONG __RPC_USER HMETAFILEPICT_UserSize(ULONG *pFlags, ULONG size, HMETAFILEPICT *phMfp)
 {
-    TRACE("%s, %lu, &%p.\n", debugstr_user_flags(pFlags), size, *phMfp);
+    TRACE("(%s, %d, &%p)\n", debugstr_user_flags(pFlags), size, *phMfp);
 
     ALIGN_LENGTH(size, 3);
 
@@ -698,6 +1492,182 @@ void __RPC_USER HMETAFILEPICT_UserFree(ULONG *pFlags, HMETAFILEPICT *phMfp)
 }
 
 /******************************************************************************
+ *           WdtpInterfacePointer_UserSize [OLE32.@]
+ *
+ * Calculates the buffer size required to marshal an interface pointer.
+ *
+ * PARAMS
+ *  pFlags       [I] Flags. See notes.
+ *  RealFlags    [I] The MSHCTX to use when marshaling the interface.
+ *  punk         [I] Interface pointer to size.
+ *  StartingSize [I] Starting size of the buffer. This value is added on to
+ *                   the buffer size required for the clip format.
+ *  riid         [I] ID of interface to size.
+ *
+ * RETURNS
+ *  The buffer size required to marshal an interface pointer plus the starting size.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ */
+ULONG __RPC_USER WdtpInterfacePointer_UserSize(ULONG *pFlags, ULONG RealFlags, ULONG StartingSize, IUnknown *punk, REFIID riid)
+{
+    DWORD marshal_size = 0;
+    HRESULT hr;
+
+    TRACE("(%s, 0%x, %d, %p, %s)\n", debugstr_user_flags(pFlags), RealFlags, StartingSize, punk, debugstr_guid(riid));
+
+    hr = CoGetMarshalSizeMax(&marshal_size, riid, punk, LOWORD(RealFlags), NULL, MSHLFLAGS_NORMAL);
+    if(FAILED(hr)) return StartingSize;
+
+    ALIGN_LENGTH(StartingSize, 3);
+    StartingSize += 2 * sizeof(DWORD);
+    return StartingSize + marshal_size;
+}
+
+/******************************************************************************
+ *           WdtpInterfacePointer_UserMarshal [OLE32.@]
+ *
+ * Marshals an interface pointer into a buffer.
+ *
+ * PARAMS
+ *  pFlags    [I] Flags. See notes.
+ *  RealFlags [I] The MSHCTX to use when marshaling the interface.
+ *  pBuffer   [I] Buffer to marshal the clip format into.
+ *  punk      [I] Interface pointer to marshal.
+ *  riid      [I] ID of interface to marshal.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to a ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is a ULONG.
+ */
+unsigned char * WINAPI WdtpInterfacePointer_UserMarshal(ULONG *pFlags, ULONG RealFlags, unsigned char *pBuffer, IUnknown *punk, REFIID riid)
+{
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, 0);
+    IStream *stm;
+    DWORD size;
+    void *ptr;
+
+    TRACE("(%s, 0x%x, %p, &%p, %s)\n", debugstr_user_flags(pFlags), RealFlags, pBuffer, punk, debugstr_guid(riid));
+
+    if(!h) return NULL;
+    if(CreateStreamOnHGlobal(h, TRUE, &stm) != S_OK)
+    {
+        GlobalFree(h);
+        return NULL;
+    }
+
+    if(CoMarshalInterface(stm, riid, punk, LOWORD(RealFlags), NULL, MSHLFLAGS_NORMAL) != S_OK)
+    {
+        IStream_Release(stm);
+        return pBuffer;
+    }
+
+    ALIGN_POINTER(pBuffer, 3);
+    size = GlobalSize(h);
+
+    *(DWORD *)pBuffer = size;
+    pBuffer += sizeof(DWORD);
+    *(DWORD *)pBuffer = size;
+    pBuffer += sizeof(DWORD);
+
+    ptr = GlobalLock(h);
+    memcpy(pBuffer, ptr, size);
+    GlobalUnlock(h);
+
+    IStream_Release(stm);
+    return pBuffer + size;
+}
+
+/******************************************************************************
+ *           WdtpInterfacePointer_UserUnmarshal [OLE32.@]
+ *
+ * Unmarshals an interface pointer from a buffer.
+ *
+ * PARAMS
+ *  pFlags   [I] Flags. See notes.
+ *  pBuffer  [I] Buffer to marshal the clip format from.
+ *  ppunk    [I/O] Address that receives the unmarshaled interface pointer.
+ *  riid     [I] ID of interface to unmarshal.
+ *
+ * RETURNS
+ *  The end of the marshaled data in the buffer.
+ *
+ * NOTES
+ *  Even though the function is documented to take a pointer to an ULONG in
+ *  pFlags, it actually takes a pointer to a USER_MARSHAL_CB structure, of which
+ *  the first parameter is an ULONG.
+ */
+unsigned char * WINAPI WdtpInterfacePointer_UserUnmarshal(ULONG *pFlags, unsigned char *pBuffer, IUnknown **ppunk, REFIID riid)
+{
+    HRESULT hr;
+    HGLOBAL h;
+    IStream *stm;
+    DWORD size;
+    void *ptr;
+    IUnknown *orig;
+
+    TRACE("(%s, %p, %p, %s)\n", debugstr_user_flags(pFlags), pBuffer, ppunk, debugstr_guid(riid));
+
+    ALIGN_POINTER(pBuffer, 3);
+
+    size = *(DWORD *)pBuffer;
+    pBuffer += sizeof(DWORD);
+    if(size != *(DWORD *)pBuffer)
+        RaiseException(RPC_X_BAD_STUB_DATA, 0, 0, NULL);
+
+    pBuffer += sizeof(DWORD);
+
+    /* FIXME: sanity check on size */
+
+    h = GlobalAlloc(GMEM_MOVEABLE, size);
+    if(!h) RaiseException(RPC_X_NO_MEMORY, 0, 0, NULL);
+
+    if(CreateStreamOnHGlobal(h, TRUE, &stm) != S_OK)
+    {
+        GlobalFree(h);
+        RaiseException(RPC_X_NO_MEMORY, 0, 0, NULL);
+    }
+
+    ptr = GlobalLock(h);
+    memcpy(ptr, pBuffer, size);
+    GlobalUnlock(h);
+
+    orig = *ppunk;
+    hr = CoUnmarshalInterface(stm, riid, (void**)ppunk);
+    IStream_Release(stm);
+
+    if(hr != S_OK) RaiseException(hr, 0, 0, NULL);
+
+    if(orig) IUnknown_Release(orig);
+
+    return pBuffer + size;
+}
+
+/******************************************************************************
+ *           WdtpInterfacePointer_UserFree [OLE32.@]
+ *
+ * Releases an unmarshaled interface pointer.
+ *
+ * PARAMS
+ *  punk    [I] Interface pointer to release.
+ *
+ * RETURNS
+ *  Nothing.
+ */
+void WINAPI WdtpInterfacePointer_UserFree(IUnknown *punk)
+{
+    TRACE("(%p)\n", punk);
+    if(punk) IUnknown_Release(punk);
+}
+
+/******************************************************************************
 *           STGMEDIUM_UserSize [OLE32.@]
 *
 * Calculates the buffer size required to marshal an STGMEDIUM.
@@ -721,7 +1691,7 @@ ULONG __RPC_USER STGMEDIUM_UserSize(ULONG *pFlags, ULONG StartingSize, STGMEDIUM
 {
     ULONG size = StartingSize;
 
-    TRACE("%s, %lu, %p.\n", debugstr_user_flags(pFlags), StartingSize, pStgMedium);
+    TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), StartingSize, pStgMedium);
 
     ALIGN_LENGTH(size, 3);
 
@@ -961,7 +1931,7 @@ unsigned char * __RPC_USER STGMEDIUM_UserUnmarshal(ULONG *pFlags, unsigned char 
             pBuffer += sizeof(DWORD);
             if (*(DWORD *)pBuffer != 0)
             {
-                ERR("invalid offset %ld\n", *(DWORD *)pBuffer);
+                ERR("invalid offset %d\n", *(DWORD *)pBuffer);
                 RpcRaiseException(RPC_S_INVALID_BOUND);
                 return NULL;
             }
@@ -970,13 +1940,14 @@ unsigned char * __RPC_USER STGMEDIUM_UserUnmarshal(ULONG *pFlags, unsigned char 
             pBuffer += sizeof(DWORD);
             if (conformance != variance)
             {
-                ERR("conformance (%ld) and variance (%ld) should be equal\n", conformance, variance);
+                ERR("conformance (%d) and variance (%d) should be equal\n",
+                    conformance, variance);
                 RpcRaiseException(RPC_S_INVALID_BOUND);
                 return NULL;
             }
             if (conformance > 0x7fffffff)
             {
-                ERR("conformance %#lx too large\n", conformance);
+                ERR("conformance 0x%x too large\n", conformance);
                 RpcRaiseException(RPC_S_INVALID_BOUND);
                 return NULL;
             }
@@ -1140,7 +2111,7 @@ ULONG __RPC_USER SNB_UserSize(ULONG *pFlags, ULONG StartingSize, SNB *pSnb)
 {
     ULONG size = StartingSize;
 
-    TRACE("%s, %lu, %p.\n", debugstr_user_flags(pFlags), StartingSize, pSnb);
+    TRACE("(%s, %d, %p\n", debugstr_user_flags(pFlags), StartingSize, pSnb);
 
     ALIGN_LENGTH(size, 3);
 
@@ -1304,7 +2275,7 @@ HRESULT CALLBACK IEnumUnknown_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumUnknown_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -1316,7 +2287,7 @@ HRESULT __RPC_STUB IEnumUnknown_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumUnknown_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;
@@ -1362,7 +2333,7 @@ HRESULT CALLBACK IEnumMoniker_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumMoniker_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -1374,7 +2345,7 @@ HRESULT __RPC_STUB IEnumMoniker_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumMoniker_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;
@@ -1448,7 +2419,7 @@ HRESULT CALLBACK IEnumString_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumString_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -1460,7 +2431,7 @@ HRESULT __RPC_STUB IEnumString_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumString_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;
@@ -1476,7 +2447,7 @@ HRESULT CALLBACK ISequentialStream_Read_Proxy(
     ULONG read;
     HRESULT hr;
 
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbRead);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbRead);
 
     hr = ISequentialStream_RemoteRead_Proxy(This, pv, cb, &read);
     if(pcbRead) *pcbRead = read;
@@ -1490,7 +2461,7 @@ HRESULT __RPC_STUB ISequentialStream_Read_Stub(
     ULONG cb,
     ULONG *pcbRead)
 {
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbRead);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbRead);
     return ISequentialStream_Read(This, pv, cb, pcbRead);
 }
 
@@ -1503,7 +2474,7 @@ HRESULT CALLBACK ISequentialStream_Write_Proxy(
     ULONG written;
     HRESULT hr;
 
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbWritten);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbWritten);
 
     hr = ISequentialStream_RemoteWrite_Proxy(This, pv, cb, &written);
     if(pcbWritten) *pcbWritten = written;
@@ -1517,7 +2488,7 @@ HRESULT __RPC_STUB ISequentialStream_Write_Stub(
     ULONG cb,
     ULONG *pcbWritten)
 {
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbWritten);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbWritten);
     return ISequentialStream_Write(This, pv, cb, pcbWritten);
 }
 
@@ -1530,7 +2501,7 @@ HRESULT CALLBACK IStream_Seek_Proxy(
     ULARGE_INTEGER newpos;
     HRESULT hr;
 
-    TRACE("%p, %s, %ld, %p.\n", This, wine_dbgstr_longlong(dlibMove.QuadPart), dwOrigin, plibNewPosition);
+    TRACE("(%p)->(%s, %d, %p)\n", This, wine_dbgstr_longlong(dlibMove.QuadPart), dwOrigin, plibNewPosition);
 
     hr = IStream_RemoteSeek_Proxy(This, dlibMove, dwOrigin, &newpos);
     if(plibNewPosition) *plibNewPosition = newpos;
@@ -1544,7 +2515,7 @@ HRESULT __RPC_STUB IStream_Seek_Stub(
     DWORD dwOrigin,
     ULARGE_INTEGER *plibNewPosition)
 {
-    TRACE("%p, %s, %ld, %p.\n", This, wine_dbgstr_longlong(dlibMove.QuadPart), dwOrigin, plibNewPosition);
+    TRACE("(%p)->(%s, %d, %p)\n", This, wine_dbgstr_longlong(dlibMove.QuadPart), dwOrigin, plibNewPosition);
     return IStream_Seek(This, dlibMove, dwOrigin, plibNewPosition);
 }
 
@@ -1586,7 +2557,7 @@ HRESULT CALLBACK IEnumSTATSTG_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumSTATSTG_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -1598,7 +2569,7 @@ HRESULT __RPC_STUB IEnumSTATSTG_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumSTATSTG_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;
@@ -1613,7 +2584,7 @@ HRESULT CALLBACK IStorage_OpenStream_Proxy(
     DWORD reserved2,
     IStream **ppstm)
 {
-    TRACE("%p, %s, %p, %#lx, %ld, %p.\n", This, debugstr_w(pwcsName), reserved1, grfMode, reserved2, ppstm);
+    TRACE("(%p)->(%s, %p, %08x, %d %p)\n", This, debugstr_w(pwcsName), reserved1, grfMode, reserved2, ppstm);
     if(reserved1) WARN("reserved1 %p\n", reserved1);
 
     return IStorage_RemoteOpenStream_Proxy(This, pwcsName, 0, NULL, grfMode, reserved2, ppstm);
@@ -1628,8 +2599,8 @@ HRESULT __RPC_STUB IStorage_OpenStream_Stub(
     DWORD reserved2,
     IStream **ppstm)
 {
-    TRACE("%p, %s, %ld, %p, %#lx, %ld, %p.\n", This, debugstr_w(pwcsName), cbReserved1, reserved1, grfMode, reserved2, ppstm);
-    if(cbReserved1 || reserved1) WARN("cbReserved1 %ld reserved1 %p\n", cbReserved1, reserved1);
+    TRACE("(%p)->(%s, %d, %p, %08x, %d %p)\n", This, debugstr_w(pwcsName), cbReserved1, reserved1, grfMode, reserved2, ppstm);
+    if(cbReserved1 || reserved1) WARN("cbReserved1 %d reserved1 %p\n", cbReserved1, reserved1);
 
     return IStorage_OpenStream(This, pwcsName, NULL, grfMode, reserved2, ppstm);
 }
@@ -1641,7 +2612,7 @@ HRESULT CALLBACK IStorage_EnumElements_Proxy(
     DWORD reserved3,
     IEnumSTATSTG **ppenum)
 {
-    TRACE("%p, %ld, %p, %ld, %p.\n", This, reserved1, reserved2, reserved3, ppenum);
+    TRACE("(%p)->(%d, %p, %d, %p)\n", This, reserved1, reserved2, reserved3, ppenum);
     if(reserved2) WARN("reserved2 %p\n", reserved2);
 
     return IStorage_RemoteEnumElements_Proxy(This, reserved1, 0, NULL, reserved3, ppenum);
@@ -1655,8 +2626,8 @@ HRESULT __RPC_STUB IStorage_EnumElements_Stub(
     DWORD reserved3,
     IEnumSTATSTG **ppenum)
 {
-    TRACE("%p, %ld, %ld, %p, %ld, %p.\n", This, reserved1, cbReserved2, reserved2, reserved3, ppenum);
-    if(cbReserved2 || reserved2) WARN("cbReserved2 %ld reserved2 %p\n", cbReserved2, reserved2);
+    TRACE("(%p)->(%d, %d, %p, %d, %p)\n", This, reserved1, cbReserved2, reserved2, reserved3, ppenum);
+    if(cbReserved2 || reserved2) WARN("cbReserved2 %d reserved2 %p\n", cbReserved2, reserved2);
 
     return IStorage_EnumElements(This, reserved1, NULL, reserved3, ppenum);
 }
@@ -1671,7 +2642,7 @@ HRESULT CALLBACK ILockBytes_ReadAt_Proxy(
     ULONG read;
     HRESULT hr;
 
-    TRACE("%p, %s, %p, %lu, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbRead);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbRead);
 
     hr = ILockBytes_RemoteReadAt_Proxy(This, ulOffset, pv, cb, &read);
     if(pcbRead) *pcbRead = read;
@@ -1686,7 +2657,7 @@ HRESULT __RPC_STUB ILockBytes_ReadAt_Stub(
     ULONG cb,
     ULONG *pcbRead)
 {
-    TRACE("%p, %s, %p, %lu, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbRead);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbRead);
     return ILockBytes_ReadAt(This, ulOffset, pv, cb, pcbRead);
 }
 
@@ -1700,7 +2671,7 @@ HRESULT CALLBACK ILockBytes_WriteAt_Proxy(
     ULONG written;
     HRESULT hr;
 
-    TRACE("%p, %s, %p, %lu, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
 
     hr = ILockBytes_RemoteWriteAt_Proxy(This, ulOffset, pv, cb, &written);
     if(pcbWritten) *pcbWritten = written;
@@ -1715,7 +2686,7 @@ HRESULT __RPC_STUB ILockBytes_WriteAt_Stub(
     ULONG cb,
     ULONG *pcbWritten)
 {
-    TRACE("%p, %s, %p, %lu, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
     return ILockBytes_WriteAt(This, ulOffset, pv, cb, pcbWritten);
 }
 
@@ -1728,7 +2699,7 @@ HRESULT CALLBACK IFillLockBytes_FillAppend_Proxy(
     ULONG written;
     HRESULT hr;
 
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbWritten);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbWritten);
 
     hr = IFillLockBytes_RemoteFillAppend_Proxy(This, pv, cb, &written);
     if(pcbWritten) *pcbWritten = written;
@@ -1742,7 +2713,7 @@ HRESULT __RPC_STUB IFillLockBytes_FillAppend_Stub(
     ULONG cb,
     ULONG *pcbWritten)
 {
-    TRACE("%p, %p, %lu, %p.\n", This, pv, cb, pcbWritten);
+    TRACE("(%p)->(%p, %d, %p)\n", This, pv, cb, pcbWritten);
     return IFillLockBytes_FillAppend(This, pv, cb, pcbWritten);
 }
 
@@ -1756,7 +2727,7 @@ HRESULT CALLBACK IFillLockBytes_FillAt_Proxy(
     ULONG written;
     HRESULT hr;
 
-    TRACE("%p, %s, %p, %lu, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
 
     hr = IFillLockBytes_RemoteFillAt_Proxy(This, ulOffset, pv, cb, &written);
     if(pcbWritten) *pcbWritten = written;
@@ -1771,7 +2742,7 @@ HRESULT __RPC_STUB IFillLockBytes_FillAt_Stub(
     ULONG cb,
     ULONG *pcbWritten)
 {
-    TRACE("%p, %s, %p, %ld, %p.\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
+    TRACE("(%p)->(%s, %p, %d, %p)\n", This, wine_dbgstr_longlong(ulOffset.QuadPart), pv, cb, pcbWritten);
     return IFillLockBytes_FillAt(This, ulOffset, pv, cb, pcbWritten);
 }
 
@@ -1806,7 +2777,7 @@ HRESULT CALLBACK IEnumSTATDATA_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %ld, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumSTATDATA_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -1818,7 +2789,7 @@ HRESULT __RPC_STUB IEnumSTATDATA_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumSTATDATA_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;
@@ -1849,7 +2820,7 @@ void CALLBACK IAdviseSink_OnViewChange_Proxy(
     DWORD dwAspect,
     LONG lindex)
 {
-    TRACE("%p, %ld, %ld.\n", This, dwAspect, lindex);
+    TRACE("(%p)->(%d, %d)\n", This, dwAspect, lindex);
     IAdviseSink_RemoteOnViewChange_Proxy(This, dwAspect, lindex);
 }
 
@@ -1858,7 +2829,7 @@ HRESULT __RPC_STUB IAdviseSink_OnViewChange_Stub(
     DWORD dwAspect,
     LONG lindex)
 {
-    TRACE("%p, %ld, %ld.\n", This, dwAspect, lindex);
+    TRACE("(%p)->(%d, %d)\n", This, dwAspect, lindex);
     IAdviseSink_OnViewChange(This, dwAspect, lindex);
     return S_OK;
 }
@@ -2053,7 +3024,7 @@ HRESULT CALLBACK IOleCache2_UpdateCache_Proxy(
     DWORD grfUpdf,
     LPVOID pReserved)
 {
-    TRACE("%p, %p, %#lx, %p.\n", This, pDataObject, grfUpdf, pReserved);
+    TRACE("(%p, %p, 0x%08x, %p)\n", This, pDataObject, grfUpdf, pReserved);
     return IOleCache2_RemoteUpdateCache_Proxy(This, pDataObject, grfUpdf, (LONG_PTR)pReserved);
 }
 
@@ -2063,7 +3034,7 @@ HRESULT __RPC_STUB IOleCache2_UpdateCache_Stub(
     DWORD grfUpdf,
     LONG_PTR pReserved)
 {
-    TRACE("%p, %p, %#lx, %Id.\n", This, pDataObject, grfUpdf, pReserved);
+    TRACE("(%p, %p, 0x%08x, %li)\n", This, pDataObject, grfUpdf, pReserved);
     return IOleCache2_UpdateCache(This, pDataObject, grfUpdf, (void*)pReserved);
 }
 
@@ -2074,7 +3045,7 @@ HRESULT CALLBACK IEnumOLEVERB_Next_Proxy(
     ULONG *pceltFetched)
 {
     ULONG fetched;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     if (!pceltFetched) pceltFetched = &fetched;
     return IEnumOLEVERB_RemoteNext_Proxy(This, celt, rgelt, pceltFetched);
 }
@@ -2086,7 +3057,7 @@ HRESULT __RPC_STUB IEnumOLEVERB_Next_Stub(
     ULONG *pceltFetched)
 {
     HRESULT hr;
-    TRACE("%p, %lu, %p, %p.\n", This, celt, rgelt, pceltFetched);
+    TRACE("(%p)->(%d, %p, %p)\n", This, celt, rgelt, pceltFetched);
     *pceltFetched = 0;
     hr = IEnumOLEVERB_Next(This, celt, rgelt, pceltFetched);
     if (hr == S_OK) *pceltFetched = celt;

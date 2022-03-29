@@ -1,3 +1,6 @@
 MODULE    = mssip32.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
+
+C_SRCS = \
+	main.c

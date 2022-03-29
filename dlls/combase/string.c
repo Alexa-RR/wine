@@ -26,57 +26,44 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winstring);
 
-#define HSTRING_REFERENCE_FLAG 1
-
-struct hstring_header
-{
-    UINT32 flags;
-    UINT32 length;
-    UINT32 padding1;
-    UINT32 padding2;
-    const WCHAR *str;
-};
-
 struct hstring_private
 {
-    struct hstring_header header;
-    LONG refcount;
-    WCHAR buffer[1];
+    LPWSTR buffer;
+    UINT32 length;
+    BOOL   reference;
+    LONG   refcount;
 };
 
 static const WCHAR empty[1];
 
-C_ASSERT(sizeof(struct hstring_header) <= sizeof(HSTRING_HEADER));
+C_ASSERT(sizeof(struct hstring_private) <= sizeof(HSTRING_HEADER));
 
 static inline struct hstring_private *impl_from_HSTRING(HSTRING string)
 {
-    return (struct hstring_private *)string;
+   return (struct hstring_private *)string;
 }
 
 static inline struct hstring_private *impl_from_HSTRING_HEADER(HSTRING_HEADER *header)
 {
-    return CONTAINING_RECORD(header, struct hstring_private, header);
+   return (struct hstring_private *)header;
 }
 
 static inline struct hstring_private *impl_from_HSTRING_BUFFER(HSTRING_BUFFER buffer)
 {
-    return CONTAINING_RECORD(buffer, struct hstring_private, buffer);
+   return (struct hstring_private *)buffer;
 }
 
 static BOOL alloc_string(UINT32 len, HSTRING *out)
 {
     struct hstring_private *priv;
-    priv = HeapAlloc(GetProcessHeap(), 0, offsetof(struct hstring_private, buffer[len+1]));
+    priv = HeapAlloc(GetProcessHeap(), 0, sizeof(*priv) + (len + 1) * sizeof(*priv->buffer));
     if (!priv)
         return FALSE;
-
-    priv->header.flags = 0;
-    priv->header.length = len;
-    priv->header.str = priv->buffer;
-
+    priv->buffer = (LPWSTR)(priv + 1);
+    priv->length = len;
+    priv->reference = FALSE;
     priv->refcount = 1;
     priv->buffer[len] = '\0';
-
     *out = (HSTRING)priv;
     return TRUE;
 }
@@ -128,12 +115,10 @@ HRESULT WINAPI WindowsCreateStringReference(LPCWSTR ptr, UINT32 len,
     }
     if (ptr == NULL)
         return E_POINTER;
-
-    priv->header.str = ptr;
-    priv->header.length = len;
-    priv->header.flags = HSTRING_REFERENCE_FLAG;
-
-    *out = (HSTRING)priv;
+    priv->buffer = (LPWSTR)ptr;
+    priv->length = len;
+    priv->reference = TRUE;
+    *out = (HSTRING)header;
     return S_OK;
 }
 
@@ -148,7 +133,7 @@ HRESULT WINAPI WindowsDeleteString(HSTRING str)
 
     if (str == NULL)
         return S_OK;
-    if (priv->header.flags & HSTRING_REFERENCE_FLAG)
+    if (priv->reference)
         return S_OK;
     if (InterlockedDecrement(&priv->refcount) == 0)
         HeapFree(GetProcessHeap(), 0, priv);
@@ -171,8 +156,8 @@ HRESULT WINAPI WindowsDuplicateString(HSTRING str, HSTRING *out)
         *out = NULL;
         return S_OK;
     }
-    if (priv->header.flags & HSTRING_REFERENCE_FLAG)
-        return WindowsCreateString(priv->header.str, priv->header.length, out);
+    if (priv->reference)
+        return WindowsCreateString(priv->buffer, priv->length, out);
     InterlockedIncrement(&priv->refcount);
     *out = str;
     return S_OK;
@@ -202,7 +187,7 @@ HRESULT WINAPI WindowsPreallocateStringBuffer(UINT32 len, WCHAR **outptr,
         return E_OUTOFMEMORY;
     priv = impl_from_HSTRING(str);
     *outptr = priv->buffer;
-    *out = (HSTRING_BUFFER)&priv->buffer;
+    *out = (HSTRING_BUFFER)str;
     return S_OK;
 }
 
@@ -211,14 +196,9 @@ HRESULT WINAPI WindowsPreallocateStringBuffer(UINT32 len, WCHAR **outptr,
  */
 HRESULT WINAPI WindowsDeleteStringBuffer(HSTRING_BUFFER buf)
 {
-    struct hstring_private *priv = NULL;
-
     TRACE("(%p)\n", buf);
 
-    if(buf)
-        priv = impl_from_HSTRING_BUFFER(buf);
-
-    return WindowsDeleteString((HSTRING)priv);
+    return WindowsDeleteString((HSTRING)buf);
 }
 
 /***********************************************************************
@@ -237,9 +217,9 @@ HRESULT WINAPI WindowsPromoteStringBuffer(HSTRING_BUFFER buf, HSTRING *out)
         *out = NULL;
         return S_OK;
     }
-    if (priv->buffer[priv->header.length] != 0 || priv->header.flags & HSTRING_REFERENCE_FLAG || priv->refcount != 1)
+    if (priv->buffer[priv->length] != 0 || priv->reference || priv->refcount != 1)
         return E_INVALIDARG;
-    *out = (HSTRING)priv;
+    *out = (HSTRING)buf;
     return S_OK;
 }
 
@@ -254,7 +234,7 @@ UINT32 WINAPI WindowsGetStringLen(HSTRING str)
 
     if (str == NULL)
         return 0;
-    return priv->header.length;
+    return priv->length;
 }
 
 /***********************************************************************
@@ -273,8 +253,8 @@ LPCWSTR WINAPI WindowsGetStringRawBuffer(HSTRING str, UINT32 *len)
         return empty;
     }
     if (len)
-        *len = priv->header.length;
-    return priv->header.str;
+        *len = priv->length;
+    return priv->buffer;
 }
 
 /***********************************************************************
@@ -294,9 +274,9 @@ HRESULT WINAPI WindowsStringHasEmbeddedNull(HSTRING str, BOOL *out)
         *out = FALSE;
         return S_OK;
     }
-    for (i = 0; i < priv->header.length; i++)
+    for (i = 0; i < priv->length; i++)
     {
-        if (priv->header.str[i] == '\0')
+        if (priv->buffer[i] == '\0')
         {
             *out = TRUE;
             return S_OK;
@@ -325,7 +305,7 @@ HRESULT WINAPI WindowsSubstring(HSTRING str, UINT32 start, HSTRING *out)
         *out = NULL;
         return S_OK;
     }
-    return WindowsCreateString(&priv->header.str[start], len - start, out);
+    return WindowsCreateString(&priv->buffer[start], len - start, out);
 }
 
 /***********************************************************************
@@ -347,7 +327,7 @@ HRESULT WINAPI WindowsSubstringWithSpecifiedLength(HSTRING str, UINT32 start, UI
         *out = NULL;
         return S_OK;
     }
-    return WindowsCreateString(&priv->header.str[start], len, out);
+    return WindowsCreateString(&priv->buffer[start], len, out);
 }
 
 /***********************************************************************
@@ -367,16 +347,16 @@ HRESULT WINAPI WindowsConcatString(HSTRING str1, HSTRING str2, HSTRING *out)
         return WindowsDuplicateString(str2, out);
     if (str2 == NULL)
         return WindowsDuplicateString(str1, out);
-    if (!priv1->header.length && !priv2->header.length)
+    if (!priv1->length && !priv2->length)
     {
         *out = NULL;
         return S_OK;
     }
-    if (!alloc_string(priv1->header.length + priv2->header.length, out))
+    if (!alloc_string(priv1->length + priv2->length, out))
         return E_OUTOFMEMORY;
     priv = impl_from_HSTRING(*out);
-    memcpy(priv->buffer, priv1->header.str, priv1->header.length * sizeof(*priv1->buffer));
-    memcpy(priv->buffer + priv1->header.length, priv2->header.str, priv2->header.length * sizeof(*priv2->buffer));
+    memcpy(priv->buffer, priv1->buffer, priv1->length * sizeof(*priv1->buffer));
+    memcpy(priv->buffer + priv1->length, priv2->buffer, priv2->length * sizeof(*priv2->buffer));
     return S_OK;
 }
 
@@ -391,7 +371,7 @@ BOOL WINAPI WindowsIsStringEmpty(HSTRING str)
 
     if (str == NULL)
         return TRUE;
-    return priv->header.length == 0;
+    return priv->length == 0;
 }
 
 /***********************************************************************
@@ -415,13 +395,13 @@ HRESULT WINAPI WindowsCompareStringOrdinal(HSTRING str1, HSTRING str2, INT32 *re
     }
     if (str1)
     {
-        buf1 = priv1->header.str;
-        len1 = priv1->header.length;
+        buf1 = priv1->buffer;
+        len1 = priv1->length;
     }
     if (str2)
     {
-        buf2 = priv2->header.str;
-        len2 = priv2->header.length;
+        buf2 = priv2->buffer;
+        len2 = priv2->length;
     }
     *res = CompareStringOrdinal(buf1, len1, buf2, len2, FALSE) - CSTR_EQUAL;
     return S_OK;
@@ -438,19 +418,19 @@ HRESULT WINAPI WindowsTrimStringStart(HSTRING str1, HSTRING str2, HSTRING *out)
 
     TRACE("(%p, %p, %p)\n", str1, str2, out);
 
-    if (!out || !str2 || !priv2->header.length)
+    if (!out || !str2 || !priv2->length)
         return E_INVALIDARG;
     if (!str1)
     {
         *out = NULL;
         return S_OK;
     }
-    for (start = 0; start < priv1->header.length; start++)
+    for (start = 0; start < priv1->length; start++)
     {
-        if (!wmemchr(priv2->header.str, priv1->header.str[start], priv2->header.length))
+        if (!wmemchr(priv2->buffer, priv1->buffer[start], priv2->length))
             break;
     }
-    return start ? WindowsCreateString(&priv1->header.str[start], priv1->header.length - start, out) :
+    return start ? WindowsCreateString(&priv1->buffer[start], priv1->length - start, out) :
                    WindowsDuplicateString(str1, out);
 }
 
@@ -465,18 +445,18 @@ HRESULT WINAPI WindowsTrimStringEnd(HSTRING str1, HSTRING str2, HSTRING *out)
 
     TRACE("(%p, %p, %p)\n", str1, str2, out);
 
-    if (!out || !str2 || !priv2->header.length)
+    if (!out || !str2 || !priv2->length)
         return E_INVALIDARG;
     if (!str1)
     {
         *out = NULL;
         return S_OK;
     }
-    for (len = priv1->header.length; len > 0; len--)
+    for (len = priv1->length; len > 0; len--)
     {
-        if (!wmemchr(priv2->header.str, priv1->header.str[len - 1], priv2->header.length))
+        if (!wmemchr(priv2->buffer, priv1->buffer[len - 1], priv2->length))
             break;
     }
-    return (len < priv1->header.length) ? WindowsCreateString(priv1->header.str, len, out) :
+    return (len < priv1->length) ? WindowsCreateString(priv1->buffer, len, out) :
                                    WindowsDuplicateString(str1, out);
 }

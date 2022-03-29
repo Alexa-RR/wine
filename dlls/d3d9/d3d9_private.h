@@ -94,7 +94,6 @@ struct d3d9_device
     struct wined3d_device_parent device_parent;
     LONG refcount;
     struct wined3d_device *wined3d_device;
-    struct wined3d_device_context *immediate_context;
     unsigned int adapter_ordinal;
     struct d3d9 *d3d_parent;
 
@@ -115,7 +114,8 @@ struct d3d9_device
     DWORD sysmem_ib : 1;
     DWORD in_destruction : 1;
     DWORD in_scene : 1;
-    DWORD padding : 13;
+    DWORD has_vertex_declaration : 1;
+    DWORD padding : 12;
 
     DWORD auto_mipmaps; /* D3D9_MAX_TEXTURE_UNITS */
 
@@ -163,7 +163,6 @@ struct d3d9_swapchain
     IDirect3DSwapChain9Ex IDirect3DSwapChain9Ex_iface;
     LONG refcount;
     struct wined3d_swapchain *wined3d_swapchain;
-    struct wined3d_swapchain_state_parent state_parent;
     IDirect3DDevice9Ex *parent_device;
     unsigned int swap_interval;
 };
@@ -226,7 +225,7 @@ struct d3d9_texture
     IDirect3DBaseTexture9 IDirect3DBaseTexture9_iface;
     struct d3d9_resource resource;
     struct wined3d_texture *wined3d_texture;
-    struct d3d9_device *parent_device;
+    IDirect3DDevice9Ex *parent_device;
     struct list rtv_list;
     DWORD usage;
     BOOL flags;

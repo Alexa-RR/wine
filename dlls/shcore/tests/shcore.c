@@ -138,34 +138,36 @@ static void test_process_reference(void)
 
     obj = (void *)0xdeadbeef;
     hr = pGetProcessReference(&obj);
-    ok(hr == E_FAIL, "Unexpected hr %#lx.\n", hr);
+    ok(hr == E_FAIL, "Unexpected hr %#x.\n", hr);
     ok(obj == NULL, "Unexpected pointer.\n");
 
     test_unk_init(&test_unk);
     test_unk_init(&test_unk2);
 
     pSetProcessReference(&test_unk.IUnknown_iface);
-    ok(test_unk.refcount == 1, "Unexpected refcount %lu.\n", test_unk.refcount);
+    ok(test_unk.refcount == 1, "Unexpected refcount %u.\n", test_unk.refcount);
     pSetProcessReference(&test_unk2.IUnknown_iface);
-    ok(test_unk.refcount == 1, "Unexpected refcount %lu.\n", test_unk.refcount);
-    ok(test_unk2.refcount == 1, "Unexpected refcount %lu.\n", test_unk2.refcount);
+    ok(test_unk.refcount == 1, "Unexpected refcount %u.\n", test_unk.refcount);
+    ok(test_unk2.refcount == 1, "Unexpected refcount %u.\n", test_unk2.refcount);
 
     hr = pGetProcessReference(&obj);
-    ok(hr == S_OK, "Failed to get reference, hr %#lx.\n", hr);
+    ok(hr == S_OK, "Failed to get reference, hr %#x.\n", hr);
     ok(obj == &test_unk2.IUnknown_iface, "Unexpected pointer.\n");
-    ok(test_unk2.refcount == 2, "Unexpected refcount %lu.\n", test_unk2.refcount);
+    ok(test_unk2.refcount == 2, "Unexpected refcount %u.\n", test_unk2.refcount);
 
     hmod = LoadLibraryA("shell32.dll");
 
     pSHGetInstanceExplorer = (void *)GetProcAddress(hmod, "SHGetInstanceExplorer");
     hr = pSHGetInstanceExplorer(&obj);
-    ok(hr == S_OK, "Failed to get reference, hr %#lx.\n", hr);
+    ok(hr == S_OK, "Failed to get reference, hr %#x.\n", hr);
     ok(obj == &test_unk2.IUnknown_iface, "Unexpected pointer.\n");
-    ok(test_unk2.refcount == 3, "Unexpected refcount %lu.\n", test_unk2.refcount);
+    ok(test_unk2.refcount == 3, "Unexpected refcount %u.\n", test_unk2.refcount);
 }
 
 static void test_SHUnicodeToAnsi(void)
 {
+    static const WCHAR testW[] = {'t','e','s','t',0};
+    static const WCHAR emptyW[] = { 0 };
     char buff[16];
     int ret;
 
@@ -184,31 +186,32 @@ static void test_SHUnicodeToAnsi(void)
 
     buff[0] = 1;
     strcpy(buff, "test");
-    ret = pSHUnicodeToAnsi(L"", buff, 1);
+    ret = pSHUnicodeToAnsi(emptyW, buff, 1);
     ok(ret == 1, "Unexpected return value %d.\n", ret);
     ok(*buff == 0, "Unexpected buffer contents.\n");
 
     buff[0] = 1;
-    ret = pSHUnicodeToAnsi(L"test", buff, 0);
+    ret = pSHUnicodeToAnsi(testW, buff, 0);
     ok(ret == 0, "Unexpected return value %d.\n", ret);
     ok(buff[0] == 1, "Unexpected buffer contents.\n");
 
     buff[0] = 1;
-    ret = pSHUnicodeToAnsi(L"test", buff, 1);
+    ret = pSHUnicodeToAnsi(testW, buff, 1);
     ok(ret == 1, "Unexpected return value %d.\n", ret);
     ok(*buff == 0, "Unexpected buffer contents.\n");
 
-    ret = pSHUnicodeToAnsi(L"test", buff, 16);
+    ret = pSHUnicodeToAnsi(testW, buff, 16);
     ok(ret == 5, "Unexpected return value %d.\n", ret);
     ok(!strcmp(buff, "test"), "Unexpected buffer contents.\n");
 
-    ret = pSHUnicodeToAnsi(L"test", buff, 2);
+    ret = pSHUnicodeToAnsi(testW, buff, 2);
     ok(ret == 2, "Unexpected return value %d.\n", ret);
     ok(!strcmp(buff, "t"), "Unexpected buffer contents.\n");
 }
 
 static void test_SHAnsiToUnicode(void)
 {
+    static const WCHAR testW[] = {'t','e','s','t',0};
     WCHAR buffW[16];
     int ret;
 
@@ -243,7 +246,7 @@ static void test_SHAnsiToUnicode(void)
 
     ret = pSHAnsiToUnicode("test", buffW, 16);
     ok(ret == 5, "Unexpected return value %d.\n", ret);
-    ok(!lstrcmpW(buffW, L"test"), "Unexpected buffer contents.\n");
+    ok(!lstrcmpW(buffW, testW), "Unexpected buffer contents.\n");
 
     ret = pSHAnsiToUnicode("test", buffW, 2);
     ok(ret == 2, "Unexpected return value %d.\n", ret);
@@ -291,40 +294,43 @@ static void test_SHAnsiToAnsi(void)
 
 static void test_SHUnicodeToUnicode(void)
 {
+    static const WCHAR testW[] = {'t','e','s','t',0};
+    static const WCHAR strW[] = {'a','b','c','d','e','f','g','h','i','k','l','m',0};
+    static const WCHAR emptyW[] = { 0 };
     WCHAR buff[16];
     int ret;
 
     ret = pSHUnicodeToUnicode(NULL, NULL, 0);
     ok(ret == 0, "Unexpected return value %d.\n", ret);
 
-    lstrcpyW(buff, L"abcdefghiklm");
-    ret = pSHUnicodeToUnicode(L"test", buff, 3);
+    lstrcpyW(buff, strW);
+    ret = pSHUnicodeToUnicode(testW, buff, 3);
     ok(ret == 0, "Unexpected return value %d.\n", ret);
-    ok(!memcmp(buff, L"test", 2 * sizeof(WCHAR)) && !buff[2], "Unexpected buffer contents.\n");
+    ok(!memcmp(buff, testW, 2 * sizeof(WCHAR)) && !buff[2], "Unexpected buffer contents.\n");
     ok(buff[3] == 'd', "Unexpected buffer contents.\n");
 
-    lstrcpyW(buff, L"abcdefghiklm");
-    ret = pSHUnicodeToUnicode(L"", buff, 3);
+    lstrcpyW(buff, strW);
+    ret = pSHUnicodeToUnicode(emptyW, buff, 3);
     ok(ret == 1, "Unexpected return value %d.\n", ret);
     ok(!*buff, "Unexpected buffer contents.\n");
     ok(buff[3] == 'd', "Unexpected buffer contents.\n");
 
-    lstrcpyW(buff, L"abcdefghiklm");
-    ret = pSHUnicodeToUnicode(L"test", buff, 4);
+    lstrcpyW(buff, strW);
+    ret = pSHUnicodeToUnicode(testW, buff, 4);
     ok(ret == 0, "Unexpected return value %d.\n", ret);
-    ok(!memcmp(buff, L"test", 3 * sizeof(WCHAR)) && !buff[3], "Unexpected buffer contents.\n");
+    ok(!memcmp(buff, testW, 3 * sizeof(WCHAR)) && !buff[3], "Unexpected buffer contents.\n");
     ok(buff[4] == 'e', "Unexpected buffer contents.\n");
 
-    lstrcpyW(buff, L"abcdefghiklm");
-    ret = pSHUnicodeToUnicode(L"test", buff, 5);
+    lstrcpyW(buff, strW);
+    ret = pSHUnicodeToUnicode(testW, buff, 5);
     ok(ret == 5, "Unexpected return value %d.\n", ret);
-    ok(!lstrcmpW(buff, L"test"), "Unexpected buffer contents.\n");
+    ok(!lstrcmpW(buff, testW), "Unexpected buffer contents.\n");
     ok(buff[5] == 'f', "Unexpected buffer contents.\n");
 
-    lstrcpyW(buff, L"abcdefghiklm");
-    ret = pSHUnicodeToUnicode(L"test", buff, 6);
+    lstrcpyW(buff, strW);
+    ret = pSHUnicodeToUnicode(testW, buff, 6);
     ok(ret == 5, "Unexpected return value %d.\n", ret);
-    ok(!lstrcmpW(buff, L"test"), "Unexpected buffer contents.\n");
+    ok(!lstrcmpW(buff, testW), "Unexpected buffer contents.\n");
     ok(buff[5] == 'f', "Unexpected buffer contents.\n");
 }
 
@@ -334,7 +340,7 @@ static void test_SHRegDuplicateHKey(void)
     DWORD ret;
 
     ret = RegCreateKeyA(HKEY_CURRENT_USER, "Software\\Wine\\Test", &hkey);
-    ok(!ret, "Failed to create test key, ret %ld.\n", ret);
+    ok(!ret, "Failed to create test key, ret %d.\n", ret);
 
     hkey2 = pSHRegDuplicateHKey(hkey);
     ok(hkey2 != NULL && hkey2 != hkey, "Unexpected duplicate key.\n");
@@ -351,20 +357,20 @@ static void test_SHDeleteKey(void)
     DWORD ret;
 
     ret = RegCreateKeyA(HKEY_CURRENT_USER, "Software\\Wine\\Test", &hkey);
-    ok(!ret, "Failed to create test key, %ld.\n", ret);
+    ok(!ret, "Failed to create test key, %d.\n", ret);
 
     ret = RegCreateKeyA(hkey, "delete_key", &hkey2);
-    ok(!ret, "Failed to create test key, %ld.\n", ret);
+    ok(!ret, "Failed to create test key, %d.\n", ret);
     RegCloseKey(hkey2);
 
     ret = RegDeleteKeyA(HKEY_CURRENT_USER, "Software\\Wine\\Test");
-    ok(ret == ERROR_ACCESS_DENIED, "Unexpected return value %ld.\n", ret);
+    ok(ret == ERROR_ACCESS_DENIED, "Unexpected return value %d.\n", ret);
 
     ret = pSHDeleteKeyA(HKEY_CURRENT_USER, "Software\\Wine\\Test");
-    ok(!ret, "Unexpected retval %lu.\n", ret);
+    ok(!ret, "Failed to delete a key, %d.\n", ret);
 
     ret = RegCloseKey(hkey);
-    ok(!ret, "Unexpected retval %lu.\n", ret);
+    ok(!ret, "Failed to delete a key, %d.\n", ret);
 }
 
 static HKEY create_test_entries(void)
@@ -377,7 +383,7 @@ static HKEY create_test_entries(void)
     SetEnvironmentVariableA("FOO", test_envvar2);
 
     ret = RegCreateKeyA(HKEY_CURRENT_USER, REG_TEST_KEY, &hKey);
-    ok(!ret, "Unexpected retval %lu.\n", ret);
+    ok(!ret, "RegCreateKeyA failed, ret=%u\n", ret);
 
     if (hKey)
     {
@@ -431,18 +437,18 @@ static void test_SHGetValue(void)
     size = MAX_PATH;
     type = -1;
     ret = pSHGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test1", &type, buf, &size);
-    ok(!ret, "Failed to get value, ret %lu.\n", ret);
+    ok(!ret, "Failed to get value, ret %u.\n", ret);
 
     ok(!strcmp(test_exp_path1, buf), "Unexpected value %s.\n", buf);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(type == REG_SZ, "Unexpected value type %d.\n", type);
 
     strcpy(buf, initial_buffer);
     size = MAX_PATH;
     type = -1;
     ret = pSHGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test2", &type, buf, &size);
-    ok(!ret, "Failed to get value, ret %lu.\n", ret);
+    ok(!ret, "Failed to get value, ret %u.\n", ret);
     ok(!strcmp(test_path1, buf), "Unexpected value %s.\n", buf);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(type == REG_SZ, "Unexpected value type %d.\n", type);
 
     delete_key(hkey, "Software\\Wine", "Test");
 }
@@ -457,31 +463,31 @@ static void test_SHRegGetValue(void)
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test1", SRRF_RT_REG_EXPAND_SZ, &type, data, &size);
-    ok(ret == ERROR_INVALID_PARAMETER, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_INVALID_PARAMETER, "SHRegGetValue failed, ret=%u\n", ret);
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test1", SRRF_RT_REG_SZ, &type, data, &size);
-    ok(!ret, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_SUCCESS, "SHRegGetValue failed, ret=%u\n", ret);
     ok(!strcmp(data, test_exp_path1), "data = %s, expected %s\n", data, test_exp_path1);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(type == REG_SZ, "type = %d, expected REG_SZ\n", type);
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test1", SRRF_RT_REG_DWORD, &type, data, &size);
-    ok(ret == ERROR_UNSUPPORTED_TYPE, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_UNSUPPORTED_TYPE, "SHRegGetValue failed, ret=%u\n", ret);
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test2", SRRF_RT_REG_EXPAND_SZ, &type, data, &size);
-    ok(ret == ERROR_INVALID_PARAMETER, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_INVALID_PARAMETER, "SHRegGetValue failed, ret=%u\n", ret);
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test2", SRRF_RT_REG_SZ, &type, data, &size);
-    ok(!ret, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_SUCCESS, "SHRegGetValue failed, ret=%u\n", ret);
     ok(!strcmp(data, test_path1), "data = %s, expected %s\n", data, test_path1);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(type == REG_SZ, "type = %d, expected REG_SZ\n", type);
 
     size = MAX_PATH;
     ret = pSHRegGetValueA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test2", SRRF_RT_REG_QWORD, &type, data, &size);
-    ok(ret == ERROR_UNSUPPORTED_TYPE, "Unexpected retval %lu.\n", ret);
+    ok(ret == ERROR_UNSUPPORTED_TYPE, "SHRegGetValue failed, ret=%u\n", ret);
 
     delete_key(hkey, "Software\\Wine", "Test");
 }
@@ -496,7 +502,7 @@ static void test_SHQueryValueEx(void)
     testkey = create_test_entries();
 
     ret = RegOpenKeyExA(HKEY_CURRENT_USER, REG_TEST_KEY, 0,  KEY_QUERY_VALUE, &hKey);
-    ok(!ret, "Failed to open a key, ret %lu.\n", ret);
+    ok(!ret, "Failed to open a key, ret %u.\n", ret);
 
     /****** SHQueryValueExA ******/
 
@@ -507,28 +513,28 @@ static void test_SHQueryValueEx(void)
      * Case 1.1 All arguments are NULL
      */
     ret = pSHQueryValueExA( hKey, "Test1", NULL, NULL, NULL, NULL);
-    ok(!ret, "Failed to query value, ret %lu.\n", ret);
+    ok(!ret, "Failed to query value, ret %u.\n", ret);
 
     /*
      * Case 1.2 dwType is set
      */
     type = -1;
     ret = pSHQueryValueExA( hKey, "Test1", NULL, &type, NULL, NULL);
-    ok(!ret, "Failed to query value, ret %lu.\n", ret);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(!ret, "Failed to query value, ret %u.\n", ret);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     size = 6;
     ret = pSHQueryValueExA( hKey, "Test1", NULL, NULL, NULL, &size);
-    ok(!ret, "Failed to query value, ret %lu.\n", ret);
-    ok(size == buffer_len1, "Buffer sizes %lu and %lu are not equal\n", size, buffer_len1);
+    ok(!ret, "Failed to query value, ret %u.\n", ret);
+    ok(size == buffer_len1, "Buffer sizes (%u) and (%u) are not equal\n", size, buffer_len1);
 
     /*
      * Expanded > unexpanded
      */
     size = 6;
     ret = pSHQueryValueExA( hKey, "Test3", NULL, NULL, NULL, &size);
-    ok(!ret, "Failed to query value, ret %lu.\n", ret);
-    ok(size >= buffer_len2, "Buffer size %lu should be >= %lu.\n", size, buffer_len2);
+    ok(!ret, "Failed to query value, ret %u.\n", ret);
+    ok(size >= buffer_len2, "Buffer size (%u) should be >= (%u)\n", size, buffer_len2);
 
     /*
      * Case 1 string shrinks during expanding
@@ -537,10 +543,10 @@ static void test_SHQueryValueEx(void)
     size = 6;
     type = -1;
     ret = pSHQueryValueExA( hKey, "Test1", NULL, &type, buf, &size);
-    ok(ret == ERROR_MORE_DATA, "Unexpected retval %ld.\n", ret);
+    ok(ret == ERROR_MORE_DATA, "Expected ERROR_MORE_DATA, got (%u)\n", ret);
     ok(!strcmp(initial_buffer, buf), "Comparing (%s) with (%s) failed\n", buf, initial_buffer);
-    ok(size == buffer_len1, "Buffer sizes %lu and %lu are not equal\n", size, buffer_len1);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(size == buffer_len1, "Buffer sizes (%u) and (%u) are not equal\n", size, buffer_len1);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     /*
     * string grows during expanding
@@ -550,10 +556,10 @@ static void test_SHQueryValueEx(void)
     size = 6;
     type = -1;
     ret = pSHQueryValueExA( hKey, "Test3", NULL, &type, buf, &size);
-    ok(ret == ERROR_MORE_DATA, "Unexpected retval %ld.\n", ret);
+    ok(ret == ERROR_MORE_DATA, "Expected ERROR_MORE_DATA, got (%u)\n", ret);
     ok(!strcmp(initial_buffer, buf), "Comparing (%s) with (%s) failed\n", buf, initial_buffer);
-    ok(size >= buffer_len2, "Buffer size %lu should be >= %lu.\n", size, buffer_len2);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(size >= buffer_len2, "Buffer size (%u) should be >= (%u)\n", size, buffer_len2);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     /*
     * string grows during expanding
@@ -565,15 +571,15 @@ static void test_SHQueryValueEx(void)
     size = strlen(test_envvar2) - 2;
     type = -1;
     ret = pSHQueryValueExA(hKey, "Test3", NULL, &type, buf, &size);
-    ok(ret == ERROR_MORE_DATA, "Unexpected retval %ld.\n", ret);
+    ok(ret == ERROR_MORE_DATA, "Expected ERROR_MORE_DATA, got (%u)\n", ret);
 
     todo_wine
     {
     ok(!strcmp("", buf), "Unexpanded string %s.\n", buf);
     }
 
-    ok(size >= buffer_len2, "Buffer size %lu should be >= %lu.\n", size, buffer_len2);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(size >= buffer_len2, "Buffer size (%u) should be >= (%u)\n", size, buffer_len2);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     /*
     * string grows during expanding
@@ -585,7 +591,7 @@ static void test_SHQueryValueEx(void)
     size = exp_len2 - 4;
     type = -1;
     ret = pSHQueryValueExA( hKey, "Test3", NULL, &type, buf, &size);
-    ok(ret == ERROR_MORE_DATA, "Unexpected retval %ld.\n", ret);
+    ok(ret == ERROR_MORE_DATA, "Expected ERROR_MORE_DATA, got (%u)\n", ret);
 
     todo_wine
     {
@@ -593,8 +599,8 @@ static void test_SHQueryValueEx(void)
     "Expected empty or first part of the string \"%s\", got \"%s\"\n", test_envvar2, buf);
     }
 
-    ok(size >= buffer_len2, "Buffer size %lu should be >= %lu.\n", size, buffer_len2);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(size >= buffer_len2, "Buffer size (%u) should be >= (%u)\n", size, buffer_len2);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     /*
     * The buffer is NULL but the size is set
@@ -603,9 +609,9 @@ static void test_SHQueryValueEx(void)
     size = 6;
     type = -1;
     ret = pSHQueryValueExA( hKey, "Test3", NULL, &type, NULL, &size);
-    ok(!ret, "Failed to query value, ret %lu.\n", ret);
-    ok(size >= buffer_len2, "Buffer size %lu should be >= %lu.\n", size, buffer_len2);
-    ok(type == REG_SZ, "Unexpected type %ld.\n", type);
+    ok(!ret, "Failed to query value, ret %u.\n", ret);
+    ok(size >= buffer_len2, "Buffer size (%u) should be >= (%u)\n", size, buffer_len2);
+    ok(type == REG_SZ, "Expected REG_SZ, got (%u)\n", type);
 
     RegCloseKey(hKey);
 
@@ -622,7 +628,7 @@ static void test_SHRegGetPath(void)
 
     strcpy(buf, initial_buffer);
     ret = pSHRegGetPathA(HKEY_CURRENT_USER, REG_TEST_KEY, "Test1", buf, 0);
-    ok(!ret, "Failed to get path, ret %lu.\n", ret);
+    ok(!ret, "Failed to get path, ret %u.\n", ret);
     ok(!strcmp(test_exp_path1, buf), "Unexpected path %s.\n", buf);
 
     delete_key(hkey, "Software\\Wine", "Test");
@@ -645,14 +651,14 @@ static void test_SHCopyKey(void)
 
     hKeyDst = NULL;
     ret = RegCreateKeyA(HKEY_CURRENT_USER, REG_TEST_KEY "\\CopyDestination", &hKeyDst);
-    ok(!ret, "Failed to create a test key, ret %ld.\n", ret);
+    ok(!ret, "Failed to create a test key, ret %d.\n", ret);
 
     hKeySrc = NULL;
     ret = RegOpenKeyA(HKEY_LOCAL_MACHINE, REG_CURRENT_VERSION, &hKeySrc);
-    ok(!ret, "Failed to open a test key, ret %ld.\n", ret);
+    ok(!ret, "Failed to open a test key, ret %d.\n", ret);
 
     ret = pSHCopyKeyA(hKeySrc, NULL, hKeyDst, 0);
-    ok(!ret, "Copy failed, ret %lu.\n", ret);
+    ok(!ret, "Copy failed, ret=(%u)\n", ret);
 
     RegCloseKey(hKeySrc);
     RegCloseKey(hKeyDst);
@@ -660,7 +666,7 @@ static void test_SHCopyKey(void)
     /* Check we copied the sub keys, i.e. something that's on every windows system (including Wine) */
     hKeyDst = NULL;
     ret = RegOpenKeyA(HKEY_CURRENT_USER, REG_TEST_KEY "\\CopyDestination\\Shell Folders", &hKeyDst);
-    ok(!ret, "Failed to open a test key, ret %ld.\n", ret);
+    ok(!ret, "Failed to open a test key, ret %d.\n", ret);
 
     /* And the we copied the values too */
     ok(!pSHQueryValueExA(hKeyDst, "Common AppData", NULL, NULL, NULL, NULL), "SHQueryValueExA failed\n");
@@ -676,7 +682,7 @@ static void _check_file_size(const CHAR *filename, LONG exp_size, int line)
     DWORD file_size = 0xdeadbeef;
     handle = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
     file_size = GetFileSize(handle, NULL);
-    ok_(__FILE__,line)(file_size == exp_size, "got wrong file size: %ld.\n", file_size);
+    ok_(__FILE__,line)(file_size == exp_size, "got wrong file size: %d.\n", file_size);
     CloseHandle(handle);
 }
 
@@ -688,11 +694,11 @@ static void _check_stream_size(IStream *obj, LONG exp_size, int line)
     HRESULT hr;
     stream_size.QuadPart = 0xdeadbeef;
     hr = pIStream_Size(obj, &stream_size);
-    ok_(__FILE__,line)(hr == S_OK, "IStream_Size failed: hr %#lx.\n", hr);
+    ok_(__FILE__,line)(hr == S_OK, "IStream_Size failed: 0x%08x.\n", hr);
     ok_(__FILE__,line)(stream_size.QuadPart == exp_size, "Size(): got wrong size of stream: %s.\n",
                        wine_dbgstr_longlong(stream_size.QuadPart));
     hr = IStream_Stat(obj, &stat, STATFLAG_NONAME);
-    ok_(__FILE__,line)(hr == S_OK, "IStream_Stat failed: hr %#lx.\n", hr);
+    ok_(__FILE__,line)(hr == S_OK, "IStream_Stat failed: 0x%08x.\n", hr);
     ok_(__FILE__,line)(stat.cbSize.QuadPart == exp_size, "Stat(): got wrong size of stream: %s.\n",
                        wine_dbgstr_longlong(stat.cbSize.QuadPart));
 }
@@ -706,7 +712,7 @@ static void _check_stream_pos(IStream *obj, LONG exp_pos, int line)
     move.QuadPart = 0;
     pos.QuadPart = 0xdeadbeef;
     hr = IStream_Seek(obj, move, STREAM_SEEK_CUR, &pos);
-    ok_(__FILE__,line)(hr == S_OK, "IStream_Seek failed: hr %#lx.\n", hr);
+    ok_(__FILE__,line)(hr == S_OK, "IStream_Seek failed: 0x%08x.\n", hr);
     ok_(__FILE__,line)(pos.QuadPart == exp_pos, "got wrong position: %s.\n",
                        wine_dbgstr_longlong(pos.QuadPart));
 }
@@ -722,32 +728,32 @@ static void test_stream_size(void)
     HRESULT hr;
 
     handle = CreateFileA(filename, GENERIC_READ|GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, 0);
-    ok(handle != INVALID_HANDLE_VALUE, "File creation failed: %lu.\n", GetLastError());
+    ok(handle != INVALID_HANDLE_VALUE, "File creation failed: 0x%08x.\n", GetLastError());
     WriteFile(handle, test_data, sizeof(test_data), &written, NULL);
     ok(written == sizeof(test_data), "Failed to write data into file.\n");
     CloseHandle(handle);
 
     /* in read-only mode, SetSize() will success but it has no effect on Size() and the file */
     hr = pSHCreateStreamOnFileA(filename, STGM_FAILIFTHERE|STGM_READ, &stream);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "SHCreateStreamOnFileA failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, sizeof(test_data));
     stream_size.QuadPart = 0;
     hr = IStream_SetSize(stream, stream_size);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "IStream_SetSize failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, sizeof(test_data));
     CHECK_STREAM_POS(stream, 0);
     stream_size.QuadPart = 100;
     hr = IStream_SetSize(stream, stream_size);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "IStream_SetSize failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, sizeof(test_data));
     CHECK_STREAM_POS(stream, 100);
     IStream_Release(stream);
     CHECK_FILE_SIZE(filename, sizeof(test_data));
 
     hr = pSHCreateStreamOnFileA(filename, STGM_FAILIFTHERE|STGM_WRITE, &stream);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "SHCreateStreamOnFileA failed: 0x%08x.\n", hr);
     hr = pSHCreateStreamOnFileA(filename, STGM_FAILIFTHERE|STGM_READ, &stream2);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "SHCreateStreamOnFileA failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, sizeof(test_data));
     CHECK_STREAM_SIZE(stream2, sizeof(test_data));
     CHECK_STREAM_POS(stream, 0);
@@ -755,7 +761,7 @@ static void test_stream_size(void)
 
     stream_size.QuadPart = 0;
     hr = IStream_SetSize(stream, stream_size);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "IStream_SetSize failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, 0);
     CHECK_STREAM_SIZE(stream2, 0);
     CHECK_STREAM_POS(stream, 0);
@@ -763,7 +769,7 @@ static void test_stream_size(void)
 
     stream_size.QuadPart = 100;
     hr = IStream_SetSize(stream, stream_size);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "IStream_SetSize failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, 100);
     CHECK_STREAM_SIZE(stream2, 100);
     CHECK_STREAM_POS(stream, 0);
@@ -771,7 +777,7 @@ static void test_stream_size(void)
 
     stream_size.QuadPart = 90;
     hr = IStream_SetSize(stream2, stream_size);
-    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "IStream_SetSize failed: 0x%08x.\n", hr);
     CHECK_STREAM_SIZE(stream, 100);
     CHECK_STREAM_SIZE(stream2, 100);
     CHECK_STREAM_POS(stream, 0);

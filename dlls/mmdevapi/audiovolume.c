@@ -33,7 +33,6 @@
 #include "audioclient.h"
 #include "endpointvolume.h"
 #include "audiopolicy.h"
-#include "spatialaudioclient.h"
 
 #include "mmdevapi.h"
 
@@ -78,7 +77,7 @@ static ULONG WINAPI AEV_AddRef(IAudioEndpointVolumeEx *iface)
 {
     AEVImpl *This = impl_from_IAudioEndpointVolumeEx(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p) new ref %lu\n", This, ref);
+    TRACE("(%p) new ref %u\n", This, ref);
     return ref;
 }
 
@@ -86,7 +85,7 @@ static ULONG WINAPI AEV_Release(IAudioEndpointVolumeEx *iface)
 {
     AEVImpl *This = impl_from_IAudioEndpointVolumeEx(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
-    TRACE("(%p) new ref %lu\n", This, ref);
+    TRACE("(%p) new ref %u\n", This, ref);
     if (!ref)
         AudioEndpointVolume_Destroy(This);
     return ref;

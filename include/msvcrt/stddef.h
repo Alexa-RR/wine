@@ -20,7 +20,7 @@
 
 #include <corecrt.h>
 
-#if defined(__GNUC__) || defined(__clang__)
+#ifdef __GNUC__
 #define offsetof(s,m)       __builtin_offsetof(s,m)
 #elif defined(_WIN64)
 #define offsetof(s,m)       (size_t)((ptrdiff_t)&(((s*)NULL)->m))
@@ -33,8 +33,8 @@
 extern "C" {
 #endif
 
-_ACRTIMP __msvcrt_ulong __cdecl __threadid(void);
-_ACRTIMP __msvcrt_ulong __cdecl __threadhandle(void);
+__msvcrt_ulong __cdecl __threadid(void);
+__msvcrt_ulong __cdecl __threadhandle(void);
 #define _threadid    (__threadid())
 
 #ifdef __cplusplus

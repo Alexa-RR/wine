@@ -38,7 +38,7 @@
 @ stdcall EvtOpenSession(long ptr long long)
 @ stdcall EvtQuery(ptr wstr wstr long)
 @ stub EvtRender
-@ stdcall EvtSaveChannelConfig(ptr long)
+@ stub EvtSaveChannelConfig
 @ stub EvtSeek
 @ stdcall EvtSetChannelConfigProperty(ptr long long ptr)
 @ stub EvtSetObjectArrayProperty

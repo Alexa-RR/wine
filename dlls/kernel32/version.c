@@ -21,6 +21,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -33,6 +36,7 @@
 #include "winuser.h"
 #include "winternl.h"
 #include "winerror.h"
+#include "wine/unicode.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ver);
@@ -124,7 +128,7 @@ BOOL WINAPI VerifyVersionInfoW( LPOSVERSIONINFOEXW info, DWORD dwTypeMask,
 {
     OSVERSIONINFOEXW ver;
 
-    TRACE("(%p 0x%lx 0x%s)\n", info, dwTypeMask, wine_dbgstr_longlong(dwlConditionMask));
+    TRACE("(%p 0x%x 0x%s)\n", info, dwTypeMask, wine_dbgstr_longlong(dwlConditionMask));
 
     ver.dwOSVersionInfoSize = sizeof(ver);
     if (!GetVersionExW((OSVERSIONINFOW*)&ver)) return FALSE;
@@ -233,4 +237,40 @@ DWORD WINAPI SetTermsrvAppInstallMode(BOOL bInstallMode)
 {
     FIXME("(%d): stub\n", bInstallMode);
     return 0;
+}
+
+/***********************************************************************
+ *           GetCurrentPackageId       (KERNEL32.@)
+ */
+LONG WINAPI GetCurrentPackageId(UINT32 *len, BYTE *buffer)
+{
+    FIXME("(%p %p): stub\n", len, buffer);
+    return APPMODEL_ERROR_NO_PACKAGE;
+}
+
+/***********************************************************************
+ *           GetCurrentPackageFamilyName       (KERNEL32.@)
+ */
+LONG WINAPI GetCurrentPackageFamilyName(UINT32 *length, PWSTR name)
+{
+    FIXME("(%p %p): stub\n", length, name);
+    return APPMODEL_ERROR_NO_PACKAGE;
+}
+
+/***********************************************************************
+ *           GetCurrentPackageFullName       (KERNEL32.@)
+ */
+LONG WINAPI GetCurrentPackageFullName(UINT32 *length, PWSTR name)
+{
+    FIXME("(%p %p): stub\n", length, name);
+    return APPMODEL_ERROR_NO_PACKAGE;
+}
+
+/***********************************************************************
+ *           GetPackageFullName       (KERNEL32.@)
+ */
+LONG WINAPI GetPackageFullName(HANDLE process, UINT32 *length, PWSTR name)
+{
+    FIXME("(%p %p %p): stub\n", process, length, name);
+    return APPMODEL_ERROR_NO_PACKAGE;
 }

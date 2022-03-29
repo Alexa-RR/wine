@@ -40,6 +40,25 @@ typedef struct {
 } monitorinfo_t;
 
 /*****************************************************
+ *      DllMain
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(%p, %d, %p)\n",hinstDLL, fdwReason, lpvReserved);
+
+    switch(fdwReason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;           /* prefer native version */
+
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls( hinstDLL );
+            break;
+    }
+    return TRUE;
+}
+
+/*****************************************************
  *  PSetupCreateMonitorInfo  [NTPRINT.@]
  *
  *
@@ -51,7 +70,7 @@ HANDLE WINAPI PSetupCreateMonitorInfo(DWORD unknown1, WCHAR *server)
     DWORD needed;
     DWORD res;
 
-    TRACE("(%ld, %s)\n", unknown1, debugstr_w(server));
+    TRACE("(%d, %s)\n", unknown1, debugstr_w(server));
 
     mi = HeapAlloc(GetProcessHeap(), 0, sizeof(monitorinfo_t));
     if (!mi) {
@@ -71,7 +90,7 @@ HANDLE WINAPI PSetupCreateMonitorInfo(DWORD unknown1, WCHAR *server)
         return NULL;
     }
 
-    TRACE("=> %p (%lu monitors installed)\n", mi, mi->installed);
+    TRACE("=> %p (%u monitors installed)\n", mi, mi->installed);
     return mi;
 }
 
@@ -118,14 +137,14 @@ BOOL WINAPI PSetupEnumMonitor(HANDLE monitorinfo, DWORD index, LPWSTR buffer, LP
     LPWSTR  nameW;
     DWORD   len;
 
-    TRACE("(%p, %lu, %p, %p) => %ld\n", mi, index, buffer, psize, psize ? *psize : 0);
+    TRACE("(%p, %u, %p, %p) => %d\n", mi, index, buffer, psize, psize ? *psize : 0);
 
     if (index < mi->installed) {
         nameW = mi->mi2[index].pName;
         len = lstrlenW(nameW) + 1;
         if (len <= *psize) {
             memcpy(buffer, nameW, len * sizeof(WCHAR));
-            TRACE("#%lu: %s\n", index, debugstr_w(buffer));
+            TRACE("#%u: %s\n", index, debugstr_w(buffer));
             return TRUE;
         }
         *psize = len;

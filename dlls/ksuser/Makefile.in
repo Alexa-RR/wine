@@ -1,5 +1,6 @@
 MODULE    = ksuser.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
-RC_SRCS = version.rc
+C_SRCS = \
+	main.c

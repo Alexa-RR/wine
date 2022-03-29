@@ -18,13 +18,8 @@
  */
 
 #include <windows.h>
-<<<<<<< HEAD
 #include <wine/debug.h>
 
-=======
-
-#include "wine/debug.h"
->>>>>>> master
 #include "resources.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(fsutil);
@@ -38,38 +33,6 @@ static void output_write(const WCHAR *str, DWORD wlen)
     {
         DWORD len;
         char  *msgA;
-<<<<<<< HEAD
-=======
-
-        /* On Windows WriteConsoleW() fails if the output is redirected. So fall
-         * back to WriteFile(), assuming the console encoding is still the right
-         * one in that case.
-         */
-        len = WideCharToMultiByte(CP_ACP, 0, str, wlen, NULL, 0, NULL, NULL);
-        msgA = HeapAlloc(GetProcessHeap(), 0, len * sizeof(char));
-        if (!msgA) return;
-
-        WideCharToMultiByte(CP_ACP, 0, str, wlen, msgA, len, NULL, NULL);
-        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), msgA, len, &count, FALSE);
-        HeapFree(GetProcessHeap(), 0, msgA);
-    }
-}
-
-static int WINAPIV output_string(int msg, ...)
-{
-    WCHAR out[8192];
-    va_list arguments;
-    int len;
-
-    va_start(arguments, msg);
-    len = FormatMessageW(FORMAT_MESSAGE_FROM_HMODULE, NULL, msg, 0, out, ARRAY_SIZE(out), &arguments);
-    va_end(arguments);
-
-    if (len == 0 && GetLastError() != NO_ERROR)
-        WINE_FIXME("Could not format string: le=%lu, msg=%d\n", GetLastError(), msg);
-    else
-        output_write(out, len);
->>>>>>> master
 
         /* On Windows WriteConsoleW() fails if the output is redirected. So fall
          * back to WriteFile(), assuming the console encoding is still the right
@@ -100,7 +63,6 @@ static int output_vprintf(const WCHAR* fmt, __ms_va_list va_args)
     return 0;
 }
 
-<<<<<<< HEAD
 static int WINAPIV output_string(int msg, ...)
 {
     WCHAR fmt[8192];
@@ -113,8 +75,6 @@ static int WINAPIV output_string(int msg, ...)
     return 0;
 }
 
-=======
->>>>>>> master
 static BOOL output_error_string(DWORD error)
 {
     LPWSTR pBuffer;
@@ -146,28 +106,17 @@ static int create_hardlink(int argc, WCHAR *argv[])
 
 static int hardlink(int argc, WCHAR *argv[])
 {
-<<<<<<< HEAD
     static const WCHAR createW[]={'c','r','e','a','t','e',0};
     int ret;
 
     if (argc > 2)
     {
         if (!_wcsicmp(argv[2], createW))
-=======
-    int ret = 0;
-
-    if (argc > 2)
-    {
-        if (!wcsicmp(argv[2], L"create"))
->>>>>>> master
             return create_hardlink(argc, argv);
         else
         {
             FIXME("unsupported parameter %s\n", debugstr_w(argv[2]));
-<<<<<<< HEAD
             output_string(STRING_UNSUPPORTED_PARAM, argv[2]);
-=======
->>>>>>> master
             ret = 1;
         }
     }
@@ -178,7 +127,6 @@ static int hardlink(int argc, WCHAR *argv[])
 
 int __cdecl wmain(int argc, WCHAR *argv[])
 {
-<<<<<<< HEAD
     static const WCHAR hardlinkW[]={'h','a','r','d','l','i','n','k',0};
     int i, ret = 0;
 
@@ -189,26 +137,11 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     if (argc > 1)
     {
         if (!_wcsicmp(argv[1], hardlinkW))
-=======
-    int i, ret = 0;
-
-    TRACE("Command line:");
-    for (i = 0; i < argc; i++)
-        TRACE(" %s", debugstr_w(argv[i]));
-    TRACE("\n");
-
-    if (argc > 1)
-    {
-        if (!wcsicmp(argv[1], L"hardlink"))
->>>>>>> master
             return hardlink(argc, argv);
         else
         {
             FIXME("unsupported command %s\n", debugstr_w(argv[1]));
-<<<<<<< HEAD
             output_string(STRING_UNSUPPORTED_CMD, argv[1]);
-=======
->>>>>>> master
             ret = 1;
         }
     }

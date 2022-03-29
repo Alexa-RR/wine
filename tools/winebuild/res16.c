@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -26,6 +27,10 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#ifdef HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
+#include <fcntl.h>
 
 #include "build.h"
 

@@ -1,10 +1,9 @@
 EXTRADEFS = -DD3DX11_SDK_VERSION=42
-MODULE    = d3dx11_42.dll
-IMPORTLIB = d3dx11_42
+MODULE = d3dx11_42.dll
 IMPORTS = d3dcompiler
 PARENTSRC = ../d3dx11_43
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	async.c \

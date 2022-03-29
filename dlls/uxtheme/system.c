@@ -30,7 +30,7 @@
 #include "winreg.h"
 #include "vfwmsgs.h"
 #include "uxtheme.h"
-#include "vssym32.h"
+#include "tmschema.h"
 
 #include "uxthemedll.h"
 #include "msstyles.h"
@@ -43,7 +43,19 @@ WINE_DEFAULT_DEBUG_CHANNEL(uxtheme);
  * Defines and global variables
  */
 
-static const WCHAR szThemeManager[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\ThemeManager";
+static const WCHAR szThemeManager[] = {
+    'S','o','f','t','w','a','r','e','\\',
+    'M','i','c','r','o','s','o','f','t','\\',
+    'W','i','n','d','o','w','s','\\',
+    'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+    'T','h','e','m','e','M','a','n','a','g','e','r','\0'
+};
+static const WCHAR szThemeActive[] = {'T','h','e','m','e','A','c','t','i','v','e','\0'};
+static const WCHAR szSizeName[] = {'S','i','z','e','N','a','m','e','\0'};
+static const WCHAR szColorName[] = {'C','o','l','o','r','N','a','m','e','\0'};
+static const WCHAR szDllName[] = {'D','l','l','N','a','m','e','\0'};
+
+static const WCHAR szIniDocumentation[] = {'d','o','c','u','m','e','n','t','a','t','i','o','n','\0'};
 
 DECLSPEC_HIDDEN ATOM atDialogThemeEnabled;
 
@@ -56,8 +68,6 @@ static BOOL bThemeActive = FALSE;
 static WCHAR szCurrentTheme[MAX_PATH];
 static WCHAR szCurrentColor[64];
 static WCHAR szCurrentSize[64];
-
-struct user_api_hook user_api = {0};
 
 /***********************************************************************/
 
@@ -87,7 +97,7 @@ static BOOL CALLBACK UXTHEME_broadcast_msg (HWND hWnd, LPARAM msg)
 static DWORD query_reg_path (HKEY hKey, LPCWSTR lpszValue,
                              LPVOID pvData)
 {
-  DWORD dwRet, dwType, dwUnExpDataLen = MAX_PATH * sizeof(WCHAR), dwExpDataLen;
+  DWORD dwRet, dwType, dwUnExpDataLen = MAX_PATH, dwExpDataLen;
 
   TRACE("(hkey=%p,%s,%p)\n", hKey, debugstr_w(lpszValue),
         pvData);
@@ -108,12 +118,12 @@ static DWORD query_reg_path (HKEY hKey, LPCWSTR lpszValue,
      */
     if (dwRet == ERROR_MORE_DATA)
     {
-      WCHAR emptyW[] = L"";
+      WCHAR cNull = '\0';
       nBytesToAlloc = dwUnExpDataLen;
 
       szData = LocalAlloc(LMEM_ZEROINIT, nBytesToAlloc);
       RegQueryValueExW (hKey, lpszValue, 0, NULL, (LPBYTE)szData, &nBytesToAlloc);
-      dwExpDataLen = ExpandEnvironmentStringsW(szData, emptyW, 1);
+      dwExpDataLen = ExpandEnvironmentStringsW(szData, &cNull, 1);
       dwUnExpDataLen = max(nBytesToAlloc, dwExpDataLen);
       LocalFree(szData);
     }
@@ -149,21 +159,21 @@ static void UXTHEME_LoadTheme(void)
     /* Get current theme configuration */
     if(!RegOpenKeyW(HKEY_CURRENT_USER, szThemeManager, &hKey)) {
         TRACE("Loading theme config\n");
-        buffsize = sizeof(tmp);
-        if (!RegQueryValueExW(hKey, L"ThemeActive", NULL, NULL, (BYTE*)tmp, &buffsize)) {
+        buffsize = ARRAY_SIZE(tmp);
+        if(!RegQueryValueExW(hKey, szThemeActive, NULL, NULL, (LPBYTE)tmp, &buffsize)) {
             bThemeActive = (tmp[0] != '0');
         }
         else {
             bThemeActive = FALSE;
-            TRACE("Failed to get ThemeActive: %ld\n", GetLastError());
+            TRACE("Failed to get ThemeActive: %d\n", GetLastError());
         }
-        buffsize = sizeof(szCurrentColor);
-        if (RegQueryValueExW(hKey, L"ColorName", NULL, NULL, (BYTE*)szCurrentColor, &buffsize))
+        buffsize = ARRAY_SIZE(szCurrentColor);
+        if(RegQueryValueExW(hKey, szColorName, NULL, NULL, (LPBYTE)szCurrentColor, &buffsize))
             szCurrentColor[0] = '\0';
-        buffsize = sizeof(szCurrentSize);
-        if (RegQueryValueExW(hKey, L"SizeName", NULL, NULL, (BYTE*)szCurrentSize, &buffsize))
+        buffsize = ARRAY_SIZE(szCurrentSize);
+        if(RegQueryValueExW(hKey, szSizeName, NULL, NULL, (LPBYTE)szCurrentSize, &buffsize))
             szCurrentSize[0] = '\0';
-        if (query_reg_path (hKey, L"DllName", szCurrentTheme))
+        if (query_reg_path (hKey, szDllName, szCurrentTheme))
             szCurrentTheme[0] = '\0';
         RegCloseKey(hKey);
     }
@@ -187,7 +197,7 @@ static void UXTHEME_LoadTheme(void)
             lstrcpynW(szCurrentColor, pt->pszSelectedColor, ARRAY_SIZE(szCurrentColor));
             lstrcpynW(szCurrentSize, pt->pszSelectedSize, ARRAY_SIZE(szCurrentSize));
 
-            UXTHEME_SetActiveTheme(pt);
+            MSSTYLES_SetActiveTheme(pt, FALSE);
             TRACE("Theme active: %s %s %s\n", debugstr_w(szCurrentTheme),
                 debugstr_w(szCurrentColor), debugstr_w(szCurrentSize));
             MSSTYLES_CloseThemeFile(pt);
@@ -201,171 +211,218 @@ static void UXTHEME_LoadTheme(void)
 
 /***********************************************************************/
 
-static const WCHAR * const SysColorsNames[] =
+static const char * const SysColorsNames[] =
 {
-    L"Scrollbar",               /* COLOR_SCROLLBAR */
-    L"Background",              /* COLOR_BACKGROUND */
-    L"ActiveTitle",             /* COLOR_ACTIVECAPTION */
-    L"InactiveTitle",           /* COLOR_INACTIVECAPTION */
-    L"Menu",                    /* COLOR_MENU */
-    L"Window",                  /* COLOR_WINDOW */
-    L"WindowFrame",             /* COLOR_WINDOWFRAME */
-    L"MenuText",                /* COLOR_MENUTEXT */
-    L"WindowText",              /* COLOR_WINDOWTEXT */
-    L"TitleText",               /* COLOR_CAPTIONTEXT */
-    L"ActiveBorder",            /* COLOR_ACTIVEBORDER */
-    L"InactiveBorder",          /* COLOR_INACTIVEBORDER */
-    L"AppWorkSpace",            /* COLOR_APPWORKSPACE */
-    L"Hilight",                 /* COLOR_HIGHLIGHT */
-    L"HilightText",             /* COLOR_HIGHLIGHTTEXT */
-    L"ButtonFace",              /* COLOR_BTNFACE */
-    L"ButtonShadow",            /* COLOR_BTNSHADOW */
-    L"GrayText",                /* COLOR_GRAYTEXT */
-    L"ButtonText",              /* COLOR_BTNTEXT */
-    L"InactiveTitleText",       /* COLOR_INACTIVECAPTIONTEXT */
-    L"ButtonHilight",           /* COLOR_BTNHIGHLIGHT */
-    L"ButtonDkShadow",          /* COLOR_3DDKSHADOW */
-    L"ButtonLight",             /* COLOR_3DLIGHT */
-    L"InfoText",                /* COLOR_INFOTEXT */
-    L"InfoWindow",              /* COLOR_INFOBK */
-    L"ButtonAlternateFace",     /* COLOR_ALTERNATEBTNFACE */
-    L"HotTrackingColor",        /* COLOR_HOTLIGHT */
-    L"GradientActiveTitle",     /* COLOR_GRADIENTACTIVECAPTION */
-    L"GradientInactiveTitle",   /* COLOR_GRADIENTINACTIVECAPTION */
-    L"MenuHilight",             /* COLOR_MENUHILIGHT */
-    L"MenuBar",                 /* COLOR_MENUBAR */
+    "Scrollbar",                /* COLOR_SCROLLBAR */
+    "Background",               /* COLOR_BACKGROUND */
+    "ActiveTitle",              /* COLOR_ACTIVECAPTION */
+    "InactiveTitle",            /* COLOR_INACTIVECAPTION */
+    "Menu",                     /* COLOR_MENU */
+    "Window",                   /* COLOR_WINDOW */
+    "WindowFrame",              /* COLOR_WINDOWFRAME */
+    "MenuText",                 /* COLOR_MENUTEXT */
+    "WindowText",               /* COLOR_WINDOWTEXT */
+    "TitleText",                /* COLOR_CAPTIONTEXT */
+    "ActiveBorder",             /* COLOR_ACTIVEBORDER */
+    "InactiveBorder",           /* COLOR_INACTIVEBORDER */
+    "AppWorkSpace",             /* COLOR_APPWORKSPACE */
+    "Hilight",                  /* COLOR_HIGHLIGHT */
+    "HilightText",              /* COLOR_HIGHLIGHTTEXT */
+    "ButtonFace",               /* COLOR_BTNFACE */
+    "ButtonShadow",             /* COLOR_BTNSHADOW */
+    "GrayText",                 /* COLOR_GRAYTEXT */
+    "ButtonText",               /* COLOR_BTNTEXT */
+    "InactiveTitleText",        /* COLOR_INACTIVECAPTIONTEXT */
+    "ButtonHilight",            /* COLOR_BTNHIGHLIGHT */
+    "ButtonDkShadow",           /* COLOR_3DDKSHADOW */
+    "ButtonLight",              /* COLOR_3DLIGHT */
+    "InfoText",                 /* COLOR_INFOTEXT */
+    "InfoWindow",               /* COLOR_INFOBK */
+    "ButtonAlternateFace",      /* COLOR_ALTERNATEBTNFACE */
+    "HotTrackingColor",         /* COLOR_HOTLIGHT */
+    "GradientActiveTitle",      /* COLOR_GRADIENTACTIVECAPTION */
+    "GradientInactiveTitle",    /* COLOR_GRADIENTINACTIVECAPTION */
+    "MenuHilight",              /* COLOR_MENUHILIGHT */
+    "MenuBar",                  /* COLOR_MENUBAR */
 };
+static const WCHAR strColorKey[] = 
+    { 'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
+      'C','o','l','o','r','s',0 };
+static const WCHAR keyFlatMenus[] = { 'F','l','a','t','M','e','n','u', 0};
+static const WCHAR keyGradientCaption[] = { 'G','r','a','d','i','e','n','t',
+                                            'C','a','p','t','i','o','n', 0 };
+static const WCHAR keyNonClientMetrics[] = { 'N','o','n','C','l','i','e','n','t',
+                                             'M','e','t','r','i','c','s',0 };
+static const WCHAR keyIconTitleFont[] = { 'I','c','o','n','T','i','t','l','e',
+					  'F','o','n','t',0 };
 
-static const WCHAR strColorKey[] = L"Control Panel\\Colors";
+static const struct BackupSysParam
+{
+    int spiGet, spiSet;
+    const WCHAR* keyName;
+} backupSysParams[] = 
+{
+    {SPI_GETFLATMENU, SPI_SETFLATMENU, keyFlatMenus},
+    {SPI_GETGRADIENTCAPTIONS, SPI_SETGRADIENTCAPTIONS, keyGradientCaption},
+    {-1, -1, 0}
+};
 
 #define NUM_SYS_COLORS     (COLOR_MENUBAR+1)
 
-struct system_metrics
+static void save_sys_colors (HKEY baseKey)
 {
-    COLORREF system_colors[NUM_SYS_COLORS];
-    NONCLIENTMETRICSW non_client_metrics;
-    LOGFONTW icon_title_font;
-    DWORD gradient_caption;
-    DWORD flat_menu;
-};
-
-static BOOL UXTHEME_GetSystemMetrics(struct system_metrics *metrics)
-{
-    DPI_AWARENESS_CONTEXT old_context;
-    BOOL ret = FALSE;
+    char colorStr[13];
+    HKEY hKey;
     int i;
 
-    for (i = 0; i < NUM_SYS_COLORS; ++i)
-        metrics->system_colors[i] = GetSysColor(i);
+    if (RegCreateKeyExW( baseKey, strColorKey,
+                         0, 0, 0, KEY_ALL_ACCESS,
+                         0, &hKey, 0 ) == ERROR_SUCCESS)
+    {
+        for (i = 0; i < NUM_SYS_COLORS; i++)
+        {
+            COLORREF col = GetSysColor (i);
+        
+            sprintf (colorStr, "%d %d %d", 
+                GetRValue (col), GetGValue (col), GetBValue (col));
 
-    old_context = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+            RegSetValueExA (hKey, SysColorsNames[i], 0, REG_SZ, 
+                (BYTE*)colorStr, strlen (colorStr)+1);
+        }
+        RegCloseKey (hKey);
+    }
+}
 
-    memset(&metrics->non_client_metrics, 0, sizeof(metrics->non_client_metrics));
-    metrics->non_client_metrics.cbSize = sizeof(metrics->non_client_metrics);
-    if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics->non_client_metrics),
-                               &metrics->non_client_metrics, 0))
-        goto done;
-    memset(&metrics->icon_title_font, 0, sizeof(metrics->icon_title_font));
-    if (!SystemParametersInfoW(SPI_GETICONTITLELOGFONT, sizeof(metrics->icon_title_font),
-                               &metrics->icon_title_font, 0))
-        goto done;
-    if (!SystemParametersInfoW(SPI_GETGRADIENTCAPTIONS, 0, &metrics->gradient_caption, 0))
-        goto done;
-    if (!SystemParametersInfoW(SPI_GETFLATMENU, 0, &metrics->flat_menu, 0))
-        goto done;
+/* Before activating a theme, query current system colors, certain settings 
+ * and backup them in the registry, so they can be restored when the theme 
+ * is deactivated */
+static void UXTHEME_BackupSystemMetrics(void)
+{
+    HKEY hKey;
+    const struct BackupSysParam* bsp = backupSysParams;
 
-    ret = TRUE;
-done:
-    SetThreadDpiAwarenessContext(old_context);
-    return ret;
+    if (RegCreateKeyExW( HKEY_CURRENT_USER, szThemeManager,
+                         0, 0, 0, KEY_ALL_ACCESS,
+                         0, &hKey, 0) == ERROR_SUCCESS)
+    {
+        NONCLIENTMETRICSW ncm;
+        LOGFONTW iconTitleFont;
+        
+        /* back up colors */
+        save_sys_colors (hKey);
+    
+        /* back up "other" settings */
+        while (bsp->spiGet >= 0)
+        {
+            DWORD value;
+            
+            SystemParametersInfoW (bsp->spiGet, 0, &value, 0);
+            RegSetValueExW (hKey, bsp->keyName, 0, REG_DWORD, 
+                (LPBYTE)&value, sizeof (value));
+        
+            bsp++;
+        }
+        
+	/* back up non-client metrics */
+        memset (&ncm, 0, sizeof (ncm));
+        ncm.cbSize = sizeof (ncm);
+        SystemParametersInfoW (SPI_GETNONCLIENTMETRICS, sizeof (ncm), &ncm, 0);
+        RegSetValueExW (hKey, keyNonClientMetrics, 0, REG_BINARY, (LPBYTE)&ncm,
+            sizeof (ncm));
+	memset (&iconTitleFont, 0, sizeof (iconTitleFont));
+	SystemParametersInfoW (SPI_GETICONTITLELOGFONT, sizeof (iconTitleFont),
+	    &iconTitleFont, 0);
+	RegSetValueExW (hKey, keyIconTitleFont, 0, REG_BINARY, 
+	    (LPBYTE)&iconTitleFont, sizeof (iconTitleFont));
+    
+        RegCloseKey (hKey);
+    }
 }
 
 /* Read back old settings after a theme was deactivated */
-static BOOL UXTHEME_GetUnthemedSystemMetrics(struct system_metrics *metrics)
+static void UXTHEME_RestoreSystemMetrics(void)
 {
-    HKEY theme_manager_key = NULL, color_key = NULL;
-    BOOL ret = FALSE;
-    WCHAR string[13];
-    int i, r, g, b;
-    DWORD size;
+    HKEY hKey;
+    const struct BackupSysParam* bsp = backupSysParams;
 
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, szThemeManager, 0, KEY_QUERY_VALUE, &theme_manager_key))
-        goto done;
-
-    if (RegOpenKeyExW(theme_manager_key, strColorKey, 0, KEY_QUERY_VALUE, &color_key))
-        goto done;
-
-    for (i = 0; i < NUM_SYS_COLORS; ++i)
+    if (RegOpenKeyExW (HKEY_CURRENT_USER, szThemeManager,
+                       0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) 
     {
-        size = sizeof(string);
-        if (RegQueryValueExW(color_key, SysColorsNames[i], 0, NULL, (BYTE *)string, &size))
-            goto done;
-
-        if (swscanf(string, L"%d %d %d", &r, &g, &b) != 3)
-            goto done;
-
-        metrics->system_colors[i] = RGB(r, g, b);
-    }
-
-    size = sizeof(metrics->non_client_metrics);
-    if (RegQueryValueExW(theme_manager_key, L"NonClientMetrics", 0, NULL,
-                         (BYTE *)&metrics->non_client_metrics, &size))
-        goto done;
-    size = sizeof(metrics->icon_title_font);
-    if (RegQueryValueExW(theme_manager_key, L"IconTitleFont", 0, NULL,
-                         (BYTE *)&metrics->icon_title_font, &size))
-        goto done;
-    size = sizeof(metrics->gradient_caption);
-    if (RegQueryValueExW(theme_manager_key, L"GradientCaption", 0, NULL,
-                         (BYTE *)&metrics->gradient_caption, &size))
-        goto done;
-    size = sizeof(metrics->flat_menu);
-    if (RegQueryValueExW(theme_manager_key, L"FlatMenu", 0, NULL, (BYTE *)&metrics->flat_menu,
-                         &size))
-        goto done;
-
-    ret = TRUE;
-done:
-    RegCloseKey(color_key);
-    RegCloseKey(theme_manager_key);
-    return ret;
-}
-
-static void UXTHEME_SaveUnthemedSystemMetrics(struct system_metrics *metrics)
-{
-    HKEY theme_manager_key, color_key;
-    WCHAR string[13];
-    DWORD length;
-    int i;
-
-    if (!RegCreateKeyExW(HKEY_CURRENT_USER, szThemeManager, 0, 0, 0, KEY_ALL_ACCESS, 0,
-                         &theme_manager_key, 0))
-    {
-        if (!RegCreateKeyExW(theme_manager_key, strColorKey, 0, 0, 0, KEY_ALL_ACCESS, 0, &color_key,
-                             0))
+        HKEY colorKey;
+    
+        /* read backed-up colors */
+        if (RegOpenKeyExW (hKey, strColorKey,
+                           0, KEY_QUERY_VALUE, &colorKey) == ERROR_SUCCESS) 
         {
-            for (i = 0; i < NUM_SYS_COLORS; ++i)
+            int i;
+            COLORREF sysCols[NUM_SYS_COLORS];
+            int sysColsIndices[NUM_SYS_COLORS];
+            int sysColCount = 0;
+        
+            for (i = 0; i < NUM_SYS_COLORS; i++)
             {
-                length = swprintf(string, ARRAY_SIZE(string), L"%d %d %d",
-                                  GetRValue(metrics->system_colors[i]),
-                                  GetGValue(metrics->system_colors[i]),
-                                  GetBValue(metrics->system_colors[i]));
-                RegSetValueExW(color_key, SysColorsNames[i], 0, REG_SZ, (BYTE *)string,
-                               (length + 1) * sizeof(WCHAR));
+                DWORD type;
+                char colorStr[13];
+                DWORD count = sizeof(colorStr);
+            
+                if (RegQueryValueExA (colorKey, SysColorsNames[i], 0,
+                    &type, (LPBYTE) colorStr, &count) == ERROR_SUCCESS)
+                {
+                    int r, g, b;
+                    if (sscanf (colorStr, "%d %d %d", &r, &g, &b) == 3)
+                    {
+                        sysColsIndices[sysColCount] = i;
+                        sysCols[sysColCount] = RGB(r, g, b);
+                        sysColCount++;
+                    }
+                }
             }
-
-            RegCloseKey(color_key);
+            RegCloseKey (colorKey);
+          
+            SetSysColors (sysColCount, sysColsIndices, sysCols);
         }
-
-        RegSetValueExW(theme_manager_key, L"NonClientMetrics", 0, REG_BINARY,
-                       (BYTE *)&metrics->non_client_metrics, sizeof(metrics->non_client_metrics));
-        RegSetValueExW(theme_manager_key, L"IconTitleFont", 0, REG_BINARY,
-                       (BYTE *)&metrics->icon_title_font, sizeof(metrics->icon_title_font));
-        RegSetValueExW(theme_manager_key, L"GradientCaption", 0, REG_DWORD,
-                       (BYTE *)&metrics->gradient_caption, sizeof(metrics->gradient_caption));
-        RegSetValueExW(theme_manager_key, L"FlatMenu", 0, REG_DWORD, (BYTE *)&metrics->flat_menu,
-                       sizeof(metrics->flat_menu));
-        RegCloseKey(theme_manager_key);
+    
+        /* read backed-up other settings */
+        while (bsp->spiGet >= 0)
+        {
+            DWORD value;
+            DWORD count = sizeof(value);
+            DWORD type;
+            
+            if (RegQueryValueExW (hKey, bsp->keyName, 0,
+                &type, (LPBYTE)&value, &count) == ERROR_SUCCESS)
+            {
+                SystemParametersInfoW (bsp->spiSet, 0, UlongToPtr(value), SPIF_UPDATEINIFILE);
+            }
+        
+            bsp++;
+        }
+    
+        /* read backed-up non-client metrics */
+        {
+            NONCLIENTMETRICSW ncm;
+            LOGFONTW iconTitleFont;
+            DWORD count = sizeof(ncm);
+            DWORD type;
+            
+	    if (RegQueryValueExW (hKey, keyNonClientMetrics, 0,
+		&type, (LPBYTE)&ncm, &count) == ERROR_SUCCESS)
+	    {
+		SystemParametersInfoW (SPI_SETNONCLIENTMETRICS, 
+                    count, &ncm, SPIF_UPDATEINIFILE);
+	    }
+	    
+            count = sizeof(iconTitleFont);
+            
+	    if (RegQueryValueExW (hKey, keyIconTitleFont, 0,
+		&type, (LPBYTE)&iconTitleFont, &count) == ERROR_SUCCESS)
+	    {
+		SystemParametersInfoW (SPI_SETICONTITLELOGFONT, 
+                    count, &iconTitleFont, SPIF_UPDATEINIFILE);
+	    }
+	}
+      
+        RegCloseKey (hKey);
     }
 }
 
@@ -373,47 +430,34 @@ static void UXTHEME_SaveUnthemedSystemMetrics(struct system_metrics *metrics)
  * loaded.
  * For efficiency reasons, only the last SystemParametersInfoW sets
  * SPIF_SENDWININICHANGE */
-static void UXTHEME_SaveSystemMetrics(struct system_metrics *metrics, BOOL send_syscolor_change)
+static void UXTHEME_SaveSystemMetrics(void)
 {
-    int i, length, index[NUM_SYS_COLORS];
-    DPI_AWARENESS_CONTEXT old_context;
-    WCHAR string[13];
-    HKEY hkey;
+    const struct BackupSysParam* bsp = backupSysParams;
+    NONCLIENTMETRICSW ncm;
+    LOGFONTW iconTitleFont;
 
-    if (!RegCreateKeyExW(HKEY_CURRENT_USER, strColorKey, 0, 0, 0, KEY_ALL_ACCESS, 0, &hkey, 0))
+    save_sys_colors (HKEY_CURRENT_USER);
+
+    while (bsp->spiGet >= 0)
     {
-        for (i = 0; i < NUM_SYS_COLORS; ++i)
-        {
-            length = swprintf(string, ARRAY_SIZE(string), L"%d %d %d",
-                              GetRValue(metrics->system_colors[i]),
-                              GetGValue(metrics->system_colors[i]),
-                              GetBValue(metrics->system_colors[i]));
-            RegSetValueExW(hkey, SysColorsNames[i], 0, REG_SZ, (BYTE *)string,
-                           (length + 1) * sizeof(WCHAR));
-        }
-        RegCloseKey(hkey);
+        DWORD value;
+        
+        SystemParametersInfoW (bsp->spiGet, 0, &value, 0);
+        SystemParametersInfoW (bsp->spiSet, 0, UlongToPtr(value), SPIF_UPDATEINIFILE);
+        bsp++;
     }
+    
+    memset (&ncm, 0, sizeof (ncm));
+    ncm.cbSize = sizeof (ncm);
+    SystemParametersInfoW (SPI_GETNONCLIENTMETRICS, sizeof (ncm), &ncm, 0);
+    SystemParametersInfoW (SPI_SETNONCLIENTMETRICS, sizeof (ncm), &ncm,
+        SPIF_UPDATEINIFILE);
 
-    if (send_syscolor_change)
-    {
-        for (i = 0; i < NUM_SYS_COLORS; ++i)
-            index[i] = i;
-
-        SetSysColors(NUM_SYS_COLORS, index, metrics->system_colors);
-    }
-
-    old_context = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
-
-    SystemParametersInfoW(SPI_SETNONCLIENTMETRICS, sizeof(metrics->non_client_metrics),
-                          &metrics->non_client_metrics, SPIF_UPDATEINIFILE);
-    SystemParametersInfoW(SPI_SETICONTITLELOGFONT, sizeof(metrics->icon_title_font),
-                          &metrics->icon_title_font, SPIF_UPDATEINIFILE);
-    SystemParametersInfoW(SPI_SETGRADIENTCAPTIONS, 0, (void *)(INT_PTR)metrics->gradient_caption,
-                          SPIF_UPDATEINIFILE);
-    SystemParametersInfoW(SPI_SETFLATMENU, 0, (void *)(INT_PTR)metrics->flat_menu,
-                          SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
-
-    SetThreadDpiAwarenessContext(old_context);
+    memset (&iconTitleFont, 0, sizeof (iconTitleFont));
+    SystemParametersInfoW (SPI_GETICONTITLELOGFONT, sizeof (iconTitleFont),
+        &iconTitleFont, 0);
+    SystemParametersInfoW (SPI_SETICONTITLELOGFONT, sizeof (iconTitleFont),
+        &iconTitleFont, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 }
 
 /***********************************************************************
@@ -421,43 +465,24 @@ static void UXTHEME_SaveSystemMetrics(struct system_metrics *metrics, BOOL send_
  *
  * Change the current active theme
  */
-HRESULT UXTHEME_SetActiveTheme(PTHEME_FILE tf)
+static HRESULT UXTHEME_SetActiveTheme(PTHEME_FILE tf)
 {
-    BOOL ret, loaded_before = FALSE, same_theme = FALSE;
-    struct system_metrics metrics;
-    DWORD size;
     HKEY hKey;
     WCHAR tmp[2];
     HRESULT hr;
 
+    if(tf && !bThemeActive) UXTHEME_BackupSystemMetrics();
+    hr = MSSTYLES_SetActiveTheme(tf, TRUE);
+    if(FAILED(hr))
+        return hr;
     if(tf) {
         bThemeActive = TRUE;
-        same_theme = !lstrcmpW(szCurrentTheme, tf->szThemeFile)
-                     && !lstrcmpW(szCurrentColor, tf->pszSelectedColor)
-                     && !lstrcmpW(szCurrentSize, tf->pszSelectedSize);
         lstrcpynW(szCurrentTheme, tf->szThemeFile, ARRAY_SIZE(szCurrentTheme));
         lstrcpynW(szCurrentColor, tf->pszSelectedColor, ARRAY_SIZE(szCurrentColor));
         lstrcpynW(szCurrentSize, tf->pszSelectedSize, ARRAY_SIZE(szCurrentSize));
-
-        ret = UXTHEME_GetSystemMetrics(&metrics);
-
-        /* Check if theming is already active */
-        if (!RegOpenKeyW(HKEY_CURRENT_USER, szThemeManager, &hKey))
-        {
-            size = sizeof(tmp);
-            if (!RegQueryValueExW(hKey, L"LoadedBefore", NULL, NULL, (BYTE *)tmp, &size))
-                loaded_before = (tmp[0] != '0');
-            else
-                WARN("Failed to get LoadedBefore: %ld\n", GetLastError());
-            RegCloseKey(hKey);
-        }
-        if (loaded_before && same_theme)
-            return MSSTYLES_SetActiveTheme(tf, FALSE);
-
-        if (!loaded_before && ret)
-            UXTHEME_SaveUnthemedSystemMetrics(&metrics);
     }
     else {
+        UXTHEME_RestoreSystemMetrics();
         bThemeActive = FALSE;
         szCurrentTheme[0] = '\0';
         szCurrentColor[0] = '\0';
@@ -468,38 +493,28 @@ HRESULT UXTHEME_SetActiveTheme(PTHEME_FILE tf)
     if(!RegCreateKeyW(HKEY_CURRENT_USER, szThemeManager, &hKey)) {
         tmp[0] = bThemeActive?'1':'0';
         tmp[1] = '\0';
-        RegSetValueExW(hKey, L"ThemeActive", 0, REG_SZ, (const BYTE*)tmp, sizeof(WCHAR)*2);
+        RegSetValueExW(hKey, szThemeActive, 0, REG_SZ, (const BYTE*)tmp, sizeof(WCHAR)*2);
         if(bThemeActive) {
-            RegSetValueExW(hKey, L"ColorName", 0, REG_SZ, (const BYTE*)szCurrentColor,
+            RegSetValueExW(hKey, szColorName, 0, REG_SZ, (const BYTE*)szCurrentColor, 
 		(lstrlenW(szCurrentColor)+1)*sizeof(WCHAR));
-            RegSetValueExW(hKey, L"SizeName", 0, REG_SZ, (const BYTE*)szCurrentSize,
+            RegSetValueExW(hKey, szSizeName, 0, REG_SZ, (const BYTE*)szCurrentSize, 
 		(lstrlenW(szCurrentSize)+1)*sizeof(WCHAR));
-            RegSetValueExW(hKey, L"DllName", 0, REG_SZ, (const BYTE*)szCurrentTheme,
+            RegSetValueExW(hKey, szDllName, 0, REG_SZ, (const BYTE*)szCurrentTheme, 
 		(lstrlenW(szCurrentTheme)+1)*sizeof(WCHAR));
-            RegSetValueExW(hKey, L"LoadedBefore", 0, REG_SZ, (const BYTE *)tmp, sizeof(WCHAR) * 2);
         }
         else {
-            RegDeleteValueW(hKey, L"ColorName");
-            RegDeleteValueW(hKey, L"SizeName");
-            RegDeleteValueW(hKey, L"DllName");
-            RegDeleteValueW(hKey, L"LoadedBefore");
+            RegDeleteValueW(hKey, szColorName);
+            RegDeleteValueW(hKey, szSizeName);
+            RegDeleteValueW(hKey, szDllName);
+
         }
         RegCloseKey(hKey);
     }
     else
         TRACE("Failed to open theme registry key\n");
-
-    hr = MSSTYLES_SetActiveTheme(tf, TRUE);
-    if (bThemeActive)
-    {
-        if (UXTHEME_GetSystemMetrics(&metrics))
-            UXTHEME_SaveSystemMetrics(&metrics, FALSE);
-    }
-    else
-    {
-        if (UXTHEME_GetUnthemedSystemMetrics(&metrics))
-            UXTHEME_SaveSystemMetrics(&metrics, TRUE);
-    }
+    
+    UXTHEME_SaveSystemMetrics ();
+    
     return hr;
 }
 
@@ -508,24 +523,25 @@ HRESULT UXTHEME_SetActiveTheme(PTHEME_FILE tf)
  */
 void UXTHEME_InitSystem(HINSTANCE hInst)
 {
-    atWindowTheme        = GlobalAddAtomW(L"ux_theme");
-    atSubAppName         = GlobalAddAtomW(L"ux_subapp");
-    atSubIdList          = GlobalAddAtomW(L"ux_subidlst");
-    atDialogThemeEnabled = GlobalAddAtomW(L"ux_dialogtheme");
+    static const WCHAR szWindowTheme[] = {
+        'u','x','_','t','h','e','m','e','\0'
+    };
+    static const WCHAR szSubAppName[] = {
+        'u','x','_','s','u','b','a','p','p','\0'
+    };
+    static const WCHAR szSubIdList[] = {
+        'u','x','_','s','u','b','i','d','l','s','t','\0'
+    };
+    static const WCHAR szDialogThemeEnabled[] = {
+        'u','x','_','d','i','a','l','o','g','t','h','e','m','e','\0'
+    };
+
+    atWindowTheme        = GlobalAddAtomW(szWindowTheme);
+    atSubAppName         = GlobalAddAtomW(szSubAppName);
+    atSubIdList          = GlobalAddAtomW(szSubIdList);
+    atDialogThemeEnabled = GlobalAddAtomW(szDialogThemeEnabled);
 
     UXTHEME_LoadTheme();
-    ThemeHooksInstall();
-}
-
-void UXTHEME_UninitSystem(void)
-{
-    ThemeHooksRemove();
-    MSSTYLES_SetActiveTheme(NULL, FALSE);
-
-    GlobalDeleteAtom(atWindowTheme);
-    GlobalDeleteAtom(atSubAppName);
-    GlobalDeleteAtom(atSubIdList);
-    GlobalDeleteAtom(atDialogThemeEnabled);
 }
 
 /***********************************************************************
@@ -571,10 +587,10 @@ BOOL WINAPI IsCompositionActive(void)
 HRESULT WINAPI EnableTheming(BOOL fEnable)
 {
     HKEY hKey;
+    WCHAR szEnabled[] = {'0','\0'};
 
     TRACE("(%d)\n", fEnable);
 
-<<<<<<< HEAD
     if (uxtheme_gtk_enabled())
         return uxtheme_gtk_EnableTheming(fEnable);
 
@@ -584,13 +600,10 @@ HRESULT WINAPI EnableTheming(BOOL fEnable)
         else
             UXTHEME_RestoreSystemMetrics();
         UXTHEME_SaveSystemMetrics ();
-=======
-    if (bThemeActive && !fEnable)
-    {
->>>>>>> master
         bThemeActive = fEnable;
+        if(bThemeActive) szEnabled[0] = '1';
         if(!RegOpenKeyW(HKEY_CURRENT_USER, szThemeManager, &hKey)) {
-            RegSetValueExW(hKey, L"ThemeActive", 0, REG_SZ, (BYTE *)L"0", 2 * sizeof(WCHAR));
+            RegSetValueExW(hKey, szThemeActive, 0, REG_SZ, (LPBYTE)szEnabled, sizeof(WCHAR));
             RegCloseKey(hKey);
         }
 	UXTHEME_broadcast_msg (NULL, WM_THEMECHANGED);
@@ -632,14 +645,17 @@ static LPWSTR UXTHEME_GetWindowProperty(HWND hwnd, ATOM aProp, LPWSTR pszBuffer,
     return NULL;
 }
 
-static HTHEME open_theme_data(HWND hwnd, LPCWSTR pszClassList, DWORD flags, UINT dpi)
+/***********************************************************************
+ *      OpenThemeDataEx                                     (UXTHEME.61)
+ */
+HTHEME WINAPI OpenThemeDataEx(HWND hwnd, LPCWSTR pszClassList, DWORD flags)
 {
     WCHAR szAppBuff[256];
     WCHAR szClassBuff[256];
     LPCWSTR pszAppName;
     LPCWSTR pszUseClassList;
     HTHEME hTheme = NULL;
-    TRACE("(%p,%s, %lx)\n", hwnd, debugstr_w(pszClassList), flags);
+    TRACE("(%p,%s, %x)\n", hwnd, debugstr_w(pszClassList), flags);
 
     if(!pszClassList)
     {
@@ -648,7 +664,7 @@ static HTHEME open_theme_data(HWND hwnd, LPCWSTR pszClassList, DWORD flags, UINT
     }
 
     if(flags)
-        FIXME("unhandled flags: %lx\n", flags);
+        FIXME("unhandled flags: %x\n", flags);
 
     if (uxtheme_gtk_enabled())
         hTheme = uxtheme_gtk_OpenThemeDataEx(hwnd, pszClassList, flags);
@@ -661,41 +677,13 @@ static HTHEME open_theme_data(HWND hwnd, LPCWSTR pszClassList, DWORD flags, UINT
             pszUseClassList = pszClassList;
 
         if (pszUseClassList)
-            hTheme = MSSTYLES_OpenThemeClass(pszAppName, pszUseClassList, dpi);
-
-        /* Fall back to default class if the specified subclass is not found */
-        if (!hTheme)
-            hTheme = MSSTYLES_OpenThemeClass(NULL, pszUseClassList, dpi);
+            hTheme = MSSTYLES_OpenThemeClass(pszAppName, pszUseClassList);
     }
 
     if(IsWindow(hwnd))
         SetPropW(hwnd, (LPCWSTR)MAKEINTATOM(atWindowTheme), hTheme);
     TRACE(" = %p\n", hTheme);
-
-    SetLastError(hTheme ? ERROR_SUCCESS : E_PROP_ID_UNSUPPORTED);
     return hTheme;
-}
-
-/***********************************************************************
- *      OpenThemeDataEx                                     (UXTHEME.61)
- */
-HTHEME WINAPI OpenThemeDataEx(HWND hwnd, LPCWSTR pszClassList, DWORD flags)
-{
-    UINT dpi;
-
-    dpi = GetDpiForWindow(hwnd);
-    if (!dpi)
-        dpi = 96;
-
-    return open_theme_data(hwnd, pszClassList, flags, dpi);
-}
-
-/***********************************************************************
- *      OpenThemeDataForDpi                                 (UXTHEME.@)
- */
-HTHEME WINAPI OpenThemeDataForDpi(HWND hwnd, LPCWSTR class_list, UINT dpi)
-{
-    return open_theme_data(hwnd, class_list, 0, dpi);
 }
 
 /***********************************************************************
@@ -720,13 +708,6 @@ HTHEME WINAPI OpenThemeData(HWND hwnd, LPCWSTR classlist)
 HTHEME WINAPI GetWindowTheme(HWND hwnd)
 {
     TRACE("(%p)\n", hwnd);
-
-    if (!hwnd)
-    {
-        SetLastError(E_HANDLE);
-        return NULL;
-    }
-
     return GetPropW(hwnd, (LPCWSTR)MAKEINTATOM(atWindowTheme));
 }
 
@@ -742,19 +723,14 @@ HRESULT WINAPI SetWindowTheme(HWND hwnd, LPCWSTR pszSubAppName,
     TRACE("(%p,%s,%s)\n", hwnd, debugstr_w(pszSubAppName),
           debugstr_w(pszSubIdList));
 
-<<<<<<< HEAD
     if (uxtheme_gtk_enabled())
         return uxtheme_gtk_SetWindowTheme(hwnd, pszSubAppName, pszSubIdList);
-=======
-    if (!hwnd)
-        return E_HANDLE;
->>>>>>> master
 
     hr = UXTHEME_SetWindowProperty(hwnd, atSubAppName, pszSubAppName);
     if(SUCCEEDED(hr))
         hr = UXTHEME_SetWindowProperty(hwnd, atSubIdList, pszSubIdList);
     if(SUCCEEDED(hr))
-        SendMessageW(hwnd, WM_THEMECHANGED, 0, 0);
+	UXTHEME_broadcast_msg (hwnd, WM_THEMECHANGED);
     return hr;
 }
 
@@ -764,7 +740,7 @@ HRESULT WINAPI SetWindowTheme(HWND hwnd, LPCWSTR pszSubAppName,
 HRESULT WINAPI SetWindowThemeAttribute(HWND hwnd, enum WINDOWTHEMEATTRIBUTETYPE type,
                                        PVOID attribute, DWORD size)
 {
-   FIXME("(%p,%d,%p,%ld): stub\n", hwnd, type, attribute, size);
+   FIXME("(%p,%d,%p,%d): stub\n", hwnd, type, attribute, size);
    return E_NOTIMPL;
 }
 
@@ -802,15 +778,11 @@ DWORD WINAPI GetThemeAppProperties(void)
  */
 void WINAPI SetThemeAppProperties(DWORD dwFlags)
 {
-<<<<<<< HEAD
     TRACE("(0x%08x)\n", dwFlags);
 
     if (uxtheme_gtk_enabled())
         return uxtheme_gtk_SetThemeAppProperties(dwFlags);
 
-=======
-    TRACE("(0x%08lx)\n", dwFlags);
->>>>>>> master
     dwThemeAppProperties = dwFlags;
 }
 
@@ -837,7 +809,7 @@ HRESULT WINAPI HitTestThemeBackground(HTHEME hTheme, HDC hdc, int iPartId,
                                      const RECT *pRect, HRGN hrgn,
                                      POINT ptTest, WORD *pwHitTestCode)
 {
-    FIXME("%d %d 0x%08lx: stub\n", iPartId, iStateId, dwOptions);
+    FIXME("%d %d 0x%08x: stub\n", iPartId, iStateId, dwOptions);
     if(!hTheme)
         return E_HANDLE;
     return E_NOTIMPL;
@@ -854,17 +826,12 @@ BOOL WINAPI IsThemePartDefined(HTHEME hTheme, int iPartId, int iStateId)
         return FALSE;
     }
 
-<<<<<<< HEAD
     if (uxtheme_gtk_enabled())
         return uxtheme_gtk_IsThemePartDefined(hTheme, iPartId, iStateId);
 
     if(MSSTYLES_FindPartState(hTheme, iPartId, iStateId, NULL))
         return TRUE;
     return FALSE;
-=======
-    SetLastError(NO_ERROR);
-    return !iStateId && MSSTYLES_FindPart(hTheme, iPartId);
->>>>>>> master
 }
 
 /***********************************************************************
@@ -914,7 +881,7 @@ HRESULT WINAPI GetThemeDocumentationProperty(LPCWSTR pszThemeName,
     /* If loading from string resource failed, try getting it from the theme.ini */
     if(FAILED(hr)) {
         PUXINI_FILE uf = MSSTYLES_GetThemeIni(pt);
-        if(UXINI_FindSection(uf, L"documentation")) {
+        if(UXINI_FindSection(uf, szIniDocumentation)) {
             LPCWSTR lpValue;
             DWORD dwLen;
             if(UXINI_FindValue(uf, pszPropertyName, &lpValue, &dwLen)) {
@@ -965,7 +932,7 @@ HRESULT WINAPI OpenThemeFile(LPCWSTR pszThemeFileName, LPCWSTR pszColorName,
                              LPCWSTR pszSizeName, HTHEMEFILE *hThemeFile,
                              DWORD unknown)
 {
-    TRACE("(%s,%s,%s,%p,%ld)\n", debugstr_w(pszThemeFileName),
+    TRACE("(%s,%s,%s,%p,%d)\n", debugstr_w(pszThemeFileName),
           debugstr_w(pszColorName), debugstr_w(pszSizeName),
           hThemeFile, unknown);
     return MSSTYLES_OpenThemeFile(pszThemeFileName, pszColorName, pszSizeName, (PTHEME_FILE*)hThemeFile);
@@ -1045,7 +1012,7 @@ HRESULT WINAPI GetThemeDefaults(LPCWSTR pszThemeFileName, LPWSTR pszColorName,
 {
     PTHEME_FILE pt;
     HRESULT hr;
-    TRACE("(%s,%p,%ld,%p,%ld)\n", debugstr_w(pszThemeFileName),
+    TRACE("(%s,%p,%d,%p,%d)\n", debugstr_w(pszThemeFileName),
           pszColorName, dwColorNameLen,
           pszSizeName, dwSizeNameLen);
 
@@ -1079,6 +1046,10 @@ HRESULT WINAPI EnumThemes(LPCWSTR pszThemePath, EnumThemeProc callback,
 {
     WCHAR szDir[MAX_PATH];
     WCHAR szPath[MAX_PATH];
+    static const WCHAR szStar[] = {'*','.','*','\0'};
+    static const WCHAR szFormat[] = {'%','s','%','s','\\','%','s','.','m','s','s','t','y','l','e','s','\0'};
+    static const WCHAR szDisplayName[] = {'d','i','s','p','l','a','y','n','a','m','e','\0'};
+    static const WCHAR szTooltip[] = {'t','o','o','l','t','i','p','\0'};
     WCHAR szName[60];
     WCHAR szTip[60];
     HANDLE hFind;
@@ -1100,7 +1071,7 @@ HRESULT WINAPI EnumThemes(LPCWSTR pszThemePath, EnumThemeProc callback,
     }
 
     lstrcpyW(szPath, szDir);
-    lstrcatW(szPath, L"*.*");
+    lstrcatW(szPath, szStar);
     TRACE("searching %s\n", debugstr_w(szPath));
 
     hFind = FindFirstFileW(szPath, &wfd);
@@ -1108,11 +1079,11 @@ HRESULT WINAPI EnumThemes(LPCWSTR pszThemePath, EnumThemeProc callback,
         do {
             if(wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
                && !(wfd.cFileName[0] == '.' && ((wfd.cFileName[1] == '.' && wfd.cFileName[2] == 0) || wfd.cFileName[1] == 0))) {
-                wsprintfW(szPath, L"%s%s\\%s.msstyles", szDir, wfd.cFileName, wfd.cFileName);
+                wsprintfW(szPath, szFormat, szDir, wfd.cFileName, wfd.cFileName);
 
-                hr = GetThemeDocumentationProperty(szPath, L"displayname", szName, ARRAY_SIZE(szName));
+                hr = GetThemeDocumentationProperty(szPath, szDisplayName, szName, ARRAY_SIZE(szName));
                 if(SUCCEEDED(hr))
-                    hr = GetThemeDocumentationProperty(szPath, L"tooltip", szTip, ARRAY_SIZE(szTip));
+                    hr = GetThemeDocumentationProperty(szPath, szTooltip, szTip, ARRAY_SIZE(szTip));
                 if(SUCCEEDED(hr)) {
                     TRACE("callback(%s,%s,%s,%p)\n", debugstr_w(szPath), debugstr_w(szName), debugstr_w(szTip), lpData);
                     if(!callback(NULL, szPath, szName, szTip, NULL, lpData)) {
@@ -1160,7 +1131,7 @@ HRESULT WINAPI EnumThemeColors(LPWSTR pszThemeFileName, LPWSTR pszSizeName,
     HRESULT hr;
     LPWSTR tmp;
     UINT resourceId = dwColorNum + 1000;
-    TRACE("(%s,%s,%ld)\n", debugstr_w(pszThemeFileName),
+    TRACE("(%s,%s,%d)\n", debugstr_w(pszThemeFileName),
           debugstr_w(pszSizeName), dwColorNum);
 
     hr = MSSTYLES_OpenThemeFile(pszThemeFileName, NULL, pszSizeName, &pt);
@@ -1218,7 +1189,7 @@ HRESULT WINAPI EnumThemeSizes(LPWSTR pszThemeFileName, LPWSTR pszColorName,
     HRESULT hr;
     LPWSTR tmp;
     UINT resourceId = dwSizeNum + 3000;
-    TRACE("(%s,%s,%ld)\n", debugstr_w(pszThemeFileName),
+    TRACE("(%s,%s,%d)\n", debugstr_w(pszThemeFileName),
           debugstr_w(pszColorName), dwSizeNum);
 
     hr = MSSTYLES_OpenThemeFile(pszThemeFileName, pszColorName, NULL, &pt);
@@ -1292,20 +1263,4 @@ HRESULT WINAPI CheckThemeSignature(LPCWSTR pszThemeFileName)
         return hr;
     MSSTYLES_CloseThemeFile(pt);
     return S_OK;
-}
-
-BOOL WINAPI ThemeHooksInstall(void)
-{
-    struct user_api_hook hooks;
-
-    hooks.pDefDlgProc = UXTHEME_DefDlgProc;
-    hooks.pScrollBarDraw = UXTHEME_ScrollBarDraw;
-    hooks.pScrollBarWndProc = UXTHEME_ScrollbarWndProc;
-    return RegisterUserApiHook(&hooks, &user_api);
-}
-
-BOOL WINAPI ThemeHooksRemove(void)
-{
-    UnregisterUserApiHook();
-    return TRUE;
 }

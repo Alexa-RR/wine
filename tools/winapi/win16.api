@@ -217,7 +217,7 @@ LPSTR
 
 WORD
 
-%%display.drv
+%%display.dll
 
 %long
 
@@ -362,7 +362,7 @@ INT16
 UINT16
 WORD
 
-%%keyboard.drv
+%%keyboard.dll
 
 %long
 
@@ -628,7 +628,7 @@ MMRESULT16
 UINT16
 WORD
 
-%%mouse.drv
+%%mouse.dll
 
 %ptr
 
@@ -1408,6 +1408,12 @@ CONTEXT86 *
 
 void
 
+%%winedos16.dll
+
+%void
+
+void
+
 %%wineps16.drv
 
 %long
@@ -1550,3 +1556,13 @@ HWTHOOK16
 INT16
 UINT16
 WPARAM16
+
+%%wprocs.dll
+
+%ptr
+
+CONTEXT86 *
+
+%void
+
+void

@@ -17,7 +17,6 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
-#include <process.h>
 #include "msvcrt.h"
 #include "wine/debug.h"
 
@@ -27,14 +26,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 
 typedef struct {
   HANDLE thread;
-  union {
-      _beginthread_start_routine_t start_address;
-      _beginthreadex_start_routine_t start_address_ex;
-  };
+  MSVCRT__beginthread_start_routine_t start_address;
   void *arglist;
-#if _MSVCR_VER >= 140
-  HMODULE module;
-#endif
 } _beginthread_trampoline_t;
 
 /*********************************************************************
@@ -42,7 +35,7 @@ typedef struct {
  *
  * Return the thread local storage structure.
  */
-thread_data_t *CDECL msvcrt_get_thread_data(void)
+thread_data_t *msvcrt_get_thread_data(void)
 {
     thread_data_t *ptr;
     DWORD err = GetLastError();  /* need to preserve last error */
@@ -57,9 +50,6 @@ thread_data_t *CDECL msvcrt_get_thread_data(void)
         ptr->random_seed = 1;
         ptr->locinfo = MSVCRT_locale->locinfo;
         ptr->mbcinfo = MSVCRT_locale->mbcinfo;
-#if _MSVCR_VER >= 140
-        ptr->module = NULL;
-#endif
     }
     SetLastError( err );
     return ptr;
@@ -82,7 +72,8 @@ void CDECL _endthread(void)
   } else
       WARN("tls=%p tls->handle=%p\n", tls, tls ? tls->handle : INVALID_HANDLE_VALUE);
 
-  _endthreadex(0);
+  /* FIXME */
+  ExitThread(0);
 }
 
 /*********************************************************************
@@ -93,17 +84,7 @@ void CDECL _endthreadex(
 {
   TRACE("(%d)\n", retval);
 
-#if _MSVCR_VER >= 140
-  {
-      thread_data_t *tls = TlsGetValue(msvcrt_tls_index);
-
-      if (tls && tls->module != NULL)
-          FreeLibraryAndExitThread(tls->module, retval);
-      else
-          WARN("tls=%p tls->module=%p\n", tls, tls ? tls->module : NULL);
-  }
-#endif
-
+  /* FIXME */
   ExitThread(retval);
 }
 
@@ -116,21 +97,19 @@ static DWORD CALLBACK _beginthread_trampoline(LPVOID arg)
     thread_data_t *data = msvcrt_get_thread_data();
 
     memcpy(&local_trampoline,arg,sizeof(local_trampoline));
-    free(arg);
     data->handle = local_trampoline.thread;
-#if _MSVCR_VER >= 140
-    data->module = local_trampoline.module;
-#endif
+    MSVCRT_free(arg);
 
     local_trampoline.start_address(local_trampoline.arglist);
     _endthread();
+    return 0;
 }
 
 /*********************************************************************
  *		_beginthread (MSVCRT.@)
  */
-uintptr_t CDECL _beginthread(
-  _beginthread_start_routine_t start_address, /* [in] Start address of routine that begins execution of new thread */
+MSVCRT_uintptr_t CDECL _beginthread(
+  MSVCRT__beginthread_start_routine_t start_address, /* [in] Start address of routine that begins execution of new thread */
   unsigned int stack_size, /* [in] Stack size for new thread or 0 */
   void *arglist)           /* [in] Argument list to be passed to new thread or NULL */
 {
@@ -139,19 +118,17 @@ uintptr_t CDECL _beginthread(
 
   TRACE("(%p, %d, %p)\n", start_address, stack_size, arglist);
 
-  if (!MSVCRT_CHECK_PMT(start_address)) return -1;
-
-  trampoline = malloc(sizeof(*trampoline));
+  trampoline = MSVCRT_malloc(sizeof(*trampoline));
   if(!trampoline) {
-      *_errno() = EAGAIN;
+      *MSVCRT__errno() = MSVCRT_EAGAIN;
       return -1;
   }
 
   thread = CreateThread(NULL, stack_size, _beginthread_trampoline,
           trampoline, CREATE_SUSPENDED, NULL);
   if(!thread) {
-      free(trampoline);
-      msvcrt_set_errno(GetLastError());
+      MSVCRT_free(trampoline);
+      *MSVCRT__errno() = MSVCRT_EAGAIN;
       return -1;
   }
 
@@ -159,93 +136,32 @@ uintptr_t CDECL _beginthread(
   trampoline->start_address = start_address;
   trampoline->arglist = arglist;
 
-#if _MSVCR_VER >= 140
-  if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-              (void*)start_address, &trampoline->module))
-  {
-      trampoline->module = NULL;
-      WARN("failed to get module for the start_address: %lu\n", GetLastError());
-  }
-#endif
-
   if(ResumeThread(thread) == -1) {
-#if _MSVCR_VER >= 140
-      FreeLibrary(trampoline->module);
-#endif
-      free(trampoline);
-      *_errno() = EAGAIN;
+      MSVCRT_free(trampoline);
+      *MSVCRT__errno() = MSVCRT_EAGAIN;
       return -1;
   }
 
-  return (uintptr_t)thread;
+  return (MSVCRT_uintptr_t)thread;
 }
 
-/*********************************************************************
- *		_beginthreadex_trampoline
- */
-static DWORD CALLBACK _beginthreadex_trampoline(LPVOID arg)
-{
-    unsigned int retval;
-    _beginthread_trampoline_t local_trampoline;
-    thread_data_t *data = msvcrt_get_thread_data();
-
-    memcpy(&local_trampoline, arg, sizeof(local_trampoline));
-    free(arg);
-    data->handle = local_trampoline.thread;
-#if _MSVCR_VER >= 140
-    data->module = local_trampoline.module;
-#endif
-
-    retval = local_trampoline.start_address_ex(local_trampoline.arglist);
-    _endthreadex(retval);
-}
 /*********************************************************************
  *		_beginthreadex (MSVCRT.@)
  */
-uintptr_t CDECL _beginthreadex(
+MSVCRT_uintptr_t CDECL _beginthreadex(
   void *security,          /* [in] Security descriptor for new thread; must be NULL for Windows 9x applications */
   unsigned int stack_size, /* [in] Stack size for new thread or 0 */
-  _beginthreadex_start_routine_t start_address, /* [in] Start address of routine that begins execution of new thread */
+  MSVCRT__beginthreadex_start_routine_t start_address, /* [in] Start address of routine that begins execution of new thread */
   void *arglist,           /* [in] Argument list to be passed to new thread or NULL */
   unsigned int initflag,   /* [in] Initial state of new thread (0 for running or CREATE_SUSPEND for suspended) */
   unsigned int *thrdaddr)  /* [out] Points to a 32-bit variable that receives the thread identifier */
 {
-  _beginthread_trampoline_t* trampoline;
-  HANDLE thread;
-
   TRACE("(%p, %d, %p, %p, %d, %p)\n", security, stack_size, start_address, arglist, initflag, thrdaddr);
 
-  /* FIXME: may use different errno / return values */
-  if (!MSVCRT_CHECK_PMT(start_address)) return 0;
-
-  if (!(trampoline = malloc(sizeof(*trampoline))))
-      return 0;
-
-  trampoline->thread = INVALID_HANDLE_VALUE;
-  trampoline->start_address_ex = start_address;
-  trampoline->arglist = arglist;
-
-#if _MSVCR_VER >= 140
-  if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-              (void*)start_address, &trampoline->module))
-  {
-     trampoline->module = NULL;
-     WARN("failed to get module for the start_address: %lu\n", GetLastError());
-  }
-#endif
-
-  thread = CreateThread(security, stack_size, _beginthreadex_trampoline,
-          trampoline, initflag, (DWORD *)thrdaddr);
-  if(!thread) {
-#if _MSVCR_VER >= 140
-      FreeLibrary(trampoline->module);
-#endif
-      free(trampoline);
-      msvcrt_set_errno(GetLastError());
-      return 0;
-  }
-
-  return (uintptr_t)thread;
+  /* FIXME */
+  return (MSVCRT_uintptr_t)CreateThread(security, stack_size,
+				     start_address, arglist,
+				     initflag, thrdaddr);
 }
 
 #if _MSVCR_VER>=80

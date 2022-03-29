@@ -158,21 +158,20 @@ HGLOBAL WINAPI OleMetafilePictFromIconAndLabel(HICON hIcon, LPOLESTR lpszLabel,
 	return hmem;
 }
 
-/******************************************************************************
- *		IsValidInterface	[OLE32.@]
- *
- * Determines whether a pointer is a valid interface.
- *
- * PARAMS
- *  punk [I] Interface to be tested.
- *
- * RETURNS
- *  TRUE, if the passed pointer is a valid interface, or FALSE otherwise.
+/***********************************************************************
+ *      CoGetActivationState (ole32.@)
  */
-BOOL WINAPI IsValidInterface(LPUNKNOWN punk)
+HRESULT WINAPI CoGetActivationState(GUID guid, DWORD unknown, DWORD *unknown2)
 {
-	return !(IsBadReadPtr(punk,4) ||
-                 IsBadReadPtr(punk->lpVtbl,4) ||
-                 IsBadReadPtr(punk->lpVtbl->QueryInterface,9) ||
-                 IsBadCodePtr((FARPROC)punk->lpVtbl->QueryInterface));
+    FIXME("%s, %x, %p\n", debugstr_guid(&guid), unknown, unknown2);
+    return E_NOTIMPL;
+}
+
+/***********************************************************************
+ *      CoGetCallState (ole32.@)
+ */
+HRESULT WINAPI CoGetCallState(int unknown, PULONG unknown2)
+{
+    FIXME("%d, %p\n", unknown, unknown2);
+    return E_NOTIMPL;
 }

@@ -48,7 +48,27 @@ static CRITICAL_SECTION report_table_cs = { &report_table_cs_debug, -1, 0, 0, 0,
 
 static struct list report_table = LIST_INIT(report_table);
 
-static const WCHAR regpath_exclude[] = L"Software\\Microsoft\\Windows Error Reporting\\ExcludedApplications";
+static const WCHAR regpath_exclude[] =
+    {'S','o','f','t','w','a','r','e','\\',
+     'M','i','c','r','o','s','o','f','t','\\',
+     'W','i','n','d','o','w','s',' ','E','r','r','o','r',' ','R','e','p','o','r','t','i','n','g','\\',
+     'E','x','c','l','u','d','e','d','A','p','p','l','i','c','a','t','i','o','n','s',0};
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(0x%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
+
+    switch (fdwReason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;    /* prefer native version */
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls(hinstDLL);
+            break;
+    }
+
+    return TRUE;
+}
 
 /***********************************************************************
  * WerAddExcludedApplication (wer.@)
@@ -155,7 +175,7 @@ HRESULT WINAPI WerReportAddDump(HREPORT hReportHandle, HANDLE hProcess, HANDLE h
                                 WER_DUMP_TYPE dumpType, PWER_EXCEPTION_INFORMATION pExceptionParam,
                                 PWER_DUMP_CUSTOM_OPTIONS pDumpCustomOptions, DWORD dwFlags)
 {
-    FIXME("(%p, %p, %p, %d, %p, %p, %lu) :stub\n", hReportHandle, hProcess, hThread, dumpType,
+    FIXME("(%p, %p, %p, %d, %p, %p, %u) :stub\n", hReportHandle, hProcess, hThread, dumpType,
           pExceptionParam, pDumpCustomOptions, dwFlags);
 
     return E_NOTIMPL;
@@ -179,7 +199,7 @@ HRESULT WINAPI WerReportAddDump(HREPORT hReportHandle, HANDLE hProcess, HANDLE h
  */
 HRESULT WINAPI WerReportAddFile(HREPORT hreport, PCWSTR path, WER_FILE_TYPE type, DWORD flags)
 {
-    FIXME("(%p, %s, %d, 0x%lx) :stub\n", hreport, debugstr_w(path), type, flags);
+    FIXME("(%p, %s, %d, 0x%x) :stub\n", hreport, debugstr_w(path), type, flags);
 
     return S_OK;
 }
@@ -299,7 +319,7 @@ HRESULT WINAPI WerReportCreate(PCWSTR eventtype, WER_REPORT_TYPE reporttype, PWE
  */
 HRESULT WINAPI WerReportSetParameter(HREPORT hreport, DWORD id, PCWSTR name, PCWSTR value)
 {
-    FIXME("(%p, %ld, %s, %s) :stub\n", hreport, id, debugstr_w(name), debugstr_w(value));
+    FIXME("(%p, %d, %s, %s) :stub\n", hreport, id, debugstr_w(name), debugstr_w(value));
 
     return S_OK;
 }
@@ -323,7 +343,7 @@ HRESULT WINAPI WerReportSetParameter(HREPORT hreport, DWORD id, PCWSTR name, PCW
  */
 HRESULT WINAPI WerReportSubmit(HREPORT hreport, WER_CONSENT consent, DWORD flags, PWER_SUBMIT_RESULT presult)
 {
-    FIXME("(%p, %d, 0x%lx, %p) :stub\n", hreport, consent, flags, presult);
+    FIXME("(%p, %d, 0x%x, %p) :stub\n", hreport, consent, flags, presult);
 
     if(!presult)
         return E_INVALIDARG;

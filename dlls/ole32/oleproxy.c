@@ -137,17 +137,6 @@ static const IClassFactoryVtbl PointerMonikerCFVtbl =
 
 static IClassFactory PointerMonikerCF = { &PointerMonikerCFVtbl };
 
-static const IClassFactoryVtbl ObjrefMonikerCFVtbl =
-{
-    ClassFactory_QueryInterface,
-    ClassFactory_AddRef,
-    ClassFactory_Release,
-    ObjrefMoniker_CreateInstance,
-    ClassFactory_LockServer
-};
-
-static IClassFactory ObjrefMonikerCF = { &ObjrefMonikerCFVtbl };
-
 static const IClassFactoryVtbl ComCatCFVtbl =
 {
     ClassFactory_QueryInterface,
@@ -159,27 +148,16 @@ static const IClassFactoryVtbl ComCatCFVtbl =
 
 static IClassFactory ComCatCF = { &ComCatCFVtbl };
 
-static const IClassFactoryVtbl GlobalInterfaceTableCFVtbl =
+static const IClassFactoryVtbl GlobalOptionsCFVtbl =
 {
     ClassFactory_QueryInterface,
     ClassFactory_AddRef,
     ClassFactory_Release,
-    GlobalInterfaceTable_CreateInstance,
+    GlobalOptions_CreateInstance,
     ClassFactory_LockServer
 };
 
-IClassFactory GlobalInterfaceTableCF = { &GlobalInterfaceTableCFVtbl };
-
-static const IClassFactoryVtbl ManualResetEventCFVtbl =
-{
-    ClassFactory_QueryInterface,
-    ClassFactory_AddRef,
-    ClassFactory_Release,
-    ManualResetEvent_CreateInstance,
-    ClassFactory_LockServer
-};
-
-IClassFactory ManualResetEventCF = { &ManualResetEventCFVtbl };
+IClassFactory GlobalOptionsCF = { &GlobalOptionsCFVtbl };
 
 /***********************************************************************
  *           DllGetClassObject [OLE32.@]
@@ -195,10 +173,8 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID iid,LPVOID *ppv)
 	)
     )
 	return MARSHAL_GetStandardMarshalCF(ppv);
-    if (IsEqualCLSID(rclsid, &CLSID_StdGlobalInterfaceTable))
-        return IClassFactory_QueryInterface(&GlobalInterfaceTableCF, iid, ppv);
-    if (IsEqualCLSID(rclsid, &CLSID_ManualResetEvent))
-        return IClassFactory_QueryInterface(&ManualResetEventCF, iid, ppv);
+    if (IsEqualIID(rclsid,&CLSID_StdGlobalInterfaceTable) && (IsEqualIID(iid,&IID_IClassFactory) || IsEqualIID(iid,&IID_IUnknown)))
+        return StdGlobalInterfaceTable_GetFactory(ppv);
     if (IsEqualCLSID(rclsid, &CLSID_FileMoniker))
         return IClassFactory_QueryInterface(&FileMonikerCF, iid, ppv);
     if (IsEqualCLSID(rclsid, &CLSID_ItemMoniker))
@@ -209,8 +185,6 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID iid,LPVOID *ppv)
         return IClassFactory_QueryInterface(&CompositeMonikerCF, iid, ppv);
     if (IsEqualCLSID(rclsid, &CLSID_ClassMoniker))
         return IClassFactory_QueryInterface(&ClassMonikerCF, iid, ppv);
-    if (IsEqualCLSID(rclsid, &CLSID_ObjrefMoniker))
-        return IClassFactory_QueryInterface(&ObjrefMonikerCF, iid, ppv);
     if (IsEqualCLSID(rclsid, &CLSID_PointerMoniker))
         return IClassFactory_QueryInterface(&PointerMonikerCF, iid, ppv);
     if (IsEqualGUID(rclsid, &CLSID_StdComponentCategoriesMgr))
@@ -221,19 +195,4 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID iid,LPVOID *ppv)
         return hr;
 
     return Handler_DllGetClassObject(rclsid, iid, ppv);
-}
-
-/***********************************************************************
- *           Ole32DllGetClassObject [OLE32.@]
- */
-HRESULT WINAPI Ole32DllGetClassObject(REFCLSID rclsid, REFIID riid, void **obj)
-{
-    if (IsEqualCLSID(rclsid, &CLSID_StdGlobalInterfaceTable))
-        return IClassFactory_QueryInterface(&GlobalInterfaceTableCF, riid, obj);
-    else if (IsEqualCLSID(rclsid, &CLSID_ManualResetEvent))
-        return IClassFactory_QueryInterface(&ManualResetEventCF, riid, obj);
-    else if (IsEqualCLSID(rclsid, &CLSID_InProcFreeMarshaler))
-        return FTMarshalCF_Create(riid, obj);
-    else
-        return CLASS_E_CLASSNOTAVAILABLE;
 }

@@ -21,13 +21,26 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <time.h>
+#ifdef HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
+#ifdef HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
+#ifdef HAVE_SYS_MMAN_H
+#include <sys/mman.h>
+#endif
+#include <fcntl.h>
 
-#include "../tools.h"
 #include "windef.h"
 #include "winbase.h"
 #include "winedump.h"
@@ -135,7 +148,7 @@ static BOOL dump_cv_sst_global_pub(const OMFDirEntry* omfde)
     symbols = PRD(fileoffset + sizeof(OMFSymHash), header->cbSymbol);
     if (!symbols) {printf("Can't OMF-SymHash details, aborting\n"); return FALSE;}
 
-    codeview_dump_symbols(symbols, 0, header->cbSymbol);
+    codeview_dump_symbols(symbols, header->cbSymbol);
 
     return TRUE;
 }
@@ -320,7 +333,7 @@ static BOOL dump_cv_sst_align_sym(const OMFDirEntry* omfde)
 
     if (!rawdata) {printf("Can't get srcAlignSym subsection details, aborting\n");return FALSE;}
     if (omfde->cb < sizeof(DWORD)) return TRUE;
-    codeview_dump_symbols(rawdata, sizeof(DWORD), omfde->cb);
+    codeview_dump_symbols(rawdata + sizeof(DWORD), omfde->cb - sizeof(DWORD));
 
     return TRUE;
 }
@@ -670,7 +683,7 @@ void    dump_stabs(const void* pv_stabs, unsigned szstabs, const char* stabstr, 
      * where the stab is continued over multiple lines.
      */
     stabbufflen = 65536;
-    stabbuff = xmalloc(stabbufflen);
+    stabbuff = malloc(stabbufflen);
 
     stabbuff[0] = '\0';
 
@@ -694,7 +707,7 @@ void    dump_stabs(const void* pv_stabs, unsigned szstabs, const char* stabstr, 
             if (strlen(stabbuff) + len > stabbufflen)
             {
                 stabbufflen += 65536;
-                stabbuff = xrealloc(stabbuff, stabbufflen);
+                stabbuff = realloc(stabbuff, stabbufflen);
             }
             strcat(stabbuff, ptr);
             continue;

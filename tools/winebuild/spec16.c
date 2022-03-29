@@ -23,6 +23,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -830,8 +831,7 @@ void output_fake_module16( DLLSPEC *spec )
     const unsigned int lfanew = (0x40 + sizeof(fakedll_signature) + 15) & ~15;
     const unsigned int segtab = lfanew + 0x40;
 
-    unsigned int i, rsrctab, restab, namelen, modtab, imptab, enttab, cbenttab, codeseg, dataseg, rsrcdata, rsrc_size = 0;
-    void *rsrc_ptr = NULL;
+    unsigned int i, rsrctab, restab, namelen, modtab, imptab, enttab, cbenttab, codeseg, dataseg, rsrcdata;
 
     init_output_buffer();
 
@@ -844,10 +844,6 @@ void output_fake_module16( DLLSPEC *spec )
         rsrctab = restab;
         restab += output_buffer_pos;
         free( output_buffer );
-        init_output_buffer();
-        output_bin_res16_data( spec );
-        rsrc_ptr = output_buffer;
-        rsrc_size = output_buffer_pos;
         init_output_buffer();
     }
 
@@ -880,7 +876,7 @@ void output_fake_module16( DLLSPEC *spec )
     put_dword( 0 );
     put_word( 0 );            /* e_oemid */
     put_word( 0 );            /* e_oeminfo */
-    put_dword( rsrcdata + rsrc_size ); /* e_res2 */
+    put_dword( 0 );           /* e_res2 */
     put_dword( 0 );
     put_dword( 0 );
     put_dword( 0 );
@@ -959,5 +955,7 @@ void output_fake_module16( DLLSPEC *spec )
     put_data( data_segment, sizeof(data_segment) );
 
     /* resource data */
-    put_data( rsrc_ptr, rsrc_size );
+    output_bin_res16_data( spec );
+
+    flush_output_buffer();
 }

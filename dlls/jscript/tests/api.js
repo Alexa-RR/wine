@@ -16,15 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-var JS_E_NUMBER_EXPECTED = 0x800a1389;
-var JS_E_FUNCTION_EXPECTED = 0x800a138a;
-var JS_E_DATE_EXPECTED = 0x800a138e;
-var JS_E_OBJECT_EXPECTED = 0x800a138f;
-var JS_E_BOOLEAN_EXPECTED = 0x800a1392;
-var JS_E_VBARRAY_EXPECTED = 0x800a1395;
-var JS_E_ENUMERATOR_EXPECTED = 0x800a1397;
-var JS_E_REGEXP_EXPECTED = 0x800a1398;
-
 var tmp, i;
 
 var bigInt = Math.pow(2,40);
@@ -762,14 +753,10 @@ tmp = "test".toLowerCase(3);
 ok(tmp === "test", "''.toLowerCase(3) = " + tmp);
 tmp = "tEsT".toLowerCase();
 ok(tmp === "test", "''.toLowerCase() = " + tmp);
-tmp = "tEsT".toLocaleLowerCase();
-ok(tmp === "test", "''.toLocaleLowerCase() = " + tmp);
 tmp = "tEsT".toLowerCase(3);
 ok(tmp === "test", "''.toLowerCase(3) = " + tmp);
 tmp = ("tE" + String.fromCharCode(0) + "sT").toLowerCase();
 ok(tmp === "te" + String.fromCharCode(0) + "st", "''.toLowerCase() = " + tmp);
-ok(String.prototype.toLocaleLowerCase != String.prototype.toLowerCase,
-   "String.prototype.toLocaleLowerCase == String.prototype.toLowerCase");
 
 tmp = "".toUpperCase();
 ok(tmp === "", "''.toUpperCase() = " + tmp);
@@ -781,12 +768,8 @@ tmp = "tEsT".toUpperCase();
 ok(tmp === "TEST", "''.toUpperCase() = " + tmp);
 tmp = "tEsT".toUpperCase(3);
 ok(tmp === "TEST", "''.toUpperCase(3) = " + tmp);
-tmp = "tEsT".toLocaleUpperCase(3);
-ok(tmp === "TEST", "''.toLocaleUpperCase(3) = " + tmp);
 tmp = ("tE" + String.fromCharCode(0) + "sT").toUpperCase();
 ok(tmp === "TE" + String.fromCharCode(0) + "ST", "''.toUpperCase() = " + tmp);
-ok(String.prototype.toLocaleUpperCase != String.prototype.toUpperCase,
-   "String.prototype.toLocaleUpperCase == String.prototype.toUpperCase");
 
 tmp = "".anchor();
 ok(tmp === "<A NAME=\"undefined\"></A>", "''.anchor() = " + tmp);
@@ -1055,19 +1038,6 @@ ok(tmp === arr, "tmp !== arr");
 tmp = [5,3,"2.5",2,true,false,-1];
 for(var i=0; i < arr.length; i++)
     ok(arr[i] === tmp[i], "arr[" + i + "] = " + arr[i] + " expected " + tmp[i]);
-
-tmp = [3,1,2].sort(function(x,y) { return y-x; }).join();
-ok(tmp === "3,2,1", "reverse sorted [3,1,2] = " + tmp);
-
-tmp = [3,1,2].sort(null).join();
-ok(tmp === "1,2,3", "null sorted [3,1,2] = " + tmp);
-
-try {
-    tmp = [3,1,2].sort(function(x,y) { return y-x; }, 1, 2, 3);
-    ok(false, "expected sort(undefined) exception");
-} catch(e) {
-    ok(e.name === "TypeError", "got exception " + e.name);
-}
 
 arr = [5,false,2,0,"abc",3,"a",-1];
 tmp = arr.sort();
@@ -1926,14 +1896,13 @@ ok(isNaN(tmp), "Math.tan(-Infinity) is not NaN");
         [[true], "true"],
         [[false], "false"],
         [[null], "null"],
-        [[nullDisp], undefined],
         [[1], "1"],
         [["test"], "\"test\""],
         [["test\"\\\b\f\n\r\t\u0002 !"], "\"test\\\"\\\\\\b\\f\\n\\r\\t\\u0002 !\""],
         [[NaN], "null"],
         [[Infinity], "null"],
         [[-Infinity], "null"],
-        [[{prop1: true, prop2: "string", func1: function() {}}], "{\"prop1\":true,\"prop2\":\"string\"}"],
+        [[{prop1: true, prop2: "string"}], "{\"prop1\":true,\"prop2\":\"string\"}"],
         [[{prop1: true, prop2: testObj, prop3: undefined}], "{\"prop1\":true}"],
         [[{prop1: true, prop2: {prop: "string"}},undefined,"  "],
                 "{\n  \"prop1\": true,\n  \"prop2\": {\n    \"prop\": \"string\"\n  }\n}"],
@@ -1960,25 +1929,6 @@ ok(isNaN(tmp), "Math.tan(-Infinity) is not NaN");
     s = JSON.stringify(undefined);
     ok(s === undefined || s === "undefined" /* broken on some old versions */,
        "stringify(undefined) returned " + s + " expected undefined");
-
-    s = JSON.stringify(1, function(name, value) {
-        ok(name === "", "name = " + name);
-        ok(value === 1, "value = " + value);
-        ok(this[name] === value, "this[" + name + "] = " + this[name] + " expected " + value);
-        return 2;
-    });
-    ok(s == "2", "s = " + s);
-
-    var o = { prop: 1 };
-        s = JSON.stringify(1, function(name, value) {
-        ok(name === "" || name === "prop", "name = " + name);
-        ok(value === 1 || value === true, "value = " + value);
-        ok(this[name] === value, "this[" + name + "] = " + this[name] + " expected " + value);
-        if(name === "") return o;
-        ok(this === o, "this != o");
-        return value;
-    });
-    ok(s == "{\"prop\":1}", "s = " + s);
 
     var parse_tests = [
         ["true", true],
@@ -2353,11 +2303,11 @@ ok(Math.floor(Math.SQRT1_2*100) === 70, "modified Math.SQRT1_2 = " + Math.SQRT1_
 ok(isNaN.toString() === "\nfunction isNaN() {\n    [native code]\n}\n",
    "isNaN.toString = '" + isNaN.toString() + "'");
 ok(Array.toString() === "\nfunction Array() {\n    [native code]\n}\n",
-   "Array.toString = '" + Array.toString() + "'");
+   "isNaN.toString = '" + Array.toString() + "'");
 ok(Function.toString() === "\nfunction Function() {\n    [native code]\n}\n",
-   "Function.toString = '" + Function.toString() + "'");
+   "isNaN.toString = '" + Function.toString() + "'");
 ok(Function.prototype.toString() === "\nfunction prototype() {\n    [native code]\n}\n",
-   "Function.prototype.toString = '" + Function.prototype.toString() + "'");
+   "isNaN.toString = '" + Function.prototype.toString() + "'");
 ok("".substr.toString() === "\nfunction substr() {\n    [native code]\n}\n",
    "''.substr.toString = '" + "".substr.toString() + "'");
 
@@ -2367,9 +2317,6 @@ var bool = new Boolean("false");
 ok(bool.toString() === "true", "bool.toString() = " + bool.toString());
 ok(bool.valueOf() === Boolean(1), "bool.valueOf() = " + bool.valueOf());
 ok(bool.toLocaleString() === bool.toString(), "bool.toLocaleString() = " + bool.toLocaleString());
-
-tmp = Object.prototype.valueOf.call(nullDisp);
-ok(tmp === nullDisp, "nullDisp.valueOf != nullDisp");
 
 ok(ActiveXObject instanceof Function, "ActiveXObject is not instance of Function");
 ok(ActiveXObject.prototype instanceof Object, "ActiveXObject.prototype is not instance of Object");
@@ -2518,7 +2465,6 @@ var exception_array = {
     E_OBJECT_EXPECTED:     { type: "TypeError", number: -2146823281 },
     E_OBJECT_REQUIRED:     { type: "TypeError", number: -2146827864 },
     E_UNSUPPORTED_ACTION:  { type: "TypeError", number: -2146827843 },
-    E_REGEXP_EXPECTED:     { type: "TypeError", number: -2146823272 },
     E_NOT_ENUMERATOR:      { type: "TypeError", number: -2146823273 },
     E_NOT_VBARRAY:         { type: "TypeError", number: -2146823275 },
     E_INVALID_DELETE:      { type: "TypeError", number: -2146823276 },
@@ -2547,9 +2493,7 @@ var exception_array = {
     E_REGEXP_SYNTAX_ERROR:  { type: "RegExpError", number: -2146823271 },
 
     E_URI_INVALID_CHAR:     { type: "URIError", number: -2146823264 },
-    E_URI_INVALID_CODING:   { type: "URIError", number: -2146823263 },
-
-    E_STACK_OVERFLOW:       { type: "Error", number: -2146828260 }
+    E_URI_INVALID_CODING:   { type: "URIError", number: -2146823263 }
 };
 
 function testException(func, id) {
@@ -2564,8 +2508,7 @@ function testException(func, id) {
     }
 
     ok(ret === ex.type, "Exception test, ret = " + ret + ", expected " + ex.type +". Executed function: " + func.toString());
-    ok(num === ex.number, "Exception test, num = " + num + " (" + (num + 0x80000000).toString(16) + "), expected " + ex.number
-       + ". Executed function: " + func.toString());
+    ok(num === ex.number, "Exception test, num = " + num + ", expected " + ex.number + ". Executed function: " + func.toString());
 }
 
 // RangeError tests
@@ -2578,7 +2521,6 @@ testException(function() {createArray().getItem(3);}, "E_SUBSCRIPT_OUT_OF_RANGE"
 testException(function() {date.setTime();}, "E_ARG_NOT_OPT");
 testException(function() {date.setYear();}, "E_ARG_NOT_OPT");
 testException(function() {arr.test();}, "E_NO_PROPERTY");
-testException(function() {[1,2,3].sort(nullDisp);}, "E_JSCRIPT_EXPECTED");
 testException(function() {Number.prototype.toString.call(arr);}, "E_NOT_NUM");
 testException(function() {Number.prototype.toFixed.call(arr);}, "E_NOT_NUM");
 testException(function() {(new Number(3)).toString(1);}, "E_INVALID_CALL_ARG");
@@ -2592,9 +2534,6 @@ testException(function() {eval("nonexistingfunc()")}, "E_OBJECT_EXPECTED");
 testException(function() {(new Object()) instanceof 3;}, "E_NOT_FUNC");
 testException(function() {(new Object()) instanceof null;}, "E_NOT_FUNC");
 testException(function() {(new Object()) instanceof nullDisp;}, "E_NOT_FUNC");
-testException(function() {nullDisp instanceof Object;}, "E_OBJECT_EXPECTED");
-testException(function() {Function.prototype.apply.call(nullDisp, Object, []);}, "E_OBJECT_REQUIRED");
-testException(function() {Function.prototype.call.call(nullDisp, Object);}, "E_OBJECT_REQUIRED");
 testException(function() {"test" in 3;}, "E_OBJECT_EXPECTED");
 testException(function() {"test" in null;}, "E_OBJECT_EXPECTED");
 testException(function() {"test" in nullDisp;}, "E_OBJECT_EXPECTED");
@@ -2610,9 +2549,6 @@ testException(function() {delete (new Object());}, "E_INVALID_DELETE");
 testException(function() {delete false;}, "E_INVALID_DELETE");
 testException(function() {undefined.toString();}, "E_OBJECT_EXPECTED");
 testException(function() {null.toString();}, "E_OBJECT_EXPECTED");
-testException(function() {RegExp.prototype.toString.call(new Object());}, "E_REGEXP_EXPECTED");
-
-testException(function() { return arguments.callee(); }, "E_STACK_OVERFLOW");
 
 obj = new Object();
 obj.prop = 1;
@@ -3077,50 +3013,6 @@ ok(unescape.length == 1, "unescape.length = " + unescape.length);
 
 String.length = 3;
 ok(String.length == 1, "String.length = " + String.length);
-
-(function() {
-    var tests = [
-        [ "Array.sort",             JS_E_OBJECT_EXPECTED,        function(ctx) { Array.prototype.sort.call(ctx); } ],
-        [ "Boolean.valueOf",        JS_E_BOOLEAN_EXPECTED,       function(ctx) { Boolean.prototype.valueOf.call(ctx); } ],
-        [ "Date.getYear",           JS_E_DATE_EXPECTED,          function(ctx) { Date.prototype.getYear.call(ctx); } ],
-        [ "Enumerator.atEnd",       JS_E_ENUMERATOR_EXPECTED,    function(ctx) { Enumerator.prototype.atEnd.call(ctx); } ],
-        [ "Function.apply",         JS_E_FUNCTION_EXPECTED,      function(ctx) { Function.prototype.apply.call(ctx, [ function() {} ]); } ],
-        [ "Number.toExponential",   JS_E_NUMBER_EXPECTED,        function(ctx) { Number.prototype.toExponential.call(ctx); } ],
-        [ "Object.hasOwnProperty",  JS_E_OBJECT_EXPECTED,        function(ctx) { Object.prototype.hasOwnProperty.call(ctx, "toString"); } ],
-        [ "RegExp.test",            JS_E_REGEXP_EXPECTED,        function(ctx) { RegExp.prototype.test.call(ctx, "foobar"); } ],
-        [ "VBArray.lbound",         JS_E_VBARRAY_EXPECTED,       function(ctx) { VBArray.prototype.lbound.call(ctx); } ]
-    ];
-
-    for(var i = 0; i < tests.length; i++) {
-        try {
-            tests[i][2](null);
-            ok(false, "expected exception calling " + tests[i][0] + " with null context");
-        }catch(ex) {
-            var n = ex.number >>> 0; /* make it unsigned like HRESULT */
-            ok(n === tests[i][1], tests[i][0] + " with null context exception code = " + n);
-        }
-        try {
-            tests[i][2](undefined);
-            ok(false, "expected exception calling " + tests[i][0] + " with undefined context");
-        }catch(ex) {
-            var n = ex.number >>> 0;
-            ok(n === tests[i][1], tests[i][0] + " with undefined context exception code = " + n);
-        }
-    }
-
-    var r = Error.prototype.toString.call(undefined);
-    ok(r === "[object Error]", "Error.toString with undefined context returned " + r);
-    r = String.prototype.slice.call(null, 1, 3);
-    ok(r === "ul", "String.slice with null context returned " + r);
-    r = String.prototype.slice.call(undefined, 2, 5);
-    ok(r === "def", "String.slice with undefined context returned " + r);
-    r = (function() { return this; }).call(null);
-    ok(r === test, "wrong 'this' of function with null context");
-    r = (function() { return this; }).call(undefined);
-    ok(r === test, "wrong 'this' of function with undefined context");
-    r = (function() { return this; }).call(42);
-    ok(r.valueOf() === 42, "'this' of function with 42 context = " + r);
-})();
 
 var tmp = createArray();
 ok(getVT(tmp) == "VT_ARRAY|VT_VARIANT", "getVT(createArray()) = " + getVT(tmp));

@@ -54,14 +54,15 @@ static int output_write(const WCHAR* str, int len)
     return count;
 }
 
-static int output_vprintf(const WCHAR* fmt, va_list va_args)
+static int output_vprintf(const WCHAR* fmt, __ms_va_list va_args)
 {
     WCHAR str[8192];
     int len;
 
+    SetLastError(NO_ERROR);
     len = FormatMessageW(FORMAT_MESSAGE_FROM_STRING, fmt, 0, 0, str, ARRAY_SIZE(str), &va_args);
-    if (len == 0 && GetLastError() != ERROR_NO_WORK_DONE)
-        WINE_FIXME("Could not format string: le=%lu, fmt=%s\n", GetLastError(), wine_dbgstr_w(fmt));
+    if (len == 0 && GetLastError() != NO_ERROR)
+        WINE_FIXME("Could not format string: le=%u, fmt=%s\n", GetLastError(), wine_dbgstr_w(fmt));
     else
         output_write(str, len);
     return 0;
@@ -69,23 +70,23 @@ static int output_vprintf(const WCHAR* fmt, va_list va_args)
 
 static int WINAPIV output_printf(const WCHAR* fmt, ...)
 {
-    va_list arguments;
+    __ms_va_list arguments;
 
-    va_start(arguments, fmt);
+    __ms_va_start(arguments, fmt);
     output_vprintf(fmt, arguments);
-    va_end(arguments);
+    __ms_va_end(arguments);
     return 0;
 }
 
 static int WINAPIV output_string(int msg, ...)
 {
     WCHAR fmt[8192];
-    va_list arguments;
+    __ms_va_list arguments;
 
     LoadStringW(GetModuleHandleW(NULL), msg, fmt, ARRAY_SIZE(fmt));
-    va_start(arguments, msg);
+    __ms_va_start(arguments, msg);
     output_vprintf(fmt, arguments);
-    va_end(arguments);
+    __ms_va_end(arguments);
     return 0;
 }
 
@@ -155,6 +156,7 @@ static BOOL net_use(int argc, const WCHAR* argv[])
 
 static BOOL net_enum_services(void)
 {
+    static const WCHAR runningW[]={' ',' ',' ',' ','%','1','\n',0};
     SC_HANDLE SCManager;
     LPENUM_SERVICE_STATUS_PROCESSW services;
     DWORD size, i, count, resume;
@@ -183,8 +185,8 @@ static BOOL net_enum_services(void)
     output_string(STRING_RUNNING_HEADER);
     for(i = 0; i < count; i++)
     {
-        output_printf(L"    %1\n", services[i].lpDisplayName);
-        WINE_TRACE("service=%s state=%ld controls=%lx\n",
+        output_printf(runningW, services[i].lpDisplayName);
+        WINE_TRACE("service=%s state=%d controls=%x\n",
                    wine_dbgstr_w(services[i].lpServiceName),
                    services[i].ServiceStatusProcess.dwCurrentState,
                    services[i].ServiceStatusProcess.dwControlsAccepted);
@@ -294,13 +296,19 @@ static BOOL arg_is(const WCHAR* str1, const WCHAR* str2)
 
 int __cdecl wmain(int argc, const WCHAR* argv[])
 {
+    static const WCHAR helpW[]={'h','e','l','p',0};
+    static const WCHAR shelpW[]={'/','h','e','l','p',0};
+    static const WCHAR startW[]={'s','t','a','r','t',0};
+    static const WCHAR stopW[]={'s','t','o','p',0};
+    static const WCHAR useW[]={'u','s','e',0};
+
     if (argc < 2)
     {
         output_string(STRING_USAGE);
         return 1;
     }
 
-    if(arg_is(argv[1], L"help"))
+    if(arg_is(argv[1], helpW))
     {
         if(argc > 3)
         {
@@ -309,14 +317,14 @@ int __cdecl wmain(int argc, const WCHAR* argv[])
         }
         if(argc == 2)
             output_string(STRING_USAGE);
-        else if(arg_is(argv[2], L"start"))
+        else if(arg_is(argv[2], startW))
             output_string(STRING_START_USAGE);
-        else if(arg_is(argv[2], L"stop"))
+        else if(arg_is(argv[2], stopW))
             output_string(STRING_STOP_USAGE);
         else
             output_string(STRING_USAGE);
     }
-    else if(arg_is(argv[1], L"start"))
+    else if(arg_is(argv[1], startW))
     {
         if(argc > 3)
         {
@@ -328,24 +336,24 @@ int __cdecl wmain(int argc, const WCHAR* argv[])
             if (!net_enum_services())
                 return 1;
         }
-        else if(arg_is(argv[2], L"/help"))
+        else if(arg_is(argv[2], shelpW))
             output_string(STRING_START_USAGE);
         else if(!net_service(NET_START, argv[2]))
             return 1;
     }
-    else if(arg_is(argv[1], L"stop"))
+    else if(arg_is(argv[1], stopW))
     {
         if(argc != 3)
         {
             output_string(STRING_STOP_USAGE);
             return 1;
         }
-        if(arg_is(argv[2], L"/help"))
+        if(arg_is(argv[2], shelpW))
             output_string(STRING_STOP_USAGE);
         else if(!net_service(NET_STOP, argv[2]))
             return 1;
     }
-    else if(arg_is(argv[1], L"use"))
+    else if(arg_is(argv[1], useW))
     {
         if(!net_use(argc, argv)) return 1;
     }

@@ -21,44 +21,22 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <corecrt_io.h>
-#include <mbctype.h>
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
-#include <stdlib.h>
-#include <direct.h>
 
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
+#include "wine/unicode.h"
 #include "msvcrt.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 
-#undef _wfindfirst
-#undef _wfindfirsti64
-#undef _wfindnext
-#undef _wfindnexti64
-#undef _wfindfirst32
-#undef _wfindnext32
-#undef _wfindfirst64i32
-#undef _wfindfirst64
-#undef _wfindnext64i32
-#undef _wfindnext64
-
-#undef _findfirst
-#undef _findfirsti64
-#undef _findnext
-#undef _findnexti64
-#undef _findfirst32
-#undef _findnext32
-#undef _findfirst64i32
-#undef _findfirst64
-#undef _findnext64i32
-#undef _findnext64
-
 /* INTERNAL: Translate WIN32_FIND_DATAA to finddata_t  */
-static void msvcrt_fttofd( const WIN32_FIND_DATAA *fd, struct _finddata_t* ft)
+static void msvcrt_fttofd( const WIN32_FIND_DATAA *fd, struct MSVCRT__finddata_t* ft)
 {
   DWORD dw;
 
@@ -78,7 +56,7 @@ static void msvcrt_fttofd( const WIN32_FIND_DATAA *fd, struct _finddata_t* ft)
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAA to finddata32_t  */
-static void msvcrt_fttofd32( const WIN32_FIND_DATAA *fd, struct _finddata32_t* ft)
+static void msvcrt_fttofd32( const WIN32_FIND_DATAA *fd, struct MSVCRT__finddata32_t* ft)
 {
   DWORD dw;
 
@@ -98,7 +76,7 @@ static void msvcrt_fttofd32( const WIN32_FIND_DATAA *fd, struct _finddata32_t* f
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAW to wfinddata_t  */
-static void msvcrt_wfttofd( const WIN32_FIND_DATAW *fd, struct _wfinddata_t* ft)
+static void msvcrt_wfttofd( const WIN32_FIND_DATAW *fd, struct MSVCRT__wfinddata_t* ft)
 {
   DWORD dw;
 
@@ -114,11 +92,11 @@ static void msvcrt_wfttofd( const WIN32_FIND_DATAW *fd, struct _wfinddata_t* ft)
   RtlTimeToSecondsSince1970( (const LARGE_INTEGER *)&fd->ftLastWriteTime, &dw );
   ft->time_write = dw;
   ft->size = fd->nFileSizeLow;
-  wcscpy(ft->name, fd->cFileName);
+  strcpyW(ft->name, fd->cFileName);
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAW to wfinddata32_t  */
-static void msvcrt_wfttofd32(const WIN32_FIND_DATAW *fd, struct _wfinddata32_t* ft)
+static void msvcrt_wfttofd32(const WIN32_FIND_DATAW *fd, struct MSVCRT__wfinddata32_t* ft)
 {
   DWORD dw;
 
@@ -134,11 +112,11 @@ static void msvcrt_wfttofd32(const WIN32_FIND_DATAW *fd, struct _wfinddata32_t* 
   RtlTimeToSecondsSince1970( (const LARGE_INTEGER *)&fd->ftLastWriteTime, &dw );
   ft->time_write = dw;
   ft->size = fd->nFileSizeLow;
-  wcscpy(ft->name, fd->cFileName);
+  strcpyW(ft->name, fd->cFileName);
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAA to finddatai64_t  */
-static void msvcrt_fttofdi64( const WIN32_FIND_DATAA *fd, struct _finddatai64_t* ft)
+static void msvcrt_fttofdi64( const WIN32_FIND_DATAA *fd, struct MSVCRT__finddatai64_t* ft)
 {
   DWORD dw;
 
@@ -158,7 +136,7 @@ static void msvcrt_fttofdi64( const WIN32_FIND_DATAA *fd, struct _finddatai64_t*
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAA to finddata64_t  */
-static void msvcrt_fttofd64( const WIN32_FIND_DATAA *fd, struct _finddata64_t* ft)
+static void msvcrt_fttofd64( const WIN32_FIND_DATAA *fd, struct MSVCRT__finddata64_t* ft)
 {
   DWORD dw;
 
@@ -178,7 +156,7 @@ static void msvcrt_fttofd64( const WIN32_FIND_DATAA *fd, struct _finddata64_t* f
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAW to wfinddata64_t  */
-static void msvcrt_wfttofd64( const WIN32_FIND_DATAW *fd, struct _wfinddata64_t* ft)
+static void msvcrt_wfttofd64( const WIN32_FIND_DATAW *fd, struct MSVCRT__wfinddata64_t* ft)
 {
   DWORD dw;
 
@@ -194,11 +172,11 @@ static void msvcrt_wfttofd64( const WIN32_FIND_DATAW *fd, struct _wfinddata64_t*
   RtlTimeToSecondsSince1970( (const LARGE_INTEGER *)&fd->ftLastWriteTime, &dw );
   ft->time_write = dw;
   ft->size = ((__int64)fd->nFileSizeHigh) << 32 | fd->nFileSizeLow;
-  wcscpy(ft->name, fd->cFileName);
+  strcpyW(ft->name, fd->cFileName);
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAA to finddata64i32_t  */
-static void msvcrt_fttofd64i32( const WIN32_FIND_DATAA *fd, struct _finddata64i32_t* ft)
+static void msvcrt_fttofd64i32( const WIN32_FIND_DATAA *fd, struct MSVCRT__finddata64i32_t* ft)
 {
   DWORD dw;
 
@@ -218,7 +196,7 @@ static void msvcrt_fttofd64i32( const WIN32_FIND_DATAA *fd, struct _finddata64i3
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAW to wfinddatai64_t  */
-static void msvcrt_wfttofdi64( const WIN32_FIND_DATAW *fd, struct _wfinddatai64_t* ft)
+static void msvcrt_wfttofdi64( const WIN32_FIND_DATAW *fd, struct MSVCRT__wfinddatai64_t* ft)
 {
   DWORD dw;
 
@@ -234,11 +212,11 @@ static void msvcrt_wfttofdi64( const WIN32_FIND_DATAW *fd, struct _wfinddatai64_
   RtlTimeToSecondsSince1970( (const LARGE_INTEGER *)&fd->ftLastWriteTime, &dw );
   ft->time_write = dw;
   ft->size = ((__int64)fd->nFileSizeHigh) << 32 | fd->nFileSizeLow;
-  wcscpy(ft->name, fd->cFileName);
+  strcpyW(ft->name, fd->cFileName);
 }
 
 /* INTERNAL: Translate WIN32_FIND_DATAW to wfinddata64i32_t  */
-static void msvcrt_wfttofd64i32( const WIN32_FIND_DATAW *fd, struct _wfinddata64i32_t* ft)
+static void msvcrt_wfttofd64i32( const WIN32_FIND_DATAW *fd, struct MSVCRT__wfinddata64i32_t* ft)
 {
   DWORD dw;
 
@@ -254,7 +232,7 @@ static void msvcrt_wfttofd64i32( const WIN32_FIND_DATAW *fd, struct _wfinddata64
   RtlTimeToSecondsSince1970( (const LARGE_INTEGER *)&fd->ftLastWriteTime, &dw );
   ft->time_write = dw;
   ft->size = fd->nFileSizeLow;
-  wcscpy(ft->name, fd->cFileName);
+  strcpyW(ft->name, fd->cFileName);
 }
 
 /*********************************************************************
@@ -272,7 +250,7 @@ static void msvcrt_wfttofd64i32( const WIN32_FIND_DATAW *fd, struct _wfinddata64
  * NOTES
  *  See SetCurrentDirectoryA.
  */
-int CDECL _chdir(const char * newdir)
+int CDECL MSVCRT__chdir(const char * newdir)
 {
   if (!SetCurrentDirectoryA(newdir))
   {
@@ -287,7 +265,7 @@ int CDECL _chdir(const char * newdir)
  *
  * Unicode version of _chdir.
  */
-int CDECL _wchdir(const wchar_t * newdir)
+int CDECL MSVCRT__wchdir(const MSVCRT_wchar_t * newdir)
 {
   if (!SetCurrentDirectoryW(newdir))
   {
@@ -312,16 +290,16 @@ int CDECL _wchdir(const wchar_t * newdir)
  * NOTES
  *  See SetCurrentDirectoryA.
  */
-int CDECL _chdrive(int newdrive)
+int CDECL MSVCRT__chdrive(int newdrive)
 {
-  WCHAR buffer[] = L"A:";
+  WCHAR buffer[] = {'A', ':', 0};
 
   buffer[0] += newdrive - 1;
   if (!SetCurrentDirectoryW( buffer ))
   {
     msvcrt_set_errno(GetLastError());
     if (newdrive <= 0)
-      *_errno() = EACCES;
+      *MSVCRT__errno() = MSVCRT_EACCES;
     return -1;
   }
   return 0;
@@ -342,9 +320,9 @@ int CDECL _chdrive(int newdrive)
  * NOTES
  *  See FindClose.
  */
-int CDECL _findclose(intptr_t hand)
+int CDECL MSVCRT__findclose(MSVCRT_intptr_t hand)
 {
-  TRACE(":handle %Iu\n",hand);
+  TRACE(":handle %ld\n",hand);
   if (!FindClose((HANDLE)hand))
   {
     msvcrt_set_errno(GetLastError());
@@ -370,7 +348,7 @@ int CDECL _findclose(intptr_t hand)
  * NOTES
  *  See FindFirstFileA.
  */
-intptr_t CDECL _findfirst(const char * fspec, struct _finddata_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__findfirst(const char * fspec, struct MSVCRT__finddata_t* ft)
 {
   WIN32_FIND_DATAA find_data;
   HANDLE hfind;
@@ -383,13 +361,13 @@ intptr_t CDECL _findfirst(const char * fspec, struct _finddata_t* ft)
   }
   msvcrt_fttofd(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
  *              _findfirst32 (MSVCRT.@)
  */
-intptr_t CDECL _findfirst32(const char * fspec, struct _finddata32_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__findfirst32(const char * fspec, struct MSVCRT__finddata32_t* ft)
 {
   WIN32_FIND_DATAA find_data;
   HANDLE hfind;
@@ -402,15 +380,15 @@ intptr_t CDECL _findfirst32(const char * fspec, struct _finddata32_t* ft)
   }
   msvcrt_fttofd32(&find_data, ft);
   TRACE(":got handle %p\n", hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
- *             _wfindfirst (MSVCRT.@)
+ *		_wfindfirst (MSVCRT.@)
  *
  * Unicode version of _findfirst.
  */
-intptr_t CDECL _wfindfirst(const wchar_t * fspec, struct _wfinddata_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__wfindfirst(const MSVCRT_wchar_t * fspec, struct MSVCRT__wfinddata_t* ft)
 {
   WIN32_FIND_DATAW find_data;
   HANDLE hfind;
@@ -423,7 +401,7 @@ intptr_t CDECL _wfindfirst(const wchar_t * fspec, struct _wfinddata_t* ft)
   }
   msvcrt_wfttofd(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -431,7 +409,7 @@ intptr_t CDECL _wfindfirst(const wchar_t * fspec, struct _wfinddata_t* ft)
  *
  * Unicode version of _findfirst32.
  */
-intptr_t CDECL _wfindfirst32(const wchar_t * fspec, struct _wfinddata32_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__wfindfirst32(const MSVCRT_wchar_t * fspec, struct MSVCRT__wfinddata32_t* ft)
 {
   WIN32_FIND_DATAW find_data;
   HANDLE hfind;
@@ -444,7 +422,7 @@ intptr_t CDECL _wfindfirst32(const wchar_t * fspec, struct _wfinddata32_t* ft)
   }
   msvcrt_wfttofd32(&find_data, ft);
   TRACE(":got handle %p\n", hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -452,7 +430,7 @@ intptr_t CDECL _wfindfirst32(const wchar_t * fspec, struct _wfinddata32_t* ft)
  *
  * 64-bit version of _findfirst.
  */
-intptr_t CDECL _findfirsti64(const char * fspec, struct _finddatai64_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__findfirsti64(const char * fspec, struct MSVCRT__finddatai64_t* ft)
 {
   WIN32_FIND_DATAA find_data;
   HANDLE hfind;
@@ -465,7 +443,7 @@ intptr_t CDECL _findfirsti64(const char * fspec, struct _finddatai64_t* ft)
   }
   msvcrt_fttofdi64(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -473,7 +451,7 @@ intptr_t CDECL _findfirsti64(const char * fspec, struct _finddatai64_t* ft)
  *
  * 64-bit version of _findfirst.
  */
-intptr_t CDECL _findfirst64(const char * fspec, struct _finddata64_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__findfirst64(const char * fspec, struct MSVCRT__finddata64_t* ft)
 {
   WIN32_FIND_DATAA find_data;
   HANDLE hfind;
@@ -486,7 +464,7 @@ intptr_t CDECL _findfirst64(const char * fspec, struct _finddata64_t* ft)
   }
   msvcrt_fttofd64(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -494,7 +472,7 @@ intptr_t CDECL _findfirst64(const char * fspec, struct _finddata64_t* ft)
  *
  * Unicode version of _findfirst64.
  */
-intptr_t CDECL _wfindfirst64(const wchar_t * fspec, struct _wfinddata64_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__wfindfirst64(const MSVCRT_wchar_t * fspec, struct MSVCRT__wfinddata64_t* ft)
 {
   WIN32_FIND_DATAW find_data;
   HANDLE hfind;
@@ -507,7 +485,7 @@ intptr_t CDECL _wfindfirst64(const wchar_t * fspec, struct _wfinddata64_t* ft)
   }
   msvcrt_wfttofd64(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -515,7 +493,7 @@ intptr_t CDECL _wfindfirst64(const wchar_t * fspec, struct _wfinddata64_t* ft)
  *
  * 64-bit/32-bit version of _findfirst.
  */
-intptr_t CDECL _findfirst64i32(const char * fspec, struct _finddata64i32_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__findfirst64i32(const char * fspec, struct MSVCRT__finddata64i32_t* ft)
 {
   WIN32_FIND_DATAA find_data;
   HANDLE hfind;
@@ -528,7 +506,7 @@ intptr_t CDECL _findfirst64i32(const char * fspec, struct _finddata64i32_t* ft)
   }
   msvcrt_fttofd64i32(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -536,7 +514,7 @@ intptr_t CDECL _findfirst64i32(const char * fspec, struct _finddata64i32_t* ft)
  *
  * Unicode version of _findfirst64i32.
  */
-intptr_t CDECL _wfindfirst64i32(const wchar_t * fspec, struct _wfinddata64i32_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__wfindfirst64i32(const MSVCRT_wchar_t * fspec, struct MSVCRT__wfinddata64i32_t* ft)
 {
   WIN32_FIND_DATAW find_data;
   HANDLE hfind;
@@ -549,7 +527,7 @@ intptr_t CDECL _wfindfirst64i32(const wchar_t * fspec, struct _wfinddata64i32_t*
   }
   msvcrt_wfttofd64i32(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -557,7 +535,7 @@ intptr_t CDECL _wfindfirst64i32(const wchar_t * fspec, struct _wfinddata64i32_t*
  *
  * Unicode version of _findfirsti64.
  */
-intptr_t CDECL _wfindfirsti64(const wchar_t * fspec, struct _wfinddatai64_t* ft)
+MSVCRT_intptr_t CDECL MSVCRT__wfindfirsti64(const MSVCRT_wchar_t * fspec, struct MSVCRT__wfinddatai64_t* ft)
 {
   WIN32_FIND_DATAW find_data;
   HANDLE hfind;
@@ -570,7 +548,7 @@ intptr_t CDECL _wfindfirsti64(const wchar_t * fspec, struct _wfinddatai64_t* ft)
   }
   msvcrt_wfttofdi64(&find_data,ft);
   TRACE(":got handle %p\n",hfind);
-  return (intptr_t)hfind;
+  return (MSVCRT_intptr_t)hfind;
 }
 
 /*********************************************************************
@@ -589,13 +567,13 @@ intptr_t CDECL _wfindfirsti64(const wchar_t * fspec, struct _wfinddatai64_t* ft)
  * NOTES
  *  See FindNextFileA.
  */
-int CDECL _findnext(intptr_t hand, struct _finddata_t * ft)
+int CDECL MSVCRT__findnext(MSVCRT_intptr_t hand, struct MSVCRT__finddata_t * ft)
 {
   WIN32_FIND_DATAA find_data;
 
   if (!FindNextFileA((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -606,13 +584,13 @@ int CDECL _findnext(intptr_t hand, struct _finddata_t * ft)
 /*********************************************************************
  *               _findnext32 (MSVCRT.@)
  */
-int CDECL _findnext32(intptr_t hand, struct _finddata32_t * ft)
+int CDECL MSVCRT__findnext32(MSVCRT_intptr_t hand, struct MSVCRT__finddata32_t * ft)
 {
   WIN32_FIND_DATAA find_data;
 
   if (!FindNextFileA((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -623,13 +601,13 @@ int CDECL _findnext32(intptr_t hand, struct _finddata32_t * ft)
 /*********************************************************************
  *               _wfindnext32 (MSVCRT.@)
  */
-int CDECL _wfindnext32(intptr_t hand, struct _wfinddata32_t * ft)
+int CDECL MSVCRT__wfindnext32(MSVCRT_intptr_t hand, struct MSVCRT__wfinddata32_t * ft)
 {
   WIN32_FIND_DATAW find_data;
 
   if (!FindNextFileW((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -638,17 +616,17 @@ int CDECL _wfindnext32(intptr_t hand, struct _wfinddata32_t * ft)
 }
 
 /*********************************************************************
- *             _wfindnext (MSVCRT.@)
+ *		_wfindnext (MSVCRT.@)
  *
  * Unicode version of _findnext.
  */
-int CDECL _wfindnext(intptr_t hand, struct _wfinddata_t * ft)
+int CDECL MSVCRT__wfindnext(MSVCRT_intptr_t hand, struct MSVCRT__wfinddata_t * ft)
 {
   WIN32_FIND_DATAW find_data;
 
   if (!FindNextFileW((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -661,13 +639,13 @@ int CDECL _wfindnext(intptr_t hand, struct _wfinddata_t * ft)
  *
  * 64-bit version of _findnext.
  */
-int CDECL _findnexti64(intptr_t hand, struct _finddatai64_t * ft)
+int CDECL MSVCRT__findnexti64(MSVCRT_intptr_t hand, struct MSVCRT__finddatai64_t * ft)
 {
   WIN32_FIND_DATAA find_data;
 
   if (!FindNextFileA((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -680,13 +658,13 @@ int CDECL _findnexti64(intptr_t hand, struct _finddatai64_t * ft)
  *
  * 64-bit version of _findnext.
  */
-int CDECL _findnext64(intptr_t hand, struct _finddata64_t * ft)
+int CDECL MSVCRT__findnext64(MSVCRT_intptr_t hand, struct MSVCRT__finddata64_t * ft)
 {
   WIN32_FIND_DATAA find_data;
 
   if (!FindNextFileA((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -699,13 +677,13 @@ int CDECL _findnext64(intptr_t hand, struct _finddata64_t * ft)
  *
  * Unicode version of _wfindnext64.
  */
-int CDECL _wfindnext64(intptr_t hand, struct _wfinddata64_t * ft)
+int CDECL MSVCRT__wfindnext64(MSVCRT_intptr_t hand, struct MSVCRT__wfinddata64_t * ft)
 {
   WIN32_FIND_DATAW find_data;
 
   if (!FindNextFileW((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -718,13 +696,13 @@ int CDECL _wfindnext64(intptr_t hand, struct _wfinddata64_t * ft)
  *
  * 64-bit/32-bit version of _findnext.
  */
-int CDECL _findnext64i32(intptr_t hand, struct _finddata64i32_t * ft)
+int CDECL MSVCRT__findnext64i32(MSVCRT_intptr_t hand, struct MSVCRT__finddata64i32_t * ft)
 {
   WIN32_FIND_DATAA find_data;
 
   if (!FindNextFileA((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -737,13 +715,13 @@ int CDECL _findnext64i32(intptr_t hand, struct _finddata64i32_t * ft)
  *
  * Unicode version of _findnexti64.
  */
-int CDECL _wfindnexti64(intptr_t hand, struct _wfinddatai64_t * ft)
+int CDECL MSVCRT__wfindnexti64(MSVCRT_intptr_t hand, struct MSVCRT__wfinddatai64_t * ft)
 {
   WIN32_FIND_DATAW find_data;
 
   if (!FindNextFileW((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -756,13 +734,13 @@ int CDECL _wfindnexti64(intptr_t hand, struct _wfinddatai64_t * ft)
  *
  * Unicode version of _findnext64i32.
  */
-int CDECL _wfindnext64i32(intptr_t hand, struct _wfinddata64i32_t * ft)
+int CDECL MSVCRT__wfindnext64i32(MSVCRT_intptr_t hand, struct MSVCRT__wfinddata64i32_t * ft)
 {
   WIN32_FIND_DATAW find_data;
 
   if (!FindNextFileW((HANDLE)hand, &find_data))
   {
-    *_errno() = ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
     return -1;
   }
 
@@ -784,7 +762,7 @@ int CDECL _wfindnext64i32(intptr_t hand, struct _wfinddata64i32_t * ft)
  *          Otherwise populates buf with the path and returns it.
  * Failure: NULL. errno indicates the error.
  */
-char* CDECL _getcwd(char * buf, int size)
+char* CDECL MSVCRT__getcwd(char * buf, int size)
 {
   char dir[MAX_PATH];
   int dir_len = GetCurrentDirectoryA(MAX_PATH,dir);
@@ -795,11 +773,11 @@ char* CDECL _getcwd(char * buf, int size)
   if (!buf)
   {
       if (size <= dir_len) size = dir_len + 1;
-      if (!(buf = malloc( size ))) return NULL;
+      if (!(buf = MSVCRT_malloc( size ))) return NULL;
   }
   else if (dir_len >= size)
   {
-    *_errno() = ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
     return NULL; /* buf too small */
   }
   strcpy(buf,dir);
@@ -811,9 +789,9 @@ char* CDECL _getcwd(char * buf, int size)
  *
  * Unicode version of _getcwd.
  */
-wchar_t* CDECL _wgetcwd(wchar_t * buf, int size)
+MSVCRT_wchar_t* CDECL MSVCRT__wgetcwd(MSVCRT_wchar_t * buf, int size)
 {
-  wchar_t dir[MAX_PATH];
+  MSVCRT_wchar_t dir[MAX_PATH];
   int dir_len = GetCurrentDirectoryW(MAX_PATH,dir);
 
   if (dir_len < 1)
@@ -822,14 +800,14 @@ wchar_t* CDECL _wgetcwd(wchar_t * buf, int size)
   if (!buf)
   {
       if (size <= dir_len) size = dir_len + 1;
-      if (!(buf = malloc( size * sizeof(WCHAR) ))) return NULL;
+      if (!(buf = MSVCRT_malloc( size * sizeof(WCHAR) ))) return NULL;
   }
   if (dir_len >= size)
   {
-    *_errno() = ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
     return NULL; /* buf too small */
   }
-  wcscpy(buf,dir);
+  strcpyW(buf,dir);
   return buf;
 }
 
@@ -845,12 +823,12 @@ wchar_t* CDECL _wgetcwd(wchar_t * buf, int size)
  *  Success: The drive letter number from 1 to 26 ("A:" to "Z:").
  *  Failure: 0.
  */
-int CDECL _getdrive(void)
+int CDECL MSVCRT__getdrive(void)
 {
     WCHAR buffer[MAX_PATH];
     if (GetCurrentDirectoryW( MAX_PATH, buffer ) &&
         buffer[0] >= 'A' && buffer[0] <= 'z' && buffer[1] == ':')
-        return towupper(buffer[0]) - 'A' + 1;
+        return toupperW(buffer[0]) - 'A' + 1;
     return 0;
 }
 
@@ -869,37 +847,37 @@ int CDECL _getdrive(void)
  *           Otherwise populates drive with the path and returns it.
  *  Failure: NULL. errno indicates the error.
  */
-char* CDECL _getdcwd(int drive, char * buf, int size)
+char* CDECL MSVCRT__getdcwd(int drive, char * buf, int size)
 {
   static char* dummy;
 
   TRACE(":drive %d(%c), size %d\n",drive, drive + 'A' - 1, size);
 
-  if (!drive || drive == _getdrive())
-    return _getcwd(buf,size); /* current */
+  if (!drive || drive == MSVCRT__getdrive())
+    return MSVCRT__getcwd(buf,size); /* current */
   else
   {
     char dir[MAX_PATH];
-    char drivespec[] = "A:";
+    char drivespec[] = {'A', ':', 0};
     int dir_len;
 
     drivespec[0] += drive - 1;
     if (GetDriveTypeA(drivespec) < DRIVE_REMOVABLE)
     {
-      *_errno() = EACCES;
+      *MSVCRT__errno() = MSVCRT_EACCES;
       return NULL;
     }
 
     dir_len = GetFullPathNameA(drivespec,MAX_PATH,dir,&dummy);
     if (dir_len >= size || dir_len < 1)
     {
-      *_errno() = ERANGE;
+      *MSVCRT__errno() = MSVCRT_ERANGE;
       return NULL; /* buf too small */
     }
 
     TRACE(":returning '%s'\n", dir);
     if (!buf)
-      return _strdup(dir); /* allocate */
+      return MSVCRT__strdup(dir); /* allocate */
 
     strcpy(buf,dir);
   }
@@ -911,38 +889,38 @@ char* CDECL _getdcwd(int drive, char * buf, int size)
  *
  * Unicode version of _wgetdcwd.
  */
-wchar_t* CDECL _wgetdcwd(int drive, wchar_t * buf, int size)
+MSVCRT_wchar_t* CDECL MSVCRT__wgetdcwd(int drive, MSVCRT_wchar_t * buf, int size)
 {
-  static wchar_t* dummy;
+  static MSVCRT_wchar_t* dummy;
 
   TRACE(":drive %d(%c), size %d\n",drive, drive + 'A' - 1, size);
 
-  if (!drive || drive == _getdrive())
-    return _wgetcwd(buf,size); /* current */
+  if (!drive || drive == MSVCRT__getdrive())
+    return MSVCRT__wgetcwd(buf,size); /* current */
   else
   {
-    wchar_t dir[MAX_PATH];
-    wchar_t drivespec[4] = L"A:\\";
+    MSVCRT_wchar_t dir[MAX_PATH];
+    MSVCRT_wchar_t drivespec[4] = {'A', ':', '\\', 0};
     int dir_len;
 
     drivespec[0] += drive - 1;
     if (GetDriveTypeW(drivespec) < DRIVE_REMOVABLE)
     {
-      *_errno() = EACCES;
+      *MSVCRT__errno() = MSVCRT_EACCES;
       return NULL;
     }
 
     dir_len = GetFullPathNameW(drivespec,MAX_PATH,dir,&dummy);
     if (dir_len >= size || dir_len < 1)
     {
-      *_errno() = ERANGE;
+      *MSVCRT__errno() = MSVCRT_ERANGE;
       return NULL; /* buf too small */
     }
 
     TRACE(":returning %s\n", debugstr_w(dir));
     if (!buf)
-      return _wcsdup(dir); /* allocate */
-    wcscpy(buf,dir);
+      return MSVCRT__wcsdup(dir); /* allocate */
+    strcpyW(buf,dir);
   }
   return buf;
 }
@@ -963,9 +941,9 @@ wchar_t* CDECL _wgetdcwd(int drive, wchar_t * buf, int size)
  * NOTES
  *  See GetLastError().
  */
-unsigned int CDECL _getdiskfree(unsigned int disk, struct _diskfree_t * d)
+unsigned int CDECL MSVCRT__getdiskfree(unsigned int disk, struct MSVCRT__diskfree_t * d)
 {
-  WCHAR drivespec[] = L"@:\\";
+  WCHAR drivespec[] = {'@', ':', '\\', 0};
   DWORD ret[4];
   unsigned int err;
 
@@ -1002,7 +980,7 @@ unsigned int CDECL _getdiskfree(unsigned int disk, struct _diskfree_t * d)
  * NOTES
  *  See CreateDirectoryA.
  */
-int CDECL _mkdir(const char * newdir)
+int CDECL MSVCRT__mkdir(const char * newdir)
 {
   if (CreateDirectoryA(newdir,NULL))
     return 0;
@@ -1015,7 +993,7 @@ int CDECL _mkdir(const char * newdir)
  *
  * Unicode version of _mkdir.
  */
-int CDECL _wmkdir(const wchar_t* newdir)
+int CDECL MSVCRT__wmkdir(const MSVCRT_wchar_t* newdir)
 {
   if (CreateDirectoryW(newdir,NULL))
     return 0;
@@ -1038,7 +1016,7 @@ int CDECL _wmkdir(const wchar_t* newdir)
  * NOTES
  *  See RemoveDirectoryA.
  */
-int CDECL _rmdir(const char * dir)
+int CDECL MSVCRT__rmdir(const char * dir)
 {
   if (RemoveDirectoryA(dir))
     return 0;
@@ -1051,7 +1029,7 @@ int CDECL _rmdir(const char * dir)
  *
  * Unicode version of _rmdir.
  */
-int CDECL _wrmdir(const wchar_t * dir)
+int CDECL MSVCRT__wrmdir(const MSVCRT_wchar_t * dir)
 {
   if (RemoveDirectoryW(dir))
     return 0;
@@ -1062,11 +1040,11 @@ int CDECL _wrmdir(const wchar_t * dir)
 /******************************************************************
  *		_splitpath_s (MSVCRT.@)
  */
-int CDECL _splitpath_s(const char* inpath,
-        char* drive, size_t sz_drive,
-        char* dir, size_t sz_dir,
-        char* fname, size_t sz_fname,
-        char* ext, size_t sz_ext)
+int CDECL MSVCRT__splitpath_s(const char* inpath,
+        char* drive, MSVCRT_size_t sz_drive,
+        char* dir, MSVCRT_size_t sz_dir,
+        char* fname, MSVCRT_size_t sz_fname,
+        char* ext, MSVCRT_size_t sz_ext)
 {
     const char *p, *end;
 
@@ -1079,8 +1057,8 @@ int CDECL _splitpath_s(const char* inpath,
             (!ext && sz_ext) ||
             (ext && !sz_ext))
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (inpath[0] && inpath[1] == ':')
@@ -1143,18 +1121,18 @@ do_error:
     if (dir)    dir[0] = '\0';
     if (fname)  fname[0]= '\0';
     if (ext)    ext[0]= '\0';
-    *_errno() = ERANGE;
-    return ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
  *              _splitpath (MSVCRT.@)
  */
-void CDECL _splitpath(const char *inpath, char *drv, char *dir,
+void CDECL MSVCRT__splitpath(const char *inpath, char *drv, char *dir,
         char *fname, char *ext)
 {
-    _splitpath_s(inpath, drv, drv ? _MAX_DRIVE : 0, dir, dir ? _MAX_DIR : 0,
-            fname, fname ? _MAX_FNAME : 0, ext, ext ? _MAX_EXT : 0);
+    MSVCRT__splitpath_s(inpath, drv, drv?MSVCRT__MAX_DRIVE:0, dir, dir?MSVCRT__MAX_DIR:0,
+            fname, fname?MSVCRT__MAX_FNAME:0, ext, ext?MSVCRT__MAX_EXT:0);
 }
 
 /******************************************************************
@@ -1162,13 +1140,13 @@ void CDECL _splitpath(const char *inpath, char *drv, char *dir,
  *
  * Secure version of _wsplitpath
  */
-int CDECL _wsplitpath_s(const wchar_t* inpath,
-                  wchar_t* drive, size_t sz_drive,
-                  wchar_t* dir, size_t sz_dir,
-                  wchar_t* fname, size_t sz_fname,
-                  wchar_t* ext, size_t sz_ext)
+int CDECL MSVCRT__wsplitpath_s(const MSVCRT_wchar_t* inpath,
+                  MSVCRT_wchar_t* drive, MSVCRT_size_t sz_drive,
+                  MSVCRT_wchar_t* dir, MSVCRT_size_t sz_dir,
+                  MSVCRT_wchar_t* fname, MSVCRT_size_t sz_fname,
+                  MSVCRT_wchar_t* ext, MSVCRT_size_t sz_ext)
 {
-    const wchar_t *p, *end;
+    const MSVCRT_wchar_t *p, *end;
 
     if (!inpath || (!drive && sz_drive) ||
             (drive && !sz_drive) ||
@@ -1179,8 +1157,8 @@ int CDECL _wsplitpath_s(const wchar_t* inpath,
             (!ext && sz_ext) ||
             (ext && !sz_ext))
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (inpath[0] && inpath[1] == ':')
@@ -1205,7 +1183,7 @@ int CDECL _wsplitpath_s(const wchar_t* inpath,
         if (dir)
         {
             if (sz_dir <= end - inpath) goto do_error;
-            memcpy( dir, inpath, (end - inpath) * sizeof(wchar_t) );
+            memcpy( dir, inpath, (end - inpath) * sizeof(MSVCRT_wchar_t) );
             dir[end - inpath] = 0;
         }
         inpath = end;
@@ -1221,13 +1199,13 @@ int CDECL _wsplitpath_s(const wchar_t* inpath,
     if (fname)
     {
         if (sz_fname <= end - inpath) goto do_error;
-        memcpy( fname, inpath, (end - inpath) * sizeof(wchar_t) );
+        memcpy( fname, inpath, (end - inpath) * sizeof(MSVCRT_wchar_t) );
         fname[end - inpath] = 0;
     }
     if (ext)
     {
-        if (sz_ext <= wcslen(end)) goto do_error;
-        wcscpy( ext, end );
+        if (sz_ext <= strlenW(end)) goto do_error;
+        strcpyW( ext, end );
     }
     return 0;
 do_error:
@@ -1235,8 +1213,8 @@ do_error:
     if (dir)    dir[0] = '\0';
     if (fname)  fname[0]= '\0';
     if (ext)    ext[0]= '\0';
-    *_errno() = ERANGE;
-    return ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
@@ -1244,11 +1222,11 @@ do_error:
  *
  * Unicode version of _splitpath.
  */
-void CDECL _wsplitpath(const wchar_t *inpath, wchar_t *drv, wchar_t *dir,
-        wchar_t *fname, wchar_t *ext)
+void CDECL MSVCRT__wsplitpath(const MSVCRT_wchar_t *inpath, MSVCRT_wchar_t *drv, MSVCRT_wchar_t *dir,
+        MSVCRT_wchar_t *fname, MSVCRT_wchar_t *ext)
 {
-    _wsplitpath_s(inpath, drv, drv ? _MAX_DRIVE : 0, dir, dir ? _MAX_DIR : 0,
-            fname, fname ? _MAX_FNAME : 0, ext, ext ? _MAX_EXT : 0);
+    MSVCRT__wsplitpath_s(inpath, drv, drv?MSVCRT__MAX_DRIVE:0, dir, dir?MSVCRT__MAX_DIR:0,
+            fname, fname?MSVCRT__MAX_FNAME:0, ext, ext?MSVCRT__MAX_EXT:0);
 }
 
 /*********************************************************************
@@ -1256,7 +1234,7 @@ void CDECL _wsplitpath(const wchar_t *inpath, wchar_t *drv, wchar_t *dir,
  *
  * Unicode version of _fullpath.
  */
-wchar_t * CDECL _wfullpath(wchar_t * absPath, const wchar_t* relPath, size_t size)
+MSVCRT_wchar_t * CDECL MSVCRT__wfullpath(MSVCRT_wchar_t * absPath, const MSVCRT_wchar_t* relPath, MSVCRT_size_t size)
 {
   DWORD rc;
   WCHAR* buffer;
@@ -1264,11 +1242,11 @@ wchar_t * CDECL _wfullpath(wchar_t * absPath, const wchar_t* relPath, size_t siz
   BOOL alloced = FALSE;
 
   if (!relPath || !*relPath)
-    return _wgetcwd(absPath, size);
+    return MSVCRT__wgetcwd(absPath, size);
 
   if (absPath == NULL)
   {
-      buffer = malloc(MAX_PATH * sizeof(WCHAR));
+      buffer = MSVCRT_malloc(MAX_PATH * sizeof(WCHAR));
       size = MAX_PATH;
       alloced = TRUE;
   }
@@ -1277,7 +1255,7 @@ wchar_t * CDECL _wfullpath(wchar_t * absPath, const wchar_t* relPath, size_t siz
 
   if (size < 4)
   {
-    *_errno() = ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
     return NULL;
   }
 
@@ -1290,7 +1268,7 @@ wchar_t * CDECL _wfullpath(wchar_t * absPath, const wchar_t* relPath, size_t siz
   else
   {
       if (alloced)
-          free(buffer);
+          MSVCRT_free(buffer);
         return NULL;
   }
 }
@@ -1310,7 +1288,7 @@ wchar_t * CDECL _wfullpath(wchar_t * absPath, const wchar_t* relPath, size_t siz
  *          Otherwise populates absPath with the path and returns it.
  * Failure: NULL. errno indicates the error.
  */
-char * CDECL _fullpath(char * absPath, const char* relPath, size_t size)
+char * CDECL MSVCRT__fullpath(char * absPath, const char* relPath, unsigned int size)
 {
   DWORD rc;
   char* lastpart;
@@ -1318,11 +1296,11 @@ char * CDECL _fullpath(char * absPath, const char* relPath, size_t size)
   BOOL alloced = FALSE;
 
   if (!relPath || !*relPath)
-    return _getcwd(absPath, size);
+    return MSVCRT__getcwd(absPath, size);
 
   if (absPath == NULL)
   {
-      buffer = malloc(MAX_PATH);
+      buffer = MSVCRT_malloc(MAX_PATH);
       size = MAX_PATH;
       alloced = TRUE;
   }
@@ -1331,7 +1309,7 @@ char * CDECL _fullpath(char * absPath, const char* relPath, size_t size)
 
   if (size < 4)
   {
-    *_errno() = ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
     return NULL;
   }
 
@@ -1344,7 +1322,7 @@ char * CDECL _fullpath(char * absPath, const char* relPath, size_t size)
   else
   {
       if (alloced)
-          free(buffer);
+          MSVCRT_free(buffer);
         return NULL;
   }
 }
@@ -1365,7 +1343,7 @@ char * CDECL _fullpath(char * absPath, const char* relPath, size_t size)
  *  Nothing. If path is not large enough to hold the resulting pathname,
  *  random process memory will be overwritten.
  */
-VOID CDECL _makepath(char * path, const char * drive,
+VOID CDECL MSVCRT__makepath(char * path, const char * drive,
                      const char *directory, const char * filename,
                      const char * extension)
 {
@@ -1412,10 +1390,10 @@ VOID CDECL _makepath(char * path, const char * drive,
  *
  * Unicode version of _wmakepath.
  */
-VOID CDECL _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *directory,
-                      const wchar_t *filename, const wchar_t *extension)
+VOID CDECL MSVCRT__wmakepath(MSVCRT_wchar_t *path, const MSVCRT_wchar_t *drive, const MSVCRT_wchar_t *directory,
+                      const MSVCRT_wchar_t *filename, const MSVCRT_wchar_t *extension)
 {
-    wchar_t *p = path;
+    MSVCRT_wchar_t *p = path;
 
     TRACE("%s %s %s %s\n", debugstr_w(drive), debugstr_w(directory),
           debugstr_w(filename), debugstr_w(extension));
@@ -1430,23 +1408,23 @@ VOID CDECL _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *direct
     }
     if (directory && directory[0])
     {
-        unsigned int len = wcslen(directory);
-        memmove(p, directory, len * sizeof(wchar_t));
+        unsigned int len = strlenW(directory);
+        memmove(p, directory, len * sizeof(MSVCRT_wchar_t));
         p += len;
         if (p[-1] != '/' && p[-1] != '\\')
             *p++ = '\\';
     }
     if (filename && filename[0])
     {
-        unsigned int len = wcslen(filename);
-        memmove(p, filename, len * sizeof(wchar_t));
+        unsigned int len = strlenW(filename);
+        memmove(p, filename, len * sizeof(MSVCRT_wchar_t));
         p += len;
     }
     if (extension && extension[0])
     {
         if (extension[0] != '.')
             *p++ = '.';
-        wcscpy(p, extension);
+        strcpyW(p, extension);
     }
     else
         *p = '\0';
@@ -1459,7 +1437,7 @@ VOID CDECL _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *direct
  *
  * Safe version of _makepath.
  */
-int CDECL _makepath_s(char *path, size_t size, const char *drive,
+int CDECL MSVCRT__makepath_s(char *path, MSVCRT_size_t size, const char *drive,
                       const char *directory, const char *filename,
                       const char *extension)
 {
@@ -1467,8 +1445,8 @@ int CDECL _makepath_s(char *path, size_t size, const char *drive,
 
     if (!path || !size)
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (drive && drive[0])
@@ -1554,8 +1532,8 @@ int CDECL _makepath_s(char *path, size_t size, const char *drive,
 
 range:
     path[0] = '\0';
-    *_errno() = ERANGE;
-    return ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
@@ -1563,16 +1541,16 @@ range:
  *
  * Safe version of _wmakepath.
  */
-int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
-                       const wchar_t *directory, const wchar_t *filename,
-                       const wchar_t *extension)
+int CDECL MSVCRT__wmakepath_s(MSVCRT_wchar_t *path, MSVCRT_size_t size, const MSVCRT_wchar_t *drive,
+                       const MSVCRT_wchar_t *directory, const MSVCRT_wchar_t *filename,
+                       const MSVCRT_wchar_t *extension)
 {
-    wchar_t *p = path;
+    MSVCRT_wchar_t *p = path;
 
     if (!path || !size)
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (drive && drive[0])
@@ -1587,14 +1565,14 @@ int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
 
     if (directory && directory[0])
     {
-        unsigned int len = wcslen(directory);
+        unsigned int len = strlenW(directory);
         unsigned int needs_separator = directory[len - 1] != '/' && directory[len - 1] != '\\';
         unsigned int copylen = min(size - 1, len);
 
         if (size < 2)
             goto range;
 
-        memmove(p, directory, copylen * sizeof(wchar_t));
+        memmove(p, directory, copylen * sizeof(MSVCRT_wchar_t));
 
         if (size <= len)
             goto range;
@@ -1614,13 +1592,13 @@ int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
 
     if (filename && filename[0])
     {
-        unsigned int len = wcslen(filename);
+        unsigned int len = strlenW(filename);
         unsigned int copylen = min(size - 1, len);
 
         if (size < 2)
             goto range;
 
-        memmove(p, filename, copylen * sizeof(wchar_t));
+        memmove(p, filename, copylen * sizeof(MSVCRT_wchar_t));
 
         if (size <= len)
             goto range;
@@ -1631,7 +1609,7 @@ int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
 
     if (extension && extension[0])
     {
-        unsigned int len = wcslen(extension);
+        unsigned int len = strlenW(extension);
         unsigned int needs_period = extension[0] != '.';
         unsigned int copylen;
 
@@ -1645,7 +1623,7 @@ int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
         }
 
         copylen = min(size - 1, len);
-        memcpy(p, extension, copylen * sizeof(wchar_t));
+        memcpy(p, extension, copylen * sizeof(MSVCRT_wchar_t));
 
         if (size <= len)
             goto range;
@@ -1658,22 +1636,22 @@ int CDECL _wmakepath_s(wchar_t *path, size_t size, const wchar_t *drive,
 
 range:
     path[0] = '\0';
-    *_errno() = ERANGE;
-    return ERANGE;
+    *MSVCRT__errno() = MSVCRT_ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
  *		_searchenv_s (MSVCRT.@)
  */
-int CDECL _searchenv_s(const char* file, const char* env, char *buf, size_t count)
+int CDECL MSVCRT__searchenv_s(const char* file, const char* env, char *buf, MSVCRT_size_t count)
 {
   char *envVal, *penv, *end;
   char path[MAX_PATH];
-  size_t path_len, fname_len;
+  MSVCRT_size_t path_len, fname_len;
 
-  if (!MSVCRT_CHECK_PMT(file != NULL)) return EINVAL;
-  if (!MSVCRT_CHECK_PMT(buf != NULL)) return EINVAL;
-  if (!MSVCRT_CHECK_PMT(count > 0)) return EINVAL;
+  if (!MSVCRT_CHECK_PMT(file != NULL)) return MSVCRT_EINVAL;
+  if (!MSVCRT_CHECK_PMT(buf != NULL)) return MSVCRT_EINVAL;
+  if (!MSVCRT_CHECK_PMT(count > 0)) return MSVCRT_EINVAL;
 
   if (count > MAX_PATH)
       FIXME("count > MAX_PATH not supported\n");
@@ -1690,11 +1668,11 @@ int CDECL _searchenv_s(const char* file, const char* env, char *buf, size_t coun
   }
 
   /* Search given environment variable */
-  envVal = getenv(env);
+  envVal = MSVCRT_getenv(env);
   if (!envVal)
   {
-    *_errno() = ENOENT;
-    return ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
+    return MSVCRT_ENOENT;
   }
 
   penv = envVal;
@@ -1735,44 +1713,44 @@ int CDECL _searchenv_s(const char* file, const char* env, char *buf, size_t coun
     {
       if (path_len + fname_len + 1 > count)
       {
-        MSVCRT_INVALID_PMT("buf[count] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("buf[count] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
       }
       memcpy(buf, path, path_len + fname_len + 1);
       return 0;
     }
   }
 
-  *_errno() = ENOENT;
-  return ENOENT;
+  *MSVCRT__errno() = MSVCRT_ENOENT;
+  return MSVCRT_ENOENT;
 }
 
 /*********************************************************************
  *		_searchenv (MSVCRT.@)
  */
-void CDECL _searchenv(const char* file, const char* env, char *buf)
+void CDECL MSVCRT__searchenv(const char* file, const char* env, char *buf)
 {
-    _searchenv_s(file, env, buf, MAX_PATH);
+    MSVCRT__searchenv_s(file, env, buf, MAX_PATH);
 }
 
 /*********************************************************************
  *		_wsearchenv_s (MSVCRT.@)
  */
-int CDECL _wsearchenv_s(const wchar_t* file, const wchar_t* env,
-                        wchar_t *buf, size_t count)
+int CDECL MSVCRT__wsearchenv_s(const MSVCRT_wchar_t* file, const MSVCRT_wchar_t* env,
+                        MSVCRT_wchar_t *buf, MSVCRT_size_t count)
 {
-  wchar_t *envVal, *penv, *end;
-  wchar_t path[MAX_PATH];
-  size_t path_len, fname_len;
+  MSVCRT_wchar_t *envVal, *penv, *end;
+  MSVCRT_wchar_t path[MAX_PATH];
+  MSVCRT_size_t path_len, fname_len;
 
-  if (!MSVCRT_CHECK_PMT(file != NULL)) return EINVAL;
-  if (!MSVCRT_CHECK_PMT(buf != NULL)) return EINVAL;
-  if (!MSVCRT_CHECK_PMT(count > 0)) return EINVAL;
+  if (!MSVCRT_CHECK_PMT(file != NULL)) return MSVCRT_EINVAL;
+  if (!MSVCRT_CHECK_PMT(buf != NULL)) return MSVCRT_EINVAL;
+  if (!MSVCRT_CHECK_PMT(count > 0)) return MSVCRT_EINVAL;
 
   if (count > MAX_PATH)
       FIXME("count > MAX_PATH not supported\n");
 
-  fname_len = wcslen(file);
+  fname_len = strlenW(file);
   *buf = '\0';
 
   /* Try CWD first */
@@ -1784,11 +1762,11 @@ int CDECL _wsearchenv_s(const wchar_t* file, const wchar_t* env,
   }
 
   /* Search given environment variable */
-  envVal = _wgetenv(env);
+  envVal = MSVCRT__wgetenv(env);
   if (!envVal)
   {
-    *_errno() = ENOENT;
-    return ENOENT;
+    *MSVCRT__errno() = MSVCRT_ENOENT;
+    return MSVCRT_ENOENT;
   }
 
   penv = envVal;
@@ -1823,28 +1801,28 @@ int CDECL _wsearchenv_s(const wchar_t* file, const wchar_t* env,
     if (path_len + fname_len >= MAX_PATH)
       continue;
 
-    memcpy(path + path_len, file, (fname_len + 1) * sizeof(wchar_t));
+    memcpy(path + path_len, file, (fname_len + 1) * sizeof(MSVCRT_wchar_t));
     TRACE("Checking for file %s\n", debugstr_w(path));
     if (GetFileAttributesW( path ) != INVALID_FILE_ATTRIBUTES)
     {
       if (path_len + fname_len + 1 > count)
       {
-        MSVCRT_INVALID_PMT("buf[count] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("buf[count] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
       }
-      memcpy(buf, path, (path_len + fname_len + 1) * sizeof(wchar_t));
+      memcpy(buf, path, (path_len + fname_len + 1) * sizeof(MSVCRT_wchar_t));
       return 0;
     }
   }
 
-  *_errno() = ENOENT;
-  return ENOENT;
+  *MSVCRT__errno() = MSVCRT_ENOENT;
+  return MSVCRT_ENOENT;
 }
 
 /*********************************************************************
  *      _wsearchenv (MSVCRT.@)
  */
-void CDECL _wsearchenv(const wchar_t* file, const wchar_t* env, wchar_t *buf)
+void CDECL MSVCRT__wsearchenv(const MSVCRT_wchar_t* file, const MSVCRT_wchar_t* env, MSVCRT_wchar_t *buf)
 {
-    _wsearchenv_s(file, env, buf, MAX_PATH);
+    MSVCRT__wsearchenv_s(file, env, buf, MAX_PATH);
 }

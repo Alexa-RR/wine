@@ -46,6 +46,13 @@ int defaultColor = 7;
 BOOL echo_mode = TRUE;
 
 WCHAR anykey[100], version_string[100];
+const WCHAR newlineW[] = {'\r','\n','\0'};
+const WCHAR spaceW[]   = {' ','\0'};
+static const WCHAR envPathExt[] = {'P','A','T','H','E','X','T','\0'};
+static const WCHAR dfltPathExt[] = {'.','b','a','t',';',
+                                    '.','c','o','m',';',
+                                    '.','c','m','d',';',
+                                    '.','e','x','e','\0'};
 
 static BOOL opt_c, opt_k, opt_s, unicodeOutput = FALSE;
 
@@ -122,17 +129,18 @@ static void WCMD_output_asis_len(const WCHAR *message, DWORD len, HANDLE device)
 
 void WINAPIV WCMD_output (const WCHAR *format, ...) {
 
-  va_list ap;
+  __ms_va_list ap;
   WCHAR* string;
   DWORD len;
 
-  va_start(ap,format);
+  __ms_va_start(ap,format);
+  SetLastError(NO_ERROR);
   string = NULL;
   len = FormatMessageW(FORMAT_MESSAGE_FROM_STRING|FORMAT_MESSAGE_ALLOCATE_BUFFER,
                        format, 0, 0, (LPWSTR)&string, 0, &ap);
-  va_end(ap);
-  if (len == 0 && GetLastError() != ERROR_NO_WORK_DONE)
-    WINE_FIXME("Could not format string: le=%lu, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
+  __ms_va_end(ap);
+  if (len == 0 && GetLastError() != NO_ERROR)
+    WINE_FIXME("Could not format string: le=%u, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
   else
   {
     WCMD_output_asis_len(string, len, GetStdHandle(STD_OUTPUT_HANDLE));
@@ -147,17 +155,18 @@ void WINAPIV WCMD_output (const WCHAR *format, ...) {
 
 void WINAPIV WCMD_output_stderr (const WCHAR *format, ...) {
 
-  va_list ap;
+  __ms_va_list ap;
   WCHAR* string;
   DWORD len;
 
-  va_start(ap,format);
+  __ms_va_start(ap,format);
+  SetLastError(NO_ERROR);
   string = NULL;
   len = FormatMessageW(FORMAT_MESSAGE_FROM_STRING|FORMAT_MESSAGE_ALLOCATE_BUFFER,
                        format, 0, 0, (LPWSTR)&string, 0, &ap);
-  va_end(ap);
-  if (len == 0 && GetLastError() != ERROR_NO_WORK_DONE)
-    WINE_FIXME("Could not format string: le=%lu, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
+  __ms_va_end(ap);
+  if (len == 0 && GetLastError() != NO_ERROR)
+    WINE_FIXME("Could not format string: le=%u, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
   else
   {
     WCMD_output_asis_len(string, len, GetStdHandle(STD_ERROR_HANDLE));
@@ -172,16 +181,17 @@ void WINAPIV WCMD_output_stderr (const WCHAR *format, ...) {
 
 WCHAR* WINAPIV WCMD_format_string (const WCHAR *format, ...)
 {
-  va_list ap;
+  __ms_va_list ap;
   WCHAR* string;
   DWORD len;
 
-  va_start(ap,format);
+  __ms_va_start(ap,format);
+  SetLastError(NO_ERROR);
   len = FormatMessageW(FORMAT_MESSAGE_FROM_STRING|FORMAT_MESSAGE_ALLOCATE_BUFFER,
                        format, 0, 0, (LPWSTR)&string, 0, &ap);
-  va_end(ap);
-  if (len == 0 && GetLastError() != ERROR_NO_WORK_DONE) {
-    WINE_FIXME("Could not format string: le=%lu, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
+  __ms_va_end(ap);
+  if (len == 0 && GetLastError() != NO_ERROR) {
+    WINE_FIXME("Could not format string: le=%u, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
     string = (WCHAR*)LocalAlloc(LMEM_FIXED, 2);
     *string = 0;
   }
@@ -212,7 +222,7 @@ void WCMD_leave_paged_mode(void)
 }
 
 /***************************************************************************
- * WCMD_ReadFile
+ * WCMD_Readfile
  *
  *	Read characters in from a console/file, returning result in Unicode
  */
@@ -221,8 +231,9 @@ BOOL WCMD_ReadFile(const HANDLE hIn, WCHAR *intoBuf, const DWORD maxChars, LPDWO
     DWORD numRead;
     char *buffer;
 
-    /* Try to read from console as Unicode */
-    if (ReadConsoleW(hIn, intoBuf, maxChars, charsRead, NULL)) return TRUE;
+    if (WCMD_is_console_handle(hIn))
+        /* Try to read from console as Unicode */
+        return ReadConsoleW(hIn, intoBuf, maxChars, charsRead, NULL);
 
     /* We assume it's a file handle and read then convert from assumed OEM codepage */
     if (!(buffer = get_file_buffer()))
@@ -303,7 +314,7 @@ void WCMD_print_error (void) {
   status = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
 			  NULL, error_code, 0, (LPWSTR) &lpMsgBuf, 0, NULL);
   if (!status) {
-    WINE_FIXME ("Cannot display message for error %ld, status %ld\n",
+    WINE_FIXME ("Cannot display message for error %d, status %d\n",
 			error_code, GetLastError());
     return;
   }
@@ -311,7 +322,8 @@ void WCMD_print_error (void) {
   WCMD_output_asis_len(lpMsgBuf, lstrlenW(lpMsgBuf),
                        GetStdHandle(STD_ERROR_HANDLE));
   LocalFree (lpMsgBuf);
-  WCMD_output_asis_len(L"\r\n", lstrlenW(L"\r\n"), GetStdHandle(STD_ERROR_HANDLE));
+  WCMD_output_asis_len (newlineW, lstrlenW(newlineW),
+                        GetStdHandle(STD_ERROR_HANDLE));
   return;
 }
 
@@ -328,10 +340,12 @@ static void WCMD_show_prompt (BOOL newLine) {
   WCHAR out_string[MAX_PATH], curdir[MAX_PATH], prompt_string[MAX_PATH];
   WCHAR *p, *q;
   DWORD len;
+  static const WCHAR envPrompt[] = {'P','R','O','M','P','T','\0'};
 
-  len = GetEnvironmentVariableW(L"PROMPT", prompt_string, ARRAY_SIZE(prompt_string));
+  len = GetEnvironmentVariableW(envPrompt, prompt_string, ARRAY_SIZE(prompt_string));
   if ((len == 0) || (len >= ARRAY_SIZE(prompt_string))) {
-    lstrcpyW(prompt_string, L"$P$G");
+    static const WCHAR dfltPrompt[] = {'$','P','$','G','\0'};
+    lstrcpyW (prompt_string, dfltPrompt);
   }
   p = prompt_string;
   q = out_string;
@@ -452,18 +466,6 @@ void WCMD_strsubstW(WCHAR *start, const WCHAR *next, const WCHAR *insert, int le
        memcpy(start, insert, len * sizeof(*insert));
 }
 
-BOOL WCMD_get_fullpath(const WCHAR* in, SIZE_T outsize, WCHAR* out, WCHAR** start)
-{
-    DWORD ret = GetFullPathNameW(in, outsize, out, start);
-    if (!ret) return FALSE;
-    if (ret > outsize)
-    {
-        WCMD_output_asis_stderr(WCMD_LoadMessage(WCMD_FILENAMETOOLONG));
-        return FALSE;
-    }
-    return TRUE;
-}
-
 /***************************************************************************
  * WCMD_skip_leading_spaces
  *
@@ -485,8 +487,7 @@ WCHAR *WCMD_skip_leading_spaces (WCHAR *string) {
  *  Checks if the string located at ptr matches a keyword (of length len)
  *  followed by a whitespace character (space or tab)
  */
-BOOL WCMD_keyword_ws_found(const WCHAR *keyword, const WCHAR *ptr) {
-    const int len = lstrlenW(keyword);
+BOOL WCMD_keyword_ws_found(const WCHAR *keyword, int len, const WCHAR *ptr) {
     return (CompareStringW(LOCALE_USER_DEFAULT, NORM_IGNORECASE | SORT_STRINGSORT,
                            ptr, len, keyword, len) == CSTR_EQUAL)
             && ((*(ptr + len) == ' ') || (*(ptr + len) == '\t'));
@@ -559,7 +560,13 @@ static WCHAR *WCMD_expand_envvar(WCHAR *start, WCHAR startchar)
     WCHAR thisVarContents[MAXSTRING];
     WCHAR savedchar = 0x00;
     int len;
-    WCHAR Delims[] = L"%:"; /* First char gets replaced appropriately */
+
+    static const WCHAR ErrorLvl[]  = {'E','R','R','O','R','L','E','V','E','L','\0'};
+    static const WCHAR Date[]      = {'D','A','T','E','\0'};
+    static const WCHAR Time[]      = {'T','I','M','E','\0'};
+    static const WCHAR Cd[]        = {'C','D','\0'};
+    static const WCHAR Random[]    = {'R','A','N','D','O','M','\0'};
+    WCHAR Delims[]    = {'%',':','\0'}; /* First char gets replaced appropriately */
 
     WINE_TRACE("Expanding: %s (%c)\n", wine_dbgstr_w(start), startchar);
 
@@ -613,22 +620,24 @@ static WCHAR *WCMD_expand_envvar(WCHAR *start, WCHAR startchar)
     /* Expand to contents, if unchanged, return */
     /* Handle DATE, TIME, ERRORLEVEL and CD replacements allowing */
     /* override if existing env var called that name              */
-    if (WCMD_is_magic_envvar(thisVar, L"ERRORLEVEL")) {
-      wsprintfW(thisVarContents, L"%d", errorlevel);
+    if (WCMD_is_magic_envvar(thisVar, ErrorLvl)) {
+      static const WCHAR fmt[] = {'%','d','\0'};
+      wsprintfW(thisVarContents, fmt, errorlevel);
       len = lstrlenW(thisVarContents);
-    } else if (WCMD_is_magic_envvar(thisVar, L"DATE")) {
+    } else if (WCMD_is_magic_envvar(thisVar, Date)) {
       GetDateFormatW(LOCALE_USER_DEFAULT, DATE_SHORTDATE, NULL,
                     NULL, thisVarContents, MAXSTRING);
       len = lstrlenW(thisVarContents);
-    } else if (WCMD_is_magic_envvar(thisVar, L"TIME")) {
+    } else if (WCMD_is_magic_envvar(thisVar, Time)) {
       GetTimeFormatW(LOCALE_USER_DEFAULT, TIME_NOSECONDS, NULL,
                         NULL, thisVarContents, MAXSTRING);
       len = lstrlenW(thisVarContents);
-    } else if (WCMD_is_magic_envvar(thisVar, L"CD")) {
+    } else if (WCMD_is_magic_envvar(thisVar, Cd)) {
       GetCurrentDirectoryW(MAXSTRING, thisVarContents);
       len = lstrlenW(thisVarContents);
-    } else if (WCMD_is_magic_envvar(thisVar, L"RANDOM")) {
-      wsprintfW(thisVarContents, L"%d", rand() % 32768);
+    } else if (WCMD_is_magic_envvar(thisVar, Random)) {
+      static const WCHAR fmt[] = {'%','d','\0'};
+      wsprintfW(thisVarContents, fmt, rand() % 32768);
       len = lstrlenW(thisVarContents);
     } else {
 
@@ -725,7 +734,7 @@ static WCHAR *WCMD_expand_envvar(WCHAR *start, WCHAR startchar)
 
     /* search and replace manipulation */
     } else {
-      WCHAR *equalspos = wcsstr(colonpos, L"=");
+      WCHAR *equalspos = wcsstr(colonpos, equalW);
       WCHAR *replacewith = equalspos+1;
       WCHAR *found       = NULL;
       WCHAR *searchIn;
@@ -844,7 +853,7 @@ static void handleExpansion(WCHAR *cmd, BOOL atExecute, BOOL delayed) {
 
     /* Replace %~ modifications if in batch program */
     } else if (*(p+1) == '~') {
-      WCMD_HandleTildeModifiers(&p, atExecute);
+      WCMD_HandleTildaModifiers(&p, atExecute);
       p++;
 
     /* Replace use of %0...%9 if in batch program*/
@@ -1036,26 +1045,24 @@ void WCMD_run_program (WCHAR *command, BOOL called)
   WCHAR  pathext[MAXSTRING];
   WCHAR *firstParam;
   BOOL  extensionsupplied = FALSE;
-  BOOL  explicit_path = FALSE;
   BOOL  status;
   DWORD len;
+  static const WCHAR envPath[] = {'P','A','T','H','\0'};
+  static const WCHAR delims[] = {'/','\\',':','\0'};
 
   /* Quick way to get the filename is to extract the first argument. */
   WINE_TRACE("Running '%s' (%d)\n", wine_dbgstr_w(command), called);
   firstParam = WCMD_parameter(command, 0, NULL, FALSE, TRUE);
   if (!firstParam) return;
 
-  if (!firstParam[0]) {
-      errorlevel = 0;
-      return;
-  }
-
   /* Calculate the search path and stem to search for */
-  if (wcspbrk(firstParam, L"/\\:") == NULL) {  /* No explicit path given, search path */
-    lstrcpyW(pathtosearch, L".;");
-    len = GetEnvironmentVariableW(L"PATH", &pathtosearch[2], ARRAY_SIZE(pathtosearch)-2);
+  if (wcspbrk (firstParam, delims) == NULL) {  /* No explicit path given, search path */
+    static const WCHAR curDir[] = {'.',';','\0'};
+    lstrcpyW(pathtosearch, curDir);
+    len = GetEnvironmentVariableW(envPath, &pathtosearch[2], ARRAY_SIZE(pathtosearch)-2);
     if ((len == 0) || (len >= ARRAY_SIZE(pathtosearch) - 2)) {
-      lstrcpyW(pathtosearch, L".");
+      static const WCHAR curDir[] = {'.','\0'};
+      lstrcpyW (pathtosearch, curDir);
     }
     if (wcschr(firstParam, '.') != NULL) extensionsupplied = TRUE;
     if (lstrlenW(firstParam) >= MAX_PATH)
@@ -1069,7 +1076,7 @@ void WCMD_run_program (WCHAR *command, BOOL called)
   } else {
 
     /* Convert eg. ..\fred to include a directory by removing file part */
-    if (!WCMD_get_fullpath(firstParam, ARRAY_SIZE(pathtosearch), pathtosearch, NULL)) return;
+    GetFullPathNameW(firstParam, ARRAY_SIZE(pathtosearch), pathtosearch, NULL);
     lastSlash = wcsrchr(pathtosearch, '\\');
     if (lastSlash && wcschr(lastSlash, '.') != NULL) extensionsupplied = TRUE;
     lstrcpyW(stemofsearch, lastSlash+1);
@@ -1077,13 +1084,12 @@ void WCMD_run_program (WCHAR *command, BOOL called)
     /* Reduce pathtosearch to a path with trailing '\' to support c:\a.bat and
        c:\windows\a.bat syntax                                                 */
     if (lastSlash) *(lastSlash + 1) = 0x00;
-    explicit_path = TRUE;
   }
 
   /* Now extract PATHEXT */
-  len = GetEnvironmentVariableW(L"PATHEXT", pathext, ARRAY_SIZE(pathext));
+  len = GetEnvironmentVariableW(envPathExt, pathext, ARRAY_SIZE(pathext));
   if ((len == 0) || (len >= ARRAY_SIZE(pathext))) {
-    lstrcpyW(pathext, L".bat;.com;.cmd;.exe");
+    lstrcpyW (pathext, dfltPathExt);
   }
 
   /* Loop through the search path, dir by dir */
@@ -1097,51 +1103,40 @@ void WCMD_run_program (WCHAR *command, BOOL called)
     BOOL  found             = FALSE;
     BOOL inside_quotes      = FALSE;
 
-    if (explicit_path)
+    /* Work on the first directory on the search path */
+    pos = pathposn;
+    while ((inside_quotes || *pos != ';') && *pos != 0)
     {
-        lstrcpyW(thisDir, pathposn);
-        pathposn = NULL;
+        if (*pos == '"')
+            inside_quotes = !inside_quotes;
+        pos++;
     }
+
+    if (*pos) { /* Reached semicolon */
+      memcpy(thisDir, pathposn, (pos-pathposn) * sizeof(WCHAR));
+      thisDir[(pos-pathposn)] = 0x00;
+      pathposn = pos+1;
+    } else {    /* Reached string end */
+      lstrcpyW(thisDir, pathposn);
+      pathposn = NULL;
+    }
+
+    /* Remove quotes */
+    length = lstrlenW(thisDir);
+    if (thisDir[length - 1] == '"')
+        thisDir[length - 1] = 0;
+
+    if (*thisDir != '"')
+        lstrcpyW(temp, thisDir);
     else
-    {
-        /* Work on the next directory on the search path */
-        pos = pathposn;
-        while ((inside_quotes || *pos != ';') && *pos != 0)
-        {
-            if (*pos == '"')
-                inside_quotes = !inside_quotes;
-            pos++;
-        }
+        lstrcpyW(temp, thisDir + 1);
 
-        if (*pos)  /* Reached semicolon */
-        {
-            memcpy(thisDir, pathposn, (pos-pathposn) * sizeof(WCHAR));
-            thisDir[(pos-pathposn)] = 0x00;
-            pathposn = pos+1;
-        }
-        else       /* Reached string end */
-        {
-            lstrcpyW(thisDir, pathposn);
-            pathposn = NULL;
-        }
-
-        /* Remove quotes */
-        length = lstrlenW(thisDir);
-        if (thisDir[length - 1] == '"')
-            thisDir[length - 1] = 0;
-
-        if (*thisDir != '"')
-            lstrcpyW(temp, thisDir);
-        else
-            lstrcpyW(temp, thisDir + 1);
-
-        /* Since you can have eg. ..\.. on the path, need to expand
-           to full information                                      */
-        if (!WCMD_get_fullpath(temp, ARRAY_SIZE(thisDir), thisDir, NULL)) return;
-    }
+    /* Since you can have eg. ..\.. on the path, need to expand
+       to full information                                      */
+    GetFullPathNameW(temp, MAX_PATH, thisDir, NULL);
 
     /* 1. If extension supplied, see if that file exists */
-    lstrcatW(thisDir, L"\\");
+    lstrcatW(thisDir, slashW);
     lstrcatW(thisDir, stemofsearch);
     pos = &thisDir[lstrlenW(thisDir)]; /* Pos = end of name */
 
@@ -1158,8 +1153,9 @@ void WCMD_run_program (WCHAR *command, BOOL called)
     if (!found) {
       HANDLE          h;
       WIN32_FIND_DATAW finddata;
+      static const WCHAR allFiles[] = {'.','*','\0'};
 
-      lstrcatW(thisDir, L".*");
+      lstrcatW(thisDir,allFiles);
       h = FindFirstFileW(thisDir, &finddata);
       FindClose(h);
       if (h != INVALID_HANDLE_VALUE) {
@@ -1196,18 +1192,15 @@ void WCMD_run_program (WCHAR *command, BOOL called)
       DWORD console;
       HINSTANCE hinst;
       WCHAR *ext = wcsrchr( thisDir, '.' );
-<<<<<<< HEAD
       static const WCHAR batExt[] = {'.','b','a','t','\0'};
       static const WCHAR cmdExt[] = {'.','c','m','d','\0'};
       static const WCHAR exeExt[] = {'.','e','x','e','\0'};
       static const WCHAR comExt[] = {'.','c','o','m','\0'};
-=======
->>>>>>> master
 
       WINE_TRACE("Found as %s\n", wine_dbgstr_w(thisDir));
 
       /* Special case BAT and CMD */
-      if (ext && (!wcsicmp(ext, L".bat") || !wcsicmp(ext, L".cmd"))) {
+      if (ext && (!wcsicmp(ext, batExt) || !wcsicmp(ext, cmdExt))) {
         BOOL oldinteractive = interactive;
         WINE_TRACE("Calling batch program\n");
         interactive = FALSE;
@@ -1412,6 +1405,7 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
         (*cmdList)->nextcommand->prevDelim == CMD_PIPE) {
 
         WCHAR temp_path[MAX_PATH];
+        static const WCHAR cmdW[]     = {'C','M','D','\0'};
 
         /* Remember piping is in action */
         WINE_TRACE("Output needs to be piped\n");
@@ -1419,14 +1413,15 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
 
         /* Generate a unique temporary filename */
         GetTempPathW(ARRAY_SIZE(temp_path), temp_path);
-        GetTempFileNameW(temp_path, L"CMD", 0, (*cmdList)->nextcommand->pipeFile);
+        GetTempFileNameW(temp_path, cmdW, 0, (*cmdList)->nextcommand->pipeFile);
         WINE_TRACE("Using temporary file of %s\n",
                    wine_dbgstr_w((*cmdList)->nextcommand->pipeFile));
     }
 
     /* If piped output, send stdout to the pipe by appending >filename to redirects */
     if (piped) {
-        wsprintfW (new_redir, L"%s > %s", redirects, (*cmdList)->nextcommand->pipeFile);
+        static const WCHAR redirOut[] = {'%','s',' ','>',' ','%','s','\0'};
+        wsprintfW (new_redir, redirOut, redirects, (*cmdList)->nextcommand->pipeFile);
         WINE_TRACE("Redirects now %s\n", wine_dbgstr_w(new_redir));
     } else {
         lstrcpyW(new_redir, redirects);
@@ -1453,10 +1448,11 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
       /* According to MSDN CreateProcess docs, special env vars record
          the current directory on each drive, in the form =C:
          so see if one specified, and if so go back to it             */
-      lstrcpyW(envvar, L"=");
+      lstrcpyW(envvar, equalW);
       lstrcatW(envvar, cmd);
       if (GetEnvironmentVariableW(envvar, dir, MAX_PATH) == 0) {
-        wsprintfW(cmd, L"%s\\", cmd);
+        static const WCHAR fmt[] = {'%','s','\\','\0'};
+        wsprintfW(cmd, fmt, cmd);
         WINE_TRACE("No special directory settings, using dir of %s\n", wine_dbgstr_w(cmd));
       }
       WINE_TRACE("Got directory %s as %s\n", wine_dbgstr_w(envvar), wine_dbgstr_w(cmd));
@@ -1535,7 +1531,7 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
                           GetCurrentProcess(),
                           &h,
                           0, TRUE, DUPLICATE_SAME_ACCESS) == 0) {
-            WINE_FIXME("Duplicating handle failed with gle %ld\n", GetLastError());
+            WINE_FIXME("Duplicating handle failed with gle %d\n", GetLastError());
           }
           WINE_TRACE("Redirect %d (%p) to %d (%p)\n", handle, GetStdHandle(idx_stdhandles[idx]), idx, h);
 
@@ -1664,7 +1660,7 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
         WCMD_type (parms_start);
         break;
       case WCMD_VER:
-        WCMD_output_asis(L"\r\n");
+        WCMD_output_asis(newlineW);
         WCMD_version ();
         break;
       case WCMD_VERIFY:
@@ -1735,10 +1731,11 @@ void WCMD_execute (const WCHAR *command, const WCHAR *redirects,
  */
 WCHAR *WCMD_LoadMessage(UINT id) {
     static WCHAR msg[2048];
+    static const WCHAR failedMsg[]  = {'F','a','i','l','e','d','!','\0'};
 
     if (!LoadStringW(GetModuleHandleW(NULL), id, msg, ARRAY_SIZE(msg))) {
-       WINE_FIXME("LoadString failed with %ld\n", GetLastError());
-       lstrcpyW(msg, L"Failed!");
+       WINE_FIXME("LoadString failed with %d\n", GetLastError());
+       lstrcpyW(msg, failedMsg);
     }
     return msg;
 }
@@ -1853,8 +1850,7 @@ static BOOL WCMD_IsEndQuote(const WCHAR *quote, int quoteIndex)
 
         /* Quote counting ends at EOL, redirection, space or pipe if current quote is complete */
         else if(((quoteCount % 2) == 0)
-            && ((quote[i] == '<') || (quote[i] == '>') || (quote[i] == '|') || (quote[i] == ' ') ||
-                (quote[i] == '&')))
+            && ((quote[i] == '<') || (quote[i] == '>') || (quote[i] == '|') || (quote[i] == ' ')))
         {
             break;
         }
@@ -1899,6 +1895,10 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
     CMD_LIST *lastEntry = NULL;
     CMD_DELIMITERS prevDelim = CMD_NONE;
     static WCHAR    *extraSpace = NULL;  /* Deliberately never freed */
+    static const WCHAR remCmd[] = {'r','e','m'};
+    static const WCHAR forCmd[] = {'f','o','r'};
+    static const WCHAR ifCmd[]  = {'i','f'};
+    static const WCHAR ifElse[] = {'e','l','s','e'};
     BOOL      inOneLine = FALSE;
     BOOL      inFor = FALSE;
     BOOL      inIn  = FALSE;
@@ -1911,8 +1911,6 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
     BOOL      lastWasElse = FALSE;
     BOOL      lastWasRedirect = TRUE;
     BOOL      lastWasCaret = FALSE;
-    BOOL      ignoreBracket = FALSE;         /* Some expressions after if (set) require */
-                                             /* handling brackets as a normal character */
     int       lineCurDepth;                  /* Bracket depth when line was read in */
     BOOL      resetAtEndOfLine = FALSE;      /* Do we need to reset curdepth at EOL */
 
@@ -1940,7 +1938,7 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
     if (lstrlenW(extraSpace) == MAXSTRING -1) {
         WCMD_output_asis_stderr(WCMD_LoadMessage(WCMD_TRUNCATEDLINE));
         WCMD_output_asis_stderr(extraSpace);
-        WCMD_output_asis_stderr(L"\r\n");
+        WCMD_output_asis_stderr(newlineW);
     }
 
     /* Replace env vars if in a batch context */
@@ -1951,7 +1949,10 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
 
     /* Show prompt before batch line IF echo is on and in batch program */
     if (context && echo_mode && *curPos && (*curPos != '@')) {
-      const DWORD len = lstrlenW(L"echo.");
+      static const WCHAR echoDot[] = {'e','c','h','o','.'};
+      static const WCHAR echoCol[] = {'e','c','h','o',':'};
+      static const WCHAR echoSlash[] = {'e','c','h','o','/'};
+      const DWORD len = ARRAY_SIZE(echoDot);
       DWORD curr_size = lstrlenW(curPos);
       DWORD min_len = (curr_size < len ? curr_size : len);
       WCMD_show_prompt(TRUE);
@@ -1959,15 +1960,15 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
       /* I don't know why Windows puts a space here but it does */
       /* Except for lines starting with 'echo.', 'echo:' or 'echo/'. Ask MS why */
       if (CompareStringW(LOCALE_SYSTEM_DEFAULT, NORM_IGNORECASE,
-                         curPos, min_len, L"echo.", len) != CSTR_EQUAL
+                         curPos, min_len, echoDot, len) != CSTR_EQUAL
           && CompareStringW(LOCALE_SYSTEM_DEFAULT, NORM_IGNORECASE,
-                         curPos, min_len, L"echo:", len) != CSTR_EQUAL
+                         curPos, min_len, echoCol, len) != CSTR_EQUAL
           && CompareStringW(LOCALE_SYSTEM_DEFAULT, NORM_IGNORECASE,
-                         curPos, min_len, L"echo/", len) != CSTR_EQUAL)
+                         curPos, min_len, echoSlash, len) != CSTR_EQUAL)
       {
-          WCMD_output_asis(L" ");
+          WCMD_output_asis(spaceW);
       }
-      WCMD_output_asis(L"\r\n");
+      WCMD_output_asis(newlineW);
     }
 
     /* Skip repeated 'no echo' characters */
@@ -1999,11 +2000,13 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
 
       /* Certain commands need special handling */
       if (curStringLen == 0 && curCopyTo == curString) {
+        static const WCHAR forDO[] = {'d','o'};
+
         /* If command starts with 'rem ' or identifies a label, ignore any &&, ( etc. */
-        if (WCMD_keyword_ws_found(L"rem", curPos) || *curPos == ':') {
+        if (WCMD_keyword_ws_found(remCmd, ARRAY_SIZE(remCmd), curPos) || *curPos == ':') {
           inOneLine = TRUE;
 
-        } else if (WCMD_keyword_ws_found(L"for", curPos)) {
+        } else if (WCMD_keyword_ws_found(forCmd, ARRAY_SIZE(forCmd), curPos)) {
           inFor = TRUE;
 
         /* If command starts with 'if ' or 'else ', handle ('s mid line. We should ensure this
@@ -2011,36 +2014,34 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
            should suffice for now.
            To be able to handle ('s in the condition part take as much as evaluate_if_condition
            would take and skip parsing it here. */
-        } else if (WCMD_keyword_ws_found(L"if", curPos)) {
+        } else if (WCMD_keyword_ws_found(ifCmd, ARRAY_SIZE(ifCmd), curPos)) {
+          static const WCHAR parmI[]   = {'/','I','\0'};
+          static const WCHAR notW[]    = {'n','o','t','\0'};
           int negate; /* Negate condition */
           int test;   /* Condition evaluation result */
           WCHAR *p, *command;
 
           inIf = TRUE;
 
-          p = curPos+(lstrlenW(L"if"));
-          while (*p == ' ' || *p == '\t')
+          p = curPos+(ARRAY_SIZE(ifCmd));
+          while (*p == ' ' || *p == '\t') {
             p++;
-          WCMD_parse (p, quals, param1, param2);
+            if (lstrcmpiW(WCMD_parameter(p, 0, NULL, TRUE, FALSE), notW) == 0)
+              p += lstrlenW(notW);
+            if (lstrcmpiW(WCMD_parameter(p, 0, NULL, TRUE, FALSE), parmI) == 0)
+              p += lstrlenW(parmI);
+          }
 
-          /* Function evaluate_if_condition relies on the global variables quals, param1 and param2
-             set in a call to WCMD_parse before */
           if (evaluate_if_condition(p, &command, &test, &negate) != -1)
           {
               int if_condition_len = command - curPos;
-              WINE_TRACE("p: %s, quals: %s, param1: %s, param2: %s, command: %s, if_condition_len: %d\n",
-                         wine_dbgstr_w(p), wine_dbgstr_w(quals), wine_dbgstr_w(param1),
-                         wine_dbgstr_w(param2), wine_dbgstr_w(command), if_condition_len);
               memcpy(&curCopyTo[*curLen], curPos, if_condition_len*sizeof(WCHAR));
               (*curLen)+=if_condition_len;
               curPos+=if_condition_len;
           }
 
-          if (WCMD_keyword_ws_found(L"set", curPos))
-              ignoreBracket = TRUE;
-
-        } else if (WCMD_keyword_ws_found(L"else", curPos)) {
-          const int keyw_len = lstrlenW(L"else") + 1;
+        } else if (WCMD_keyword_ws_found(ifElse, ARRAY_SIZE(ifElse), curPos)) {
+          const int keyw_len = ARRAY_SIZE(ifElse) + 1;
           inElse = TRUE;
           lastWasElse = TRUE;
           onlyWhiteSpace = TRUE;
@@ -2061,8 +2062,8 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
         /* In a for loop, the DO command will follow a close bracket followed by
            whitespace, followed by DO, ie closeBracket inserts a NULL entry, curLen
            is then 0, and all whitespace is skipped                                */
-        } else if (inFor && WCMD_keyword_ws_found(L"do", curPos)) {
-          const int keyw_len = lstrlenW(L"do") + 1;
+        } else if (inFor && WCMD_keyword_ws_found(forDO, ARRAY_SIZE(forDO), curPos)) {
+          const int keyw_len = ARRAY_SIZE(forDO) + 1;
           WINE_TRACE("Found 'DO '\n");
           lastWasDo = TRUE;
           onlyWhiteSpace = TRUE;
@@ -2075,10 +2076,12 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
 
         /* Special handling for the 'FOR' command */
         if (inFor && lastWasWhiteSpace) {
+          static const WCHAR forIN[] = {'i','n'};
+
           WINE_TRACE("Found 'FOR ', comparing next parm: '%s'\n", wine_dbgstr_w(curPos));
 
-          if (WCMD_keyword_ws_found(L"in", curPos)) {
-            const int keyw_len = lstrlenW(L"in") + 1;
+          if (WCMD_keyword_ws_found(forIN, ARRAY_SIZE(forIN), curPos)) {
+            const int keyw_len = ARRAY_SIZE(forIN) + 1;
             WINE_TRACE("Found 'IN '\n");
             lastWasIn = TRUE;
             onlyWhiteSpace = TRUE;
@@ -2226,7 +2229,7 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
                    In an ELSE statement, only allow it straight away after
                       the ELSE and whitespace
                  */
-                } else if ((inIf && !ignoreBracket) ||
+                } else if (inIf ||
                            (inElse && lastWasElse && onlyWhiteSpace) ||
                            (inFor && (lastWasIn || lastWasDo) && onlyWhiteSpace)) {
 
@@ -2404,7 +2407,7 @@ WCHAR *WCMD_ReadAndParseLine(const WCHAR *optionalcmd, CMD_LIST **output, HANDLE
         /* Continue to echo commands IF echo is on and in batch program */
         if (context && echo_mode && *curPos && *curPos != '@') {
           WCMD_output_asis(extraSpace);
-          WCMD_output_asis(L"\r\n");
+          WCMD_output_asis(newlineW);
         }
 
         /* Skip repeated 'no echo' characters and whitespace */
@@ -2486,36 +2489,42 @@ void WCMD_free_commands(CMD_LIST *cmds) {
 
 int __cdecl wmain (int argc, WCHAR *argvW[])
 {
+  int     args;
   WCHAR  *cmdLine = NULL;
   WCHAR  *cmd     = NULL;
+  WCHAR  *argPos  = NULL;
   WCHAR string[1024];
   WCHAR envvar[4];
   BOOL promptNewLine = TRUE;
   BOOL opt_q;
   int opt_t = 0;
+  static const WCHAR offW[] = {'O','F','F','\0'};
+  static const WCHAR promptW[] = {'P','R','O','M','P','T','\0'};
+  static const WCHAR defaultpromptW[] = {'$','P','$','G','\0'};
+  static const WCHAR comspecW[] = {'C','O','M','S','P','E','C',0};
+  static const WCHAR cmdW[] = {'\\','c','m','d','.','e','x','e',0};
   WCHAR comspec[MAX_PATH];
   CMD_LIST *toExecute = NULL;         /* Commands left to be executed */
-  RTL_OSVERSIONINFOEXW osv;
+  OSVERSIONINFOW osv;
   char osver[50];
   STARTUPINFOW startupInfo;
-  const WCHAR *arg;
 
-  if (!GetEnvironmentVariableW(L"COMSPEC", comspec, ARRAY_SIZE(comspec)))
+  if (!GetEnvironmentVariableW(comspecW, comspec, ARRAY_SIZE(comspec)))
   {
-      GetSystemDirectoryW(comspec, ARRAY_SIZE(comspec) - ARRAY_SIZE(L"\\cmd.exe"));
-      lstrcatW(comspec, L"\\cmd.exe");
-      SetEnvironmentVariableW(L"COMSPEC", comspec);
+      GetSystemDirectoryW(comspec, ARRAY_SIZE(comspec) - ARRAY_SIZE(cmdW));
+      lstrcatW(comspec, cmdW);
+      SetEnvironmentVariableW(comspecW, comspec);
   }
 
   srand(time(NULL));
 
   /* Get the windows version being emulated */
   osv.dwOSVersionInfoSize = sizeof(osv);
-  RtlGetVersion(&osv);
+  GetVersionExW(&osv);
 
   /* Pre initialize some messages */
   lstrcpyW(anykey, WCMD_LoadMessage(WCMD_ANYKEY));
-  sprintf(osver, "%ld.%ld.%ld", osv.dwMajorVersion, osv.dwMinorVersion, osv.dwBuildNumber);
+  sprintf(osver, "%d.%d.%d", osv.dwMajorVersion, osv.dwMinorVersion, osv.dwBuildNumber);
   cmd = WCMD_format_string(WCMD_LoadMessage(WCMD_VERSION), osver);
   lstrcpyW(version_string, cmd);
   LocalFree(cmd);
@@ -2526,70 +2535,76 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
    */
   cmdLine = GetCommandLineW();
   WINE_TRACE("Full commandline '%s'\n", wine_dbgstr_w(cmdLine));
-
-  while (*cmdLine && *cmdLine != '/') ++cmdLine;
+  args = 0;
 
   opt_c = opt_k = opt_q = opt_s = FALSE;
-
-  for (arg = cmdLine; *arg; ++arg)
+  WCMD_parameter(cmdLine, args, &argPos, TRUE, TRUE);
+  while (argPos && argPos[0] != 0x00)
   {
-        if (arg[0] != '/')
-            continue;
+      WCHAR c;
+      WINE_TRACE("Command line parm: '%s'\n", wine_dbgstr_w(argPos));
+      if (argPos[0]!='/' || argPos[1]=='\0') {
+          args++;
+          WCMD_parameter(cmdLine, args, &argPos, TRUE, TRUE);
+          continue;
+      }
 
-        switch (towlower(arg[1]))
-        {
-        case 'a':
-            unicodeOutput = FALSE;
-            break;
-        case 'c':
-            opt_c = TRUE;
-            break;
-        case 'k':
-            opt_k = TRUE;
-            break;
-        case 'q':
-            opt_q = TRUE;
-            break;
-        case 's':
-            opt_s = TRUE;
-            break;
-        case 't':
-            if (arg[2] == ':')
-                opt_t = wcstoul(&arg[3], NULL, 16);
-            break;
-        case 'u':
-            unicodeOutput = TRUE;
-            break;
-        case 'v':
-            if (arg[2] == ':')
-                delayedsubst = wcsnicmp(&arg[3], L"OFF", 3);
-            break;
-        }
+      c=argPos[1];
+      if (towlower(c)=='c') {
+          opt_c = TRUE;
+      } else if (towlower(c)=='q') {
+          opt_q = TRUE;
+      } else if (towlower(c)=='k') {
+          opt_k = TRUE;
+      } else if (towlower(c)=='s') {
+          opt_s = TRUE;
+      } else if (towlower(c)=='a') {
+          unicodeOutput = FALSE;
+      } else if (towlower(c)=='u') {
+          unicodeOutput = TRUE;
+      } else if (towlower(c)=='v' && argPos[2]==':') {
+          delayedsubst = wcsnicmp(&argPos[3], offW, 3);
+          if (delayedsubst) WINE_TRACE("Delayed substitution is on\n");
+      } else if (towlower(c)=='t' && argPos[2]==':') {
+          opt_t=wcstoul(&argPos[3], NULL, 16);
+      } else if (towlower(c)=='x' || towlower(c)=='y') {
+          /* Ignored for compatibility with Windows */
+      }
 
-        if (opt_c || opt_k)
-        {
-            arg += 2;
-            break;
-        }
+      if (argPos[2]==0 || argPos[2]==' ' || argPos[2]=='\t' ||
+          towlower(c)=='v') {
+          args++;
+          WCMD_parameter(cmdLine, args, &argPos, TRUE, TRUE);
+      }
+      else /* handle `cmd /cnotepad.exe` and `cmd /x/c ...` */
+      {
+          /* Do not step to next parameter, instead carry on parsing this one */
+          argPos+=2;
+      }
+
+      if (opt_c || opt_k) /* break out of parsing immediately after c or k */
+          break;
   }
 
-  while (*arg && wcschr(L" \t,=;", *arg)) arg++;
-
   if (opt_q) {
-    WCMD_echo(L"OFF");
+    WCMD_echo(offW);
   }
 
   /* Until we start to read from the keyboard, stay as non-interactive */
   interactive = FALSE;
 
-  SetEnvironmentVariableW(L"PROMPT", L"$P$G");
+  SetEnvironmentVariableW(promptW, defaultpromptW);
 
   if (opt_c || opt_k) {
       int     len;
       WCHAR   *q1 = NULL,*q2 = NULL,*p;
 
+      /* Handle very edge case error scenario, "cmd.exe /c" ie when there are no
+       * parameters after the /C or /K by pretending there was a single space     */
+      if (argPos == NULL) argPos = (WCHAR *)spaceW;
+
       /* Take a copy */
-      cmd = heap_strdupW(arg);
+      cmd = heap_strdupW(argPos);
 
       /* opt_s left unflagged if the command starts with and contains exactly
        * one quoted string (exactly two quote characters). The quoted string
@@ -2598,7 +2613,7 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
 
       if (!opt_s) {
         /* 1. Confirm there is at least one quote */
-        q1 = wcschr(arg, '"');
+        q1 = wcschr(argPos, '"');
         if (!q1) opt_s=1;
       }
 
@@ -2640,16 +2655,16 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
         BOOL found = FALSE;
 
         /* Now extract PATHEXT */
-        len = GetEnvironmentVariableW(L"PATHEXT", pathext, ARRAY_SIZE(pathext));
+        len = GetEnvironmentVariableW(envPathExt, pathext, ARRAY_SIZE(pathext));
         if ((len == 0) || (len >= ARRAY_SIZE(pathext))) {
-          lstrcpyW(pathext, L".bat;.com;.cmd;.exe");
+          lstrcpyW (pathext, dfltPathExt);
         }
 
         /* If the supplied parameter has any directory information, look there */
         WINE_TRACE("First parameter is '%s'\n", wine_dbgstr_w(thisArg));
         if (wcschr(thisArg, '\\') != NULL) {
 
-          if (!WCMD_get_fullpath(thisArg, ARRAY_SIZE(string), string, NULL)) return FALSE;
+          GetFullPathNameW(thisArg, ARRAY_SIZE(string), string, NULL);
           WINE_TRACE("Full path name '%s'\n", wine_dbgstr_w(string));
           p = string + lstrlenW(string);
 
@@ -2729,7 +2744,8 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
   /* Save cwd into appropriate env var (Must be before the /c processing */
   GetCurrentDirectoryW(ARRAY_SIZE(string), string);
   if (IsCharAlphaW(string[0]) && string[1] == ':') {
-    wsprintfW(envvar, L"=%c:", string[0]);
+    static const WCHAR fmt[] = {'=','%','c',':','\0'};
+    wsprintfW(envvar, fmt, string[0]);
     SetEnvironmentVariableW(envvar, string);
     WINE_TRACE("Set %s to %s\n", wine_dbgstr_w(envvar), wine_dbgstr_w(string));
   }
@@ -2773,20 +2789,26 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
       HKEY key;
       DWORD type;
       DWORD value=0, size=4;
-      static const WCHAR regKeyW[] = L"Software\\Microsoft\\Command Processor";
+      static const WCHAR regKeyW[] = {'S','o','f','t','w','a','r','e','\\',
+                                      'M','i','c','r','o','s','o','f','t','\\',
+                                      'C','o','m','m','a','n','d',' ','P','r','o','c','e','s','s','o','r','\0'};
+      static const WCHAR dfltColorW[] = {'D','e','f','a','u','l','t','C','o','l','o','r','\0'};
 
       if (RegOpenKeyExW(HKEY_CURRENT_USER, regKeyW,
                        0, KEY_READ, &key) == ERROR_SUCCESS) {
           WCHAR  strvalue[4];
 
           /* See if DWORD or REG_SZ */
-          if (RegQueryValueExW(key, L"DefaultColor", NULL, &type, NULL, NULL) == ERROR_SUCCESS) {
+          if (RegQueryValueExW(key, dfltColorW, NULL, &type,
+                     NULL, NULL) == ERROR_SUCCESS) {
               if (type == REG_DWORD) {
                   size = sizeof(DWORD);
-                  RegQueryValueExW(key, L"DefaultColor", NULL, NULL, (BYTE *)&value, &size);
+                  RegQueryValueExW(key, dfltColorW, NULL, NULL,
+                                  (LPBYTE)&value, &size);
               } else if (type == REG_SZ) {
-                  size = sizeof(strvalue);
-                  RegQueryValueExW(key, L"DefaultColor", NULL, NULL, (BYTE *)strvalue, &size);
+                  size = ARRAY_SIZE(strvalue);
+                  RegQueryValueExW(key, dfltColorW, NULL, NULL,
+                                  (LPBYTE)strvalue, &size);
                   value = wcstoul(strvalue, NULL, 10);
               }
           }
@@ -2798,14 +2820,16 @@ int __cdecl wmain (int argc, WCHAR *argvW[])
           WCHAR  strvalue[4];
 
           /* See if DWORD or REG_SZ */
-          if (RegQueryValueExW(key, L"DefaultColor", NULL, &type,
+          if (RegQueryValueExW(key, dfltColorW, NULL, &type,
                      NULL, NULL) == ERROR_SUCCESS) {
               if (type == REG_DWORD) {
                   size = sizeof(DWORD);
-                  RegQueryValueExW(key, L"DefaultColor", NULL, NULL, (BYTE *)&value, &size);
+                  RegQueryValueExW(key, dfltColorW, NULL, NULL,
+                                  (LPBYTE)&value, &size);
               } else if (type == REG_SZ) {
-                  size = sizeof(strvalue);
-                  RegQueryValueExW(key, L"DefaultColor", NULL, NULL, (BYTE *)strvalue, &size);
+                  size = ARRAY_SIZE(strvalue);
+                  RegQueryValueExW(key, dfltColorW, NULL, NULL,
+                                  (LPBYTE)strvalue, &size);
                   value = wcstoul(strvalue, NULL, 10);
               }
           }

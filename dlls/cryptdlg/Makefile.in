@@ -1,7 +1,7 @@
 MODULE    = cryptdlg.dll
 IMPORTS   = cryptui crypt32 wintrust user32 advapi32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	main.c

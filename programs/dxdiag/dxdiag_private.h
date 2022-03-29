@@ -19,7 +19,6 @@
  */
 
 #include <windef.h>
-#include <winuser.h>
 
 /* Resource definitions. */
 #define MAX_STRING_LEN          1024

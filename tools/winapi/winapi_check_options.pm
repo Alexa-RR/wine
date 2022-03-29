@@ -17,11 +17,9 @@
 #
 
 package winapi_check_options;
+use base qw(options);
 
 use strict;
-use warnings 'all';
-
-use base qw(options);
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 require Exporter;
@@ -163,11 +161,9 @@ my $options_usage = "usage: winapi_check [--help] [<files>]\n";
 $options = '_winapi_check_options'->new(\%options_long, \%options_short, $options_usage);
 
 package _winapi_check_options;
+use base qw(_options);
 
 use strict;
-use warnings 'all';
-
-use base qw(_options);
 
 sub report_module($$) {
     my $self = shift;

@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include "winedump.h"
 
@@ -91,7 +92,7 @@ static const char * const known_longs[] =
 void symbol_init(parsed_symbol* sym, const char* name)
 {
     memset(sym, 0, sizeof(parsed_symbol));
-    sym->symbol = xstrdup(name);
+    sym->symbol = strdup(name);
 }
 
 /*******************************************************************

@@ -7,4 +7,3 @@
 @ stdcall -private DllUnregisterServer()
 @ stdcall IEGetWriteableHKCU(ptr)
 @ stdcall OpenURL(long long str long)
-@ stdcall SetQueryNetSessionCount(long)

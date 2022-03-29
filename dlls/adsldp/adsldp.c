@@ -38,7 +38,6 @@
 #include "lmcons.h"
 #include "lmapibuf.h"
 #include "winldap.h"
-#include "winber.h"
 
 #include "adsldp_private.h"
 
@@ -52,6 +51,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(adsldp);
 
 DEFINE_GUID(CLSID_LDAP,0x228d9a81,0xc302,0x11cf,0x9a,0xa4,0x00,0xaa,0x00,0x4a,0x56,0x91);
 DEFINE_GUID(CLSID_LDAPNamespace,0x228d9a82,0xc302,0x11cf,0x9a,0xa4,0x00,0xaa,0x00,0x4a,0x56,0x91);
+
+static HMODULE adsldp_hinst;
 
 static HRESULT LDAPNamespace_create(REFIID riid, void **obj);
 
@@ -218,21 +219,21 @@ static HRESULT WINAPI sysinfo_GetTypeInfoCount(IADsADSystemInfo *iface, UINT *co
 
 static HRESULT WINAPI sysinfo_GetTypeInfo(IADsADSystemInfo *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%#lx,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%#x,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sysinfo_GetIDsOfNames(IADsADSystemInfo *iface, REFIID riid, LPOLESTR *names,
                                             UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sysinfo_Invoke(IADsADSystemInfo *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                      DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -245,7 +246,7 @@ static HRESULT WINAPI sysinfo_get_UserName(IADsADSystemInfo *iface, BSTR *retval
 
 static HRESULT WINAPI sysinfo_get_ComputerName(IADsADSystemInfo *iface, BSTR *retval)
 {
-    ULONG size;
+    UINT size;
     WCHAR *name;
 
     TRACE("%p,%p\n", iface, retval);
@@ -399,16 +400,11 @@ typedef struct
     struct
     {
         ADS_SCOPEENUM scope;
-        int pagesize;
-        BOOL cache_results;
-        BOOL attribtypes_only;
-        BOOL tombstone;
     } search;
 } LDAP_namespace;
 
 struct ldap_search_context
 {
-    LDAPSearch *page;
     LDAPMessage *res, *entry;
     BerElement *ber;
     ULONG count, pos;
@@ -515,21 +511,21 @@ static HRESULT WINAPI ldapns_GetTypeInfoCount(IADs *iface, UINT *count)
 
 static HRESULT WINAPI ldapns_GetTypeInfo(IADs *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%#lx,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%#x,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ldapns_GetIDsOfNames(IADs *iface, REFIID riid, LPOLESTR *names,
                                            UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ldapns_Invoke(IADs *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                     DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -626,7 +622,7 @@ static HRESULT WINAPI ldapns_Get(IADs *iface, BSTR name, VARIANT *prop)
                 VARIANT item;
                 LONG idx;
 
-                TRACE("attr %s has %lu values\n", debugstr_w(ldap->attrs[i].name), count);
+                TRACE("attr %s has %u values\n", debugstr_w(ldap->attrs[i].name), count);
 
                 sa = SafeArrayCreateVector(VT_VARIANT, 0, count);
                 if (!sa) return E_OUTOFMEMORY;
@@ -682,7 +678,7 @@ static HRESULT WINAPI ldapns_GetEx(IADs *iface, BSTR name, VARIANT *prop)
 
 static HRESULT WINAPI ldapns_PutEx(IADs *iface, LONG code, BSTR name, VARIANT prop)
 {
-    FIXME("%p,%ld,%s,%s: stub\n", iface, code, debugstr_w(name), wine_dbgstr_variant(&prop));
+    FIXME("%p,%d,%s,%s: stub\n", iface, code, debugstr_w(name), wine_dbgstr_variant(&prop));
     return E_NOTIMPL;
 }
 
@@ -723,7 +719,7 @@ static HRESULT WINAPI ldapns_GetInfoEx(IADs *iface, VARIANT prop, LONG reserved)
     LDAPMessage *res = NULL, *entry;
     BerElement *ber;
 
-    TRACE("%p,%s,%ld\n", iface, wine_dbgstr_variant(&prop), reserved);
+    TRACE("%p,%s,%d\n", iface, wine_dbgstr_variant(&prop), reserved);
 
     free_attributes(ldap);
 
@@ -764,7 +760,7 @@ static HRESULT WINAPI ldapns_GetInfoEx(IADs *iface, VARIANT prop, LONG reserved)
     err = ldap_search_sW(ldap->ld, NULL, LDAP_SCOPE_BASE, (WCHAR *)L"(objectClass=*)", props, FALSE, &res);
     if (err != LDAP_SUCCESS)
     {
-        TRACE("ldap_search_sW error %#lx\n", err);
+        TRACE("ldap_search_sW error %#x\n", err);
         hr = HRESULT_FROM_WIN32(map_ldap_error(err));
         goto exit;
     }
@@ -784,14 +780,12 @@ static HRESULT WINAPI ldapns_GetInfoEx(IADs *iface, VARIANT prop, LONG reserved)
             {
                 ldap_value_freeW(values);
                 ldap_memfreeW(attr);
-                ber_free(ber, 0);
                 goto exit;
             }
 
             attr = ldap_next_attributeW(ldap->ld, entry, ber);
         }
 
-        ber_free(ber, 0);
         entry = ldap_next_entry(ldap->ld, res);
     }
 
@@ -870,21 +864,21 @@ static HRESULT WINAPI openobj_GetTypeInfoCount(IADsOpenDSObject *iface, UINT *co
 
 static HRESULT WINAPI openobj_GetTypeInfo(IADsOpenDSObject *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%#lx,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%#x,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI openobj_GetIDsOfNames(IADsOpenDSObject *iface, REFIID riid, LPOLESTR *names,
                                             UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI openobj_Invoke(IADsOpenDSObject *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                      DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -964,12 +958,12 @@ static HRESULT WINAPI openobj_OpenDSObject(IADsOpenDSObject *iface, BSTR path, B
     ULONG err, at_single_count = 0, at_multiple_count = 0;
     struct attribute_type *at = NULL;
 
-    TRACE("%p,%s,%s,%p,%08lx,%p\n", iface, debugstr_w(path), debugstr_w(user), password, flags, obj);
+    TRACE("%p,%s,%s,%p,%08x,%p\n", iface, debugstr_w(path), debugstr_w(user), password, flags, obj);
 
     hr = parse_path(path, &host, &port, &object);
     if (hr != S_OK) return hr;
 
-    TRACE("host %s, port %lu, object %s\n", debugstr_w(host), port, debugstr_w(object));
+    TRACE("host %s, port %u, object %s\n", debugstr_w(host), port, debugstr_w(object));
 
     if (host)
     {
@@ -990,7 +984,7 @@ static HRESULT WINAPI openobj_OpenDSObject(IADsOpenDSObject *iface, BSTR path, B
             err = DsGetDcNameW(NULL, NULL, NULL, NULL, DS_RETURN_DNS_NAME, &dcinfo);
             if (err != ERROR_SUCCESS)
             {
-                hr = HRESULT_FROM_WIN32(err);
+                hr = HRESULT_FROM_WIN32(LdapGetLastError());
                 goto fail;
             }
 
@@ -1043,7 +1037,7 @@ static HRESULT WINAPI openobj_OpenDSObject(IADsOpenDSObject *iface, BSTR path, B
             err = ldap_bind_sW(ld, NULL, (WCHAR *)&id, LDAP_AUTH_NEGOTIATE);
             if (err != LDAP_SUCCESS)
             {
-                TRACE("ldap_bind_sW error %#lx\n", err);
+                TRACE("ldap_bind_sW error %#x\n", err);
                 hr = HRESULT_FROM_WIN32(map_ldap_error(err));
                 ldap_unbind(ld);
                 goto fail;
@@ -1054,7 +1048,7 @@ static HRESULT WINAPI openobj_OpenDSObject(IADsOpenDSObject *iface, BSTR path, B
             err = ldap_simple_bind_sW(ld, user, password);
             if (err != LDAP_SUCCESS)
             {
-                TRACE("ldap_simple_bind_sW error %#lx\n", err);
+                TRACE("ldap_simple_bind_sW error %#x\n", err);
                 hr = HRESULT_FROM_WIN32(map_ldap_error(err));
                 ldap_unbind(ld);
                 goto fail;
@@ -1140,7 +1134,7 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
     HRESULT hr = S_OK;
     DWORD i;
 
-    TRACE("%p,%p,%lu\n", iface, prefs, count);
+    TRACE("%p,%p,%u\n", iface, prefs, count);
 
     for (i = 0; i < count; i++)
     {
@@ -1149,7 +1143,7 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
         case ADS_SEARCHPREF_SEARCH_SCOPE:
             if (prefs[i].vValue.dwType != ADSTYPE_INTEGER)
             {
-                FIXME("ADS_SEARCHPREF_SEARCH_SCOPE: unsupported dwType %d\n", prefs[i].vValue.dwType);
+                FIXME("ADS_SEARCHPREF_SEACH_SCOPE: not supportd dwType %d\n", prefs[i].vValue.dwType);
                 prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
                 break;
             }
@@ -1159,7 +1153,7 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
             case ADS_SCOPE_BASE:
             case ADS_SCOPE_ONELEVEL:
             case ADS_SCOPE_SUBTREE:
-                TRACE("SEARCH_SCOPE: %ld\n", prefs[i].vValue.u.Integer);
+                TRACE("SEARCH_SCOPE: %d\n", prefs[i].vValue.u.Integer);
                 ldap->search.scope = prefs[i].vValue.u.Integer;
                 prefs[i].dwStatus = ADS_STATUS_S_OK;
                 break;
@@ -1180,12 +1174,12 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
 
             if (prefs[i].vValue.dwType != ADSTYPE_INTEGER)
             {
-                FIXME("ADS_SEARCHPREF_SECURITY_MASK: not supported dwType %d\n", prefs[i].vValue.dwType);
+                FIXME("ADS_SEARCHPREF_SECURITY_MASK: not supportd dwType %d\n", prefs[i].vValue.dwType);
                 prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
                 break;
             }
 
-            TRACE("SECURITY_MASK: %08lx\n", prefs[i].vValue.u.Integer);
+            TRACE("SECURITY_MASK: %08x\n", prefs[i].vValue.u.Integer);
             security_mask = prefs[i].vValue.u.Integer;
             if (!security_mask)
                 security_mask = ADS_SECURITY_INFO_OWNER;
@@ -1208,7 +1202,7 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
             err = ldap_set_optionW(ldap->ld, LDAP_OPT_SERVER_CONTROLS, ctrls);
             if (err != LDAP_SUCCESS)
             {
-                TRACE("ldap_set_option error %#lx\n", err);
+                TRACE("ldap_set_option error %#x\n", err);
                 prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREF;
                 hr = S_ADS_ERRORSOCCURRED;
             }
@@ -1219,58 +1213,6 @@ static HRESULT WINAPI search_SetSearchPreference(IDirectorySearch *iface, PADS_S
             ber_free(ber, 1);
             break;
         }
-
-        case ADS_SEARCHPREF_PAGESIZE:
-            if (prefs[i].vValue.dwType != ADSTYPE_INTEGER)
-            {
-                FIXME("ADS_SEARCHPREF_PAGESIZE: unsupported dwType %d\n", prefs[i].vValue.dwType);
-                prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
-                break;
-            }
-
-            TRACE("PAGESIZE: %ld\n", prefs[i].vValue.u.Integer);
-            ldap->search.pagesize = prefs[i].vValue.u.Integer;
-            prefs[i].dwStatus = ADS_STATUS_S_OK;
-            break;
-
-        case ADS_SEARCHPREF_CACHE_RESULTS:
-            if (prefs[i].vValue.dwType != ADSTYPE_BOOLEAN)
-            {
-                FIXME("ADS_SEARCHPREF_CACHE_RESULTS: unsupported dwType %d\n", prefs[i].vValue.dwType);
-                prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
-                break;
-            }
-
-            TRACE("CACHE_RESULTS: %ld\n", prefs[i].vValue.u.Boolean);
-            ldap->search.cache_results = prefs[i].vValue.u.Boolean;
-            prefs[i].dwStatus = ADS_STATUS_S_OK;
-            break;
-
-        case ADS_SEARCHPREF_ATTRIBTYPES_ONLY:
-            if (prefs[i].vValue.dwType != ADSTYPE_BOOLEAN)
-            {
-                FIXME("ADS_SEARCHPREF_ATTRIBTYPES_ONLY: unsupported dwType %d\n", prefs[i].vValue.dwType);
-                prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
-                break;
-            }
-
-            TRACE("ATTRIBTYPES_ONLY: %ld\n", prefs[i].vValue.u.Boolean);
-            ldap->search.attribtypes_only = prefs[i].vValue.u.Boolean;
-            prefs[i].dwStatus = ADS_STATUS_S_OK;
-            break;
-
-        case ADS_SEARCHPREF_TOMBSTONE:
-            if (prefs[i].vValue.dwType != ADSTYPE_BOOLEAN)
-            {
-                FIXME("ADS_SEARCHPREF_TOMBSTONE: unsupported dwType %d\n", prefs[i].vValue.dwType);
-                prefs[i].dwStatus = ADS_STATUS_INVALID_SEARCHPREFVALUE;
-                break;
-            }
-
-            TRACE("TOMBSTONE: %ld\n", prefs[i].vValue.u.Boolean);
-            ldap->search.tombstone = prefs[i].vValue.u.Boolean;
-            prefs[i].dwStatus = ADS_STATUS_S_OK;
-            break;
 
         default:
             FIXME("pref %d, type %u: stub\n", prefs[i].dwSearchPref, prefs[i].vValue.dwType);
@@ -1288,10 +1230,9 @@ static HRESULT WINAPI search_ExecuteSearch(IDirectorySearch *iface, LPWSTR filte
     LDAP_namespace *ldap = impl_from_IDirectorySearch(iface);
     ULONG err, i;
     WCHAR **props;
-    LDAPControlW **ctrls = NULL, *ctrls_a[2], tombstone;
     struct ldap_search_context *ldap_ctx;
 
-    TRACE("%p,%s,%p,%lu,%p\n", iface, debugstr_w(filter), names, count, res);
+    TRACE("%p,%s,%p,%u,%p\n", iface, debugstr_w(filter), names, count, res);
 
     if (!res) return E_ADS_BAD_PARAMETER;
 
@@ -1302,11 +1243,7 @@ static HRESULT WINAPI search_ExecuteSearch(IDirectorySearch *iface, LPWSTR filte
         props = NULL;
     else
     {
-        if (count && !names)
-        {
-            heap_free(ldap_ctx);
-            return E_ADS_BAD_PARAMETER;
-        }
+        if (count && !names) return E_ADS_BAD_PARAMETER;
 
         props = heap_alloc((count + 1) * sizeof(props[0]));
         if (!props)
@@ -1324,37 +1261,11 @@ static HRESULT WINAPI search_ExecuteSearch(IDirectorySearch *iface, LPWSTR filte
         props[count] = NULL;
     }
 
-    if (ldap->search.tombstone)
-    {
-        tombstone.ldctl_oid = (WCHAR *)L"1.2.840.113556.1.4.417";
-        tombstone.ldctl_iscritical = TRUE;
-        tombstone.ldctl_value.bv_val = NULL;
-        tombstone.ldctl_value.bv_len = 0;
-        ctrls_a[0] = &tombstone;
-        ctrls_a[1] = NULL;
-        ctrls = ctrls_a;
-    }
-
-    if (ldap->search.pagesize)
-    {
-        ldap_ctx->page = ldap_search_init_pageW(ldap->ld, ldap->object, ldap->search.scope,
-                                                filter, props, ldap->search.attribtypes_only,
-                                                ctrls, NULL, 0, 0, NULL);
-        if (ldap_ctx->page)
-            err = ldap_get_next_page_s(ldap->ld, ldap_ctx->page, NULL,
-                                       ldap->search.pagesize, &count, &ldap_ctx->res);
-        else
-            err = LDAP_NO_MEMORY;
-    }
-    else
-        err = ldap_search_ext_sW(ldap->ld, ldap->object, ldap->search.scope, filter, props,
-                                 ldap->search.attribtypes_only, ctrls, NULL, NULL, 0, &ldap_ctx->res);
+    err = ldap_search_sW(ldap->ld, ldap->object, ldap->search.scope, filter, props, FALSE, &ldap_ctx->res);
     heap_free(props);
     if (err != LDAP_SUCCESS)
     {
-        TRACE("ldap_search_sW error %#lx\n", err);
-        if (ldap_ctx->page)
-            ldap_search_abandon_page(ldap->ld, ldap_ctx->page);
+        TRACE("ldap_search_sW error %#x\n", err);
         heap_free(ldap_ctx);
         return HRESULT_FROM_WIN32(map_ldap_error(err));
     }
@@ -1404,42 +1315,11 @@ static HRESULT WINAPI search_GetNextRow(IDirectorySearch *iface, ADS_SEARCH_HAND
     else
     {
         if (ldap_ctx->pos >= ldap_ctx->count)
-        {
-            if (ldap_ctx->page)
-            {
-                ULONG err, count;
-
-                ldap_msgfree(ldap_ctx->res);
-                ldap_ctx->res = NULL;
-
-                err = ldap_get_next_page_s(ldap->ld, ldap_ctx->page, NULL, ldap->search.pagesize, &count, &ldap_ctx->res);
-                if (err == LDAP_SUCCESS)
-                {
-                    ldap_ctx->count = ldap_count_entries(ldap->ld, ldap_ctx->res);
-                    ldap_ctx->pos = 0;
-
-                    if (ldap_ctx->pos >= ldap_ctx->count)
-                        return S_ADS_NOMORE_ROWS;
-
-                    ldap_ctx->entry = ldap_first_entry(ldap->ld, ldap_ctx->res);
-                    goto exit;
-                }
-
-                if (err != LDAP_NO_RESULTS_RETURNED)
-                {
-                    TRACE("ldap_get_next_page_s error %#lx\n", err);
-                    return HRESULT_FROM_WIN32(map_ldap_error(err));
-                }
-                /* fall through */
-            }
-
             return S_ADS_NOMORE_ROWS;
-        }
 
-        ldap_ctx->entry = ldap_next_entry(ldap->ld, ldap_ctx->entry);
+        ldap_ctx->entry = ldap_next_entry(ldap->ld, ldap_ctx->res);
     }
 
-exit:
     if (!ldap_ctx->entry)
         return S_ADS_NOMORE_ROWS;
 
@@ -1513,10 +1393,13 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
     {
         WCHAR **values = ldap_get_valuesW(ldap->ld, ldap_ctx->entry, name);
         if (!values)
+        {
+            memset(col, 0, sizeof(*col));
             return E_ADS_COLUMN_NOT_SET;
+        }
         count = ldap_count_valuesW(values);
 
-        col->pADsValues = heap_alloc_zero(count * sizeof(col->pADsValues[0]));
+        col->pADsValues = heap_alloc(count * sizeof(col->pADsValues[0]));
         if (!col->pADsValues)
         {
             ldap_value_freeW(values);
@@ -1538,10 +1421,13 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
     {
         WCHAR **values = ldap_get_valuesW(ldap->ld, ldap_ctx->entry, name);
         if (!values)
+        {
+            memset(col, 0, sizeof(*col));
             return E_ADS_COLUMN_NOT_SET;
+        }
         count = ldap_count_valuesW(values);
 
-        col->pADsValues = heap_alloc_zero(count * sizeof(col->pADsValues[0]));
+        col->pADsValues = heap_alloc(count * sizeof(col->pADsValues[0]));
         if (!col->pADsValues)
         {
             ldap_value_freeW(values);
@@ -1552,16 +1438,16 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
         {
             col->pADsValues[i].dwType = type;
 
-            if (!wcsicmp(values[i], L"TRUE"))
+            if (wcsicmp(values[i], L"TRUE"))
                 col->pADsValues[i].u.Boolean = 1;
-            else if (!wcsicmp(values[i], L"FALSE"))
+            else if (wcsicmp(values[i], L"FALSE"))
                 col->pADsValues[i].u.Boolean = 0;
             else
             {
                 FIXME("not recognized boolean value %s\n", debugstr_w(values[i]));
                 col->pADsValues[i].u.Boolean = 0;
             }
-            TRACE("%s => %ld\n", debugstr_w(values[i]), col->pADsValues[i].u.Boolean);
+            TRACE("=> %d\n", col->pADsValues[i].u.Boolean);
         }
 
         ldap_value_freeW(values);
@@ -1570,37 +1456,29 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
     }
 
     case ADSTYPE_INTEGER:
-    case ADSTYPE_LARGE_INTEGER:
     {
-        struct berval **values = ldap_get_values_lenW(ldap->ld, ldap_ctx->entry, name);
+        WCHAR **values = ldap_get_valuesW(ldap->ld, ldap_ctx->entry, name);
         if (!values)
+        {
+            memset(col, 0, sizeof(*col));
             return E_ADS_COLUMN_NOT_SET;
-        count = ldap_count_values_len(values);
+        }
+        count = ldap_count_valuesW(values);
 
-        col->pADsValues = heap_alloc_zero(count * sizeof(col->pADsValues[0]));
+        col->pADsValues = heap_alloc(count * sizeof(col->pADsValues[0]));
         if (!col->pADsValues)
         {
-            ldap_value_free_len(values);
+            ldap_value_freeW(values);
             return E_OUTOFMEMORY;
         }
 
         for (i = 0; i < count; i++)
         {
-            col->pADsValues[i].dwType = type;
-
-            if (type == ADSTYPE_LARGE_INTEGER)
-            {
-                col->pADsValues[i].u.LargeInteger.QuadPart = _atoi64(values[i]->bv_val);
-                TRACE("%s => %s\n", debugstr_an(values[i]->bv_val, values[i]->bv_len), wine_dbgstr_longlong(col->pADsValues[i].u.LargeInteger.QuadPart));
-            }
-            else
-            {
-                col->pADsValues[i].u.Integer = atol(values[i]->bv_val);
-                TRACE("%s => %ld\n", debugstr_an(values[i]->bv_val, values[i]->bv_len), col->pADsValues[i].u.Integer);
-            }
+            col->pADsValues[i].u.Integer = wcstol(values[i], NULL, 10);
+            TRACE("%s => %d\n", debugstr_w(values[i]), col->pADsValues[i].u.Integer);
         }
 
-        ldap_value_free_len(values);
+        ldap_value_freeW(values);
         col->hReserved = NULL;
         break;
     }
@@ -1610,10 +1488,13 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
     {
         struct berval **values = ldap_get_values_lenW(ldap->ld, ldap_ctx->entry, name);
         if (!values)
+        {
+            memset(col, 0, sizeof(*col));
             return E_ADS_COLUMN_NOT_SET;
+        }
         count = ldap_count_values_len(values);
 
-        col->pADsValues = heap_alloc_zero(count * sizeof(col->pADsValues[0]));
+        col->pADsValues = heap_alloc(count * sizeof(col->pADsValues[0]));
         if (!col->pADsValues)
         {
             ldap_value_free_len(values);
@@ -1626,122 +1507,6 @@ static HRESULT add_column_values(LDAP_namespace *ldap, struct ldap_search_contex
             col->pADsValues[i].dwType = type;
             col->pADsValues[i].u.OctetString.dwLength = values[i]->bv_len;
             col->pADsValues[i].u.OctetString.lpValue = (BYTE *)values[i]->bv_val;
-        }
-
-        col->hReserved = values;
-        break;
-    }
-
-    case ADSTYPE_UTC_TIME:
-    {
-        struct berval **values = ldap_get_values_lenW(ldap->ld, ldap_ctx->entry, name);
-        if (!values)
-            return E_ADS_COLUMN_NOT_SET;
-        count = ldap_count_values_len(values);
-
-        col->pADsValues = heap_alloc_zero(count * sizeof(col->pADsValues[0]));
-        if (!col->pADsValues)
-        {
-            ldap_value_free_len(values);
-            return E_OUTOFMEMORY;
-        }
-
-        for (i = 0; i < count; i++)
-        {
-            col->pADsValues[i].dwType = type;
-            if (values[i]->bv_len < 14 ||
-                _snscanf_l(values[i]->bv_val, values[i]->bv_len, "%04hu%02hu%02hu%02hu%02hu%02hu", NULL,
-                           &col->pADsValues[i].u.UTCTime.wYear, &col->pADsValues[i].u.UTCTime.wMonth,
-                           &col->pADsValues[i].u.UTCTime.wDay, &col->pADsValues[i].u.UTCTime.wHour,
-                           &col->pADsValues[i].u.UTCTime.wMinute, &col->pADsValues[i].u.UTCTime.wSecond) != 6)
-            {
-                FIXME("not recognized UTCTime: %s\n", debugstr_an(values[i]->bv_val, values[i]->bv_len));
-                memset(&col->pADsValues[i].u.UTCTime, 0, sizeof(col->pADsValues[i].u.UTCTime));
-                continue;
-            }
-
-            if ((values[i]->bv_val[14] != '.' && values[i]->bv_val[14] != ',') ||
-                values[i]->bv_val[15] != '0' || values[i]->bv_val[16] != 'Z')
-                    FIXME("not handled time zone: %s\n", debugstr_an(values[i]->bv_val + 14, values[i]->bv_len - 14));
-
-            TRACE("%s => %02u.%02u.%04u %02u:%02u:%02u\n", debugstr_an(values[i]->bv_val, values[i]->bv_len),
-                  col->pADsValues[i].u.UTCTime.wDay, col->pADsValues[i].u.UTCTime.wMonth,
-                  col->pADsValues[i].u.UTCTime.wYear, col->pADsValues[i].u.UTCTime.wHour,
-                  col->pADsValues[i].u.UTCTime.wMinute, col->pADsValues[i].u.UTCTime.wSecond);
-        }
-
-        ldap_value_free_len(values);
-        col->hReserved = NULL;
-        break;
-    }
-
-    case ADSTYPE_DN_WITH_BINARY:
-    {
-        static const BYTE hex2bin[] =
-        {
-            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,        /* 0x00 */
-            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,        /* 0x10 */
-            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,        /* 0x20 */
-            0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,        /* 0x30 */
-            0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,  /* 0x40 */
-            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,        /* 0x50 */
-            0,10,11,12,13,14,15                     /* 0x60 */
-        };
-        ADS_DN_WITH_BINARY *dnb;
-        WCHAR **values = ldap_get_valuesW(ldap->ld, ldap_ctx->entry, name);
-        if (!values)
-            return E_ADS_COLUMN_NOT_SET;
-        count = ldap_count_valuesW(values);
-
-        col->pADsValues = heap_alloc_zero(count * (sizeof(col->pADsValues[0]) + sizeof(col->pADsValues[0].u.pDNWithBinary[0])));
-        if (!col->pADsValues)
-        {
-            ldap_value_freeW(values);
-            return E_OUTOFMEMORY;
-        }
-
-        dnb = (ADS_DN_WITH_BINARY *)(col->pADsValues + count);
-
-        for (i = 0; i < count; i++)
-        {
-            WCHAR *p = values[i];
-            DWORD n;
-
-            col->pADsValues[i].dwType = type;
-            col->pADsValues[i].u.pDNWithBinary = dnb++;
-
-            if ((p[0] != 'b' && p[0] != 'B') || p[1] != ':')
-                FIXME("wrong DN with binary tag '%c%c'\n", p[0], p[1]);
-            p += 2;
-
-            col->pADsValues[i].u.pDNWithBinary->dwLength = wcstol(p, &p, 10) / 2;
-            if (*p != ':')
-                FIXME("wrong DN with binary separator '%c'\n", *p);
-            p++;
-            col->pADsValues[i].u.pDNWithBinary->lpBinaryValue = (BYTE *)p;
-            /* decode values in-place */
-            for (n = 0; n < col->pADsValues[i].u.pDNWithBinary->dwLength; n++, p += 2)
-            {
-                BYTE b;
-
-                if (p[0] > 'f' || (p[0] != '0' && !hex2bin[p[0]]) ||
-                    p[1] > 'f' || (p[1] != '0' && !hex2bin[p[1]]))
-                {
-                    FIXME("bad hex encoding at %s\n", debugstr_w(p));
-                    continue;
-                }
-
-                b = (hex2bin[p[0]] << 4) | hex2bin[p[1]];
-                col->pADsValues[i].u.pDNWithBinary->lpBinaryValue[n] = b;
-            }
-            if (*p != ':')
-                FIXME("wrong DN with binary separator '%c'\n", *p);
-            col->pADsValues[i].u.pDNWithBinary->pszDNString = p + 1;
-
-            TRACE("%s => %lu,%s,%s\n", debugstr_w(values[i]),
-                  col->pADsValues[i].u.pDNWithBinary->dwLength,
-                  debugstr_an((char *)col->pADsValues[i].u.pDNWithBinary->lpBinaryValue, col->pADsValues[i].u.pDNWithBinary->dwLength),
-                  debugstr_w(col->pADsValues[i].u.pDNWithBinary->pszDNString));
         }
 
         col->hReserved = values;
@@ -1767,8 +1532,6 @@ static HRESULT WINAPI search_GetColumn(IDirectorySearch *iface, ADS_SEARCH_HANDL
     TRACE("%p,%p,%s,%p\n", iface, res, debugstr_w(name), col);
 
     if (!res || !name || !ldap_ctx->entry) return E_ADS_BAD_PARAMETER;
-
-    memset(col, 0, sizeof(*col));
 
     if (!wcsicmp(name, L"ADsPath"))
     {
@@ -1817,14 +1580,10 @@ static HRESULT WINAPI search_FreeColumn(IDirectorySearch *iface, PADS_SEARCH_COL
 
     if (!col) return E_ADS_BAD_PARAMETER;
 
-    if (!wcsicmp(col->pszAttrName, L"ADsPath"))
-        heap_free(col->pADsValues[0].u.CaseIgnoreString);
     heap_free(col->pADsValues);
-    heap_free(col->pszAttrName);
-
     if (col->hReserved)
     {
-        if (col->dwADsType == ADSTYPE_OCTET_STRING || col->dwADsType == ADSTYPE_NT_SECURITY_DESCRIPTOR)
+        if (col->dwADsType == ADSTYPE_OCTET_STRING)
             ldap_value_free_len(col->hReserved);
         else
             ldap_value_freeW(col->hReserved);
@@ -1835,20 +1594,13 @@ static HRESULT WINAPI search_FreeColumn(IDirectorySearch *iface, PADS_SEARCH_COL
 
 static HRESULT WINAPI search_CloseSearchHandle(IDirectorySearch *iface, ADS_SEARCH_HANDLE res)
 {
-    LDAP_namespace *ldap = impl_from_IDirectorySearch(iface);
     struct ldap_search_context *ldap_ctx = res;
 
     TRACE("%p,%p\n", iface, res);
 
     if (!res) return E_ADS_BAD_PARAMETER;
 
-    if (ldap_ctx->page)
-        ldap_search_abandon_page(ldap->ld, ldap_ctx->page);
-    if (ldap_ctx->res)
-        ldap_msgfree(ldap_ctx->res);
-    if (ldap_ctx->ber)
-        ber_free(ldap_ctx->ber, 0);
-    heap_free(ldap_ctx);
+    ldap_msgfree(ldap_ctx->res);
 
     return S_OK;
 }
@@ -1915,21 +1667,21 @@ static HRESULT WINAPI dirobj_GetObjectInformation(IDirectoryObject *iface, PADS_
 static HRESULT WINAPI dirobj_GetObjectAttributes(IDirectoryObject *iface, LPWSTR *names,
                                                  DWORD count, PADS_ATTR_INFO *attrs, DWORD *count_returned)
 {
-    FIXME("%p,%p,%lu,%p,%p: stub\n", iface, names, count, attrs, count_returned);
+    FIXME("%p,%p,%u,%p,%p: stub\n", iface, names, count, attrs, count_returned);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI dirobj_SetObjectAttributes(IDirectoryObject *iface, PADS_ATTR_INFO attrs,
                                                  DWORD count, DWORD *count_set)
 {
-    FIXME("%p,%p,%lu,%p: stub\n", iface, attrs, count, count_set);
+    FIXME("%p,%p,%u,%p: stub\n", iface, attrs, count, count_set);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI dirobj_CreateDSObject(IDirectoryObject *iface, LPWSTR name,
                                             PADS_ATTR_INFO attrs, DWORD count, IDispatch **obj)
 {
-    FIXME("%p,%s,%p,%lu,%p: stub\n", iface, debugstr_w(name), attrs, count, obj);
+    FIXME("%p,%s,%p,%u,%p: stub\n", iface, debugstr_w(name), attrs, count, obj);
     return E_NOTIMPL;
 }
 
@@ -1971,10 +1723,6 @@ static HRESULT LDAPNamespace_create(REFIID riid, void **obj)
     ldap->attrs_count_allocated = 0;
     ldap->attrs = NULL;
     ldap->search.scope = ADS_SCOPE_SUBTREE;
-    ldap->search.pagesize = 0;
-    ldap->search.cache_results = TRUE;
-    ldap->search.attribtypes_only = FALSE;
-    ldap->search.tombstone = FALSE;
     ldap->at = NULL;
     ldap->at_single_count = 0;
     ldap->at_multiple_count = 0;
@@ -2032,7 +1780,7 @@ static ULONG WINAPI factory_AddRef(IClassFactory *iface)
     class_factory *factory = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&factory->ref);
 
-    TRACE("(%p) ref %lu\n", iface, ref);
+    TRACE("(%p) ref %u\n", iface, ref);
 
     return ref;
 }
@@ -2042,7 +1790,7 @@ static ULONG WINAPI factory_Release(IClassFactory *iface)
     class_factory *factory = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&factory->ref);
 
-    TRACE("(%p) ref %lu\n", iface, ref);
+    TRACE("(%p) ref %u\n", iface, ref);
 
     if (!ref)
         heap_free(factory);
@@ -2115,4 +1863,37 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, LPVOID *obj)
 
     FIXME("class %s/%s is not implemented\n", debugstr_guid(clsid), debugstr_guid(iid));
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
+}
+
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources(adsldp_hinst);
+}
+
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources(adsldp_hinst);
+}
+
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, void *reserved)
+{
+    TRACE("%p,%u,%p\n", hinst, reason, reserved);
+
+    switch (reason)
+    {
+    case DLL_WINE_PREATTACH:
+        return FALSE; /* prefer native version */
+
+    case DLL_PROCESS_ATTACH:
+        adsldp_hinst = hinst;
+        DisableThreadLibraryCalls(hinst);
+        break;
+    }
+
+    return TRUE;
 }

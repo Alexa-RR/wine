@@ -30,7 +30,7 @@ typedef struct
 #else
 typedef struct _GUID
 {
-#ifndef __LP64__
+#ifdef _MSC_VER
     unsigned long  Data1;
 #else
     unsigned int   Data1;
@@ -74,7 +74,7 @@ extern "C++" {
         __WINE_UUID_ATTR const GUID __wine_uuidof<type>::uuid = {l,w1,w2,{b1,b2,b3,b4,b5,b6,b7,b8}}; \
     }
 
-#define __uuidof(type) __wine_uuidof_type<__typeof__(type)>::inst::uuid
+#define __uuidof(type) __wine_uuidof_type<typeof(type)>::inst::uuid
 
 #else /* __WINE_UUID_ATTR */
 
@@ -85,14 +85,6 @@ extern "C++" {
 #endif
 
 #undef DEFINE_GUID
-
-#ifndef DECLSPEC_HIDDEN
-# if defined(__GNUC__) && !defined(__MINGW32__) && !defined(__CYGWIN__)
-#  define DECLSPEC_HIDDEN __attribute__((visibility ("hidden")))
-# else
-#  define DECLSPEC_HIDDEN
-# endif
-#endif
 
 #ifdef INITGUID
 #ifdef __cplusplus
@@ -164,18 +156,18 @@ typedef GUID FMTID,*LPFMTID;
 #define IsEqualGUID(rguid1, rguid2) (!memcmp(&(rguid1), &(rguid2), sizeof(GUID)))
 inline int InlineIsEqualGUID(REFGUID rguid1, REFGUID rguid2)
 {
-   return (((unsigned int *)&rguid1)[0] == ((unsigned int *)&rguid2)[0] &&
-           ((unsigned int *)&rguid1)[1] == ((unsigned int *)&rguid2)[1] &&
-           ((unsigned int *)&rguid1)[2] == ((unsigned int *)&rguid2)[2] &&
-           ((unsigned int *)&rguid1)[3] == ((unsigned int *)&rguid2)[3]);
+   return (((ULONG *)&rguid1)[0] == ((ULONG *)&rguid2)[0] &&
+           ((ULONG *)&rguid1)[1] == ((ULONG *)&rguid2)[1] &&
+           ((ULONG *)&rguid1)[2] == ((ULONG *)&rguid2)[2] &&
+           ((ULONG *)&rguid1)[3] == ((ULONG *)&rguid2)[3]);
 }
 #else
 #define IsEqualGUID(rguid1, rguid2) (!memcmp(rguid1, rguid2, sizeof(GUID)))
 #define InlineIsEqualGUID(rguid1, rguid2)  \
-        (((unsigned int *)rguid1)[0] == ((unsigned int *)rguid2)[0] && \
-         ((unsigned int *)rguid1)[1] == ((unsigned int *)rguid2)[1] && \
-         ((unsigned int *)rguid1)[2] == ((unsigned int *)rguid2)[2] && \
-         ((unsigned int *)rguid1)[3] == ((unsigned int *)rguid2)[3])
+        (((ULONG *)rguid1)[0] == ((ULONG *)rguid2)[0] && \
+         ((ULONG *)rguid1)[1] == ((ULONG *)rguid2)[1] && \
+         ((ULONG *)rguid1)[2] == ((ULONG *)rguid2)[2] && \
+         ((ULONG *)rguid1)[3] == ((ULONG *)rguid2)[3])
 #endif
 
 #ifdef __cplusplus

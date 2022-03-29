@@ -78,7 +78,7 @@ static int WINAPIV NETSTAT_wprintf(const WCHAR *format, ...)
     static BOOL  traceOutput  = FALSE;
 #define MAX_WRITECONSOLE_SIZE 65535
 
-    va_list parms;
+    __ms_va_list parms;
     DWORD   nOut;
     int len;
     DWORD   res = 0;
@@ -96,9 +96,9 @@ static int WINAPIV NETSTAT_wprintf(const WCHAR *format, ...)
         return 0;
     }
 
-    va_start(parms, format);
+    __ms_va_start(parms, format);
     len = wvsprintfW(output_bufW, format, parms);
-    va_end(parms);
+    __ms_va_end(parms);
 
     /* Try to write as unicode all the time we think it's a console */
     if (toConsole) {
@@ -145,7 +145,7 @@ static WCHAR *NETSTAT_load_message(UINT id) {
     static const WCHAR failedW[]  = {'F','a','i','l','e','d','!','\0'};
 
     if (!LoadStringW(GetModuleHandleW(NULL), id, msg, ARRAY_SIZE(msg))) {
-        WINE_FIXME("LoadString failed with %ld\n", GetLastError());
+        WINE_FIXME("LoadString failed with %d\n", GetLastError());
         lstrcpyW(msg, failedW);
     }
     return msg;

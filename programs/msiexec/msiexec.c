@@ -22,7 +22,6 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <windows.h>
-#include <commctrl.h>
 #include <msi.h>
 #include <winsvc.h>
 #include <objbase.h>
@@ -47,6 +46,19 @@ struct string_list
 	WCHAR str[1];
 };
 
+static const WCHAR ActionAdmin[] = {
+   'A','C','T','I','O','N','=','A','D','M','I','N',0 };
+static const WCHAR RemoveAll[] = {
+   'R','E','M','O','V','E','=','A','L','L',0 };
+
+static const WCHAR InstallRunOnce[] = {
+   'S','o','f','t','w','a','r','e','\\',
+   'M','i','c','r','o','s','o','f','t','\\',
+   'W','i','n','d','o','w','s','\\',
+   'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+   'I','n','s','t','a','l','l','e','r','\\',
+   'R','u','n','O','n','c','e','E','n','t','r','i','e','s',0};
+
 static void ShowUsage(int ExitCode)
 {
     WCHAR msiexec_version[40];
@@ -61,13 +73,13 @@ static void ShowUsage(int ExitCode)
     *filename = 0;
     res = GetModuleFileNameW(hmsi, filename, ARRAY_SIZE(filename));
     if (!res)
-        WINE_ERR("GetModuleFileName failed: %ld\n", GetLastError());
+        WINE_ERR("GetModuleFileName failed: %d\n", GetLastError());
 
     len = ARRAY_SIZE(msiexec_version);
     *msiexec_version = 0;
     res = MsiGetFileVersionW(filename, msiexec_version, &len, NULL, NULL);
     if (res)
-        WINE_ERR("MsiGetFileVersion failed with %ld\n", res);
+        WINE_ERR("MsiGetFileVersion failed with %d\n", res);
 
     /* Return the length of the resource.
        No typo: The LPWSTR parameter must be a LPWSTR * for this mode */
@@ -327,6 +339,8 @@ static DWORD DoDllUnregisterServer(LPCWSTR DllName)
 
 static DWORD DoRegServer(void)
 {
+    static const WCHAR msiserverW[] = {'M','S','I','S','e','r','v','e','r',0};
+    static const WCHAR msiexecW[] = {'\\','m','s','i','e','x','e','c',' ','/','V',0};
     SC_HANDLE scm, service;
     WCHAR path[MAX_PATH+12];
     DWORD len, ret = 0;
@@ -337,8 +351,8 @@ static DWORD DoRegServer(void)
         return 1;
     }
     len = GetSystemDirectoryW(path, MAX_PATH);
-    lstrcpyW(path + len, L"\\msiexec /V");
-    if ((service = CreateServiceW(scm, L"MSIServer", L"MSIServer", GENERIC_ALL,
+    lstrcpyW(path + len, msiexecW);
+    if ((service = CreateServiceW(scm, msiserverW, msiserverW, GENERIC_ALL,
                                   SERVICE_WIN32_SHARE_PROCESS, SERVICE_DEMAND_START,
                                   SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL)))
     {
@@ -355,6 +369,7 @@ static DWORD DoRegServer(void)
 
 static DWORD DoUnregServer(void)
 {
+    static const WCHAR msiserverW[] = {'M','S','I','S','e','r','v','e','r',0};
     SC_HANDLE scm, service;
     DWORD ret = 0;
 
@@ -363,7 +378,7 @@ static DWORD DoUnregServer(void)
         fprintf(stderr, "Failed to open service control manager\n");
         return 1;
     }
-    if ((service = OpenServiceW(scm, L"MSIServer", DELETE)))
+    if ((service = OpenServiceW(scm, msiserverW, DELETE)))
     {
         if (!DeleteService(service))
         {
@@ -394,6 +409,7 @@ static DWORD CALLBACK custom_action_thread(void *arg)
 
 static int custom_action_server(const WCHAR *arg)
 {
+    static const WCHAR pipe_name[] = {'\\','\\','.','\\','p','i','p','e','\\','m','s','i','c','a','_','%','x','_','%','d',0};
     GUID guid, *thread_guid;
     DWORD64 thread64;
     WCHAR buffer[24];
@@ -409,11 +425,11 @@ static int custom_action_server(const WCHAR *arg)
         return 1;
     }
 
-    swprintf(buffer, ARRAY_SIZE(buffer), L"\\\\.\\pipe\\msica_%x_%d", client_pid, sizeof(void *) * 8);
+    swprintf(buffer, ARRAY_SIZE(buffer), pipe_name, client_pid, sizeof(void *) * 8);
     pipe = CreateFileW(buffer, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (pipe == INVALID_HANDLE_VALUE)
     {
-        ERR("Failed to create custom action server pipe: %lu\n", GetLastError());
+        ERR("Failed to create custom action server pipe: %u\n", GetLastError());
         return GetLastError();
     }
 
@@ -438,12 +454,12 @@ static int custom_action_server(const WCHAR *arg)
         thread64 = (DWORD_PTR)thread;
         if (!WriteFile(pipe, &thread64, sizeof(thread64), &size, NULL) || size != sizeof(thread64))
         {
-            ERR("Failed to write to custom action server pipe: %lu\n", GetLastError());
+            ERR("Failed to write to custom action server pipe: %u\n", GetLastError());
             CoUninitialize();
             return GetLastError();
         }
     }
-    ERR("Failed to read from custom action server pipe: %lu\n", GetLastError());
+    ERR("Failed to read from custom action server pipe: %u\n", GetLastError());
     CoUninitialize();
     return GetLastError();
 }
@@ -561,8 +577,7 @@ static BOOL process_args_from_reg( const WCHAR *ident, int *pargc, WCHAR ***parg
 	WCHAR *buf;
 	BOOL ret = FALSE;
 
-	r = RegOpenKeyW(HKEY_LOCAL_MACHINE,
-			L"Software\\Microsoft\\Windows\\CurrentVersion\\Installer\\RunOnceEntries", &hkey);
+	r = RegOpenKeyW(HKEY_LOCAL_MACHINE, InstallRunOnce, &hkey);
 	if(r != ERROR_SUCCESS)
 		return FALSE;
 	r = RegQueryValueExW(hkey, ident, 0, &type, 0, &sz);
@@ -586,31 +601,6 @@ static BOOL process_args_from_reg( const WCHAR *ident, int *pargc, WCHAR ***parg
 	}
 	RegCloseKey(hkey);
 	return ret;
-}
-
-static WCHAR *get_path_with_extension(const WCHAR *package_name)
-{
-    static const WCHAR ext[] = L".msi";
-    unsigned int p;
-    WCHAR *path;
-
-    if (!(path = heap_alloc(lstrlenW(package_name) * sizeof(WCHAR) + sizeof(ext))))
-    {
-        WINE_ERR("No memory.\n");
-        return NULL;
-    }
-
-    lstrcpyW(path, package_name);
-    p = lstrlenW(path);
-    while (p && path[p] != '.' && path[p] != L'\\' && path[p] != '/')
-        --p;
-    if (path[p] == '.')
-    {
-        heap_free(path);
-        return NULL;
-    }
-    lstrcatW(path, ext);
-    return path;
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -651,9 +641,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	DWORD ReturnCode;
 	int argc;
 	LPWSTR *argvW = NULL;
-	WCHAR *path;
-
-        InitCommonControls();
 
 	/* parse the command line */
 	process_args( GetCommandLineW(), &argc, &argvW );
@@ -713,7 +700,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				ShowUsage(1);
 			WINE_TRACE("argvW[%d] = %s\n", i, wine_dbgstr_w(argvW[i]));
 			PackageName = argvW[i];
-			StringListAppend(&property_list, L"ACTION=ADMIN");
+			StringListAppend(&property_list, ActionAdmin);
 			WINE_FIXME("Administrative installs are not currently supported\n");
 		}
 		else if(msi_option_prefix(argvW[i], "f"))
@@ -796,7 +783,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				PackageName = argvW[i];
 			}
 			WINE_TRACE("PackageName = %s\n", wine_dbgstr_w(PackageName));
-			StringListAppend(&property_list, L"REMOVE=ALL");
+			StringListAppend(&property_list, RemoveAll);
 		}
 		else if(msi_option_prefix(argvW[i], "j"))
 		{
@@ -948,7 +935,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			LogFileName = argvW[i];
 			if(MsiEnableLogW(LogMode, LogFileName, LogAttributes) != ERROR_SUCCESS)
 			{
-				fprintf(stderr, "Logging in %s (0x%08lx, %lu) failed\n",
+				fprintf(stderr, "Logging in %s (0x%08x, %u) failed\n",
 					 wine_dbgstr_w(LogFileName), LogMode, LogAttributes);
 				ExitProcess(1);
 			}
@@ -1009,8 +996,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		}
                 else if(msi_option_equal(argvW[i], "passive"))
                 {
+                    static const WCHAR rebootpromptW[] =
+                        {'R','E','B','O','O','T','P','R','O','M','P','T','=','"','S','"',0};
+
                     InstallUILevel = INSTALLUILEVEL_BASIC|INSTALLUILEVEL_PROGRESSONLY|INSTALLUILEVEL_HIDECANCEL;
-                    StringListAppend(&property_list, L"REBOOTPROMPT=\"S\"");
+                    StringListAppend(&property_list, rebootpromptW);
                 }
 		else if(msi_option_equal(argvW[i], "y"))
 		{
@@ -1066,28 +1056,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		if(IsProductCode(PackageName))
 			ReturnCode = MsiConfigureProductExW(PackageName, 0, INSTALLSTATE_DEFAULT, Properties);
 		else
-		{
-			if ((ReturnCode = MsiInstallProductW(PackageName, Properties)) == ERROR_FILE_NOT_FOUND
-					&& (path = get_path_with_extension(PackageName)))
-			{
-				ReturnCode = MsiInstallProductW(path, Properties);
-				heap_free(path);
-			}
-		}
+			ReturnCode = MsiInstallProductW(PackageName, Properties);
 	}
 	else if(FunctionRepair)
 	{
 		if(IsProductCode(PackageName))
 			WINE_FIXME("Product code treatment not implemented yet\n");
 		else
-		{
-			if ((ReturnCode = MsiReinstallProductW(PackageName, RepairMode)) == ERROR_FILE_NOT_FOUND
-					&& (path = get_path_with_extension(PackageName)))
-			{
-				ReturnCode = MsiReinstallProductW(path, RepairMode);
-				heap_free(path);
-			}
-		}
+			ReturnCode = MsiReinstallProductW(PackageName, RepairMode);
 	}
 	else if(FunctionAdvertise)
 	{

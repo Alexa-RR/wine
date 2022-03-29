@@ -24,7 +24,7 @@
 @ stub CryptExtOpenPKCS7W
 @ stub CryptExtOpenSTR
 @ stub CryptExtOpenSTRW
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
-@ stdcall -private DllRegisterServer()
-@ stdcall -private DllUnregisterServer()
+@ stub DllRegisterServer
+@ stub DllUnregisterServer

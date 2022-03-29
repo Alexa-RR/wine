@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -150,11 +151,11 @@ static int killcomment(char *s)
 
 void write_h_file(const char *fname)
 {
-	struct node *ndp;
+	node_t *ndp;
 	char *cptr;
 	char *cast;
 	FILE *fp;
-	struct token *ttab;
+	token_t *ttab;
 	int ntab;
 	int i;
 	int once = 0;
@@ -278,8 +279,8 @@ void write_h_file(const char *fname)
 
 static void write_rcbin(FILE *fp)
 {
-	struct lan_blk *lbp;
-	struct token *ttab;
+	lan_blk_t *lbp;
+	token_t *ttab;
 	int ntab;
 	int i;
 
@@ -370,7 +371,7 @@ static char *make_string(WCHAR *uc, int len)
 
 static void write_rcinline(FILE *fp)
 {
-	struct lan_blk *lbp;
+	lan_blk_t *lbp;
 	int i;
 	int j;
 
@@ -391,7 +392,7 @@ static void write_rcinline(FILE *fp)
 		}
 		for(i = 0; i < lbp->nblk; i++)
 		{
-			struct block *blk = &lbp->blks[i];
+			block_t *blk = &lbp->blks[i];
 			for(j = 0; j < blk->nmsg; j++)
 			{
 				char *cptr;
@@ -426,7 +427,7 @@ void write_rc_file(const char *fname)
 	fclose(fp);
 }
 
-static void output_bin_data( struct lan_blk *lbp )
+static void output_bin_data( lan_blk_t *lbp )
 {
     unsigned int offs = 4 * (lbp->nblk * 3 + 1);
     int i, j, k;
@@ -441,7 +442,7 @@ static void output_bin_data( struct lan_blk *lbp )
     }
     for (i = 0; i < lbp->nblk; i++)
     {
-        struct block *blk = &lbp->blks[i];
+        block_t *blk = &lbp->blks[i];
         for (j = 0; j < blk->nmsg; j++)
         {
             int len = (2 * blk->msgs[j]->len + 3) & ~3;
@@ -455,8 +456,8 @@ static void output_bin_data( struct lan_blk *lbp )
 
 void write_bin_files(void)
 {
-    struct lan_blk *lbp;
-    struct token *ttab;
+    lan_blk_t *lbp;
+    token_t *ttab;
     int ntab;
     int i;
 
@@ -487,7 +488,7 @@ void write_bin_files(void)
 
 void write_res_file( const char *name )
 {
-    struct lan_blk *lbp;
+    lan_blk_t *lbp;
     int i, j;
 
     init_output_buffer();
@@ -511,7 +512,7 @@ void write_res_file( const char *name )
 
         for (i = 0; i < lbp->nblk; i++)
         {
-            struct block *blk = &lbp->blks[i];
+            block_t *blk = &lbp->blks[i];
             for (j = 0; j < blk->nmsg; j++) data_size += 4 + ((blk->msgs[j]->len * 2 + 3) & ~3);
         }
 

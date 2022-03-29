@@ -33,6 +33,18 @@ WINE_DEFAULT_DEBUG_CHANNEL(msisys);
 
 
 /***********************************************************************
+ *		DllCanUnloadNow (MSISYS.@)
+ *
+ * RETURNS
+ *    Success: S_OK
+ *    Failure: S_FALSE
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+	return S_FALSE;
+}
+
+/***********************************************************************
  *		DllGetClassObject (MSISYS.@)
  */
 HRESULT WINAPI DllGetClassObject(REFCLSID pclsid, REFIID piid, LPVOID *ppv)
@@ -40,4 +52,24 @@ HRESULT WINAPI DllGetClassObject(REFCLSID pclsid, REFIID piid, LPVOID *ppv)
         FIXME("\n");
 
 	return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *		DllRegisterServer (MSISYS.@)
+ */
+
+HRESULT WINAPI DllRegisterServer( void )
+{
+	FIXME( "(): stub\n" );
+	return E_FAIL;
+}
+
+/***********************************************************************
+ *		DllUnregisterServer (MSISYS.@)
+ */
+
+HRESULT WINAPI DllUnregisterServer( void )
+{
+	FIXME( "(): stub\n" );
+	return E_FAIL;
 }

@@ -41,6 +41,24 @@
 WINE_DEFAULT_DEBUG_CHANNEL(activeds);
 
 /*****************************************************
+ * DllMain
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(%p, %d, %p)\n",hinstDLL, fdwReason, lpvReserved);
+
+    switch(fdwReason)
+    {
+    case DLL_WINE_PREATTACH:
+        return FALSE;  /* prefer native version */
+    case DLL_PROCESS_ATTACH:
+        DisableThreadLibraryCalls( hinstDLL );
+        break;
+    }
+    return TRUE;
+}
+
+/*****************************************************
  * ADsGetObject     [ACTIVEDS.3]
  */
 HRESULT WINAPI ADsGetObject(LPCWSTR path, REFIID riid, void **obj)
@@ -76,7 +94,7 @@ HRESULT WINAPI ADsFreeEnumerator(IEnumVARIANT* pEnumVariant)
  */
 HRESULT WINAPI ADsEnumerateNext(IEnumVARIANT* pEnumVariant, ULONG cElements, VARIANT* pvar, ULONG * pcElementsFetched)
 {
-    FIXME("(%p)->(%lu, %p, %p)!stub\n",pEnumVariant, cElements, pvar, pcElementsFetched);
+    FIXME("(%p)->(%u, %p, %p)!stub\n",pEnumVariant, cElements, pvar, pcElementsFetched);
     return E_NOTIMPL;
 }
 
@@ -89,7 +107,7 @@ HRESULT WINAPI ADsBuildVarArrayStr(LPWSTR *str, DWORD count, VARIANT *var)
     SAFEARRAY *sa;
     LONG idx, end = count;
 
-    TRACE("(%p, %lu, %p)\n", str, count, var);
+    TRACE("(%p, %u, %p)\n", str, count, var);
 
     if (!var) return E_ADS_BAD_PARAMETER;
 
@@ -128,7 +146,7 @@ fail:
  */
 HRESULT WINAPI ADsBuildVarArrayInt(LPDWORD lpdwObjectTypes, DWORD dwObjectTypes, VARIANT* pvar)
 {
-    FIXME("(%p, %ld, %p)!stub\n",lpdwObjectTypes, dwObjectTypes, pvar);
+    FIXME("(%p, %d, %p)!stub\n",lpdwObjectTypes, dwObjectTypes, pvar);
     return E_NOTIMPL;
 }
 
@@ -142,7 +160,7 @@ HRESULT WINAPI ADsOpenObject(LPCWSTR path, LPCWSTR user, LPCWSTR password, DWORD
     WCHAR provider[MAX_PATH], progid[MAX_PATH];
     DWORD idx = 0;
 
-    TRACE("(%s,%s,%lu,%s,%p)\n", debugstr_w(path), debugstr_w(user), reserved, debugstr_guid(riid), obj);
+    TRACE("(%s,%s,%u,%s,%p)\n", debugstr_w(path), debugstr_w(user), reserved, debugstr_guid(riid), obj);
 
     if (!path || !riid || !obj)
         return E_INVALIDARG;
@@ -216,7 +234,7 @@ HRESULT WINAPI ADsOpenObject(LPCWSTR path, LPCWSTR user, LPCWSTR password, DWORD
  */
 VOID WINAPI ADsSetLastError(DWORD dwErr, LPWSTR pszError, LPWSTR pszProvider)
 {
-    FIXME("(%ld,%p,%p)!stub\n", dwErr, pszError, pszProvider);
+    FIXME("(%d,%p,%p)!stub\n", dwErr, pszError, pszProvider);
 }
 
 /*****************************************************
@@ -224,7 +242,7 @@ VOID WINAPI ADsSetLastError(DWORD dwErr, LPWSTR pszError, LPWSTR pszProvider)
  */
 HRESULT WINAPI ADsGetLastError(LPDWORD perror, LPWSTR errorbuf, DWORD errorbuflen, LPWSTR namebuf, DWORD namebuflen)
 {
-    FIXME("(%p,%p,%ld,%p,%ld)!stub\n", perror, errorbuf, errorbuflen, namebuf, namebuflen);
+    FIXME("(%p,%p,%d,%p,%d)!stub\n", perror, errorbuf, errorbuflen, namebuf, namebuflen);
     return E_NOTIMPL;
 }
 
@@ -295,6 +313,6 @@ BOOL WINAPI ReallocADsStr(LPWSTR *ppStr, LPWSTR pStr)
  */
 HRESULT WINAPI ADsEncodeBinaryData(PBYTE pbSrcData, DWORD dwSrcLen, LPWSTR *ppszDestData)
 {
-    FIXME("(%p,%ld,%p)!stub\n", pbSrcData, dwSrcLen, *ppszDestData);
+    FIXME("(%p,%d,%p)!stub\n", pbSrcData, dwSrcLen, *ppszDestData);
     return E_NOTIMPL;
 }

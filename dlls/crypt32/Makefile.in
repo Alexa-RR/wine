@@ -1,6 +1,5 @@
 EXTRADEFS = -D_CRYPT32_
 MODULE    = crypt32.dll
-UNIXLIB   = crypt32.so
 IMPORTLIB = crypt32
 IMPORTS   = user32 advapi32 bcrypt
 DELAYIMPORTS = cryptnet
@@ -32,7 +31,6 @@ C_SRCS = \
 	serialize.c \
 	sip.c \
 	store.c \
-	str.c \
-	unixlib.c
+	str.c
 
 RC_SRCS = crypt32.rc

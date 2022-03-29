@@ -60,7 +60,7 @@ static ULONG WINAPI opc_uri_AddRef(IOpcPartUri *iface)
     struct opc_uri *uri = impl_from_IOpcPartUri(iface);
     ULONG refcount = InterlockedIncrement(&uri->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -70,7 +70,7 @@ static ULONG WINAPI opc_uri_Release(IOpcPartUri *iface)
     struct opc_uri *uri = impl_from_IOpcPartUri(iface);
     ULONG refcount = InterlockedDecrement(&uri->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -90,7 +90,7 @@ static HRESULT WINAPI opc_uri_GetPropertyBSTR(IOpcPartUri *iface, Uri_PROPERTY p
 {
     struct opc_uri *uri = impl_from_IOpcPartUri(iface);
 
-    TRACE("iface %p, property %d, value %p, flags %#lx.\n", iface, property, value, flags);
+    TRACE("iface %p, property %d, value %p, flags %#x.\n", iface, property, value, flags);
 
     return IUri_GetPropertyBSTR(uri->uri, property, value, flags);
 }
@@ -100,7 +100,7 @@ static HRESULT WINAPI opc_uri_GetPropertyLength(IOpcPartUri *iface, Uri_PROPERTY
 {
     struct opc_uri *uri = impl_from_IOpcPartUri(iface);
 
-    TRACE("iface %p, property %d, length %p, flags %#lx.\n", iface, property, length, flags);
+    TRACE("iface %p, property %d, length %p, flags %#x.\n", iface, property, length, flags);
 
     return IUri_GetPropertyLength(uri->uri, property, length, flags);
 }
@@ -110,7 +110,7 @@ static HRESULT WINAPI opc_uri_GetPropertyDWORD(IOpcPartUri *iface, Uri_PROPERTY 
 {
     struct opc_uri *uri = impl_from_IOpcPartUri(iface);
 
-    TRACE("iface %p, property %d, value %p, flags %#lx.\n", iface, property, value, flags);
+    TRACE("iface %p, property %d, value %p, flags %#x.\n", iface, property, value, flags);
 
     return IUri_GetPropertyDWORD(uri->uri, property, value, flags);
 }
@@ -449,8 +449,8 @@ static const IOpcPartUriVtbl opc_part_uri_vtbl =
 
 static IUri *opc_part_uri_get_rels_uri(IUri *uri)
 {
-    static const WCHAR relsdirW[] = L"/_rels";
-    static const WCHAR relsextW[] = L".rels";
+    static const WCHAR relsdirW[] = {'/','_','r','e','l','s',0};
+    static const WCHAR relsextW[] = {'.','r','e','l','s',0};
     WCHAR *start = NULL, *end, *ret;
     IUri *rels_uri;
     HRESULT hr;
@@ -504,7 +504,7 @@ static IUri *opc_part_uri_get_rels_uri(IUri *uri)
     lstrcatW(ret, relsextW);
 
     if (FAILED(hr = CreateUri(ret, Uri_CREATE_ALLOW_RELATIVE, 0, &rels_uri)))
-        WARN("Failed to create rels uri, hr %#lx.\n", hr);
+        WARN("Failed to create rels uri, hr %#x.\n", hr);
     heap_free(ret);
     SysFreeString(path);
 
@@ -544,7 +544,7 @@ static HRESULT opc_source_uri_create(struct opc_uri *uri, IOpcUri **out)
 
     if (FAILED(hr = opc_part_uri_init(obj, NULL, uri->source_uri->is_part_uri, uri->source_uri->uri)))
     {
-        WARN("Failed to init part uri, hr %#lx.\n", hr);
+        WARN("Failed to init part uri, hr %#x.\n", hr);
         heap_free(obj);
         return hr;
     }
@@ -566,7 +566,7 @@ HRESULT opc_part_uri_create(IUri *uri, struct opc_uri *source_uri, IOpcPartUri *
 
     if (FAILED(hr = opc_part_uri_init(obj, source_uri, TRUE, uri)))
     {
-        WARN("Failed to init part uri, hr %#lx.\n", hr);
+        WARN("Failed to init part uri, hr %#x.\n", hr);
         heap_free(obj);
         return hr;
     }
@@ -578,6 +578,7 @@ HRESULT opc_part_uri_create(IUri *uri, struct opc_uri *source_uri, IOpcPartUri *
 
 HRESULT opc_root_uri_create(IOpcUri **out)
 {
+    static const WCHAR rootW[] = {'/',0};
     struct opc_uri *obj;
     HRESULT hr;
     IUri *uri;
@@ -587,9 +588,9 @@ HRESULT opc_root_uri_create(IOpcUri **out)
     if (!(obj = heap_alloc_zero(sizeof(*obj))))
         return E_OUTOFMEMORY;
 
-    if (FAILED(hr = CreateUri(L"/", Uri_CREATE_ALLOW_RELATIVE, 0, &uri)))
+    if (FAILED(hr = CreateUri(rootW, Uri_CREATE_ALLOW_RELATIVE, 0, &uri)))
     {
-        WARN("Failed to create rels uri, hr %#lx.\n", hr);
+        WARN("Failed to create rels uri, hr %#x.\n", hr);
         heap_free(obj);
         return hr;
     }
@@ -598,7 +599,7 @@ HRESULT opc_root_uri_create(IOpcUri **out)
     IUri_Release(uri);
     if (FAILED(hr))
     {
-        WARN("Failed to init uri, hr %#lx.\n", hr);
+        WARN("Failed to init uri, hr %#x.\n", hr);
         heap_free(uri);
         return hr;
     }

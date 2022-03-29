@@ -17,4 +17,3 @@
  */
 
 extern HRESULT dhtml_edit_create(REFIID iid, void **out);
-void release_typelib(void);

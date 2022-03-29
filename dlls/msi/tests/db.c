@@ -33,18 +33,18 @@
 static const char *msifile = "winetest-db.msi";
 static const char *msifile2 = "winetst2-db.msi";
 static const char *mstfile = "winetst-db.mst";
-static const WCHAR msifileW[] = L"winetest-db.msi";
-static const WCHAR msifile2W[] = L"winetst2-db.msi";
+static const WCHAR msifileW[] = {'w','i','n','e','t','e','s','t','-','d','b','.','m','s','i',0};
+static const WCHAR msifile2W[] = {'w','i','n','e','t','s','t','2','-','d','b','.','m','s','i',0};
 
 static void WINAPIV check_record_(int line, MSIHANDLE rec, UINT count, ...)
 {
-    va_list args;
+    __ms_va_list args;
     UINT i;
 
     ok_(__FILE__, line)(count == MsiRecordGetFieldCount(rec),
             "expected %u fields, got %u\n", count, MsiRecordGetFieldCount(rec));
 
-    va_start(args, count);
+    __ms_va_start(args, count);
 
     for (i = 1; i <= count; ++i)
     {
@@ -57,15 +57,13 @@ static void WINAPIV check_record_(int line, MSIHANDLE rec, UINT count, ...)
                 "field %u: expected \"%s\", got \"%s\"\n", i, expect, buffer);
     }
 
-    va_end(args);
+    __ms_va_end(args);
 }
 #define check_record(rec, ...) check_record_(__LINE__, rec, __VA_ARGS__)
 
 static void test_msidatabase(void)
 {
     MSIHANDLE hdb = 0, hdb2 = 0;
-    WCHAR path[MAX_PATH];
-    DWORD len;
     UINT res;
 
     DeleteFileW(msifileW);
@@ -163,22 +161,6 @@ static void test_msidatabase(void)
 
     res = MsiCloseHandle( hdb );
     ok( res == ERROR_SUCCESS , "Failed to close database\n" );
-
-    res = GetCurrentDirectoryW(ARRAY_SIZE(path), path);
-    ok ( res, "Got zero res.\n" );
-    lstrcatW( path, L"\\");
-    lstrcatW( path, msifileW);
-    len = lstrlenW(path);
-    path[len - 4] = 0;
-
-    res = MsiOpenDatabaseW( path, MSIDBOPEN_READONLY, &hdb );
-    ok( res != ERROR_SUCCESS , "Got unexpected res %u.\n", res );
-
-    lstrcpyW( path, msifileW );
-    path[lstrlenW(path) - 4] = 0;
-
-    res = MsiOpenDatabaseW( path, MSIDBOPEN_READONLY, &hdb );
-    ok( res != ERROR_SUCCESS , "Got unexpected res %u.\n", res );
 
     res = DeleteFileA( msifile2 );
     ok( res == TRUE, "Failed to delete database\n" );
@@ -323,10 +305,10 @@ static inline UINT add_entry(const char *file, int line, const char *type, MSIHA
     UINT sz, r;
 
     sz = strlen(values) + strlen(insert) + 1;
-    query = malloc(sz);
+    query = HeapAlloc(GetProcessHeap(), 0, sz);
     sprintf(query, insert, values);
     r = run_query(hdb, 0, query);
-    free(query);
+    HeapFree(GetProcessHeap(), 0, query);
     ok_(file, line)(r == ERROR_SUCCESS, "failed to insert into %s table: %u\n", type, r);
     return r;
 }
@@ -548,7 +530,7 @@ static void test_msidecomposedesc(void)
     comp[0] = 0x55;
     r = pMsiDecomposeDescriptorA(desc, prod, feature, comp, &len);
     ok(r == ERROR_SUCCESS, "returned an error\n");
-    ok(len == 41, "got %lu\n", len);
+    ok(len == 41, "got %u\n", len);
     ok(!strcmp(prod,"{90110409-6000-11D3-8CFE-0150048383C9}"), "got '%s'\n", prod);
     ok(!strcmp(feature,"FollowTheWhiteRabbit"), "got '%s'\n", feature);
     ok(!comp[0], "got '%s'\n", comp);
@@ -558,7 +540,7 @@ static void test_msidecomposedesc(void)
     comp[0] = 0x55;
     r = pMsiDecomposeDescriptorA("yh1BVN)8A$!!!!!MKKSkAlwaysInstalledIntl_1033<", prod, feature, comp, &len);
     ok(r == ERROR_SUCCESS, "got %u\n", r);
-    ok(len == 45, "got %lu\n", len);
+    ok(len == 45, "got %u\n", len);
     ok(!strcmp(prod, "{90150000-006E-0409-0000-0000000FF1CE}"), "got '%s'\n", prod);
     ok(!strcmp(feature, "AlwaysInstalledIntl_1033"), "got '%s'\n", feature);
     ok(!comp[0], "got '%s'\n", comp);
@@ -907,7 +889,7 @@ static void test_viewmodify(void)
     err = MsiViewGetErrorA( hview, buffer, &sz );
     ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
     ok(!buffer[0], "got \"%s\"\n", buffer);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     r = MsiViewExecute(hview, 0);
     ok(r == ERROR_SUCCESS, "MsiViewExecute failed\n");
@@ -928,7 +910,7 @@ static void test_viewmodify(void)
     err = MsiViewGetErrorA( hview, buffer, &sz );
     ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
     ok(!buffer[0], "got \"%s\"\n", buffer);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     r = MsiCloseHandle(hrec);
     ok(r == ERROR_SUCCESS, "failed to close record\n");
@@ -960,7 +942,7 @@ static void test_viewmodify(void)
     err = MsiViewGetErrorA( hview, buffer, &sz );
     ok(err == MSIDBERROR_DUPLICATEKEY, "got %d\n", err);
     ok(!strcmp(buffer, "id"), "got \"%s\"\n", buffer);
-    ok(sz == 2, "got size %lu\n", sz);
+    ok(sz == 2, "got size %u\n", sz);
 
     /* insert the same thing again */
     r = MsiViewExecute(hview, 0);
@@ -1446,7 +1428,7 @@ static void test_msiexport(void)
 
 static void test_longstrings(void)
 {
-    const char insert_query[] =
+    const char insert_query[] = 
         "INSERT INTO `strings` ( `id`, `val` ) VALUES('1', 'Z')";
     char *str;
     MSIHANDLE hdb = 0, hview = 0, hrec = 0;
@@ -1460,19 +1442,20 @@ static void test_longstrings(void)
     ok(r == ERROR_SUCCESS, "MsiOpenDatabase failed\n");
 
     /* create a table */
-    r = try_query( hdb,
+    r = try_query( hdb, 
         "CREATE TABLE `strings` ( `id` INT, `val` CHAR(0) PRIMARY KEY `id`)");
     ok(r == ERROR_SUCCESS, "query failed\n");
 
     /* try to insert a very long string */
-    str = malloc(STRING_LENGTH + sizeof insert_query);
+    str = HeapAlloc(GetProcessHeap(), 0, STRING_LENGTH+sizeof insert_query);
     len = strchr(insert_query, 'Z') - insert_query;
     strcpy(str, insert_query);
     memset(str+len, 'Z', STRING_LENGTH);
     strcpy(str+len+STRING_LENGTH, insert_query+len+1);
     r = try_query( hdb, str );
     ok(r == ERROR_SUCCESS, "MsiDatabaseOpenView failed\n");
-    free(str);
+
+    HeapFree(GetProcessHeap(), 0, str);
 
     r = MsiDatabaseCommit(hdb);
     ok(r == ERROR_SUCCESS, "MsiDatabaseCommit failed\n");
@@ -1524,7 +1507,7 @@ static void create_file_data(LPCSTR name, LPCSTR data, DWORD size)
 }
 
 #define create_file(name) create_file_data(name, name, 0)
-
+ 
 static void test_streamtable(void)
 {
     MSIHANDLE hdb = 0, rec, view, hsi;
@@ -1809,7 +1792,7 @@ static void test_streamtable(void)
     memset(buf, 0, MAX_PATH);
     r = MsiRecordReadStream( rec, 2, buf, &size );
     ok( r == ERROR_SUCCESS, "Failed to get stream: %d\n", r);
-    ok( !lstrcmpA(buf, "test.txt\n"), "Expected 'test.txt\\n', got '%s' (%lu)\n", buf, size);
+    ok( !lstrcmpA(buf, "test.txt\n"), "Expected 'test.txt\\n', got '%s' (%d)\n", buf, size);
     MsiCloseHandle( rec );
 
     /* open a handle to the "data" stream (and keep it open during removal) */
@@ -1841,7 +1824,7 @@ static void test_streamtable(void)
     memset(buf, 0, MAX_PATH);
     r = MsiRecordReadStream( rec, 2, buf, &size );
     ok( r == ERROR_SUCCESS, "Failed to get stream: %d\n", r);
-    todo_wine ok( size == 0, "Expected empty buffer, got %lu bytes\n", size);
+    todo_wine ok( size == 0, "Expected empty buffer, got %d bytes\n", size);
     MsiCloseHandle( rec );
 
     MsiCloseHandle( hdb );
@@ -2246,8 +2229,7 @@ static void test_suminfo_import(void)
 {
     MSIHANDLE hdb, hsi, view = 0;
     LPCSTR query;
-    UINT r, count, type;
-    DWORD size;
+    UINT r, count, size, type;
     char str_value[50];
     INT int_value;
     FILETIME ft_value;
@@ -2285,7 +2267,7 @@ static void test_suminfo_import(void)
     r = MsiSummaryInfoGetPropertyA(hsi, PID_TITLE, &type, NULL, NULL, str_value, &size);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %u\n", r);
     ok(type == VT_LPSTR, "Expected VT_LPSTR, got %u\n", type);
-    ok(size == 18, "Expected 18, got %lu\n", size);
+    ok(size == 18, "Expected 18, got %u\n", size);
     ok(!strcmp(str_value, "Installer Database"),
        "Expected \"Installer Database\", got %s\n", str_value);
 
@@ -2758,7 +2740,7 @@ static void test_handle_limit(void)
         static char szQueryBuf[256] = "SELECT * from `_Tables`";
         hviews[i] = 0xdeadbeeb;
         r = MsiDatabaseOpenViewA(hdb, szQueryBuf, &hviews[i]);
-        if( r != ERROR_SUCCESS || hviews[i] == 0xdeadbeeb ||
+        if( r != ERROR_SUCCESS || hviews[i] == 0xdeadbeeb || 
             hviews[i] == 0 || (i && (hviews[i] == hviews[i-1])))
             break;
     }
@@ -2981,7 +2963,7 @@ static void generate_transform_manual(void)
                             STGM_WRITE | STGM_SHARE_EXCLUSIVE, 0, 0, &stm );
         if (FAILED(r))
         {
-            ok(0, "failed to create stream %#lx\n", r);
+            ok(0, "failed to create stream %08x\n", r);
             continue;
         }
 
@@ -3069,7 +3051,7 @@ static UINT package_from_db(MSIHANDLE hdb, MSIHANDLE *handle)
     CHAR szPackage[12];
     MSIHANDLE hPackage;
 
-    sprintf(szPackage, "#%lu", hdb);
+    sprintf(szPackage, "#%u", hdb);
     res = MsiOpenPackageA(szPackage, &hPackage);
     if (res != ERROR_SUCCESS)
         return res;
@@ -3087,40 +3069,11 @@ static UINT package_from_db(MSIHANDLE hdb, MSIHANDLE *handle)
 
 static void test_try_transform(void)
 {
-    static const struct {
-        const char *table;
-        const char *column;
-        const char *row;
-        const char *data;
-        const char *current;
-    } transform_view[] = {
-        { "MOO", "OOO", "1", "c", "a" },
-        { "MOO", "COW", "", "5378", "3" },
-        { "MOO", "PIG", "", "5378", "4" },
-        { "MOO", "PIG", "1", "5", "" },
-        { "MOO", "DELETE", "3", "", "" },
-        { "BINARY", "BLOB", "1", "BINARY.1", "" },
-        { "BINARY", "INSERT", "1", "", "" },
-        { "AAR", "CREATE", "", "", "" },
-        { "AAR", "CAR", "", "15871", "1" },
-        { "AAR", "BAR", "", "1282", "2" },
-        { "AAR", "BAR", "vw", "1", "" },
-        { "AAR", "BAR", "bmw", "2", "" },
-        { "AAR", "INSERT", "vw", "", "" },
-        { "AAR", "INSERT", "bmw", "", "" },
-        { "Property", "CREATE", "", "", "" },
-        { "Property", "Property", "", "11592", "1" },
-        { "Property", "Value", "", "7424", "2" },
-        { "Property", "Value", "prop", "val", "" },
-        { "Property", "INSERT", "prop", "", "" }
-    };
-
     MSIHANDLE hdb, hview, hrec, hpkg = 0;
     LPCSTR query;
     UINT r;
     DWORD sz;
     char buffer[MAX_PATH];
-    int i, matched;
 
     DeleteFileA(msifile);
     DeleteFileA(mstfile);
@@ -3181,65 +3134,6 @@ static void test_try_transform(void)
 
     r = MsiOpenDatabaseW(msifileW, MSIDBOPEN_DIRECT, &hdb );
     ok( r == ERROR_SUCCESS , "Failed to create database\n" );
-
-    r = MsiDatabaseApplyTransformA(hdb, mstfile, MSITRANSFORM_ERROR_VIEWTRANSFORM);
-    ok(r == ERROR_SUCCESS, "return code %d, should be ERROR_SUCCESS\n", r);
-
-    query = "select * from `_TransformView`";
-    r = MsiDatabaseOpenViewA(hdb, query, &hview);
-    ok(r == ERROR_SUCCESS, "MsiDatabaseOpenView failed\n");
-    r = MsiViewExecute(hview, 0);
-    ok(r == ERROR_SUCCESS, "MsiViewExecute failed\n");
-
-    r = MsiViewGetColumnInfo(hview, MSICOLINFO_NAMES, &hrec);
-    ok(r == ERROR_SUCCESS, "error\n");
-    check_record(hrec, 5, "Table", "Column", "Row", "Data", "Current");
-    MsiCloseHandle(hrec);
-
-    r = MsiViewGetColumnInfo(hview, MSICOLINFO_TYPES, &hrec);
-    ok(r == ERROR_SUCCESS, "error\n");
-    check_record(hrec, 5, "g0", "g0", "G0", "G0", "G0");
-    MsiCloseHandle(hrec);
-
-    matched = 0;
-    while (MsiViewFetch(hview, &hrec) == ERROR_SUCCESS)
-    {
-        char data[5][256];
-
-        for (i = 1; i <= 5; i++) {
-            sz = ARRAY_SIZE(data[0]);
-            r = MsiRecordGetStringA(hrec, i, data[i-1], &sz);
-            ok(r == ERROR_SUCCESS, "%d) MsiRecordGetStringA failed %d\n", i, r);
-        }
-
-        for (i = 0; i < ARRAY_SIZE(transform_view); i++)
-        {
-            if (strcmp(data[0], transform_view[i].table) ||
-                    strcmp(data[1], transform_view[i].column) ||
-                    strcmp(data[2], transform_view[i].row))
-                continue;
-
-            matched++;
-            ok(!strcmp(data[3], transform_view[i].data), "%d) data[3] = %s\n", i, data[3]);
-            ok(!strcmp(data[4], transform_view[i].current), "%d) data[4] = %s\n", i, data[4]);
-            break;
-        }
-        ok(i != ARRAY_SIZE(transform_view), "invalid row: %s, %s, %s\n",
-                wine_dbgstr_a(data[0]), wine_dbgstr_a(data[1]), wine_dbgstr_a(data[2]));
-        MsiCloseHandle(hrec);
-    }
-    ok(matched == ARRAY_SIZE(transform_view), "matched = %d\n", matched);
-
-    r = MsiViewClose(hview);
-    ok(r == ERROR_SUCCESS, "MsiViewClose failed\n");
-    r = MsiCloseHandle(hview);
-    ok(r == ERROR_SUCCESS, "MsiCloseHandle failed\n");
-
-    query = "ALTER TABLE `_TransformView` FREE";
-    r = run_query( hdb, 0, query );
-    ok( r == ERROR_SUCCESS, "cannot free _TransformView table: %d\n", r );
-    r = run_query( hdb, 0, query );
-    ok( r == ERROR_BAD_QUERY_SYNTAX, "_TransformView table still exist: %d\n", r );
 
     r = MsiDatabaseApplyTransformA( hdb, mstfile, 0 );
     ok( r == ERROR_SUCCESS, "return code %d, should be ERROR_SUCCESS\n", r );
@@ -3513,7 +3407,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 5, "Expected 5 rows, got %lu\n", i );
+    ok( i == 5, "Expected 5 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3534,7 +3428,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 24, "Expected 24 rows, got %lu\n", i );
+    ok( i == 24, "Expected 24 rows, got %d\n", i );
 
     MsiViewClose(hview);
     MsiCloseHandle(hview);
@@ -3556,7 +3450,7 @@ static void test_join(void)
         MsiCloseHandle(hrec);
     }
 
-    ok( i == 2, "Expected 2 rows, got %lu\n", i );
+    ok( i == 2, "Expected 2 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3579,7 +3473,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 2, "Expected 2 rows, got %lu\n", i );
+    ok( i == 2, "Expected 2 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3602,7 +3496,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 1, "Expected 1 rows, got %lu\n", i );
+    ok( i == 1, "Expected 1 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3626,7 +3520,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 1, "Expected 1 rows, got %lu\n", i );
+    ok( i == 1, "Expected 1 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3649,7 +3543,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 6, "Expected 6 rows, got %lu\n", i );
+    ok( i == 6, "Expected 6 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3673,7 +3567,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 3, "Expected 3 rows, got %lu\n", i );
+    ok( i == 3, "Expected 3 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3694,7 +3588,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 6, "Expected 6 rows, got %lu\n", i );
+    ok( i == 6, "Expected 6 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3715,7 +3609,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 6, "Expected 6 rows, got %lu\n", i );
+    ok( i == 6, "Expected 6 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3737,7 +3631,7 @@ static void test_join(void)
         i++;
         MsiCloseHandle(hrec);
     }
-    ok( i == 6, "Expected 6 rows, got %lu\n", i );
+    ok( i == 6, "Expected 6 rows, got %d\n", i );
     ok( r == ERROR_NO_MORE_ITEMS, "expected no more items: %d\n", r );
 
     MsiViewClose(hview);
@@ -3968,28 +3862,16 @@ static void test_temporary_table(void)
 static void test_alter(void)
 {
     MSICONDITION cond;
-    MSIHANDLE hdb = 0, rec;
+    MSIHANDLE hdb = 0;
     const char *query;
     UINT r;
 
     hdb = create_db();
     ok( hdb, "failed to create db\n");
 
-    query = "CREATE TABLE `T` ( `B` SHORT NOT NULL TEMPORARY, `C` CHAR(255) TEMPORARY PRIMARY KEY `C`)";
-    r = run_query(hdb, 0, query);
-    ok(r == ERROR_SUCCESS, "failed to add table\n");
-
-    query = "SELECT * FROM `T`";
-    r = run_query(hdb, 0, query);
-    ok(r == ERROR_BAD_QUERY_SYNTAX, "expected ERROR_BAD_QUERY_SYNTAX, got %d\n", r);
-
     query = "CREATE TABLE `T` ( `B` SHORT NOT NULL TEMPORARY, `C` CHAR(255) TEMPORARY PRIMARY KEY `C`) HOLD";
     r = run_query(hdb, 0, query);
     ok(r == ERROR_SUCCESS, "failed to add table\n");
-
-    query = "SELECT * FROM `T`";
-    r = run_query(hdb, 0, query);
-    ok(r == ERROR_SUCCESS, "expected ERROR_SUCCESS, got %d\n", r);
 
     cond = MsiDatabaseIsTablePersistentA(hdb, "T");
     ok( cond == MSICONDITION_FALSE, "wrong return condition\n");
@@ -4038,10 +3920,6 @@ static void test_alter(void)
     r = run_query(hdb, 0, query);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
 
-    query = "SELECT * FROM `_Columns` WHERE `Table` = 'U' AND `Name` = 'C'";
-    r = do_query(hdb, query, &rec);
-    ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-
     /* add column C again */
     query = "ALTER TABLE `U` ADD `C` INTEGER";
     r = run_query(hdb, 0, query);
@@ -4058,10 +3936,6 @@ static void test_alter(void)
     query = "ALTER TABLE `U` ADD `D` INTEGER TEMPORARY HOLD";
     r = run_query(hdb, 0, query);
     ok(r == ERROR_BAD_QUERY_SYNTAX, "Expected ERROR_BAD_QUERY_SYNTAX, got %d\n", r);
-
-    query = "SELECT * FROM `_Columns` WHERE `Table` = 'U' AND `Name` = 'D'";
-    r = do_query(hdb, query, &rec);
-    ok(r == ERROR_NO_MORE_ITEMS, "Expected ERROR_NO_MORE_ITEMS, got %d\n", r);
 
     query = "INSERT INTO `U` ( `A`, `B`, `C`, `D` ) VALUES ( 5, 6, 7, 8 )";
     r = run_query(hdb, 0, query);
@@ -4241,21 +4115,21 @@ static void test_integers(void)
     ok(r == 8, "record count wrong: %d\n", r);
 
     i = MsiRecordGetInteger(rec, 1);
-    ok(i == MSI_NULL_INTEGER, "Expected MSI_NULL_INTEGER, got %lu\n", i);
+    ok(i == MSI_NULL_INTEGER, "Expected MSI_NULL_INTEGER, got %d\n", i);
     i = MsiRecordGetInteger(rec, 3);
-    ok(i == MSI_NULL_INTEGER, "Expected MSI_NULL_INTEGER, got %lu\n", i);
+    ok(i == MSI_NULL_INTEGER, "Expected MSI_NULL_INTEGER, got %d\n", i);
     i = MsiRecordGetInteger(rec, 2);
-    ok(i == 2, "Expected 2, got %lu\n", i);
+    ok(i == 2, "Expected 2, got %d\n", i);
     i = MsiRecordGetInteger(rec, 4);
-    ok(i == 4, "Expected 4, got %lu\n", i);
+    ok(i == 4, "Expected 4, got %d\n", i);
     i = MsiRecordGetInteger(rec, 5);
-    ok(i == 5, "Expected 5, got %lu\n", i);
+    ok(i == 5, "Expected 5, got %d\n", i);
     i = MsiRecordGetInteger(rec, 6);
-    ok(i == 6, "Expected 6, got %lu\n", i);
+    ok(i == 6, "Expected 6, got %d\n", i);
     i = MsiRecordGetInteger(rec, 7);
-    ok(i == 7, "Expected 7, got %lu\n", i);
+    ok(i == 7, "Expected 7, got %d\n", i);
     i = MsiRecordGetInteger(rec, 8);
-    ok(i == 8, "Expected 8, got %lu\n", i);
+    ok(i == 8, "Expected 8, got %d\n", i);
 
     MsiCloseHandle(rec);
     MsiViewClose(view);
@@ -4794,6 +4668,34 @@ static void test_rows_order(void)
 
 static void test_collation(void)
 {
+    static const WCHAR query1[] =
+        {'I','N','S','E','R','T',' ','I','N','T','O',' ','`','b','a','r','`',' ',
+         '(','`','f','o','o','`',',','`','b','a','z','`',')',' ','V','A','L','U','E','S',' ',
+         '(','\'','a',0x30a,'\'',',','\'','C','\'',')',0};
+    static const WCHAR query2[] =
+        {'I','N','S','E','R','T',' ','I','N','T','O',' ','`','b','a','r','`',' ',
+         '(','`','f','o','o','`',',','`','b','a','z','`',')',' ','V','A','L','U','E','S',' ',
+         '(','\'',0xe5,'\'',',','\'','D','\'',')',0};
+    static const WCHAR query3[] =
+        {'C','R','E','A','T','E',' ','T','A','B','L','E',' ','`','b','a','z','`',' ',
+         '(',' ','`','a',0x30a,'`',' ','L','O','N','G','C','H','A','R',' ','N','O','T',' ','N','U','L','L',',',
+           ' ','`',0xe5,'`',' ','L','O','N','G','C','H','A','R',' ','N','O','T',' ','N','U','L','L',' ',
+           'P','R','I','M','A','R','Y',' ','K','E','Y',' ','`','a',0x30a,'`',')',0};
+    static const WCHAR query4[] =
+        {'C','R','E','A','T','E',' ','T','A','B','L','E',' ','`','a',0x30a,'`',' ',
+         '(',' ','`','f','o','o','`',' ','L','O','N','G','C','H','A','R',' ','N','O','T',' ',
+         'N','U','L','L',' ','P','R','I','M','A','R','Y',' ','K','E','Y',' ','`','f','o','o','`',')',0};
+    static const WCHAR query5[] =
+        {'C','R','E','A','T','E',' ','T','A','B','L','E',' ','`',0xe5,'`',' ',
+         '(',' ','`','f','o','o','`',' ','L','O','N','G','C','H','A','R',' ','N','O','T',' ',
+         'N','U','L','L',' ','P','R','I','M','A','R','Y',' ','K','E','Y',' ','`','f','o','o','`',')',0};
+    static const WCHAR query6[] =
+        {'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ','`','b','a','r','`',' ','W','H','E','R','E',
+         ' ','`','f','o','o','`',' ','=','\'',0xe5,'\'',0};
+    static const WCHAR letter_C[] = {'C',0};
+    static const WCHAR letter_D[] = {'D',0};
+    static const WCHAR letter_a_ring[] = {'a',0x30a,0};
+    static const WCHAR letter_a_with_ring[] = {0xe5,0};
     const char *query;
     MSIHANDLE hdb = 0, hview = 0, hrec = 0;
     UINT r;
@@ -4822,19 +4724,19 @@ static void test_collation(void)
             "( `foo`, `baz` ) VALUES ( '\1', 'B' )");
     ok(r == ERROR_SUCCESS, "cannot add value to table %u\n", r);
 
-    r = run_queryW(hdb, 0, L"INSERT INTO `bar` (`foo`,`baz`) VALUES ('a\x30a','C')");
+    r = run_queryW(hdb, 0, query1);
     ok(r == ERROR_SUCCESS, "cannot add value to table %u\n", r);
 
-    r = run_queryW(hdb, 0, L"INSERT INTO `bar` (`foo`,`baz`) VALUES ('\xe5','D')");
+    r = run_queryW(hdb, 0, query2);
     ok(r == ERROR_SUCCESS, "cannot add value to table %u\n", r);
 
-    r = run_queryW(hdb, 0, L"CREATE TABLE `baz` ( `a\x30a` LONGCHAR NOT NULL, `\xe5` LONGCHAR NOT NULL PRIMARY KEY `a\x30a`)");
+    r = run_queryW(hdb, 0, query3);
     ok(r == ERROR_SUCCESS, "cannot create table %u\n", r);
 
-    r = run_queryW(hdb, 0, L"CREATE TABLE `a\x30a` ( `foo` LONGCHAR NOT NULL PRIMARY KEY `foo`)");
+    r = run_queryW(hdb, 0, query4);
     ok(r == ERROR_SUCCESS, "cannot create table %u\n", r);
 
-    r = run_queryW(hdb, 0, L"CREATE TABLE `\xe5` ( `foo` LONGCHAR NOT NULL PRIMARY KEY `foo`)");
+    r = run_queryW(hdb, 0, query5);
     ok(r == ERROR_SUCCESS, "cannot create table %u\n", r);
 
     query = "SELECT * FROM `bar`";
@@ -4872,12 +4774,12 @@ static void test_collation(void)
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 1, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!memcmp(bufferW, L"a\x30a", sizeof(L"a\x30a")),
-       "Expected %s, got %s\n", wine_dbgstr_w(L"a\x30a"), wine_dbgstr_w(bufferW));
+    ok(!memcmp(bufferW, letter_a_ring, sizeof(letter_a_ring)),
+       "Expected %s, got %s\n", wine_dbgstr_w(letter_a_ring), wine_dbgstr_w(bufferW));
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 2, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!lstrcmpW(bufferW, L"C"), "Expected C, got %s\n", wine_dbgstr_w(bufferW));
+    ok(!lstrcmpW(bufferW, letter_C), "Expected C, got %s\n", wine_dbgstr_w(bufferW));
     MsiCloseHandle(hrec);
 
     r = MsiViewFetch(hview, &hrec);
@@ -4885,12 +4787,12 @@ static void test_collation(void)
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 1, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!memcmp(bufferW, L"\xe5", sizeof(L"\xe5")),
-       "Expected %s, got %s\n", wine_dbgstr_w(L"\xe5"), wine_dbgstr_w(bufferW));
+    ok(!memcmp(bufferW, letter_a_with_ring, sizeof(letter_a_with_ring)),
+       "Expected %s, got %s\n", wine_dbgstr_w(letter_a_with_ring), wine_dbgstr_w(bufferW));
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 2, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!lstrcmpW(bufferW, L"D"), "Expected D, got %s\n", wine_dbgstr_w(bufferW));
+    ok(!lstrcmpW(bufferW, letter_D), "Expected D, got %s\n", wine_dbgstr_w(bufferW));
     MsiCloseHandle(hrec);
 
     r = MsiViewClose(hview);
@@ -4898,7 +4800,7 @@ static void test_collation(void)
     r = MsiCloseHandle(hview);
     ok(r == ERROR_SUCCESS, "MsiCloseHandle failed\n");
 
-    r = MsiDatabaseOpenViewW(hdb, L"SELECT * FROM `bar` WHERE `foo` ='\xe5'", &hview);
+    r = MsiDatabaseOpenViewW(hdb, query6, &hview);
     ok(r == ERROR_SUCCESS, "MsiDatabaseOpenView failed\n");
     r = MsiViewExecute(hview, 0);
     ok(r == ERROR_SUCCESS, "MsiViewExecute failed\n");
@@ -4908,12 +4810,12 @@ static void test_collation(void)
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 1, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!memcmp(bufferW, L"\xe5", sizeof(L"\xe5")),
-       "Expected %s, got %s\n", wine_dbgstr_w(L"\xe5"), wine_dbgstr_w(bufferW));
+    ok(!memcmp(bufferW, letter_a_with_ring, sizeof(letter_a_with_ring)),
+       "Expected %s, got %s\n", wine_dbgstr_w(letter_a_with_ring), wine_dbgstr_w(bufferW));
     sz = ARRAY_SIZE(bufferW);
     r = MsiRecordGetStringW(hrec, 2, bufferW, &sz);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
-    ok(!lstrcmpW(bufferW, L"D"), "Expected D, got %s\n", wine_dbgstr_w(bufferW));
+    ok(!lstrcmpW(bufferW, letter_D), "Expected D, got %s\n", wine_dbgstr_w(bufferW));
     MsiCloseHandle(hrec);
 
     r = MsiViewFetch(hview, &hrec);
@@ -5715,65 +5617,65 @@ static void test_stringtable(void)
 
     MultiByteToWideChar(CP_ACP, 0, msifile, -1, name, 0x20);
     hr = StgOpenStorage(name, NULL, mode, NULL, 0, &stg);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     ok(stg != NULL, "Expected non-NULL storage\n");
 
     hr = IStorage_OpenStream(stg, moo, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     ok(stm != NULL, "Expected non-NULL stream\n");
 
     hr = IStream_Read(stm, data, MAX_PATH, &read);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
-    ok(read == 4, "Expected 4, got %lu\n", read);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
+    ok(read == 4, "Expected 4, got %d\n", read);
     todo_wine ok(!memcmp(data, data10, read), "Unexpected data\n");
 
     hr = IStream_Release(stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
 
     hr = IStorage_OpenStream(stg, aar, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     ok(stm != NULL, "Expected non-NULL stream\n");
 
     hr = IStream_Read(stm, data, MAX_PATH, &read);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
-    ok(read == 8, "Expected 8, got %lu\n", read);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
+    ok(read == 8, "Expected 8, got %d\n", read);
     todo_wine
     {
         ok(!memcmp(data, data11, read), "Unexpected data\n");
     }
 
     hr = IStream_Release(stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
 
     hr = IStorage_OpenStream(stg, stringdata, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     ok(stm != NULL, "Expected non-NULL stream\n");
 
     hr = IStream_Read(stm, buffer, MAX_PATH, &read);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
-    ok(read == 24, "Expected 24, got %lu\n", read);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
+    ok(read == 24, "Expected 24, got %d\n", read);
     ok(!memcmp(buffer, data12, read), "Unexpected data\n");
 
     hr = IStream_Release(stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
 
     hr = IStorage_OpenStream(stg, stringpool, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     ok(stm != NULL, "Expected non-NULL stream\n");
 
     hr = IStream_Read(stm, data, MAX_PATH, &read);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
     todo_wine
     {
-        ok(read == 64, "Expected 64, got %lu\n", read);
+        ok(read == 64, "Expected 64, got %d\n", read);
         ok(!memcmp(data, data13, read), "Unexpected data\n");
     }
 
     hr = IStream_Release(stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
 
     hr = IStorage_Release(stg);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
 
     DeleteFileA(msifile);
 }
@@ -5896,7 +5798,7 @@ static void enum_stream_names(IStorage *stg)
     memset(check, 'a', MAX_PATH);
 
     hr = IStorage_EnumElements(stg, 0, NULL, 0, &stgenum);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
 
     n = 0;
     while(TRUE)
@@ -5907,12 +5809,12 @@ static void enum_stream_names(IStorage *stg)
             break;
 
         ok(!lstrcmpW(stat.pwcsName, database_table_data[n].name),
-           "Expected table %lu name to match\n", n);
+           "Expected table %d name to match\n", n);
 
         stm = NULL;
         hr = IStorage_OpenStream(stg, stat.pwcsName, NULL,
                                  STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-        ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+        ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
         ok(stm != NULL, "Expected non-NULL stream\n");
 
         CoTaskMemFree(stat.pwcsName);
@@ -5920,22 +5822,22 @@ static void enum_stream_names(IStorage *stg)
         sz = MAX_PATH;
         memset(data, 'a', MAX_PATH);
         hr = IStream_Read(stm, data, sz, &count);
-        ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+        ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
 
         ok(count == database_table_data[n].size,
-           "Expected %lu, got %lu\n", database_table_data[n].size, count);
+           "Expected %d, got %d\n", database_table_data[n].size, count);
 
         if (!database_table_data[n].size)
             ok(!memcmp(data, check, MAX_PATH), "data should not be changed\n");
         else
             ok(!memcmp(data, database_table_data[n].data, database_table_data[n].size),
-               "Expected table %lu data to match\n", n);
+               "Expected table %d data to match\n", n);
 
         IStream_Release(stm);
         n++;
     }
 
-    ok(n == 3, "Expected 3, got %lu\n", n);
+    ok(n == 3, "Expected 3, got %d\n", n);
 
     IEnumSTATSTG_Release(stgenum);
 }
@@ -5958,7 +5860,7 @@ static void test_defaultdatabase(void)
     MsiCloseHandle(hdb);
 
     hr = StgOpenStorage(msifileW, NULL, STGM_READ | STGM_SHARE_DENY_WRITE, NULL, 0, &stg);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
     ok(stg != NULL, "Expected non-NULL stg\n");
 
     enum_stream_names(stg);
@@ -7189,7 +7091,7 @@ static void test_storages_table(void)
     r = MsiRecordReadStream(hrec, 2, buf, &size);
     ok(r == ERROR_INVALID_DATA, "Expected ERROR_INVALID_DATA, got %d\n", r);
     ok(!lstrcmpA(buf, "apple"), "Expected buf to be unchanged, got %s\n", buf);
-    ok(size == 0, "Expected 0, got %lu\n", size);
+    ok(size == 0, "Expected 0, got %d\n", size);
 
     MsiCloseHandle(hrec);
 
@@ -7205,23 +7107,23 @@ static void test_storages_table(void)
     MultiByteToWideChar(CP_ACP, 0, msifile, -1, name, MAX_PATH);
     hr = StgOpenStorage(name, NULL, STGM_DIRECT | STGM_READ |
                         STGM_SHARE_DENY_WRITE, NULL, 0, &stg);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
     ok(stg != NULL, "Expected non-NULL storage\n");
 
     MultiByteToWideChar(CP_ACP, 0, "stgname", -1, name, MAX_PATH);
     hr = IStorage_OpenStorage(stg, name, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE,
                               NULL, 0, &inner);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
     ok(inner != NULL, "Expected non-NULL storage\n");
 
     MultiByteToWideChar(CP_ACP, 0, "storage.bin", -1, name, MAX_PATH);
     hr = IStorage_OpenStream(inner, name, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
+    ok(hr == S_OK, "Expected S_OK, got %08x\n", hr);
     ok(stm != NULL, "Expected non-NULL stream\n");
 
     hr = IStream_Read(stm, buf, MAX_PATH, &size);
-    ok(hr == S_OK, "Expected S_OK, got %#lx\n", hr);
-    ok(size == 8, "Expected 8, got %lu\n", size);
+    ok(hr == S_OK, "Expected S_OK, got %d\n", hr);
+    ok(size == 8, "Expected 8, got %d\n", size);
     ok(!lstrcmpA(buf, "stgdata"), "Expected \"stgdata\", got \"%s\"\n", buf);
 
     IStream_Release(stm);
@@ -7249,7 +7151,7 @@ static void test_dbtopackage(void)
     create_custom_action_table(hdb);
     add_custom_action_entry(hdb, "'SetProp', 51, 'MYPROP', 'grape'");
 
-    sprintf(package, "#%lu", hdb);
+    sprintf(package, "#%u", hdb);
     r = MsiOpenPackageA(package, &hpkg);
     if (r == ERROR_INSTALL_PACKAGE_REJECTED)
     {
@@ -7264,7 +7166,7 @@ static void test_dbtopackage(void)
     r = MsiGetPropertyA(hpkg, "MYPROP", buf, &size);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
     ok(!lstrcmpA(buf, ""), "Expected \"\", got \"%s\"\n", buf);
-    ok(size == 0, "Expected 0, got %lu\n", size);
+    ok(size == 0, "Expected 0, got %d\n", size);
 
     /* run the custom action to set the property */
     r = MsiDoActionA(hpkg, "SetProp");
@@ -7276,7 +7178,7 @@ static void test_dbtopackage(void)
     r = MsiGetPropertyA(hpkg, "MYPROP", buf, &size);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
     ok(!lstrcmpA(buf, "grape"), "Expected \"grape\", got \"%s\"\n", buf);
-    ok(size == 5, "Expected 5, got %lu\n", size);
+    ok(size == 5, "Expected 5, got %d\n", size);
 
     MsiCloseHandle(hpkg);
 
@@ -7292,7 +7194,7 @@ static void test_dbtopackage(void)
     todo_wine
     {
         ok(!lstrcmpA(buf, ""), "Expected \"\", got \"%s\"\n", buf);
-        ok(size == 0, "Expected 0, got %lu\n", size);
+        ok(size == 0, "Expected 0, got %d\n", size);
     }
 
     MsiCloseHandle(hdb);
@@ -7309,7 +7211,7 @@ static void test_dbtopackage(void)
     create_custom_action_table(hdb);
     add_custom_action_entry(hdb, "'SetProp', 51, 'MYPROP', 'grape'");
 
-    sprintf(package, "#%lu", hdb);
+    sprintf(package, "#%u", hdb);
     r = MsiOpenPackageA(package, &hpkg);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
 
@@ -7319,7 +7221,7 @@ static void test_dbtopackage(void)
     r = MsiGetPropertyA(hpkg, "MYPROP", buf, &size);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
     ok(!lstrcmpA(buf, ""), "Expected \"\", got \"%s\"\n", buf);
-    ok(size == 0, "Expected 0, got %lu\n", size);
+    ok(size == 0, "Expected 0, got %d\n", size);
 
     /* run the custom action to set the property */
     r = MsiDoActionA(hpkg, "SetProp");
@@ -7331,7 +7233,7 @@ static void test_dbtopackage(void)
     r = MsiGetPropertyA(hpkg, "MYPROP", buf, &size);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
     ok(!lstrcmpA(buf, "grape"), "Expected \"grape\", got \"%s\"\n", buf);
-    ok(size == 5, "Expected 5, got %lu\n", size);
+    ok(size == 5, "Expected 5, got %d\n", size);
 
     MsiCloseHandle(hpkg);
 
@@ -7347,7 +7249,7 @@ static void test_dbtopackage(void)
     todo_wine
     {
         ok(!lstrcmpA(buf, ""), "Expected \"\", got \"%s\"\n", buf);
-        ok(size == 0, "Expected 0, got %lu\n", size);
+        ok(size == 0, "Expected 0, got %d\n", size);
     }
 
     MsiCloseHandle(hpkg);
@@ -7529,6 +7431,7 @@ static void test_droptable(void)
 
 static void test_dbmerge(void)
 {
+    static const WCHAR refdbW[] = {'r','e','f','d','b','.','m','s','i',0};
     MSIHANDLE hdb, href, hview, hrec;
     CHAR buf[MAX_PATH];
     LPCSTR query;
@@ -7538,7 +7441,7 @@ static void test_dbmerge(void)
     r = MsiOpenDatabaseW(msifileW, MSIDBOPEN_CREATE, &hdb);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
 
-    r = MsiOpenDatabaseW(L"refdb.msi", MSIDBOPEN_CREATE, &href);
+    r = MsiOpenDatabaseW(refdbW, MSIDBOPEN_CREATE, &href);
     ok(r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r);
 
     /* hDatabase is invalid */
@@ -8079,7 +7982,7 @@ static void test_dbmerge(void)
     MsiCloseHandle(hdb);
     MsiCloseHandle(href);
     DeleteFileA(msifile);
-    DeleteFileW(L"refdb.msi");
+    DeleteFileW(refdbW);
     DeleteFileA("codepage.idt");
     DeleteFileA("binary.dat");
 }
@@ -8584,8 +8487,7 @@ static void test_embedded_nulls(void)
         "s72\tL0\n"
         "Control\tDialog\n"
         "LicenseAgreementDlg\ttext\x11\x19text\0text";
-    UINT r;
-    DWORD sz;
+    UINT r, sz;
     MSIHANDLE hdb, hrec;
     char buffer[32];
 
@@ -8865,7 +8767,7 @@ static void test_viewmodify_merge(void)
     MsiRecordSetInteger(rec, 1, 1);
     MsiRecordSetInteger(rec, 2, 3);
     r = MsiViewModify(view, MSIMODIFY_MERGE, rec);
-    todo_wine
+todo_wine
     ok(r == ERROR_FUNCTION_FAILED, "got %u\n", r);
 
     MsiRecordSetInteger(rec, 1, 2);
@@ -8914,7 +8816,7 @@ static void test_viewmodify_merge(void)
 
     MsiRecordSetInteger(rec, 3, 4);
     r = MsiViewModify(view, MSIMODIFY_MERGE, rec);
-    todo_wine
+todo_wine
     ok(r == ERROR_FUNCTION_FAILED, "got %u\n", r);
 
     MsiRecordSetInteger(rec, 2, 4);
@@ -8959,7 +8861,7 @@ static void test_viewmodify_merge(void)
 
     MsiRecordSetInteger(rec, 2, 3);
     r = MsiViewModify(view, MSIMODIFY_MERGE, rec);
-    todo_wine
+todo_wine
     ok(r == ERROR_FUNCTION_FAILED, "got %u\n", r);
 
     MsiCloseHandle(rec);
@@ -8999,7 +8901,7 @@ static void test_viewmodify_merge(void)
     MsiRecordSetInteger(rec, 2, 2);
     MsiRecordSetInteger(rec, 3, 3);
     r = MsiViewModify(view, MSIMODIFY_MERGE, rec);
-    todo_wine
+todo_wine
     ok(r == ERROR_FUNCTION_FAILED, "got %u\n", r);
 
     MsiRecordSetInteger(rec, 1, 1);
@@ -9210,7 +9112,7 @@ static void test_view_get_error(void)
     sz = 0;
     err = MsiViewGetErrorA(0, NULL, &sz);
     ok(err == MSIDBERROR_INVALIDARG, "got %d\n", err);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     err = MsiViewGetErrorA(view, NULL, NULL);
     ok(err == MSIDBERROR_INVALIDARG, "got %d\n", err);
@@ -9218,21 +9120,21 @@ static void test_view_get_error(void)
     sz = 0;
     err = MsiViewGetErrorA(view, NULL, &sz);
     ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     sz = 0;
     strcpy(buffer, "x");
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_MOREDATA, "got %d\n", err);
     ok(!strcmp(buffer, "x"), "got \"%s\"\n", buffer);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     sz = 1;
     strcpy(buffer, "x");
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
     ok(!buffer[0], "got \"%s\"\n", buffer);
-    ok(sz == 0, "got size %lu\n", sz);
+    ok(sz == 0, "got size %u\n", sz);
 
     rec = MsiCreateRecord(2);
     MsiRecordSetInteger(rec, 1, 1);
@@ -9245,14 +9147,14 @@ static void test_view_get_error(void)
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_DUPLICATEKEY, "got %d\n", err);
     ok(!strcmp(buffer, "A"), "got \"%s\"\n", buffer);
-    ok(sz == 1, "got size %lu\n", sz);
+    ok(sz == 1, "got size %u\n", sz);
 
     sz = 2;
     strcpy(buffer, "x");
     err = MsiViewGetErrorA(view, buffer, &sz);
     todo_wine ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
     todo_wine ok(!buffer[0], "got \"%s\"\n", buffer);
-    todo_wine ok(sz == 0, "got size %lu\n", sz);
+    todo_wine ok(sz == 0, "got size %u\n", sz);
 
     r = MsiViewModify(view, MSIMODIFY_VALIDATE_NEW, rec);
     ok(r == ERROR_INVALID_DATA, "got %u\n", r);
@@ -9262,14 +9164,14 @@ static void test_view_get_error(void)
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_MOREDATA, "got %d\n", err);
     ok(!buffer[0], "got \"%s\"\n", buffer);
-    ok(sz == 1, "got size %lu\n", sz);
+    ok(sz == 1, "got size %u\n", sz);
 
     sz = 1;
     strcpy(buffer, "x");
     err = MsiViewGetErrorA(view, buffer, &sz);
     todo_wine ok(err == MSIDBERROR_NOERROR, "got %d\n", err);
     ok(!buffer[0], "got \"%s\"\n", buffer);
-    todo_wine ok(sz == 0, "got size %lu\n", sz);
+    todo_wine ok(sz == 0, "got size %u\n", sz);
 
     r = MsiViewModify(view, MSIMODIFY_VALIDATE_NEW, rec);
     ok(r == ERROR_INVALID_DATA, "got %u\n", r);
@@ -9279,98 +9181,16 @@ static void test_view_get_error(void)
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_MOREDATA, "got %d\n", err);
     ok(!strcmp(buffer, "x"), "got \"%s\"\n", buffer);
-    ok(sz == 1, "got size %lu\n", sz);
+    ok(sz == 1, "got size %u\n", sz);
 
     sz = 0;
     strcpy(buffer, "x");
     err = MsiViewGetErrorA(view, buffer, &sz);
     ok(err == MSIDBERROR_MOREDATA, "got %d\n", err);
     ok(!strcmp(buffer, "x"), "got \"%s\"\n", buffer);
-    todo_wine ok(sz == 0, "got size %lu\n", sz);
+    todo_wine ok(sz == 0, "got size %u\n", sz);
 
     MsiCloseHandle(rec);
-    MsiCloseHandle(view);
-    MsiCloseHandle(db);
-    DeleteFileA(msifile);
-}
-
-static void test_viewfetch_wraparound(void)
-{
-    MSIHANDLE db = 0, view = 0, rec = 0;
-    UINT r, i, idset, tries;
-    const char *query;
-
-    DeleteFileA(msifile);
-
-    /* just MsiOpenDatabase should not create a file */
-    r = MsiOpenDatabaseW( msifileW, MSIDBOPEN_CREATE, &db );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    query = "CREATE TABLE `phone` ( "
-            "`id` INT, `name` CHAR(32), `number` CHAR(32) "
-            "PRIMARY KEY `id`)";
-    r = run_query( db, 0, query );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    query = "INSERT INTO `phone` ( `id`, `name`, `number` )"
-        "VALUES('1', 'Alan', '5030581')";
-    r = run_query( db, 0, query );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    query = "INSERT INTO `phone` ( `id`, `name`, `number` )"
-        "VALUES('2', 'Barry', '928440')";
-    r = run_query( db, 0, query );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    query = "INSERT INTO `phone` ( `id`, `name`, `number` )"
-        "VALUES('3', 'Cindy', '2937550')";
-    r = run_query( db, 0, query );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    query = "SELECT * FROM `phone`";
-    r = MsiDatabaseOpenViewA( db, query, &view );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    r = MsiViewExecute( view, 0 );
-    ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-
-    for (tries = 0; tries < 3; tries++)
-    {
-        winetest_push_context( "Wraparound attempt #%d", tries );
-        idset = 0;
-
-        for (i = 0; i < 3; i++)
-        {
-            winetest_push_context( "Record #%d", i );
-
-            r = MsiViewFetch( view, &rec );
-            ok( r == ERROR_SUCCESS, "Expected ERROR_SUCCESS, got %d\n", r );
-            if (r != ERROR_SUCCESS)
-            {
-                winetest_pop_context();
-                break;
-            }
-
-            r = MsiRecordGetInteger(rec, 1);
-            ok(r >= 1 && r <= 3, "Expected 1 <= id <= 3, got %d\n", r);
-            if (r < sizeof(idset) * 8)
-            {
-                ok(!(idset & (1 << r)), "Duplicate id %d\n", r);
-                idset |= 1 << r;
-            }
-
-            MsiCloseHandle(rec);
-
-            winetest_pop_context();
-        }
-
-        r = MsiViewFetch(view, &rec);
-        ok(r == ERROR_NO_MORE_ITEMS, "Expected ERROR_NO_MORE_ITEMS, got %d\n", r);
-
-        winetest_pop_context();
-    }
-
-    MsiViewClose(view);
     MsiCloseHandle(view);
     MsiCloseHandle(db);
     DeleteFileA(msifile);
@@ -9435,5 +9255,4 @@ START_TEST(db)
     test_viewmodify_merge();
     test_viewmodify_insert();
     test_view_get_error();
-    test_viewfetch_wraparound();
 }

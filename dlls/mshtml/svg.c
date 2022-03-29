@@ -17,6 +17,7 @@
  */
 
 #include <stdarg.h>
+#include <assert.h>
 #include <math.h>
 
 #define COBJMACROS
@@ -487,14 +488,14 @@ static HRESULT WINAPI SVGSVGElement_get_currentTranslate(ISVGSVGElement *iface, 
 static HRESULT WINAPI SVGSVGElement_suspendRedraw(ISVGSVGElement *iface, ULONG max_wait, ULONG *p)
 {
     SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    FIXME("(%p)->(%lu %p)\n", This, max_wait, p);
+    FIXME("(%p)->(%u %p)\n", This, max_wait, p);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI SVGSVGElement_unsuspendRedraw(ISVGSVGElement *iface, ULONG id)
 {
     SVGSVGElement *This = impl_from_ISVGSVGElement(iface);
-    FIXME("(%p)->(%lu)\n", This, id);
+    FIXME("(%p)->(%u)\n", This, id);
     return E_NOTIMPL;
 }
 
@@ -1038,7 +1039,7 @@ static HRESULT WINAPI SVGTextContentElement_getSubStringLength(ISVGTextContentEl
                                                                LONG charnum, LONG nchars, float *p)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %ld %p)\n", This, charnum, nchars, p);
+    FIXME("(%p)->(%d %d %p)\n", This, charnum, nchars, p);
     return E_NOTIMPL;
 }
 
@@ -1046,7 +1047,7 @@ static HRESULT WINAPI SVGTextContentElement_getStartPositionOfChar(ISVGTextConte
                                                                    LONG charnum, ISVGPoint **p)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %p)\n", This, charnum, p);
+    FIXME("(%p)->(%d %p)\n", This, charnum, p);
     return E_NOTIMPL;
 }
 
@@ -1054,7 +1055,7 @@ static HRESULT WINAPI SVGTextContentElement_getEndPositionOfChar(ISVGTextContent
                                                                  LONG charnum, ISVGPoint **p)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %p)\n", This, charnum, p);
+    FIXME("(%p)->(%d %p)\n", This, charnum, p);
     return E_NOTIMPL;
 }
 
@@ -1062,7 +1063,7 @@ static HRESULT WINAPI SVGTextContentElement_getExtentOfChar(ISVGTextContentEleme
                                                             LONG charnum, ISVGRect **p)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %p)\n", This, charnum, p);
+    FIXME("(%p)->(%d %p)\n", This, charnum, p);
     return E_NOTIMPL;
 }
 
@@ -1070,7 +1071,7 @@ static HRESULT WINAPI SVGTextContentElement_getRotationOfChar(ISVGTextContentEle
                                                               LONG charnum, float *p)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %p)\n", This, charnum, p);
+    FIXME("(%p)->(%d %p)\n", This, charnum, p);
     return E_NOTIMPL;
 }
 
@@ -1086,7 +1087,7 @@ static HRESULT WINAPI SVGTextContentElement_selectSubString(ISVGTextContentEleme
                                                             LONG charnum, LONG nchars)
 {
     SVGTextContentElement *This = impl_from_ISVGTextContentElement(iface);
-    FIXME("(%p)->(%ld %ld)\n", This, charnum, nchars);
+    FIXME("(%p)->(%d %d)\n", This, charnum, nchars);
     return E_NOTIMPL;
 }
 
@@ -1172,17 +1173,21 @@ static HRESULT create_tspan_element(HTMLDocumentNode *doc, nsIDOMSVGElement *nse
     return S_OK;
 }
 
+static const WCHAR circleW[] = {'c','i','r','c','l','e',0};
+static const WCHAR svgW[] = {'s','v','g',0};
+static const WCHAR tspanW[] = {'t','s','p','a','n',0};
+
 HRESULT create_svg_element(HTMLDocumentNode *doc, nsIDOMSVGElement *dom_element, const WCHAR *tag_name, HTMLElement **elem)
 {
     SVGElement *svg_element;
 
     TRACE("%s\n", debugstr_w(tag_name));
 
-    if(!wcscmp(tag_name, L"svg"))
+    if(!wcscmp(tag_name, svgW))
         return create_viewport_element(doc, dom_element, elem);
-    if(!wcscmp(tag_name, L"circle"))
+    if(!wcscmp(tag_name, circleW))
         return create_circle_element(doc, dom_element, elem);
-    if(!wcscmp(tag_name, L"tspan"))
+    if(!wcscmp(tag_name, tspanW))
         return create_tspan_element(doc, dom_element, elem);
 
     svg_element = heap_alloc_zero(sizeof(*svg_element));

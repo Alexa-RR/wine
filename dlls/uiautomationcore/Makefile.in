@@ -1,12 +1,8 @@
 MODULE = uiautomationcore.dll
 IMPORTLIB = uiautomationcore
-<<<<<<< HEAD
 IMPORTS   = uuid
-=======
-IMPORTS   = uuid ole32 oleaut32 user32
->>>>>>> master
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	uia_main.c

@@ -72,7 +72,8 @@ static void destroy_datasource(struct datasource *data)
         CoTaskMemFree(data->propinfoset->rgPropertyInfos);
         CoTaskMemFree(data->propinfoset);
     }
-    CoTaskMemFree(data->description);
+    if (data->description)
+        CoTaskMemFree(data->description);
 
     if (data->provider)
         IDBProperties_Release(data->provider);
@@ -89,7 +90,7 @@ static BOOL initialize_datasource(struct datasource *data)
     hr = CoCreateInstance(&data->clsid, NULL, CLSCTX_INPROC_SERVER, &IID_IDBProperties, (void**)&data->provider);
     if (FAILED(hr))
     {
-        WARN("Datasource cannot be created (0x%08lx)\n", hr);
+        WARN("Datasource cannot be created (0x%08x)\n", hr);
         return FALSE;
     }
 
@@ -100,7 +101,7 @@ static BOOL initialize_datasource(struct datasource *data)
     hr = IDBProperties_GetPropertyInfo(data->provider, 1, &propidset, &infocount, &data->propinfoset, &data->description);
     if (FAILED(hr))
     {
-        WARN("Failed to get DB Properties (0x%08lx)\n", hr);
+        WARN("Failed to get DB Properties (0x%08x)\n", hr);
 
         IDBProperties_Release(data->provider);
         data->provider = NULL;
@@ -180,7 +181,7 @@ static HRESULT WINAPI dslocator_QueryInterface(IDataSourceLocator *iface, REFIID
 static ULONG WINAPI dslocator_AddRef(IDataSourceLocator *iface)
 {
     DSLocatorImpl *This = impl_from_IDataSourceLocator(iface);
-    TRACE("(%p)->%lu\n",This,This->ref);
+    TRACE("(%p)->%u\n",This,This->ref);
     return InterlockedIncrement(&This->ref);
 }
 
@@ -189,7 +190,7 @@ static ULONG WINAPI dslocator_Release(IDataSourceLocator *iface)
     DSLocatorImpl *This = impl_from_IDataSourceLocator(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p)->%lu\n",This,ref+1);
+    TRACE("(%p)->%u\n",This,ref+1);
 
     if (!ref)
     {
@@ -212,7 +213,7 @@ static HRESULT WINAPI dslocator_GetTypeInfo(IDataSourceLocator *iface, UINT iTIn
 {
     DSLocatorImpl *This = impl_from_IDataSourceLocator(iface);
 
-    FIXME("(%p)->(%u %lu %p)\n", This, iTInfo, lcid, ppTInfo);
+    FIXME("(%p)->(%u %u %p)\n", This, iTInfo, lcid, ppTInfo);
 
     return E_NOTIMPL;
 }
@@ -222,7 +223,7 @@ static HRESULT WINAPI dslocator_GetIDsOfNames(IDataSourceLocator *iface, REFIID 
 {
     DSLocatorImpl *This = impl_from_IDataSourceLocator(iface);
 
-    FIXME("(%p)->(%s %p %u %lu %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
+    FIXME("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames, lcid, rgDispId);
 
     return E_NOTIMPL;
 }
@@ -232,7 +233,7 @@ static HRESULT WINAPI dslocator_Invoke(IDataSourceLocator *iface, DISPID dispIdM
 {
     DSLocatorImpl *This = impl_from_IDataSourceLocator(iface);
 
-    FIXME("(%p)->(%ld %s %ld %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
+    FIXME("(%p)->(%d %s %d %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
            lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     return E_NOTIMPL;
@@ -277,6 +278,7 @@ static void create_connections_columns(HWND lv)
 
 static void add_connections_providers(HWND lv)
 {
+    static const WCHAR oledbprov[] = {'\\','O','L','E',' ','D','B',' ','P','r','o','v','i','d','e','r',0};
     LONG res;
     HKEY key = NULL, subkey;
     DWORD index = 0;
@@ -295,7 +297,7 @@ static void add_connections_providers(HWND lv)
         WCHAR description[MAX_PATH];
 
         lstrcpyW(guidkey, provider);
-        lstrcatW(guidkey, L"\\OLE DB Provider");
+        lstrcatW(guidkey, oledbprov);
 
         res = RegOpenKeyW(key, guidkey, &subkey);
         if (res == ERROR_SUCCESS)
@@ -329,9 +331,9 @@ static void add_connections_providers(HWND lv)
     RegCloseKey(key);
 }
 
-static INT_PTR CALLBACK data_link_properties_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK data_link_properties_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    TRACE("(%p, %08x, %08Ix, %08Ix)\n", hwnd, msg, wp, lp);
+    TRACE("(%p, %08x, %08lx, %08lx)\n", hwnd, msg, wp, lp);
 
     switch (msg)
     {
@@ -477,9 +479,9 @@ static void connection_toggle_controls(HWND parent)
     EnableWindow(GetDlgItem(parent, IDC_BTN_BUILD), !checked);
 }
 
-static INT_PTR CALLBACK data_link_connection_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK data_link_connection_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    TRACE("(%p, %08x, %08Ix, %08Ix)\n", hwnd, msg, wp, lp);
+    TRACE("(%p, %08x, %08lx, %08lx)\n", hwnd, msg, wp, lp);
 
     switch (msg)
     {
@@ -492,7 +494,7 @@ static INT_PTR CALLBACK data_link_connection_dlg_proc(HWND hwnd, UINT msg, WPARA
         }
         case WM_COMMAND:
         {
-            switch (LOWORD(wp))
+            switch LOWORD(wp)
             {
                 case IDC_RDO_SRC_NAME:
                 case IDC_BTN_CONNECTION:
@@ -549,9 +551,9 @@ static void advanced_fill_permission_list(HWND parent)
     }
 }
 
-static INT_PTR CALLBACK data_link_advanced_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK data_link_advanced_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    TRACE("(%p, %08x, %08Ix, %08Ix)\n", hwnd, msg, wp, lp);
+    TRACE("(%p, %08x, %08lx, %08lx)\n", hwnd, msg, wp, lp);
 
     switch (msg)
     {
@@ -593,9 +595,9 @@ static void create_page_all_columns(HWND lv)
     SendMessageW(lv, LVM_INSERTCOLUMNW, 0, (LPARAM)&column);
 }
 
-static INT_PTR CALLBACK data_link_all_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK data_link_all_dlg_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    TRACE("(%p, %08x, %08Ix, %08Ix)\n", hwnd, msg, wp, lp);
+    TRACE("(%p, %08x, %08lx, %08lx)\n", hwnd, msg, wp, lp);
 
     switch (msg)
     {
@@ -712,7 +714,7 @@ static ULONG WINAPI datainitialize_Release(IDataInitialize *iface)
 static HRESULT WINAPI datainitialize_GetDataSource(IDataInitialize *iface,
     IUnknown *outer, DWORD context, LPWSTR initstring, REFIID riid, IUnknown **datasource)
 {
-    TRACE("(%p)->(%p %#lx %s %s %p)\n", iface, outer, context, debugstr_w(initstring), debugstr_guid(riid),
+    TRACE("(%p)->(%p %#x %s %s %p)\n", iface, outer, context, debugstr_w(initstring), debugstr_guid(riid),
         datasource);
 
     return get_data_source(outer, context, initstring, riid, datasource);
@@ -728,7 +730,7 @@ static HRESULT WINAPI datainitialize_GetInitializationString(IDataInitialize *if
 static HRESULT WINAPI datainitialize_CreateDBInstance(IDataInitialize *iface, REFCLSID prov, IUnknown *outer,
     DWORD clsctx, LPWSTR reserved, REFIID riid, IUnknown **datasource)
 {
-    FIXME("(%p)->(%s %p %#lx %p %s %p): stub\n", iface, debugstr_guid(prov), outer, clsctx, reserved,
+    FIXME("(%p)->(%s %p %#x %p %s %p): stub\n", iface, debugstr_guid(prov), outer, clsctx, reserved,
         debugstr_guid(riid), datasource);
     return E_NOTIMPL;
 }
@@ -736,7 +738,7 @@ static HRESULT WINAPI datainitialize_CreateDBInstance(IDataInitialize *iface, RE
 static HRESULT WINAPI datainitialize_CreateDBInstanceEx(IDataInitialize *iface, REFCLSID prov, IUnknown *outer,
     DWORD clsctx, LPWSTR reserved, COSERVERINFO *server_info, DWORD cmq, MULTI_QI *results)
 {
-    FIXME("(%p)->(%s %p %#lx %p %p %lu %p): stub\n", iface, debugstr_guid(prov), outer, clsctx, reserved,
+    FIXME("(%p)->(%s %p %#x %p %p %u %p): stub\n", iface, debugstr_guid(prov), outer, clsctx, reserved,
         server_info, cmq, results);
     return E_NOTIMPL;
 }
@@ -750,7 +752,7 @@ static HRESULT WINAPI datainitialize_LoadStringFromStorage(IDataInitialize *ifac
 static HRESULT WINAPI datainitialize_WriteStringToStorage(IDataInitialize *iface, LPWSTR filename, LPWSTR initstring,
     DWORD disposition)
 {
-    FIXME("(%p)->(%s %s %#lx): stub\n", iface, debugstr_w(filename), debugstr_w(initstring), disposition);
+    FIXME("(%p)->(%s %s %#x): stub\n", iface, debugstr_w(filename), debugstr_w(initstring), disposition);
     return E_NOTIMPL;
 }
 

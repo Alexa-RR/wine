@@ -26,8 +26,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(urlmon);
 
-static WCHAR cbinding_contextW[] = L"CBinding Context";
-static WCHAR bscb_holderW[] = L"_BSCB_Holder_";
+static WCHAR cbinding_contextW[] = {'C','B','i','n','d','i','n','g',' ','C','o','n','t','e','x','t',0};
+static WCHAR bscb_holderW[] = { '_','B','S','C','B','_','H','o','l','d','e','r','_',0 };
 
 typedef struct {
     IUnknown IUnknown_iface;
@@ -131,15 +131,15 @@ static void dump_BINDINFO(BINDINFO *bi)
 
     TRACE("\n"
             "BINDINFO = {\n"
-            "    %ld, %s,\n"
-            "    {%ld, %p, %p},\n"
+            "    %d, %s,\n"
+            "    {%d, %p, %p},\n"
             "    %s,\n"
             "    %s,\n"
             "    %s,\n"
-            "    %ld, %08lx, %ld, %ld\n"
-            "    {%ld %p %x},\n"
+            "    %d, %08x, %d, %d\n"
+            "    {%d %p %x},\n"
             "    %s\n"
-            "    %p, %ld\n"
+            "    %p, %d\n"
             "}\n",
 
             bi->cbSize, debugstr_w(bi->szExtraInfo),
@@ -197,6 +197,7 @@ static LPWSTR get_mime_clsid(LPCWSTR mime, CLSID *clsid)
     static const WCHAR mime_keyW[] =
         {'M','I','M','E','\\','D','a','t','a','b','a','s','e','\\',
          'C','o','n','t','e','n','t',' ','T','y','p','e','\\'};
+    static const WCHAR clsidW[] = {'C','L','S','I','D',0};
 
     len = lstrlenW(mime)+1;
     key_name = heap_alloc(sizeof(mime_keyW) + len*sizeof(WCHAR));
@@ -206,23 +207,23 @@ static LPWSTR get_mime_clsid(LPCWSTR mime, CLSID *clsid)
     res = RegOpenKeyW(HKEY_CLASSES_ROOT, key_name, &hkey);
     heap_free(key_name);
     if(res != ERROR_SUCCESS) {
-        WARN("Could not open MIME key: %lx\n", res);
+        WARN("Could not open MIME key: %x\n", res);
         return NULL;
     }
 
     size = 50*sizeof(WCHAR);
     ret = heap_alloc(size);
-    res = RegQueryValueExW(hkey, L"CLSID", NULL, &type, (BYTE*)ret, &size);
+    res = RegQueryValueExW(hkey, clsidW, NULL, &type, (LPBYTE)ret, &size);
     RegCloseKey(hkey);
     if(res != ERROR_SUCCESS) {
-        WARN("Could not get CLSID: %08lx\n", res);
+        WARN("Could not get CLSID: %08x\n", res);
         heap_free(ret);
         return NULL;
     }
 
     hres = CLSIDFromString(ret, clsid);
     if(FAILED(hres)) {
-        WARN("Could not parse CLSID: %08lx\n", hres);
+        WARN("Could not parse CLSID: %08x\n", hres);
         heap_free(ret);
         return NULL;
     }
@@ -237,7 +238,7 @@ static void load_doc_mon(Binding *binding, IPersistMoniker *persist)
 
     hres = CreateAsyncBindCtxEx(binding->bctx, 0, NULL, NULL, &bctx, 0);
     if(FAILED(hres)) {
-        WARN("CreateAsyncBindCtxEx failed: %08lx\n", hres);
+        WARN("CreateAsyncBindCtxEx failed: %08x\n", hres);
         return;
     }
 
@@ -248,7 +249,7 @@ static void load_doc_mon(Binding *binding, IPersistMoniker *persist)
     IBindCtx_RevokeObjectParam(bctx, cbinding_contextW);
     IBindCtx_Release(bctx);
     if(FAILED(hres))
-        FIXME("Load failed: %08lx\n", hres);
+        FIXME("Load failed: %08x\n", hres);
 }
 
 static HRESULT create_mime_object(Binding *binding, const CLSID *clsid, LPCWSTR clsid_str)
@@ -259,7 +260,7 @@ static HRESULT create_mime_object(Binding *binding, const CLSID *clsid, LPCWSTR 
     hres = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER|CLSCTX_INPROC_HANDLER,
                             &binding->iid, (void**)&binding->obj);
     if(FAILED(hres)) {
-        WARN("CoCreateInstance failed: %08lx\n", hres);
+        WARN("CoCreateInstance failed: %08x\n", hres);
         return INET_E_CANNOT_INSTANTIATE_OBJECT;
     }
 
@@ -280,7 +281,7 @@ static HRESULT create_mime_object(Binding *binding, const CLSID *clsid, LPCWSTR 
 
         IPersistMoniker_Release(persist);
     }else {
-        FIXME("Could not get IPersistMoniker: %08lx\n", hres);
+        FIXME("Could not get IPersistMoniker: %08x\n", hres);
         /* FIXME: Try query IPersistFile */
     }
 
@@ -330,7 +331,7 @@ static void cache_file_available(Binding *This, const WCHAR *file_name)
         This->stgmed_buf->file = CreateFileW(file_name, GENERIC_READ, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL,
                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if(This->stgmed_buf->file == INVALID_HANDLE_VALUE)
-            WARN("CreateFile failed: %lu\n", GetLastError());
+            WARN("CreateFile failed: %u\n", GetLastError());
     }
 }
 
@@ -362,7 +363,7 @@ static ULONG WINAPI StgMedUnk_AddRef(IUnknown *iface)
     stgmed_buf_t *This = impl_from_IUnknown(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -372,7 +373,7 @@ static ULONG WINAPI StgMedUnk_Release(IUnknown *iface)
     stgmed_buf_t *This = impl_from_IUnknown(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
         if(This->file != INVALID_HANDLE_VALUE)
@@ -457,7 +458,7 @@ static ULONG WINAPI ProtocolStream_AddRef(IStream *iface)
     ProtocolStream *This = impl_from_IStream(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -467,7 +468,7 @@ static ULONG WINAPI ProtocolStream_Release(IStream *iface)
     ProtocolStream *This = impl_from_IStream(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
         IUnknown_Release(&This->buf->IUnknown_iface);
@@ -486,7 +487,7 @@ static HRESULT WINAPI ProtocolStream_Read(IStream *iface, void *pv,
     DWORD read = 0;
     HRESULT hres;
 
-    TRACE("(%p)->(%p %ld %p)\n", This, pv, cb, pcbRead);
+    TRACE("(%p)->(%p %d %p)\n", This, pv, cb, pcbRead);
 
     if(This->buf->file == INVALID_HANDLE_VALUE) {
         hres = This->buf->hres = IInternetProtocolEx_Read(This->buf->protocol, (PBYTE)pv, cb, &read);
@@ -500,7 +501,7 @@ static HRESULT WINAPI ProtocolStream_Read(IStream *iface, void *pv,
     if(hres == E_PENDING)
         return E_PENDING;
     else if(FAILED(hres))
-        FIXME("Read failed: %08lx\n", hres);
+        FIXME("Read failed: %08x\n", hres);
 
     return read ? S_OK : S_FALSE;
 }
@@ -510,7 +511,7 @@ static HRESULT WINAPI ProtocolStream_Write(IStream *iface, const void *pv,
 {
     ProtocolStream *This = impl_from_IStream(iface);
 
-    TRACE("(%p)->(%p %ld %p)\n", This, pv, cb, pcbWritten);
+    TRACE("(%p)->(%p %d %p)\n", This, pv, cb, pcbWritten);
 
     return STG_E_ACCESSDENIED;
 }
@@ -522,7 +523,7 @@ static HRESULT WINAPI ProtocolStream_Seek(IStream *iface, LARGE_INTEGER dlibMove
     LARGE_INTEGER new_pos;
     DWORD method;
 
-    TRACE("(%p)->(%ld %08lx %p)\n", This, dlibMove.u.LowPart, dwOrigin, plibNewPosition);
+    TRACE("(%p)->(%d %08x %p)\n", This, dlibMove.u.LowPart, dwOrigin, plibNewPosition);
 
     if(This->buf->file == INVALID_HANDLE_VALUE) {
         /* We should probably call protocol handler's Seek. */
@@ -541,12 +542,12 @@ static HRESULT WINAPI ProtocolStream_Seek(IStream *iface, LARGE_INTEGER dlibMove
         method = FILE_END;
         break;
     default:
-        WARN("Invalid origin %lx\n", dwOrigin);
+        WARN("Invalid origin %x\n", dwOrigin);
         return E_FAIL;
     }
 
     if(!SetFilePointerEx(This->buf->file, dlibMove, &new_pos, method)) {
-        FIXME("SetFilePointerEx failed: %lu\n", GetLastError());
+        FIXME("SetFilePointerEx failed: %u\n", GetLastError());
         return E_FAIL;
     }
 
@@ -558,7 +559,7 @@ static HRESULT WINAPI ProtocolStream_Seek(IStream *iface, LARGE_INTEGER dlibMove
 static HRESULT WINAPI ProtocolStream_SetSize(IStream *iface, ULARGE_INTEGER libNewSize)
 {
     ProtocolStream *This = impl_from_IStream(iface);
-    FIXME("(%p)->(%ld)\n", This, libNewSize.u.LowPart);
+    FIXME("(%p)->(%d)\n", This, libNewSize.u.LowPart);
     return E_NOTIMPL;
 }
 
@@ -566,7 +567,7 @@ static HRESULT WINAPI ProtocolStream_CopyTo(IStream *iface, IStream *pstm,
         ULARGE_INTEGER cb, ULARGE_INTEGER *pcbRead, ULARGE_INTEGER *pcbWritten)
 {
     ProtocolStream *This = impl_from_IStream(iface);
-    FIXME("(%p)->(%p %ld %p %p)\n", This, pstm, cb.u.LowPart, pcbRead, pcbWritten);
+    FIXME("(%p)->(%p %d %p %p)\n", This, pstm, cb.u.LowPart, pcbRead, pcbWritten);
     return E_NOTIMPL;
 }
 
@@ -574,7 +575,7 @@ static HRESULT WINAPI ProtocolStream_Commit(IStream *iface, DWORD grfCommitFlags
 {
     ProtocolStream *This = impl_from_IStream(iface);
 
-    TRACE("(%p)->(%08lx)\n", This, grfCommitFlags);
+    TRACE("(%p)->(%08x)\n", This, grfCommitFlags);
 
     return E_NOTIMPL;
 }
@@ -592,7 +593,7 @@ static HRESULT WINAPI ProtocolStream_LockRegion(IStream *iface, ULARGE_INTEGER l
                                                ULARGE_INTEGER cb, DWORD dwLockType)
 {
     ProtocolStream *This = impl_from_IStream(iface);
-    FIXME("(%p)->(%ld %ld %ld)\n", This, libOffset.u.LowPart, cb.u.LowPart, dwLockType);
+    FIXME("(%p)->(%d %d %d)\n", This, libOffset.u.LowPart, cb.u.LowPart, dwLockType);
     return E_NOTIMPL;
 }
 
@@ -600,7 +601,7 @@ static HRESULT WINAPI ProtocolStream_UnlockRegion(IStream *iface,
         ULARGE_INTEGER libOffset, ULARGE_INTEGER cb, DWORD dwLockType)
 {
     ProtocolStream *This = impl_from_IStream(iface);
-    FIXME("(%p)->(%ld %ld %ld)\n", This, libOffset.u.LowPart, cb.u.LowPart, dwLockType);
+    FIXME("(%p)->(%d %d %d)\n", This, libOffset.u.LowPart, cb.u.LowPart, dwLockType);
     return E_NOTIMPL;
 }
 
@@ -608,7 +609,7 @@ static HRESULT WINAPI ProtocolStream_Stat(IStream *iface, STATSTG *pstatstg,
                                          DWORD dwStatFlag)
 {
     ProtocolStream *This = impl_from_IStream(iface);
-    TRACE("(%p)->(%p %08lx)\n", This, pstatstg, dwStatFlag);
+    TRACE("(%p)->(%p %08x)\n", This, pstatstg, dwStatFlag);
 
     if(!pstatstg)
         return E_FAIL;
@@ -832,7 +833,7 @@ static ULONG WINAPI Binding_AddRef(IBinding *iface)
     Binding *This = impl_from_IBinding(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -842,7 +843,7 @@ static ULONG WINAPI Binding_Release(IBinding *iface)
     Binding *This = impl_from_IBinding(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
         if(This->notif_hwnd)
@@ -914,7 +915,7 @@ static HRESULT WINAPI Binding_Resume(IBinding *iface)
 static HRESULT WINAPI Binding_SetPriority(IBinding *iface, LONG nPriority)
 {
     Binding *This = impl_from_IBinding(iface);
-    FIXME("(%p)->(%ld)\n", This, nPriority);
+    FIXME("(%p)->(%d)\n", This, nPriority);
     return E_NOTIMPL;
 }
 
@@ -1067,7 +1068,7 @@ static HRESULT WINAPI InternetProtocolSink_ReportProgress(IInternetProtocolSink 
     case BINDSTATUS_ACCEPTRANGES:
         break;
     default:
-        FIXME("Unhandled status code %ld\n", ulStatusCode);
+        FIXME("Unhandled status code %d\n", ulStatusCode);
         return E_NOTIMPL;
     };
 
@@ -1079,7 +1080,7 @@ static void report_data(Binding *This, DWORD bscf, ULONG progress, ULONG progres
     FORMATETC formatetc = {0, NULL, 1, -1, TYMED_ISTREAM};
     BOOL sent_begindownloaddata = FALSE;
 
-    TRACE("(%p)->(%ld %lu %lu)\n", This, bscf, progress, progress_max);
+    TRACE("(%p)->(%d %u %u)\n", This, bscf, progress, progress_max);
 
     if(This->download_state == END_DOWNLOAD || (This->state & BINDING_ABORTED)) {
         read_protocol_data(This->stgmed_buf);
@@ -1126,7 +1127,8 @@ static void report_data(Binding *This, DWORD bscf, ULONG progress, ULONG progres
         HRESULT hres;
 
         if(!(This->state & BINDING_LOCKED)) {
-            hres = IInternetProtocolEx_LockRequest(&This->protocol->IInternetProtocolEx_iface, 0);
+            HRESULT hres = IInternetProtocolEx_LockRequest(
+                    &This->protocol->IInternetProtocolEx_iface, 0);
             if(SUCCEEDED(hres))
                 This->state |= BINDING_LOCKED;
         }
@@ -1149,7 +1151,7 @@ static void report_data(Binding *This, DWORD bscf, ULONG progress, ULONG progres
                         BINDSTATUS_ENDDOWNLOADDATA, This->url);
             }
 
-            WARN("OnDataAvailable returned %lx\n", hres);
+            WARN("OnDataAvailable returned %x\n", hres);
             stop_binding(This, hres, NULL);
             return;
         }
@@ -1164,7 +1166,7 @@ static HRESULT WINAPI InternetProtocolSink_ReportData(IInternetProtocolSink *ifa
 {
     Binding *This = impl_from_IInternetProtocolSink(iface);
 
-    TRACE("(%p)->(%ld %lu %lu)\n", This, grfBSCF, ulProgress, ulProgressMax);
+    TRACE("(%p)->(%d %u %u)\n", This, grfBSCF, ulProgress, ulProgressMax);
 
     report_data(This, grfBSCF, ulProgress, ulProgressMax);
     return S_OK;
@@ -1175,7 +1177,7 @@ static HRESULT WINAPI InternetProtocolSink_ReportResult(IInternetProtocolSink *i
 {
     Binding *This = impl_from_IInternetProtocolSink(iface);
 
-    TRACE("(%p)->(%08lx %ld %s)\n", This, hrResult, dwError, debugstr_w(szResult));
+    TRACE("(%p)->(%08x %d %s)\n", This, hrResult, dwError, debugstr_w(szResult));
 
     stop_binding(This, hrResult, szResult);
 
@@ -1233,15 +1235,17 @@ static HRESULT WINAPI InternetBindInfo_GetBindString(IInternetBindInfo *iface,
 {
     Binding *This = impl_from_IInternetBindInfo(iface);
 
-    TRACE("(%p)->(%ld %p %ld %p)\n", This, ulStringType, ppwzStr, cEl, pcElFetched);
+    TRACE("(%p)->(%d %p %d %p)\n", This, ulStringType, ppwzStr, cEl, pcElFetched);
 
     switch(ulStringType) {
     case BINDSTRING_ACCEPT_MIMES: {
+        static const WCHAR wszMimes[] = {'*','/','*',0};
+
         if(!ppwzStr || !pcElFetched)
             return E_INVALIDARG;
 
-        ppwzStr[0] = CoTaskMemAlloc(sizeof(L"*/*"));
-        memcpy(ppwzStr[0], L"*/*", sizeof(L"*/*"));
+        ppwzStr[0] = CoTaskMemAlloc(sizeof(wszMimes));
+        memcpy(ppwzStr[0], wszMimes, sizeof(wszMimes));
         *pcElFetched = 1;
         return S_OK;
     }
@@ -1273,7 +1277,7 @@ static HRESULT WINAPI InternetBindInfo_GetBindString(IInternetBindInfo *iface,
     }
     }
 
-    FIXME("not supported string type %ld\n", ulStringType);
+    FIXME("not supported string type %d\n", ulStringType);
     return E_NOTIMPL;
 }
 
@@ -1315,7 +1319,7 @@ static HRESULT WINAPI WinInetHttpInfo_QueryOption(IWinInetHttpInfo *iface, DWORD
     IWinInetInfo *wininet_info;
     HRESULT hres;
 
-    TRACE("(%p)->(%lx %p %p)\n", This, dwOption, pBuffer, pcbBuffer);
+    TRACE("(%p)->(%x %p %p)\n", This, dwOption, pBuffer, pcbBuffer);
 
     hres = IInternetProtocolEx_QueryInterface(&This->protocol->IInternetProtocolEx_iface,
                                               &IID_IWinInetInfo, (void**)&wininet_info);
@@ -1334,7 +1338,7 @@ static HRESULT WINAPI WinInetHttpInfo_QueryInfo(IWinInetHttpInfo *iface, DWORD d
     IWinInetHttpInfo *http_info;
     HRESULT hres;
 
-    TRACE("(%p)->(%lx %p %p %p %p)\n", This, dwOption, pBuffer, pcbBuffer, pdwFlags, pdwReserved);
+    TRACE("(%p)->(%x %p %p %p %p)\n", This, dwOption, pBuffer, pcbBuffer, pdwFlags, pdwReserved);
 
     hres = IInternetProtocolEx_QueryInterface(&This->protocol->IInternetProtocolEx_iface,
                                               &IID_IWinInetHttpInfo, (void**)&http_info);
@@ -1503,12 +1507,12 @@ static HRESULT Binding_Create(IMoniker *mon, Binding *binding_ctx, IUri *uri, IB
 
     hres = IBindStatusCallback_GetBindInfo(ret->callback, &ret->bindf, &ret->bindinfo);
     if(FAILED(hres)) {
-        WARN("GetBindInfo failed: %08lx\n", hres);
+        WARN("GetBindInfo failed: %08x\n", hres);
         IBinding_Release(&ret->IBinding_iface);
         return hres;
     }
 
-    TRACE("bindf %08lx\n", ret->bindf);
+    TRACE("bindf %08x\n", ret->bindf);
     dump_BINDINFO(&ret->bindinfo);
 
     ret->bindf |= BINDF_FROMURLMON;
@@ -1566,7 +1570,7 @@ static HRESULT start_binding(IMoniker *mon, Binding *binding_ctx, IUri *uri, IBi
 
     hres = IBindStatusCallback_OnStartBinding(binding->callback, 0, &binding->IBinding_iface);
     if(FAILED(hres)) {
-        WARN("OnStartBinding failed: %08lx\n", hres);
+        WARN("OnStartBinding failed: %08x\n", hres);
         if(hres != E_ABORT && hres != E_NOTIMPL)
             hres = INET_E_DOWNLOAD_FAILURE;
 
@@ -1587,7 +1591,7 @@ static HRESULT start_binding(IMoniker *mon, Binding *binding_ctx, IUri *uri, IBi
                 &binding->IInternetProtocolSink_iface, &binding->IInternetBindInfo_iface,
                 PI_APARTMENTTHREADED|PI_MIMEVERIFICATION, 0);
 
-        TRACE("start ret %08lx\n", hres);
+        TRACE("start ret %08x\n", hres);
 
         if(FAILED(hres) && hres != E_PENDING) {
             stop_binding(binding, hres, NULL);

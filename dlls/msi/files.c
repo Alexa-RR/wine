@@ -160,9 +160,9 @@ DWORD msi_get_file_version_info( MSIPACKAGE *package, const WCHAR *path, DWORD b
 
 VS_FIXEDFILEINFO *msi_get_disk_file_version( MSIPACKAGE *package, const WCHAR *filename )
 {
+    static const WCHAR name[] = {'\\',0};
     VS_FIXEDFILEINFO *ptr, *ret;
-    DWORD version_size;
-    UINT size;
+    DWORD version_size, size;
     void *version;
 
     if (!(version_size = msi_get_file_version_info( package, filename, 0, NULL ))) return NULL;
@@ -170,7 +170,7 @@ VS_FIXEDFILEINFO *msi_get_disk_file_version( MSIPACKAGE *package, const WCHAR *f
 
     msi_get_file_version_info( package, filename, version_size, version );
 
-    if (!VerQueryValueW( version, L"\\", (void **)&ptr, &size ))
+    if (!VerQueryValueW( version, name, (void **)&ptr, &size ))
     {
         msi_free( version );
         return NULL;
@@ -267,7 +267,7 @@ static BOOL is_obsoleted_by_patch( MSIPACKAGE *package, MSIFILE *file )
 {
     if (!list_empty( &package->patches ) && file->disk_id < MSI_INITIAL_MEDIA_TRANSFORM_DISKID)
     {
-        if (!msi_get_property_int( package->db, L"Installed", 0 )) return FALSE;
+        if (!msi_get_property_int( package->db, szInstalled, 0 )) return FALSE;
         return TRUE;
     }
     if (is_registered_patch_media( package, file->disk_id )) return TRUE;
@@ -355,7 +355,7 @@ static msi_file_state calculate_install_state( MSIPACKAGE *package, MSIFILE *fil
     }
     if ((size = msi_get_disk_file_size( package, file->TargetPath )) != file->FileSize)
     {
-        TRACE("overwriting %s (old size %lu new size %d)\n", debugstr_w(file->File), size, file->FileSize);
+        TRACE("overwriting %s (old size %u new size %u)\n", debugstr_w(file->File), size, file->FileSize);
         return msifs_overwrite;
     }
     if (file->hash.dwFileHashInfoSize)
@@ -442,7 +442,7 @@ static UINT copy_install_file(MSIPACKAGE *package, MSIFILE *file, LPWSTR source)
             msi_free( pathW );
             return ERROR_OUTOFMEMORY;
         }
-        if (!GetTempFileNameW( pathW, L"msi", 0, tmpfileW )) tmpfileW[0] = 0;
+        if (!GetTempFileNameW( pathW, szMsi, 0, tmpfileW )) tmpfileW[0] = 0;
         msi_free( pathW );
 
         if (msi_copy_file( package, source, tmpfileW, FALSE ) &&
@@ -548,7 +548,7 @@ WCHAR *msi_resolve_file_source( MSIPACKAGE *package, MSIFILE *file )
 
 /*
  * ACTION_InstallFiles()
- *
+ * 
  * For efficiency, this is done in two passes:
  * 1) Correct all the TargetPaths and determine what files are to be installed.
  * 2) Extract Cabinets and copy files.
@@ -562,7 +562,7 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
     msi_set_sourcedir_props(package, FALSE);
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"InstallFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szInstallFiles);
 
     schedule_install_files(package);
     mi = msi_alloc_zero( sizeof(MSIMEDIAINFO) );
@@ -571,7 +571,7 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
     {
         BOOL is_global_assembly = msi_is_global_assembly( file->Component );
 
-        msi_file_update_ui( package, file, L"InstallFiles" );
+        msi_file_update_ui( package, file, szInstallFiles );
 
         rc = msi_load_media_info( package, file->Sequence, mi );
         if (rc != ERROR_SUCCESS)
@@ -583,7 +583,7 @@ UINT ACTION_InstallFiles(MSIPACKAGE *package)
 
         if (file->state != msifs_hashmatch &&
             file->state != msifs_skipped &&
-            (file->state != msifs_present || !msi_get_property_int( package->db, L"Installed", 0 )) &&
+            (file->state != msifs_present || !msi_get_property_int( package->db, szInstalled, 0 )) &&
             (rc = ready_media( package, file->IsCompressed, mi )))
         {
             ERR("Failed to ready media for %s\n", debugstr_w(file->File));
@@ -722,7 +722,7 @@ static UINT patch_file( MSIPACKAGE *package, MSIFILEPATCH *patch )
     }
     else
     {
-        WARN( "failed to patch %s: %#lx\n", debugstr_w(patch->File->TargetPath), GetLastError() );
+        WARN("failed to patch %s: %08x\n", debugstr_w(patch->File->TargetPath), GetLastError());
         r = ERROR_INSTALL_FAILURE;
     }
     DeleteFileW( patch->path );
@@ -743,7 +743,7 @@ static UINT patch_assembly( MSIPACKAGE *package, MSIASSEMBLY *assembly, MSIFILEP
     while ((IAssemblyEnum_GetNextAssembly( iter, NULL, &name, 0 ) == S_OK))
     {
         WCHAR *displayname, *path;
-        DWORD len = 0;
+        UINT len = 0;
         HRESULT hr;
 
         hr = IAssemblyName_GetDisplayName( name, NULL, &len, 0 );
@@ -761,8 +761,8 @@ static UINT patch_assembly( MSIPACKAGE *package, MSIASSEMBLY *assembly, MSIFILEP
         {
             if (!msi_copy_file( package, path, patch->File->TargetPath, FALSE ))
             {
-                ERR( "failed to copy file %s -> %s (%lu)\n", debugstr_w(path),
-                     debugstr_w(patch->File->TargetPath), GetLastError() );
+                ERR("Failed to copy file %s -> %s (%u)\n", debugstr_w(path),
+                    debugstr_w(patch->File->TargetPath), GetLastError() );
                 msi_free( path );
                 msi_free( displayname );
                 IAssemblyName_Release( name );
@@ -790,7 +790,7 @@ UINT ACTION_PatchFiles( MSIPACKAGE *package )
     TRACE("%p\n", package);
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"PatchFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szPatchFiles);
 
     mi = msi_alloc_zero( sizeof(MSIMEDIAINFO) );
 
@@ -898,7 +898,7 @@ static BOOL move_file( MSIPACKAGE *package, const WCHAR *source, const WCHAR *de
         ret = msi_move_file( package, source, dest, MOVEFILE_REPLACE_EXISTING );
         if (!ret)
         {
-            WARN( "msi_move_file failed: %lu\n", GetLastError() );
+            WARN("msi_move_file failed: %u\n", GetLastError());
             return FALSE;
         }
     }
@@ -908,7 +908,7 @@ static BOOL move_file( MSIPACKAGE *package, const WCHAR *source, const WCHAR *de
         ret = msi_copy_file( package, source, dest, FALSE );
         if (!ret)
         {
-            WARN( "msi_copy_file failed: %lu\n", GetLastError() );
+            WARN("msi_copy_file failed: %u\n", GetLastError());
             return FALSE;
         }
     }
@@ -1129,7 +1129,7 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
 
         lstrcpyW(source, sourcedir);
         if (source[lstrlenW(source) - 1] != '\\')
-            lstrcatW(source, L"\\");
+            lstrcatW(source, szBackSlash);
         lstrcatW(source, sourcename);
     }
 
@@ -1167,7 +1167,7 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
 
     lstrcpyW(dest, destdir);
     if (dest[lstrlenW(dest) - 1] != '\\')
-        lstrcatW(dest, L"\\");
+        lstrcatW(dest, szBackSlash);
 
     if (destname)
         lstrcatW(dest, destname);
@@ -1176,7 +1176,7 @@ static UINT ITERATE_MoveFiles( MSIRECORD *rec, LPVOID param )
     {
         if (!msi_create_full_path( package, destdir ))
         {
-            WARN( "failed to create directory %lu\n", GetLastError() );
+            WARN("failed to create directory %u\n", GetLastError());
             goto done;
         }
     }
@@ -1205,13 +1205,16 @@ done:
 
 UINT ACTION_MoveFiles( MSIPACKAGE *package )
 {
+    static const WCHAR query[] = {
+        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
+        '`','M','o','v','e','F','i','l','e','`',0};
     MSIQUERY *view;
     UINT rc;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"MoveFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szMoveFiles);
 
-    rc = MSI_DatabaseOpenViewW(package->db, L"SELECT * FROM `MoveFile`", &view);
+    rc = MSI_DatabaseOpenViewW(package->db, query, &view);
     if (rc != ERROR_SUCCESS)
         return ERROR_SUCCESS;
 
@@ -1317,8 +1320,8 @@ static UINT ITERATE_DuplicateFiles(MSIRECORD *row, LPVOID param)
     TRACE("Duplicating file %s to %s\n", debugstr_w(file->TargetPath), debugstr_w(dest));
     if (!msi_copy_file( package, file->TargetPath, dest, TRUE ))
     {
-        WARN( "failed to copy file %s -> %s (%lu)\n",
-              debugstr_w(file->TargetPath), debugstr_w(dest), GetLastError() );
+        WARN("Failed to copy file %s -> %s (%u)\n",
+             debugstr_w(file->TargetPath), debugstr_w(dest), GetLastError());
     }
     FIXME("We should track these duplicate files as well\n");
 
@@ -1335,13 +1338,16 @@ static UINT ITERATE_DuplicateFiles(MSIRECORD *row, LPVOID param)
 
 UINT ACTION_DuplicateFiles(MSIPACKAGE *package)
 {
+    static const WCHAR query[] = {
+        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
+        '`','D','u','p','l','i','c','a','t','e','F','i','l','e','`',0};
     MSIQUERY *view;
     UINT rc;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"DuplicateFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szDuplicateFiles);
 
-    rc = MSI_DatabaseOpenViewW(package->db, L"SELECT * FROM `DuplicateFile`", &view);
+    rc = MSI_DatabaseOpenViewW(package->db, query, &view);
     if (rc != ERROR_SUCCESS)
         return ERROR_SUCCESS;
 
@@ -1395,7 +1401,7 @@ static UINT ITERATE_RemoveDuplicateFiles( MSIRECORD *row, LPVOID param )
     TRACE("Removing duplicate %s of %s\n", debugstr_w(dest), debugstr_w(file->TargetPath));
     if (!msi_delete_file( package, dest ))
     {
-        WARN( "failed to delete duplicate file %s (%lu)\n", debugstr_w(dest), GetLastError() );
+        WARN("Failed to delete duplicate file %s (%u)\n", debugstr_w(dest), GetLastError());
     }
 
     uirow = MSI_CreateRecord( 9 );
@@ -1410,13 +1416,16 @@ static UINT ITERATE_RemoveDuplicateFiles( MSIRECORD *row, LPVOID param )
 
 UINT ACTION_RemoveDuplicateFiles( MSIPACKAGE *package )
 {
+    static const WCHAR query[] = {
+        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
+        '`','D','u','p','l','i','c','a','t','e','F','i','l','e','`',0};
     MSIQUERY *view;
     UINT rc;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"RemoveDuplicateFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szRemoveDuplicateFiles);
 
-    rc = MSI_DatabaseOpenViewW( package->db, L"SELECT * FROM `DuplicateFile`", &view );
+    rc = MSI_DatabaseOpenViewW( package->db, query, &view );
     if (rc != ERROR_SUCCESS)
         return ERROR_SUCCESS;
 
@@ -1548,15 +1557,18 @@ static void remove_folder( MSIFOLDER *folder )
 
 UINT ACTION_RemoveFiles( MSIPACKAGE *package )
 {
+    static const WCHAR query[] = {
+        'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',
+        '`','R','e','m','o','v','e','F','i','l','e','`',0};
     MSIQUERY *view;
     MSICOMPONENT *comp;
     MSIFILE *file;
     UINT r;
 
     if (package->script == SCRIPT_NONE)
-        return msi_schedule_action(package, SCRIPT_INSTALL, L"RemoveFiles");
+        return msi_schedule_action(package, SCRIPT_INSTALL, szRemoveFiles);
 
-    r = MSI_DatabaseOpenViewW(package->db, L"SELECT * FROM `RemoveFile`", &view);
+    r = MSI_DatabaseOpenViewW(package->db, query, &view);
     if (r == ERROR_SUCCESS)
     {
         r = MSI_IterateRecords(view, NULL, ITERATE_RemoveFiles, package);
@@ -1571,7 +1583,7 @@ UINT ACTION_RemoveFiles( MSIPACKAGE *package )
         VS_FIXEDFILEINFO *ver;
 
         comp = file->Component;
-        msi_file_update_ui( package, file, L"RemoveFiles" );
+        msi_file_update_ui( package, file, szRemoveFiles );
 
         comp->Action = msi_get_component_action( package, comp );
         if (comp->Action != INSTALLSTATE_ABSENT || comp->Installed == INSTALLSTATE_SOURCE)
@@ -1606,7 +1618,7 @@ UINT ACTION_RemoveFiles( MSIPACKAGE *package )
         msi_set_file_attributes( package, file->TargetPath, FILE_ATTRIBUTE_NORMAL );
         if (!msi_delete_file( package, file->TargetPath ))
         {
-            WARN( "failed to delete %s (%lu)\n",  debugstr_w(file->TargetPath), GetLastError() );
+            WARN("failed to delete %s (%u)\n",  debugstr_w(file->TargetPath), GetLastError());
         }
         file->state = msifs_missing;
 

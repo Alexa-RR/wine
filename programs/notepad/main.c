@@ -24,7 +24,6 @@
 
 #include <stdio.h>
 #include <windows.h>
-#include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
 #include <shlwapi.h>
@@ -216,8 +215,7 @@ static VOID NOTEPAD_LoadSettingFromRegistry(void)
     if(RegOpenKeyW(HKEY_CURRENT_USER, notepad_reg_key, &hkey) == ERROR_SUCCESS)
     {
         WORD  data_helper[MAX_PATH];
-        DWORD type, size;
-        int point_size;
+        DWORD type, data, size;
 
 #define QUERY_NOTEPAD_REG(hkey, value_name, ret) do { DWORD type, data; DWORD size = sizeof(DWORD); if(RegQueryValueExW(hkey, value_name, 0, &type, (LPBYTE)&data, &size) == ERROR_SUCCESS) if(type == REG_DWORD) ret = data; } while(0)
         QUERY_NOTEPAD_REG(hkey, value_fWrap,            Globals.bWrapLongLines);
@@ -246,10 +244,10 @@ static VOID NOTEPAD_LoadSettingFromRegistry(void)
         main_rect.bottom = main_rect.top + dy;
 
         size = sizeof(DWORD);
-        if(RegQueryValueExW(hkey, value_iPointSize, 0, &type, (LPBYTE)&point_size, &size) == ERROR_SUCCESS)
+        if(RegQueryValueExW(hkey, value_iPointSize, 0, &type, (LPBYTE)&data, &size) == ERROR_SUCCESS)
             if(type == REG_DWORD)
                 /* The value is stored as 10 * twips */
-                Globals.lfFont.lfHeight = -MulDiv(abs(point_size), get_dpi(), 720);
+                Globals.lfFont.lfHeight = -MulDiv(abs(data), get_dpi(), 720);
 
         size = sizeof(Globals.lfFont.lfFaceName);
         if(RegQueryValueExW(hkey, value_lfFaceName, 0, &type, (LPBYTE)&data_helper, &size) == ERROR_SUCCESS)
@@ -750,8 +748,6 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show)
     INT x, y;
     static const WCHAR className[] = {'N','o','t','e','p','a','d',0};
     static const WCHAR winName[]   = {'N','o','t','e','p','a','d',0};
-
-    InitCommonControls();
 
     aFINDMSGSTRING = RegisterWindowMessageW(FINDMSGSTRINGW);
 

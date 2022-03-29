@@ -19,6 +19,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <string.h>
 #include <stdarg.h>
 
@@ -26,9 +29,9 @@
 #include "winbase.h"
 #include "winnls.h"
 #include "winerror.h"
-#include "winreg.h"
 #include "winternl.h"
-#include "shlwapi.h"
+#include "wine/unicode.h"
+#include "wine/library.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(profile);
@@ -78,6 +81,9 @@ static PROFILE *MRUProfile[N_CACHED_PROFILES]={NULL};
 /* Check for comments in profile */
 #define IS_ENTRY_COMMENT(str)  ((str)[0] == ';')
 
+static const WCHAR emptystringW[] = {0};
+static const WCHAR wininiW[] = { 'w','i','n','.','i','n','i',0 };
+
 static CRITICAL_SECTION PROFILE_CritSect;
 static CRITICAL_SECTION_DEBUG critsect_debug =
 {
@@ -95,19 +101,20 @@ static const char hex[16] = "0123456789ABCDEF";
  * Copy the content of an entry into a buffer, removing quotes, and possibly
  * translating environment variables.
  */
-static void PROFILE_CopyEntry( LPWSTR buffer, LPCWSTR value, int len )
+static void PROFILE_CopyEntry( LPWSTR buffer, LPCWSTR value, int len,
+                               BOOL strip_quote )
 {
     WCHAR quote = '\0';
 
     if(!buffer) return;
 
-    if (*value == '\'' || *value == '\"')
+    if (strip_quote && ((*value == '\'') || (*value == '\"')))
     {
-        if (value[1] && (value[lstrlenW(value)-1] == *value)) quote = *value++;
+        if (value[1] && (value[strlenW(value)-1] == *value)) quote = *value++;
     }
 
     lstrcpynW( buffer, value, len );
-    if (quote && (len >= lstrlenW(value))) buffer[lstrlenW(buffer)-1] = '\0';
+    if (quote && (len >= lstrlenW(value))) buffer[strlenW(buffer)-1] = '\0';
 }
 
 /* byte-swaps shorts in-place in a buffer. len is in WCHARs */
@@ -196,12 +203,12 @@ static void PROFILE_Save( HANDLE hFile, const PROFILESECTION *section, ENCODING 
     {
         int len = 0;
 
-        if (section->name[0]) len += lstrlenW(section->name) + 4;
+        if (section->name[0]) len += strlenW(section->name) + 4;
 
         for (key = section->key; key; key = key->next)
         {
-            len += lstrlenW(key->name) + 2;
-            if (key->value) len += lstrlenW(key->value) + 1;
+            len += strlenW(key->name) + 2;
+            if (key->value) len += strlenW(key->value) + 1;
         }
 
         buffer = HeapAlloc(GetProcessHeap(), 0, len * sizeof(WCHAR));
@@ -211,8 +218,8 @@ static void PROFILE_Save( HANDLE hFile, const PROFILESECTION *section, ENCODING 
         if (section->name[0])
         {
             *p++ = '[';
-            lstrcpyW( p, section->name );
-            p += lstrlenW(p);
+            strcpyW( p, section->name );
+            p += strlenW(p);
             *p++ = ']';
             *p++ = '\r';
             *p++ = '\n';
@@ -220,13 +227,13 @@ static void PROFILE_Save( HANDLE hFile, const PROFILESECTION *section, ENCODING 
 
         for (key = section->key; key; key = key->next)
         {
-            lstrcpyW( p, key->name );
-            p += lstrlenW(p);
+            strcpyW( p, key->name );
+            p += strlenW(p);
             if (key->value)
             {
                 *p++ = '=';
-                lstrcpyW( p, key->value );
-                p += lstrlenW(p);
+                strcpyW( p, key->value );
+                p += strlenW(p);
             }
             *p++ = '\r';
             *p++ = '\n';
@@ -322,7 +329,7 @@ static PROFILESECTION *PROFILE_Load(HANDLE hFile, ENCODING * pEncoding)
     if (!ReadFile(hFile, buffer_base, dwFileSize, &dwFileSize, NULL))
     {
         HeapFree(GetProcessHeap(), 0, buffer_base);
-        WARN("Error %ld reading file\n", GetLastError());
+        WARN("Error %d reading file\n", GetLastError());
         return NULL;
     }
     len = dwFileSize;
@@ -483,6 +490,29 @@ static PROFILESECTION *PROFILE_Load(HANDLE hFile, ENCODING * pEncoding)
 
 
 /***********************************************************************
+ *           PROFILE_DeleteSection
+ *
+ * Delete a section from a profile tree.
+ */
+static BOOL PROFILE_DeleteSection( PROFILESECTION **section, LPCWSTR name )
+{
+    while (*section)
+    {
+        if (!strcmpiW( (*section)->name, name ))
+        {
+            PROFILESECTION *to_del = *section;
+            *section = to_del->next;
+            to_del->next = NULL;
+            PROFILE_Free( to_del );
+            return TRUE;
+        }
+        section = &(*section)->next;
+    }
+    return FALSE;
+}
+
+
+/***********************************************************************
  *           PROFILE_DeleteKey
  *
  * Delete a key from a profile tree.
@@ -492,12 +522,12 @@ static BOOL PROFILE_DeleteKey( PROFILESECTION **section,
 {
     while (*section)
     {
-        if (!wcsicmp( (*section)->name, section_name ))
+        if (!strcmpiW( (*section)->name, section_name ))
         {
             PROFILEKEY **key = &(*section)->key;
             while (*key)
             {
-                if (!wcsicmp( (*key)->name, key_name ))
+                if (!strcmpiW( (*key)->name, key_name ))
                 {
                     PROFILEKEY *to_del = *key;
                     *key = to_del->next;
@@ -524,7 +554,7 @@ static void PROFILE_DeleteAllKeys( LPCWSTR section_name)
     PROFILESECTION **section= &CurProfile->section;
     while (*section)
     {
-        if (!wcsicmp( (*section)->name, section_name ))
+        if (!strcmpiW( (*section)->name, section_name ))
         {
             PROFILEKEY **key = &(*section)->key;
             while (*key)
@@ -555,7 +585,7 @@ static PROFILEKEY *PROFILE_Find( PROFILESECTION **section, LPCWSTR section_name,
     while (PROFILE_isspaceW(*section_name)) section_name++;
     if (*section_name)
     {
-        p = section_name + lstrlenW(section_name) - 1;
+        p = section_name + strlenW(section_name) - 1;
         while ((p > section_name) && PROFILE_isspaceW(*p)) p--;
         seclen = p - section_name + 1;
     }
@@ -563,14 +593,14 @@ static PROFILEKEY *PROFILE_Find( PROFILESECTION **section, LPCWSTR section_name,
     while (PROFILE_isspaceW(*key_name)) key_name++;
     if (*key_name)
     {
-        p = key_name + lstrlenW(key_name) - 1;
+        p = key_name + strlenW(key_name) - 1;
         while ((p > key_name) && PROFILE_isspaceW(*p)) p--;
         keylen = p - key_name + 1;
     }
 
     while (*section)
     {
-        if (!wcsnicmp((*section)->name, section_name, seclen) &&
+        if (!strncmpiW((*section)->name, section_name, seclen) &&
             ((*section)->name)[seclen] == '\0')
         {
             PROFILEKEY **key = &(*section)->key;
@@ -584,16 +614,16 @@ static PROFILEKEY *PROFILE_Find( PROFILESECTION **section, LPCWSTR section_name,
                  */
                 if(!create_always)
                 {
-                    if ( (!(wcsnicmp( (*key)->name, key_name, keylen )))
+                    if ( (!(strncmpiW( (*key)->name, key_name, keylen )))
                          && (((*key)->name)[keylen] == '\0') )
                         return *key;
                 }
                 key = &(*key)->next;
             }
             if (!create) return NULL;
-            if (!(*key = HeapAlloc( GetProcessHeap(), 0, sizeof(PROFILEKEY) + lstrlenW(key_name) * sizeof(WCHAR) )))
+            if (!(*key = HeapAlloc( GetProcessHeap(), 0, sizeof(PROFILEKEY) + strlenW(key_name) * sizeof(WCHAR) )))
                 return NULL;
-            lstrcpyW( (*key)->name, key_name );
+            strcpyW( (*key)->name, key_name );
             (*key)->value = NULL;
             (*key)->next  = NULL;
             return *key;
@@ -601,17 +631,17 @@ static PROFILEKEY *PROFILE_Find( PROFILESECTION **section, LPCWSTR section_name,
         section = &(*section)->next;
     }
     if (!create) return NULL;
-    *section = HeapAlloc( GetProcessHeap(), 0, sizeof(PROFILESECTION) + lstrlenW(section_name) * sizeof(WCHAR) );
+    *section = HeapAlloc( GetProcessHeap(), 0, sizeof(PROFILESECTION) + strlenW(section_name) * sizeof(WCHAR) );
     if(*section == NULL) return NULL;
-    lstrcpyW( (*section)->name, section_name );
+    strcpyW( (*section)->name, section_name );
     (*section)->next = NULL;
     if (!((*section)->key  = HeapAlloc( GetProcessHeap(), 0,
-                                        sizeof(PROFILEKEY) + lstrlenW(key_name) * sizeof(WCHAR) )))
+                                        sizeof(PROFILEKEY) + strlenW(key_name) * sizeof(WCHAR) )))
     {
         HeapFree(GetProcessHeap(), 0, *section);
         return NULL;
     }
-    lstrcpyW( (*section)->key->name, key_name );
+    strcpyW( (*section)->key->name, key_name );
     (*section)->key->value = NULL;
     (*section)->key->next  = NULL;
     return (*section)->key;
@@ -641,7 +671,7 @@ static BOOL PROFILE_FlushFile(void)
 
     if (hFile == INVALID_HANDLE_VALUE)
     {
-        WARN("could not save profile file %s (error was %ld)\n", debugstr_w(CurProfile->filename), GetLastError());
+        WARN("could not save profile file %s (error was %d)\n", debugstr_w(CurProfile->filename), GetLastError());
         return FALSE;
     }
 
@@ -722,16 +752,17 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
        }
 
     if (!filename)
-        filename = L"win.ini";
+	filename = wininiW;
 
     if ((RtlDetermineDosPathNameType_U(filename) == RELATIVE_PATH) &&
-        !wcschr(filename, '\\') && !wcschr(filename, '/'))
+        !strchrW(filename, '\\') && !strchrW(filename, '/'))
     {
+        static const WCHAR wszSeparator[] = {'\\', 0};
         WCHAR windirW[MAX_PATH];
         GetWindowsDirectoryW( windirW, MAX_PATH );
-        lstrcpyW(buffer, windirW);
-        lstrcatW(buffer, L"\\");
-        lstrcatW(buffer, filename);
+        strcpyW(buffer, windirW);
+        strcatW(buffer, wszSeparator);
+        strcatW(buffer, filename);
     }
     else
     {
@@ -747,13 +778,13 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
 
     if ((hFile == INVALID_HANDLE_VALUE) && (GetLastError() != ERROR_FILE_NOT_FOUND))
     {
-        WARN("Error %ld opening file %s\n", GetLastError(), debugstr_w(buffer));
+        WARN("Error %d opening file %s\n", GetLastError(), debugstr_w(buffer));
         return FALSE;
     }
 
     for(i=0;i<N_CACHED_PROFILES;i++)
     {
-        if ((MRUProfile[i]->filename && !wcsicmp( buffer, MRUProfile[i]->filename )))
+        if ((MRUProfile[i]->filename && !strcmpiW( buffer, MRUProfile[i]->filename )))
         {
             TRACE("MRU Filename: %s, new filename: %s\n", debugstr_w(MRUProfile[i]->filename), debugstr_w(buffer));
             if(i)
@@ -802,8 +833,8 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
     if(CurProfile->filename) PROFILE_ReleaseFile();
 
     /* OK, now that CurProfile is definitely free we assign it our new file */
-    CurProfile->filename  = HeapAlloc( GetProcessHeap(), 0, (lstrlenW(buffer)+1) * sizeof(WCHAR) );
-    lstrcpyW( CurProfile->filename, buffer );
+    CurProfile->filename  = HeapAlloc( GetProcessHeap(), 0, (strlenW(buffer)+1) * sizeof(WCHAR) );
+    strcpyW( CurProfile->filename, buffer );
 
     if (hFile != INVALID_HANDLE_VALUE)
     {
@@ -826,28 +857,18 @@ static BOOL PROFILE_Open( LPCWSTR filename, BOOL write_access )
  * Returns all keys of a section.
  * If return_values is TRUE, also include the corresponding values.
  */
-static INT PROFILE_GetSection( const WCHAR *filename, LPCWSTR section_name,
+static INT PROFILE_GetSection( PROFILESECTION *section, LPCWSTR section_name,
 			       LPWSTR buffer, UINT len, BOOL return_values )
 {
-    PROFILESECTION *section;
     PROFILEKEY *key;
 
     if(!buffer) return 0;
 
     TRACE("%s,%p,%u\n", debugstr_w(section_name), buffer, len);
 
-    EnterCriticalSection( &PROFILE_CritSect );
-
-    if (!PROFILE_Open( filename, FALSE ))
+    while (section)
     {
-        LeaveCriticalSection( &PROFILE_CritSect );
-        buffer[0] = 0;
-        return 0;
-    }
-
-    for (section = CurProfile->section; section; section = section->next)
-    {
-        if (!wcsicmp( section->name, section_name ))
+        if (!strcmpiW( section->name, section_name ))
         {
             UINT oldlen = len;
             for (key = section->key; key; key = key->next)
@@ -856,22 +877,19 @@ static INT PROFILE_GetSection( const WCHAR *filename, LPCWSTR section_name,
                 if (!*key->name && !key->value) continue;  /* Skip empty lines */
                 if (IS_ENTRY_COMMENT(key->name)) continue;  /* Skip comments */
                 if (!return_values && !key->value) continue;  /* Skip lines w.o. '=' */
-                lstrcpynW( buffer, key->name, len - 1 );
-                len -= lstrlenW(buffer) + 1;
-                buffer += lstrlenW(buffer) + 1;
+                PROFILE_CopyEntry( buffer, key->name, len - 1, 0 );
+                len -= strlenW(buffer) + 1;
+                buffer += strlenW(buffer) + 1;
 		if (len < 2)
 		    break;
 		if (return_values && key->value) {
 			buffer[-1] = '=';
-                    lstrcpynW( buffer, key->value, len - 1 );
-			len -= lstrlenW(buffer) + 1;
-			buffer += lstrlenW(buffer) + 1;
+			PROFILE_CopyEntry ( buffer, key->value, len - 1, 0 );
+			len -= strlenW(buffer) + 1;
+			buffer += strlenW(buffer) + 1;
                 }
             }
             *buffer = '\0';
-
-            LeaveCriticalSection( &PROFILE_CritSect );
-
             if (len <= 1)
                 /*If either lpszSection or lpszKey is NULL and the supplied
                   destination buffer is too small to hold all the strings,
@@ -884,44 +902,11 @@ static INT PROFILE_GetSection( const WCHAR *filename, LPCWSTR section_name,
             }
             return oldlen - len;
         }
+        section = section->next;
     }
     buffer[0] = buffer[1] = '\0';
-
-    LeaveCriticalSection( &PROFILE_CritSect );
-
     return 0;
 }
-
-static BOOL PROFILE_DeleteSection( const WCHAR *filename, const WCHAR *name )
-{
-    PROFILESECTION **section;
-
-    EnterCriticalSection( &PROFILE_CritSect );
-
-    if (!PROFILE_Open( filename, TRUE ))
-    {
-        LeaveCriticalSection( &PROFILE_CritSect );
-        return FALSE;
-    }
-
-    for (section = &CurProfile->section; *section; section = &(*section)->next)
-    {
-        if (!wcsicmp( (*section)->name, name ))
-        {
-            PROFILESECTION *to_del = *section;
-            *section = to_del->next;
-            to_del->next = NULL;
-            PROFILE_Free( to_del );
-            CurProfile->changed = TRUE;
-            PROFILE_FlushFile();
-            break;
-        }
-    }
-
-    LeaveCriticalSection( &PROFILE_CritSect );
-    return TRUE;
-}
-
 
 /* See GetPrivateProfileSectionNamesA for documentation */
 static INT PROFILE_GetSectionNames( LPWSTR buffer, UINT len )
@@ -944,7 +929,7 @@ static INT PROFILE_GetSectionNames( LPWSTR buffer, UINT len )
     section = CurProfile->section;
     while ((section!=NULL)) {
         if (section->name[0]) {
-            tmplen = lstrlenW(section->name)+1;
+            tmplen = strlenW(section->name)+1;
             if (tmplen >= buflen) {
                 if (buflen > 0) {
                     memcpy(buf, section->name, (buflen-1) * sizeof(WCHAR));
@@ -964,6 +949,64 @@ static INT PROFILE_GetSectionNames( LPWSTR buffer, UINT len )
     return buf-buffer;
 }
 
+
+/***********************************************************************
+ *           PROFILE_GetString
+ *
+ * Get a profile string.
+ *
+ * Tests with GetPrivateProfileString16, W95a,
+ * with filled buffer ("****...") and section "set1" and key_name "1" valid:
+ * section	key_name	def_val		res	buffer
+ * "set1"	"1"		"x"		43	[data]
+ * "set1"	"1   "		"x"		43	[data]		(!)
+ * "set1"	"  1  "'	"x"		43	[data]		(!)
+ * "set1"	""		"x"		1	"x"
+ * "set1"	""		"x   "		1	"x"		(!)
+ * "set1"	""		"  x   "	3	"  x"		(!)
+ * "set1"	NULL		"x"		6	"1\02\03\0\0"
+ * "set1"	""		"x"		1	"x"
+ * NULL		"1"		"x"		0	""		(!)
+ * ""		"1"		"x"		1	"x"
+ * NULL		NULL		""		0	""
+ *
+ *
+ */
+static INT PROFILE_GetString( LPCWSTR section, LPCWSTR key_name,
+                              LPCWSTR def_val, LPWSTR buffer, UINT len )
+{
+    PROFILEKEY *key = NULL;
+    static const WCHAR empty_strW[] = { 0 };
+
+    if(!buffer || !len) return 0;
+
+    if (!def_val) def_val = empty_strW;
+    if (key_name)
+    {
+        key = PROFILE_Find( &CurProfile->section, section, key_name, FALSE, FALSE);
+        PROFILE_CopyEntry( buffer, (key && key->value) ? key->value : def_val,
+                           len, TRUE );
+        TRACE("(%s,%s,%s): returning %s\n",
+              debugstr_w(section), debugstr_w(key_name),
+              debugstr_w(def_val), debugstr_w(buffer) );
+        return strlenW( buffer );
+    }
+    /* no "else" here ! */
+    if (section)
+    {
+        INT ret = PROFILE_GetSection(CurProfile->section, section, buffer, len, FALSE);
+        if (!buffer[0]) /* no luck -> def_val */
+        {
+            PROFILE_CopyEntry(buffer, def_val, len, TRUE);
+            ret = strlenW(buffer);
+        }
+        return ret;
+    }
+    buffer[0] = '\0';
+    return 0;
+}
+
+
 /***********************************************************************
  *           PROFILE_SetString
  *
@@ -972,7 +1015,15 @@ static INT PROFILE_GetSectionNames( LPWSTR buffer, UINT len )
 static BOOL PROFILE_SetString( LPCWSTR section_name, LPCWSTR key_name,
                                LPCWSTR value, BOOL create_always )
 {
-    if (!value)  /* Delete a key */
+    if (!key_name)  /* Delete a whole section */
+    {
+        TRACE("(%s)\n", debugstr_w(section_name));
+        CurProfile->changed |= PROFILE_DeleteSection( &CurProfile->section,
+                                                      section_name );
+        return TRUE;         /* Even if PROFILE_DeleteSection() has failed,
+                                this is not an error on application's level.*/
+    }
+    else if (!value)  /* Delete a key */
     {
         TRACE("(%s,%s)\n", debugstr_w(section_name), debugstr_w(key_name) );
         CurProfile->changed |= PROFILE_DeleteKey( &CurProfile->section,
@@ -993,7 +1044,7 @@ static BOOL PROFILE_SetString( LPCWSTR section_name, LPCWSTR key_name,
 
         if (key->value)
         {
-            if (!wcscmp( key->value, value ))
+            if (!strcmpW( key->value, value ))
             {
                 TRACE("  no change needed\n" );
                 return TRUE;  /* No change needed */
@@ -1002,314 +1053,13 @@ static BOOL PROFILE_SetString( LPCWSTR section_name, LPCWSTR key_name,
             HeapFree( GetProcessHeap(), 0, key->value );
         }
         else TRACE("  creating key\n" );
-        key->value = HeapAlloc( GetProcessHeap(), 0, (lstrlenW(value)+1) * sizeof(WCHAR) );
-        lstrcpyW( key->value, value );
+        key->value = HeapAlloc( GetProcessHeap(), 0, (strlenW(value)+1) * sizeof(WCHAR) );
+        strcpyW( key->value, value );
         CurProfile->changed = TRUE;
     }
     return TRUE;
 }
 
-static HKEY open_file_mapping_key( const WCHAR *filename )
-{
-    static HKEY mapping_key;
-    HKEY key;
-
-    EnterCriticalSection( &PROFILE_CritSect );
-
-    if (!mapping_key && RegOpenKeyExW( HKEY_LOCAL_MACHINE,
-                                       L"Software\\Microsoft\\Windows NT\\CurrentVersion\\IniFileMapping",
-                                       0, KEY_WOW64_64KEY, &mapping_key ))
-        mapping_key = NULL;
-
-    LeaveCriticalSection( &PROFILE_CritSect );
-
-    if (mapping_key && !RegOpenKeyExW( mapping_key, PathFindFileNameW( filename ), 0, KEY_READ, &key ))
-        return key;
-    return NULL;
-}
-
-static WCHAR *enum_key( HKEY key, DWORD i )
-{
-    WCHAR *value, *new_value;
-    DWORD max = 256, len;
-    LSTATUS res;
-
-    if (!(value = HeapAlloc( GetProcessHeap(), 0, max * sizeof(WCHAR) ))) return NULL;
-    len = max;
-    while ((res = RegEnumValueW( key, i, value, &len, NULL, NULL, NULL, NULL )) == ERROR_MORE_DATA)
-    {
-        max *= 2;
-        if (!(new_value = HeapReAlloc( GetProcessHeap(), 0, value, max * sizeof(WCHAR) )))
-        {
-            HeapFree( GetProcessHeap(), 0, value );
-            return NULL;
-        }
-        value = new_value;
-        len = max;
-    }
-    if (!res) return value;
-    HeapFree( GetProcessHeap(), 0, value );
-    return NULL;
-}
-
-static WCHAR *get_key_value( HKEY key, const WCHAR *value )
-{
-    DWORD size = 0;
-    WCHAR *data;
-
-    if (RegGetValueW( key, NULL, value, RRF_RT_REG_SZ | RRF_NOEXPAND, NULL, NULL, &size )) return NULL;
-    if (!(data = HeapAlloc( GetProcessHeap(), 0, size ))) return NULL;
-    if (!RegGetValueW( key, NULL, value, RRF_RT_REG_SZ | RRF_NOEXPAND, NULL, (BYTE *)data, &size )) return data;
-    HeapFree( GetProcessHeap(), 0, data );
-    return NULL;
-}
-
-static HKEY open_mapped_key( const WCHAR *path, BOOL write )
-{
-    static const WCHAR usrW[] = {'U','S','R',':'};
-    static const WCHAR sysW[] = {'S','Y','S',':'};
-    WCHAR *combined_path;
-    const WCHAR *p;
-    LSTATUS res;
-    HKEY key;
-
-    TRACE("%s\n", debugstr_w( path ));
-
-    for (p = path; strchr("!#@", *p); p++)
-        FIXME("ignoring %c modifier\n", *p);
-
-    if (!wcsncmp( p, usrW, ARRAY_SIZE( usrW ) ))
-    {
-        if (write)
-            res = RegCreateKeyExW( HKEY_CURRENT_USER, p + 4, 0, NULL, 0, KEY_READ | KEY_WRITE, NULL, &key, NULL );
-        else
-            res = RegOpenKeyExW( HKEY_CURRENT_USER, p + 4, 0, KEY_READ, &key );
-        return res ? NULL : key;
-    }
-
-    if (!wcsncmp( p, sysW, ARRAY_SIZE( sysW ) ))
-    {
-        p += 4;
-        if (!(combined_path = HeapAlloc( GetProcessHeap(), 0,
-                                         (ARRAY_SIZE( L"Software\\" ) + lstrlenW( p )) * sizeof(WCHAR) )))
-            return NULL;
-        lstrcpyW( combined_path, L"Software\\" );
-        lstrcatW( combined_path, p );
-        if (write)
-            res = RegCreateKeyExW( HKEY_LOCAL_MACHINE, combined_path, 0, NULL,
-                                   0, KEY_READ | KEY_WRITE, NULL, &key, NULL );
-        else
-            res = RegOpenKeyExW( HKEY_LOCAL_MACHINE, combined_path, 0, KEY_READ, &key );
-        HeapFree( GetProcessHeap(), 0, combined_path );
-        return res ? NULL : key;
-    }
-
-    FIXME("unhandled path syntax %s\n", debugstr_w( path ));
-    return NULL;
-}
-
-/* returns TRUE if the given section + name is mapped */
-static BOOL get_mapped_section_key( const WCHAR *filename, const WCHAR *section,
-                                    const WCHAR *name, BOOL write, HKEY *ret_key )
-{
-    WCHAR *path = NULL, *combined_path;
-    HKEY key, subkey = NULL;
-
-    if (!(key = open_file_mapping_key( filename )))
-        return FALSE;
-
-    if (!RegOpenKeyExW( key, section, 0, KEY_READ, &subkey ))
-    {
-        if (!(path = get_key_value( subkey, name )))
-            path = get_key_value( subkey, NULL );
-        RegCloseKey( subkey );
-        RegCloseKey( key );
-        if (!path) return FALSE;
-    }
-    else
-    {
-        if (!(path = get_key_value( key, section )))
-        {
-            if ((path = get_key_value( key, NULL )))
-            {
-                if ((combined_path = HeapAlloc( GetProcessHeap(), 0,
-                                                (lstrlenW( path ) + lstrlenW( section ) + 2) * sizeof(WCHAR) )))
-                {
-                    lstrcpyW( combined_path, path );
-                    lstrcatW( combined_path, L"\\" );
-                    lstrcatW( combined_path, section );
-                }
-                HeapFree( GetProcessHeap(), 0, path );
-                path = combined_path;
-            }
-        }
-        RegCloseKey( key );
-        if (!path) return FALSE;
-    }
-
-    *ret_key = open_mapped_key( path, write );
-    HeapFree( GetProcessHeap(), 0, path );
-    return TRUE;
-}
-
-static DWORD get_mapped_section( HKEY key, WCHAR *buffer, DWORD size, BOOL return_values )
-{
-    WCHAR *entry, *value;
-    DWORD i, ret = 0;
-
-    for (i = 0; (entry = enum_key( key, i )); ++i)
-    {
-        lstrcpynW( buffer + ret, entry, size - ret - 1 );
-        ret = min( ret + lstrlenW( entry ) + 1, size - 1 );
-        if (return_values && ret < size - 1 && (value = get_key_value( key, entry )))
-        {
-            buffer[ret - 1] = '=';
-            lstrcpynW( buffer + ret, value, size - ret - 1 );
-            ret = min( ret + lstrlenW( value ) + 1, size - 1 );
-            HeapFree( GetProcessHeap(), 0, value );
-        }
-        HeapFree( GetProcessHeap(), 0, entry );
-    }
-
-    return ret;
-}
-
-static DWORD get_section( const WCHAR *filename, const WCHAR *section,
-                          WCHAR *buffer, DWORD size, BOOL return_values )
-{
-    HKEY key, subkey, section_key;
-    BOOL use_ini = TRUE;
-    DWORD ret = 0;
-    WCHAR *path;
-
-    if ((key = open_file_mapping_key( filename )))
-    {
-        if (!RegOpenKeyExW( key, section, 0, KEY_READ, &subkey ))
-        {
-            WCHAR *entry, *value;
-            HKEY entry_key;
-            DWORD i;
-
-            for (i = 0; (entry = enum_key( subkey, i )); ++i)
-            {
-                if (!(path = get_key_value( subkey, entry )))
-                {
-                    HeapFree( GetProcessHeap(), 0, entry );
-                    continue;
-                }
-
-                entry_key = open_mapped_key( path, FALSE );
-                HeapFree( GetProcessHeap(), 0, path );
-                if (!entry_key)
-                {
-                    HeapFree( GetProcessHeap(), 0, entry );
-                    continue;
-                }
-
-                if (entry[0])
-                {
-                    if ((value = get_key_value( entry_key, entry )))
-                    {
-                        lstrcpynW( buffer + ret, entry, size - ret - 1 );
-                        ret = min( ret + lstrlenW( entry ) + 1, size - 1 );
-                        if (return_values && ret < size - 1)
-                        {
-                            buffer[ret - 1] = '=';
-                            lstrcpynW( buffer + ret, value, size - ret - 1 );
-                            ret = min( ret + lstrlenW( value ) + 1, size - 1 );
-                        }
-                        HeapFree( GetProcessHeap(), 0, value );
-                    }
-                }
-                else
-                {
-                    ret = get_mapped_section( entry_key, buffer, size, return_values );
-                    use_ini = FALSE;
-                }
-
-                HeapFree( GetProcessHeap(), 0, entry );
-                RegCloseKey( entry_key );
-            }
-
-            RegCloseKey( subkey );
-        }
-        else if (get_mapped_section_key( filename, section, NULL, FALSE, &section_key ))
-        {
-            ret = get_mapped_section( section_key, buffer, size, return_values );
-            use_ini = FALSE;
-            RegCloseKey( section_key );
-        }
-
-        RegCloseKey( key );
-    }
-
-    if (use_ini)
-        ret += PROFILE_GetSection( filename, section, buffer + ret, size - ret, return_values );
-
-    return ret;
-}
-
-static void delete_key_values( HKEY key )
-{
-    WCHAR *entry;
-
-    while ((entry = enum_key( key, 0 )))
-    {
-        RegDeleteValueW( key, entry );
-        HeapFree( GetProcessHeap(), 0, entry );
-    }
-}
-
-static BOOL delete_section( const WCHAR *filename, const WCHAR *section )
-{
-    HKEY key, subkey, section_key;
-
-    if ((key = open_file_mapping_key( filename )))
-    {
-        if (!RegOpenKeyExW( key, section, 0, KEY_READ, &subkey ))
-        {
-            WCHAR *entry, *path;
-            HKEY entry_key;
-            DWORD i;
-
-            for (i = 0; (entry = enum_key( subkey, i )); ++i)
-            {
-                if (!(path = get_key_value( subkey, entry )))
-                {
-                    HeapFree( GetProcessHeap(), 0, entry );
-                    continue;
-                }
-
-                entry_key = open_mapped_key( path, TRUE );
-                HeapFree( GetProcessHeap(), 0, path );
-                if (!entry_key)
-                {
-                    HeapFree( GetProcessHeap(), 0, entry );
-                    continue;
-                }
-
-                if (entry[0])
-                    RegDeleteValueW( entry_key, entry );
-                else
-                    delete_key_values( entry_key );
-
-                HeapFree( GetProcessHeap(), 0, entry );
-                RegCloseKey( entry_key );
-            }
-
-            RegCloseKey( subkey );
-        }
-        else if (get_mapped_section_key( filename, section, NULL, TRUE, &section_key ))
-        {
-            delete_key_values( section_key );
-            RegCloseKey( section_key );
-        }
-
-        RegCloseKey( key );
-    }
-
-    return PROFILE_DeleteSection( filename, section );
-}
 
 /********************* API functions **********************************/
 
@@ -1327,7 +1077,7 @@ UINT WINAPI GetProfileIntA( LPCSTR section, LPCSTR entry, INT def_val )
  */
 UINT WINAPI GetProfileIntW( LPCWSTR section, LPCWSTR entry, INT def_val )
 {
-    return GetPrivateProfileIntW( section, entry, def_val, L"win.ini" );
+    return GetPrivateProfileIntW( section, entry, def_val, wininiW );
 }
 
 /***********************************************************************
@@ -1339,81 +1089,45 @@ INT WINAPI GetPrivateProfileStringW( LPCWSTR section, LPCWSTR entry,
 {
     int		ret;
     LPWSTR	defval_tmp = NULL;
-    const WCHAR *p;
-    HKEY key;
 
     TRACE("%s,%s,%s,%p,%u,%s\n", debugstr_w(section), debugstr_w(entry),
           debugstr_w(def_val), buffer, len, debugstr_w(filename));
 
-    if (!buffer || !len) return 0;
-    if (!def_val) def_val = L"";
-    if (!section) return GetPrivateProfileSectionNamesW( buffer, len, filename );
-    if (!entry)
-    {
-        ret = get_section( filename, section, buffer, len, FALSE );
-        if (!buffer[0])
-        {
-            PROFILE_CopyEntry( buffer, def_val, len );
-            ret = lstrlenW( buffer );
-        }
-        return ret;
-    }
-
     /* strip any trailing ' ' of def_val. */
-    p = def_val + lstrlenW(def_val) - 1;
-
-    while (p > def_val && *p == ' ') p--;
-
-    if (p >= def_val)
+    if (def_val)
     {
-        int vlen = (int)(p - def_val) + 1;
+        LPCWSTR p = def_val + strlenW(def_val) - 1;
 
-        defval_tmp = HeapAlloc(GetProcessHeap(), 0, (vlen + 1) * sizeof(WCHAR));
-        memcpy(defval_tmp, def_val, vlen * sizeof(WCHAR));
-        defval_tmp[vlen] = '\0';
-        def_val = defval_tmp;
+        while (p > def_val && *p == ' ')
+            p--;
+
+        if (p >= def_val)
+        {
+            int vlen = (int)(p - def_val) + 1;
+
+            defval_tmp = HeapAlloc(GetProcessHeap(), 0, (vlen + 1) * sizeof(WCHAR));
+            memcpy(defval_tmp, def_val, vlen * sizeof(WCHAR));
+            defval_tmp[vlen] = '\0';
+            def_val = defval_tmp;
+        }
     }
 
-    if (get_mapped_section_key( filename, section, entry, FALSE, &key ))
-    {
-        if (key)
-        {
-            WCHAR *value;
+    RtlEnterCriticalSection( &PROFILE_CritSect );
 
-            if ((value = get_key_value( key, entry )))
-            {
-                lstrcpynW( buffer, value, len );
-                HeapFree( GetProcessHeap(), 0, value );
-            }
-            else
-                lstrcpynW( buffer, def_val, len );
-
-            RegCloseKey( key );
-        }
-        else
-            lstrcpynW( buffer, def_val, len );
-
-        ret = lstrlenW( buffer );
+    if (PROFILE_Open( filename, FALSE )) {
+	if (section == NULL)
+            ret = PROFILE_GetSectionNames(buffer, len);
+	else 
+	    /* PROFILE_GetString can handle the 'entry == NULL' case */
+            ret = PROFILE_GetString( section, entry, def_val, buffer, len );
+    } else if (buffer && def_val) {
+       lstrcpynW( buffer, def_val, len );
+       ret = strlenW( buffer );
     }
     else
-    {
-        EnterCriticalSection( &PROFILE_CritSect );
+       ret = 0;
 
-        if (PROFILE_Open( filename, FALSE ))
-        {
-            PROFILEKEY *key = PROFILE_Find( &CurProfile->section, section, entry, FALSE, FALSE );
-            PROFILE_CopyEntry( buffer, (key && key->value) ? key->value : def_val, len );
-            TRACE("-> %s\n", debugstr_w( buffer ));
-            ret = lstrlenW( buffer );
-        }
-        else
-        {
-           lstrcpynW( buffer, def_val, len );
-           ret = lstrlenW( buffer );
-        }
-
-        LeaveCriticalSection( &PROFILE_CritSect );
-    }
+    RtlLeaveCriticalSection( &PROFILE_CritSect );
 
     HeapFree(GetProcessHeap(), 0, defval_tmp);
 
@@ -1481,7 +1195,8 @@ INT WINAPI GetProfileStringA( LPCSTR section, LPCSTR entry, LPCSTR def_val,
 INT WINAPI GetProfileStringW( LPCWSTR section, LPCWSTR entry,
 			      LPCWSTR def_val, LPWSTR buffer, UINT len )
 {
-    return GetPrivateProfileStringW( section, entry, def_val, buffer, len, L"win.ini" );
+    return GetPrivateProfileStringW( section, entry, def_val,
+				     buffer, len, wininiW );
 }
 
 /***********************************************************************
@@ -1499,7 +1214,7 @@ BOOL WINAPI WriteProfileStringA( LPCSTR section, LPCSTR entry,
 BOOL WINAPI WriteProfileStringW( LPCWSTR section, LPCWSTR entry,
                                      LPCWSTR string )
 {
-    return WritePrivateProfileStringW( section, entry, string, L"win.ini" );
+    return WritePrivateProfileStringW( section, entry, string, wininiW );
 }
 
 
@@ -1513,7 +1228,7 @@ UINT WINAPI GetPrivateProfileIntW( LPCWSTR section, LPCWSTR entry,
     UNICODE_STRING bufferW;
     ULONG result;
 
-    if (GetPrivateProfileStringW( section, entry, L"", buffer, ARRAY_SIZE( buffer ),
+    if (GetPrivateProfileStringW( section, entry, emptystringW, buffer, ARRAY_SIZE( buffer ),
                                   filename ) == 0)
         return def_val;
 
@@ -1531,6 +1246,8 @@ UINT WINAPI GetPrivateProfileIntW( LPCWSTR section, LPCWSTR entry,
 
 /***********************************************************************
  *           GetPrivateProfileIntA   (KERNEL32.@)
+ *
+ * FIXME: rewrite using unicode
  */
 UINT WINAPI GetPrivateProfileIntA( LPCSTR section, LPCSTR entry,
 				   INT def_val, LPCSTR filename )
@@ -1557,15 +1274,24 @@ UINT WINAPI GetPrivateProfileIntA( LPCSTR section, LPCSTR entry,
 INT WINAPI GetPrivateProfileSectionW( LPCWSTR section, LPWSTR buffer,
 				      DWORD len, LPCWSTR filename )
 {
+    int ret = 0;
+
     if (!section || !buffer)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    TRACE("(%s, %p, %ld, %s)\n", debugstr_w(section), buffer, len, debugstr_w(filename));
+    TRACE("(%s, %p, %d, %s)\n", debugstr_w(section), buffer, len, debugstr_w(filename));
 
-    return get_section( filename, section, buffer, len, TRUE );
+    RtlEnterCriticalSection( &PROFILE_CritSect );
+
+    if (PROFILE_Open( filename, FALSE ))
+        ret = PROFILE_GetSection(CurProfile->section, section, buffer, len, TRUE);
+
+    RtlLeaveCriticalSection( &PROFILE_CritSect );
+
+    return ret;
 }
 
 /***********************************************************************
@@ -1627,7 +1353,7 @@ INT WINAPI GetProfileSectionA( LPCSTR section, LPSTR buffer, DWORD len )
  */
 INT WINAPI GetProfileSectionW( LPCWSTR section, LPWSTR buffer, DWORD len )
 {
-    return GetPrivateProfileSectionW( section, buffer, len, L"win.ini" );
+    return GetPrivateProfileSectionW( section, buffer, len, wininiW );
 }
 
 
@@ -1638,48 +1364,27 @@ BOOL WINAPI WritePrivateProfileStringW( LPCWSTR section, LPCWSTR entry,
 					LPCWSTR string, LPCWSTR filename )
 {
     BOOL ret = FALSE;
-    HKEY key;
 
-    TRACE("(%s, %s, %s, %s)\n", debugstr_w(section), debugstr_w(entry), debugstr_w(string), debugstr_w(filename));
+    RtlEnterCriticalSection( &PROFILE_CritSect );
 
     if (!section && !entry && !string) /* documented "file flush" case */
     {
-        EnterCriticalSection( &PROFILE_CritSect );
         if (!filename || PROFILE_Open( filename, TRUE ))
         {
-            if (CurProfile) PROFILE_ReleaseFile();
+            if (CurProfile) PROFILE_ReleaseFile();  /* always return FALSE in this case */
         }
-        LeaveCriticalSection( &PROFILE_CritSect );
-        return FALSE;
     }
-    if (!entry) return delete_section( filename, section );
-
-    if (get_mapped_section_key( filename, section, entry, TRUE, &key ))
+    else if (PROFILE_Open( filename, TRUE ))
     {
-        LSTATUS res;
-
-        if (string)
-            res = RegSetValueExW( key, entry, 0, REG_SZ, (const BYTE *)string,
-                                  (lstrlenW( string ) + 1) * sizeof(WCHAR) );
-        else
-            res = RegDeleteValueW( key, entry );
-        RegCloseKey( key );
-        if (res) SetLastError( res );
-        return !res;
-    }
-
-    EnterCriticalSection( &PROFILE_CritSect );
-
-    if (PROFILE_Open( filename, TRUE ))
-    {
-        if (!section)
+        if (!section) {
             SetLastError(ERROR_FILE_NOT_FOUND);
-        else
+        } else {
             ret = PROFILE_SetString( section, entry, string, FALSE);
-        if (ret) ret = PROFILE_FlushFile();
+            if (ret) ret = PROFILE_FlushFile();
+        }
     }
 
-    LeaveCriticalSection( &PROFILE_CritSect );
+    RtlLeaveCriticalSection( &PROFILE_CritSect );
     return ret;
 }
 
@@ -1718,82 +1423,37 @@ BOOL WINAPI WritePrivateProfileSectionW( LPCWSTR section,
 {
     BOOL ret = FALSE;
     LPWSTR p;
-    HKEY key, section_key;
+
+    RtlEnterCriticalSection( &PROFILE_CritSect );
 
     if (!section && !string)
     {
-        EnterCriticalSection( &PROFILE_CritSect );
         if (!filename || PROFILE_Open( filename, TRUE ))
         {
-            if (CurProfile) PROFILE_ReleaseFile();
+            if (CurProfile) PROFILE_ReleaseFile();  /* always return FALSE in this case */
         }
-        LeaveCriticalSection( &PROFILE_CritSect );
-        return FALSE;
     }
-    if (!string) return delete_section( filename, section );
-
-    if ((key = open_file_mapping_key( filename )))
-    {
-        /* replace existing entries, but only if they are mapped, and do not
-         * delete any keys */
-
-        const WCHAR *entry, *p;
-
-        for (entry = string; *entry; entry += lstrlenW( entry ) + 1)
-        {
-            if ((p = wcschr( entry, '=' )))
-            {
-                WCHAR *entry_copy;
-                p++;
-                if (!(entry_copy = HeapAlloc( GetProcessHeap(), 0, (p - entry) * sizeof(WCHAR) )))
-                {
-                    SetLastError( ERROR_NOT_ENOUGH_MEMORY );
-                    RegCloseKey( key );
-                    return FALSE;
+    else if (PROFILE_Open( filename, TRUE )) {
+        if (!string) {/* delete the named section*/
+	    ret = PROFILE_SetString(section,NULL,NULL, FALSE);
+        } else {
+	    PROFILE_DeleteAllKeys(section);
+	    ret = TRUE;
+	    while(*string && ret) {
+                LPWSTR buf = HeapAlloc( GetProcessHeap(), 0, (strlenW(string)+1) * sizeof(WCHAR) );
+                strcpyW( buf, string );
+                if((p = strchrW( buf, '='))) {
+                    *p='\0';
+                    ret = PROFILE_SetString( section, buf, p+1, TRUE);
                 }
-                lstrcpynW( entry_copy, entry, p - entry );
-                if (get_mapped_section_key( filename, section, entry_copy, TRUE, &section_key ))
-                {
-                    LSTATUS res = RegSetValueExW( section_key, entry_copy, 0, REG_SZ, (const BYTE *)p,
-                                                  (lstrlenW( p ) + 1) * sizeof(WCHAR) );
-                    RegCloseKey( section_key );
-                    if (res)
-                    {
-                        HeapFree( GetProcessHeap(), 0, entry_copy );
-                        SetLastError( res );
-                        RegCloseKey( key );
-                        return FALSE;
-                    }
-                }
-                HeapFree( GetProcessHeap(), 0, entry_copy );
+                HeapFree( GetProcessHeap(), 0, buf );
+                string += strlenW(string)+1;
             }
-        }
-        RegCloseKey( key );
-        return TRUE;
-    }
-
-    EnterCriticalSection( &PROFILE_CritSect );
-
-    if (PROFILE_Open( filename, TRUE ))
-    {
-        PROFILE_DeleteAllKeys(section);
-        ret = TRUE;
-        while (*string && ret)
-        {
-            WCHAR *buf = HeapAlloc( GetProcessHeap(), 0, (lstrlenW( string ) + 1) * sizeof(WCHAR) );
-            lstrcpyW( buf, string );
-            if ((p = wcschr( buf, '=')))
-            {
-                *p = '\0';
-                ret = PROFILE_SetString( section, buf, p+1, TRUE );
-            }
-            HeapFree( GetProcessHeap(), 0, buf );
-            string += lstrlenW( string ) + 1;
         }
         if (ret) ret = PROFILE_FlushFile();
     }
 
-    LeaveCriticalSection( &PROFILE_CritSect );
+    RtlLeaveCriticalSection( &PROFILE_CritSect );
     return ret;
 }
 
@@ -1847,7 +1507,7 @@ BOOL WINAPI WriteProfileSectionA( LPCSTR section, LPCSTR keys_n_values)
  */
 BOOL WINAPI WriteProfileSectionW( LPCWSTR section, LPCWSTR keys_n_values)
 {
-   return WritePrivateProfileSectionW(section, keys_n_values, L"win.ini");
+   return WritePrivateProfileSectionW(section, keys_n_values, wininiW);
 }
 
 
@@ -1892,27 +1552,11 @@ DWORD WINAPI GetPrivateProfileSectionNamesW( LPWSTR buffer, DWORD size,
 					     LPCWSTR filename)
 {
     DWORD ret = 0;
-    HKEY key;
-
-    if ((key = open_file_mapping_key( filename )))
-    {
-        WCHAR *section;
-        DWORD i;
-
-        for (i = 0; (section = enum_key( key, i )); ++i)
-        {
-            lstrcpynW( buffer + ret, section, size - ret - 1 );
-            ret = min( ret + lstrlenW( section ) + 1, size - 1 );
-            HeapFree( GetProcessHeap(), 0, section );
-        }
-
-        RegCloseKey( key );
-    }
 
     RtlEnterCriticalSection( &PROFILE_CritSect );
 
     if (PROFILE_Open( filename, FALSE ))
-        ret += PROFILE_GetSectionNames( buffer + ret, size - ret );
+        ret = PROFILE_GetSectionNames(buffer, size);
 
     RtlLeaveCriticalSection( &PROFILE_CritSect );
 

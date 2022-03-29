@@ -46,16 +46,19 @@ static inline IDirectPlay8ThreadPoolImpl *impl_from_IDirectPlay8ThreadPool(IDire
 
 /* IUnknown interface follows */
 static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_QueryInterface(IDirectPlay8ThreadPool *iface,
-        REFIID riid, void **ret_iface)
+        REFIID riid, void **ppobj)
 {
-    if(IsEqualGUID(riid, &IID_IUnknown) || IsEqualGUID(riid, &IID_IDirectPlay8ThreadPool))
+    IDirectPlay8ThreadPoolImpl *This = impl_from_IDirectPlay8ThreadPool(iface);
+
+    if(IsEqualGUID(riid, &IID_IUnknown) ||
+       IsEqualGUID(riid, &IID_IDirectPlay8ThreadPool))
     {
-        IDirectPlay8ThreadPool_AddRef(iface);
-        *ret_iface = iface;
-        return S_OK;
+        IUnknown_AddRef(iface);
+        *ppobj = This;
+        return DPN_OK;
     }
 
-    WARN("(%p)->(%s,%p): not found\n", iface, debugstr_guid(riid), ret_iface);
+    WARN("(%p)->(%s,%p): not found\n", This, debugstr_guid(riid), ppobj);
     return E_NOINTERFACE;
 }
 
@@ -84,7 +87,7 @@ static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_Initialize(IDirectPlay8ThreadPo
 {
     IDirectPlay8ThreadPoolImpl *This = impl_from_IDirectPlay8ThreadPool(iface);
 
-    TRACE("(%p)->(%p,%p,%lx)\n", This, pvUserContext, pfn, dwFlags);
+    TRACE("(%p)->(%p,%p,%x)\n", This, pvUserContext, pfn, dwFlags);
 
     if(!pfn)
         return DPNERR_INVALIDPARAM;
@@ -104,7 +107,7 @@ static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_Close(IDirectPlay8ThreadPool *i
 {
     IDirectPlay8ThreadPoolImpl *This = impl_from_IDirectPlay8ThreadPool(iface);
 
-    FIXME("(%p)->(%lx)\n", This, dwFlags);
+    FIXME("(%p)->(%x)\n", This, dwFlags);
 
     if(!threadpool_msghandler)
         return DPNERR_UNINITIALIZED;
@@ -117,7 +120,7 @@ static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_Close(IDirectPlay8ThreadPool *i
 static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_GetThreadCount(IDirectPlay8ThreadPool *iface,
         const DWORD dwProcessorNum, DWORD * const pdwNumThreads, const DWORD dwFlags)
 {
-    FIXME("(%p)->(%lx,%p,%lx): stub\n", iface, dwProcessorNum, pdwNumThreads, dwFlags);
+    FIXME("(%p)->(%x,%p,%x): stub\n", iface, dwProcessorNum, pdwNumThreads, dwFlags);
     *pdwNumThreads = 0;
     return DPN_OK;
 }
@@ -125,7 +128,7 @@ static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_GetThreadCount(IDirectPlay8Thre
 static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_SetThreadCount(IDirectPlay8ThreadPool *iface,
         const DWORD dwProcessorNum, const DWORD dwNumThreads, const DWORD dwFlags)
 {
-    FIXME("(%p)->(%lx,%lx,%lx): stub\n", iface, dwProcessorNum, dwNumThreads, dwFlags);
+    FIXME("(%p)->(%x,%x,%x): stub\n", iface, dwProcessorNum, dwNumThreads, dwFlags);
     return DPN_OK;
 }
 
@@ -135,7 +138,7 @@ static HRESULT WINAPI IDirectPlay8ThreadPoolImpl_DoWork(IDirectPlay8ThreadPool *
     static BOOL Run = FALSE;
 
     if(!Run)
-        FIXME("(%p)->(%lx,%lx): stub\n", iface, dwAllowedTimeSlice, dwFlags);
+        FIXME("(%p)->(%x,%x): stub\n", iface, dwAllowedTimeSlice, dwFlags);
 
     Run = TRUE;
 

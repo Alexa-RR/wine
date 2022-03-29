@@ -22,7 +22,7 @@
 
 #ifdef __ASM_OBSOLETE
 
-#include "unicode.h"
+#include "wine/unicode.h"
 
 static inline WCHAR to_unicode_digit( WCHAR ch )
 {

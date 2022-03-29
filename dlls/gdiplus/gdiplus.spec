@@ -200,8 +200,8 @@
 200 stub GdipEnumerateMetafileSrcRectDestPointI
 201 stdcall GdipEnumerateMetafileSrcRectDestPoints(ptr ptr ptr long ptr long ptr ptr ptr)
 202 stub GdipEnumerateMetafileSrcRectDestPointsI
-203 stdcall GdipEnumerateMetafileSrcRectDestRect(ptr ptr ptr ptr long ptr ptr ptr)
-204 stdcall GdipEnumerateMetafileSrcRectDestRectI(ptr ptr ptr ptr long ptr ptr ptr)
+203 stub GdipEnumerateMetafileSrcRectDestRect
+204 stub GdipEnumerateMetafileSrcRectDestRectI
 205 stdcall GdipFillClosedCurve2(ptr ptr ptr long float long)
 206 stdcall GdipFillClosedCurve2I(ptr ptr ptr long float long)
 207 stdcall GdipFillClosedCurve(ptr ptr ptr long)
@@ -298,7 +298,7 @@
 298 stdcall GdipGetLogFontA(ptr ptr ptr)
 299 stdcall GdipGetLogFontW(ptr ptr ptr)
 300 stdcall GdipGetMatrixElements(ptr ptr)
-301 stdcall GdipGetMetafileDownLevelRasterizationLimit(ptr ptr)
+301 stub GdipGetMetafileDownLevelRasterizationLimit
 302 stdcall GdipGetMetafileHeaderFromEmf(ptr ptr)
 303 stdcall GdipGetMetafileHeaderFromFile(wstr ptr)
 304 stdcall GdipGetMetafileHeaderFromMetafile(ptr ptr)

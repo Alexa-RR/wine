@@ -56,16 +56,6 @@ struct DomainEntry
 
 static HANDLE dll_fixup_heap; /* using a separate heap so we can have execute permission */
 
-static CRITICAL_SECTION fixup_list_cs;
-static CRITICAL_SECTION_DEBUG fixup_list_cs_debug =
-{
-    0, 0, &fixup_list_cs,
-    { &fixup_list_cs_debug.ProcessLocksList,
-      &fixup_list_cs_debug.ProcessLocksList },
-      0, 0, { (DWORD_PTR)(__FILE__ ": fixup_list_cs") }
-};
-static CRITICAL_SECTION fixup_list_cs = { &fixup_list_cs_debug, -1, 0, 0, 0, 0 };
-
 static struct list dll_fixups;
 
 WCHAR **private_path = NULL;
@@ -84,7 +74,9 @@ struct dll_fixup
 struct comclassredirect_data
 {
     ULONG size;
-    ULONG flags;
+    BYTE  res;
+    BYTE  miscmask;
+    BYTE  res1[2];
     DWORD model;
     GUID  clsid;
     GUID  alias;
@@ -137,7 +129,7 @@ static void domain_restore(MonoDomain *prev_domain)
 
 static HRESULT RuntimeHost_GetDefaultDomain(RuntimeHost *This, const WCHAR *config_path, MonoDomain **result)
 {
-    WCHAR exe_config[MAX_PATH];
+    WCHAR config_dir[MAX_PATH];
     WCHAR base_dir[MAX_PATH];
     char *base_dirA, *config_pathA, *slash;
     HRESULT res=S_OK;
@@ -151,10 +143,18 @@ static HRESULT RuntimeHost_GetDefaultDomain(RuntimeHost *This, const WCHAR *conf
 
     if (!config_path)
     {
-        GetModuleFileNameW(NULL, exe_config, MAX_PATH);
-        lstrcatW(exe_config, L".config");
+        DWORD len = ARRAY_SIZE(config_dir);
 
-        config_path = exe_config;
+        static const WCHAR machine_configW[] = {'\\','C','O','N','F','I','G','\\','m','a','c','h','i','n','e','.','c','o','n','f','i','g',0};
+
+        res = ICLRRuntimeInfo_GetRuntimeDirectory(&This->version->ICLRRuntimeInfo_iface,
+                config_dir, &len);
+        if (FAILED(res))
+            goto end;
+
+        lstrcatW(config_dir, machine_configW);
+
+        config_path = config_dir;
     }
 
     config_pathA = WtoA(config_path);
@@ -200,26 +200,18 @@ static BOOL RuntimeHost_GetMethod(MonoDomain *domain, const char *assemblyname,
     MonoImage *image;
     MonoClass *klass;
 
-    if (!assemblyname)
+    assembly = mono_domain_assembly_open(domain, assemblyname);
+    if (!assembly)
     {
-        image = mono_get_corlib();
+        ERR("Cannot load assembly %s\n", assemblyname);
+        return FALSE;
     }
-    else
-    {
-        MonoImageOpenStatus status;
-        assembly = mono_assembly_open(assemblyname, &status);
-        if (!assembly)
-        {
-            ERR("Cannot load assembly %s, status=%i\n", assemblyname, status);
-            return FALSE;
-        }
 
-        image = mono_assembly_get_image(assembly);
-        if (!image)
-        {
-            ERR("Couldn't get assembly image for %s\n", assemblyname);
-            return FALSE;
-        }
+    image = mono_assembly_get_image(assembly);
+    if (!image)
+    {
+        ERR("Couldn't get assembly image for %s\n", assemblyname);
+        return FALSE;
     }
 
     klass = mono_class_from_name(image, namespace, typename);
@@ -258,7 +250,7 @@ static HRESULT RuntimeHost_DoInvoke(RuntimeHost *This, MonoDomain *domain,
         if (methodname != get_hresult)
         {
             /* Map the exception to an HRESULT. */
-            hr = RuntimeHost_Invoke(This, domain, NULL, "System", "Exception", get_hresult,
+            hr = RuntimeHost_Invoke(This, domain, "mscorlib", "System", "Exception", get_hresult,
                 exc, NULL, 0, &hr_object);
             if (SUCCEEDED(hr))
                 hr = *(HRESULT*)mono_object_unbox(hr_object);
@@ -296,7 +288,7 @@ static HRESULT RuntimeHost_Invoke(RuntimeHost *This, MonoDomain *domain,
     hr = RuntimeHost_DoInvoke(This, domain, methodname, method, obj, args, result);
     if (FAILED(hr))
     {
-        ERR("Method %s.%s:%s raised an exception, hr=%lx\n", namespace, typename, methodname, hr);
+        ERR("Method %s.%s:%s raised an exception, hr=%x\n", namespace, typename, methodname, hr);
     }
 
     domain_restore(prev_domain);
@@ -340,7 +332,7 @@ static HRESULT RuntimeHost_VirtualInvoke(RuntimeHost *This, MonoDomain *domain,
     hr = RuntimeHost_DoInvoke(This, domain, methodname, method, obj, args, result);
     if (FAILED(hr))
     {
-        ERR("Method %s.%s:%s raised an exception, hr=%lx\n", namespace, typename, methodname, hr);
+        ERR("Method %s.%s:%s raised an exception, hr=%x\n", namespace, typename, methodname, hr);
     }
 
     domain_restore(prev_domain);
@@ -356,7 +348,7 @@ static HRESULT RuntimeHost_GetObjectForIUnknown(RuntimeHost *This, MonoDomain *d
     MonoObject *result;
 
     args[0] = &unk;
-    hr = RuntimeHost_Invoke(This, domain, NULL, "System.Runtime.InteropServices", "Marshal", "GetObjectForIUnknown",
+    hr = RuntimeHost_Invoke(This, domain, "mscorlib", "System.Runtime.InteropServices", "Marshal", "GetObjectForIUnknown",
         NULL, args, 1, &result);
 
     if (SUCCEEDED(hr))
@@ -421,7 +413,7 @@ static HRESULT RuntimeHost_AddDomain(RuntimeHost *This, const WCHAR *name, IUnkn
         args[2] = NULL;
     }
 
-    res = RuntimeHost_Invoke(This, domain, NULL, "System", "AppDomain", "CreateDomain",
+    res = RuntimeHost_Invoke(This, domain, "mscorlib", "System", "AppDomain", "CreateDomain",
         NULL, args, 3, &new_domain);
 
     if (FAILED(res))
@@ -435,7 +427,7 @@ static HRESULT RuntimeHost_AddDomain(RuntimeHost *This, const WCHAR *name, IUnkn
      * Instead, do a vcall.
      */
 
-    res = RuntimeHost_VirtualInvoke(This, domain, NULL, "System", "AppDomain", "get_Id",
+    res = RuntimeHost_VirtualInvoke(This, domain, "mscorlib", "System", "AppDomain", "get_Id",
         new_domain, NULL, 0, &id);
 
     if (FAILED(res))
@@ -456,7 +448,7 @@ static HRESULT RuntimeHost_GetIUnknownForDomain(RuntimeHost *This, MonoDomain *d
     MonoObject *appdomain_object;
     IUnknown *unk;
 
-    hr = RuntimeHost_Invoke(This, domain, NULL, "System", "AppDomain", "get_CurrentDomain",
+    hr = RuntimeHost_Invoke(This, domain, "mscorlib", "System", "AppDomain", "get_CurrentDomain",
         NULL, NULL, 0, &appdomain_object);
 
     if (SUCCEEDED(hr))
@@ -482,13 +474,13 @@ void RuntimeHost_ExitProcess(RuntimeHost *This, INT exitcode)
     hr = RuntimeHost_GetDefaultDomain(This, NULL, &domain);
     if (FAILED(hr))
     {
-        ERR("Cannot get domain, hr=%lx\n", hr);
+        ERR("Cannot get domain, hr=%x\n", hr);
         return;
     }
 
     args[0] = &exitcode;
     args[1] = NULL;
-    RuntimeHost_Invoke(This, domain, NULL, "System", "Environment", "Exit",
+    RuntimeHost_Invoke(This, domain, "mscorlib", "System", "Environment", "Exit",
         NULL, args, 1, &dummy);
 
     ERR("Process should have exited\n");
@@ -842,14 +834,14 @@ static HRESULT WINAPI CLRRuntimeHost_GetCLRControl(ICLRRuntimeHost* iface,
 static HRESULT WINAPI CLRRuntimeHost_UnloadAppDomain(ICLRRuntimeHost* iface,
     DWORD dwAppDomainId, BOOL fWaitUntilDone)
 {
-    FIXME("(%p,%lu,%i)\n", iface, dwAppDomainId, fWaitUntilDone);
+    FIXME("(%p,%u,%i)\n", iface, dwAppDomainId, fWaitUntilDone);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI CLRRuntimeHost_ExecuteInAppDomain(ICLRRuntimeHost* iface,
     DWORD dwAppDomainId, FExecuteInAppDomainCallback pCallback, void *cookie)
 {
-    FIXME("(%p,%lu,%p,%p)\n", iface, dwAppDomainId, pCallback, cookie);
+    FIXME("(%p,%u,%p,%p)\n", iface, dwAppDomainId, pCallback, cookie);
     return E_NOTIMPL;
 }
 
@@ -864,7 +856,7 @@ static HRESULT WINAPI CLRRuntimeHost_ExecuteApplication(ICLRRuntimeHost* iface,
     LPCWSTR pwzAppFullName, DWORD dwManifestPaths, LPCWSTR *ppwzManifestPaths,
     DWORD dwActivationData, LPCWSTR *ppwzActivationData, int *pReturnValue)
 {
-    FIXME("(%p,%s,%lu,%lu)\n", iface, debugstr_w(pwzAppFullName), dwManifestPaths, dwActivationData);
+    FIXME("(%p,%s,%u,%u)\n", iface, debugstr_w(pwzAppFullName), dwManifestPaths, dwActivationData);
     return E_NOTIMPL;
 }
 
@@ -1056,7 +1048,7 @@ HRESULT RuntimeHost_GetIUnknownForObject(RuntimeHost *This, MonoObject *obj,
 
     domain = mono_object_get_domain(obj);
 
-    hr = RuntimeHost_Invoke(This, domain, NULL, "System.Runtime.InteropServices", "Marshal", "GetIUnknownForObject",
+    hr = RuntimeHost_Invoke(This, domain, "mscorlib", "System.Runtime.InteropServices", "Marshal", "GetIUnknownForObject",
         NULL, (void**)&obj, 1, &result);
 
     if (SUCCEEDED(hr))
@@ -1224,34 +1216,6 @@ static const struct vtable_fixup_thunk thunk_template = {0};
 
 #endif
 
-DWORD WINAPI GetTokenForVTableEntry(HINSTANCE hinst, BYTE **ppVTEntry)
-{
-    struct dll_fixup *fixup;
-    DWORD result = 0;
-    DWORD rva;
-    int i;
-
-    TRACE("%p,%p\n", hinst, ppVTEntry);
-
-    rva = (BYTE*)ppVTEntry - (BYTE*)hinst;
-
-    EnterCriticalSection(&fixup_list_cs);
-    LIST_FOR_EACH_ENTRY(fixup, &dll_fixups, struct dll_fixup, entry)
-    {
-        if (fixup->dll != hinst)
-            continue;
-        if (rva < fixup->fixup->rva || (rva - fixup->fixup->rva >= fixup->fixup->count * sizeof(ULONG_PTR)))
-            continue;
-        i = (rva - fixup->fixup->rva) / sizeof(ULONG_PTR);
-        result = ((ULONG_PTR*)fixup->tokens)[i];
-        break;
-    }
-    LeaveCriticalSection(&fixup_list_cs);
-
-    TRACE("<-- %lx\n", result);
-    return result;
-}
-
 static void CDECL ReallyFixupVTable(struct dll_fixup *fixup)
 {
     HRESULT hr=S_OK;
@@ -1311,6 +1275,7 @@ static void CDECL ReallyFixupVTable(struct dll_fixup *fixup)
                 ULONG_PTR *tokens = fixup->tokens;
                 for (i=0; i<fixup->fixup->count; i++)
                 {
+                    TRACE("%#lx\n", tokens[i]);
                     vtable[i] = mono_marshal_get_vtfixup_ftnptr(
                         image, tokens[i], fixup->fixup->type);
                 }
@@ -1329,7 +1294,7 @@ static void CDECL ReallyFixupVTable(struct dll_fixup *fixup)
 
     if (!fixup->done)
     {
-        ERR("unable to fixup vtable, hr=%lx, status=%d\n", hr, status);
+        ERR("unable to fixup vtable, hr=%x, status=%d\n", hr, status);
         /* If we returned now, we'd get an infinite loop. */
         assert(0);
     }
@@ -1354,6 +1319,7 @@ static void FixupVTableEntry(HMODULE hmodule, VTableFixup *vtable_fixup)
     fixup->vtable = (BYTE*)hmodule + vtable_fixup->rva;
     fixup->done = FALSE;
 
+    TRACE("vtable_fixup->type=0x%x\n",vtable_fixup->type);
 #if __x86_64__
     if (vtable_fixup->type & COR_VTABLE_64BIT)
 #else
@@ -1384,9 +1350,7 @@ static void FixupVTableEntry(HMODULE hmodule, VTableFixup *vtable_fixup)
         return;
     }
 
-    EnterCriticalSection(&fixup_list_cs);
     list_add_tail(&dll_fixups, &fixup->entry);
-    LeaveCriticalSection(&fixup_list_cs);
 }
 
 static void FixupVTable_Assembly(HMODULE hmodule, ASSEMBLY *assembly)
@@ -1414,7 +1378,7 @@ static void FixupVTable(HMODULE hmodule)
         assembly_release(assembly);
     }
     else
-        ERR("failed to read CLR headers, hr=%lx\n", hr);
+        ERR("failed to read CLR headers, hr=%x\n", hr);
 }
 
 __int32 WINAPI _CorExeMain(void)
@@ -1441,7 +1405,10 @@ __int32 WINAPI _CorExeMain(void)
 
     GetModuleFileNameW(NULL, filename, MAX_PATH);
 
-    TRACE("%s argc=%i\n", debugstr_w(filename), argc);
+    TRACE("%s", debugstr_w(filename));
+    for (i=0; i<argc; i++)
+        TRACE(" %s", debugstr_a(argv[i]));
+    TRACE("\n");
 
     filenameA = WtoA(filename);
     if (!filenameA)
@@ -1535,7 +1502,7 @@ BOOL WINAPI _CorDllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     ASSEMBLY *assembly=NULL;
     HRESULT hr;
 
-    TRACE("(%p, %ld, %p)\n", hinstDLL, fdwReason, lpvReserved);
+    TRACE("(%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
 
     hr = assembly_from_hmodule(&assembly, hinstDLL);
     if (SUCCEEDED(hr))
@@ -1555,7 +1522,7 @@ BOOL WINAPI _CorDllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
             return NativeEntryPoint(hinstDLL, fdwReason, lpvReserved);
     }
     else
-        ERR("failed to read CLR headers, hr=%lx\n", hr);
+        ERR("failed to read CLR headers, hr=%x\n", hr);
 
     return TRUE;
 }
@@ -1663,7 +1630,7 @@ static BOOL try_create_registration_free_com(REFIID clsid, WCHAR *classname, UIN
     {
         DWORD error = GetLastError();
         if (error != ERROR_SXS_KEY_NOT_FOUND)
-            ERR("Failed to find guid: %ld\n", error);
+            ERR("Failed to find guid: %d\n", error);
         goto end;
     }
 
@@ -1672,7 +1639,7 @@ static BOOL try_create_registration_free_com(REFIID clsid, WCHAR *classname, UIN
     if (!QueryActCtxW(0, guid_info.hActCtx, &guid_info.ulAssemblyRosterIndex,
             AssemblyDetailedInformationInActivationContext, assembly_info, bytes_assembly_info, &bytes_assembly_info))
     {
-        ERR("QueryActCtxW failed: %ld!\n", GetLastError());
+        ERR("QueryActCtxW failed: %d!\n", GetLastError());
         goto end;
     }
 
@@ -1716,11 +1683,15 @@ end:
 
 #define CHARS_IN_GUID 39
 
-HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
+HRESULT create_monodata(REFIID riid, LPVOID *ppObj )
 {
-    static const WCHAR wszFileSlash[] = L"file:///";
-    static const WCHAR wszCLSIDSlash[] = L"CLSID\\";
-    static const WCHAR wszInprocServer32[] = L"\\InprocServer32";
+    static const WCHAR wszAssembly[] = {'A','s','s','e','m','b','l','y',0};
+    static const WCHAR wszCodebase[] = {'C','o','d','e','B','a','s','e',0};
+    static const WCHAR wszClass[] = {'C','l','a','s','s',0};
+    static const WCHAR wszFileSlash[] = {'f','i','l','e',':','/','/','/',0};
+    static const WCHAR wszCLSIDSlash[] = {'C','L','S','I','D','\\',0};
+    static const WCHAR wszInprocServer32[] = {'\\','I','n','p','r','o','c','S','e','r','v','e','r','3','2',0};
+    static const WCHAR wszDLL[] = {'.','d','l','l',0};
     WCHAR path[CHARS_IN_GUID + ARRAY_SIZE(wszCLSIDSlash) + ARRAY_SIZE(wszInprocServer32) - 1];
     MonoDomain *domain;
     MonoAssembly *assembly;
@@ -1730,7 +1701,6 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
     HKEY key, subkey;
     LONG res;
     int offset = 0;
-    HANDLE file = INVALID_HANDLE_VALUE;
     DWORD numKeys, keyLength;
     WCHAR codebase[MAX_PATH + 8];
     WCHAR classname[350], subkeyName[256];
@@ -1739,7 +1709,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
     DWORD dwBufLen = 350;
 
     lstrcpyW(path, wszCLSIDSlash);
-    StringFromGUID2(clsid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
+    StringFromGUID2(riid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
     lstrcatW(path, wszInprocServer32);
 
     TRACE("Registry key: %s\n", debugstr_w(path));
@@ -1747,53 +1717,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, path, 0, KEY_READ, &key);
     if (res != ERROR_FILE_NOT_FOUND)
     {
-        res = RegOpenKeyExW( key, L"Server", 0, KEY_READ, &subkey );
-        if (res == ERROR_SUCCESS)
-        {
-            /* Not a managed class, just chain through LoadLibraryShim */
-            HMODULE module;
-            HRESULT (WINAPI *pDllGetClassObject)(REFCLSID,REFIID,LPVOID*);
-            IClassFactory *classfactory;
-
-            dwBufLen = ARRAY_SIZE( filename );
-            res = RegGetValueW( subkey, NULL, NULL, RRF_RT_REG_SZ, NULL, filename, &dwBufLen );
-
-            RegCloseKey( subkey );
-
-            if (res != ERROR_SUCCESS)
-            {
-                WARN("Can't read default value from Server subkey.\n");
-                hr = CLASS_E_CLASSNOTAVAILABLE;
-                goto cleanup;
-            }
-
-            hr = LoadLibraryShim( filename, L"v4.0.30319", NULL, &module);
-            if (FAILED(hr))
-            {
-                WARN("Can't load %s.\n", debugstr_w(filename));
-                goto cleanup;
-            }
-
-            pDllGetClassObject = (void*)GetProcAddress( module, "DllGetClassObject" );
-            if (!pDllGetClassObject)
-            {
-                WARN("Can't get DllGetClassObject from %s.\n", debugstr_w(filename));
-                hr = CLASS_E_CLASSNOTAVAILABLE;
-                goto cleanup;
-            }
-
-            hr = pDllGetClassObject( clsid, &IID_IClassFactory, (void**)&classfactory );
-            if (SUCCEEDED(hr))
-            {
-                hr = IClassFactory_CreateInstance( classfactory, NULL, &IID_IUnknown, ppObj );
-
-                IClassFactory_Release( classfactory );
-            }
-
-            goto cleanup;
-        }
-
-        res = RegGetValueW( key, NULL, L"Class", RRF_RT_REG_SZ, NULL, classname, &dwBufLen);
+        res = RegGetValueW( key, NULL, wszClass, RRF_RT_REG_SZ, NULL, classname, &dwBufLen);
         if(res != ERROR_SUCCESS)
         {
             WARN("Class value cannot be found.\n");
@@ -1804,7 +1728,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
         TRACE("classname (%s)\n", debugstr_w(classname));
 
         dwBufLen = MAX_PATH + 8;
-        res = RegGetValueW( key, NULL, L"CodeBase", RRF_RT_REG_SZ, NULL, codebase, &dwBufLen);
+        res = RegGetValueW( key, NULL, wszCodebase, RRF_RT_REG_SZ, NULL, codebase, &dwBufLen);
         if(res == ERROR_SUCCESS)
         {
             /* Strip file:/// */
@@ -1812,12 +1736,7 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
                 offset = lstrlenW(wszFileSlash);
 
             lstrcpyW(filename, codebase + offset);
-
-            file = CreateFileW(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, 0);
         }
-
-        if (file != INVALID_HANDLE_VALUE)
-            CloseHandle(file);
         else
         {
             WCHAR assemblyname[MAX_PATH + 8];
@@ -1826,37 +1745,27 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             WARN("CodeBase value cannot be found, trying Assembly.\n");
             /* get the last subkey of InprocServer32 */
             res = RegQueryInfoKeyW(key, 0, 0, 0, &numKeys, 0, 0, 0, 0, 0, 0, 0);
+            if (res != ERROR_SUCCESS || numKeys == 0)
+                goto cleanup;
+            numKeys--;
+            keyLength = ARRAY_SIZE(subkeyName);
+            res = RegEnumKeyExW(key, numKeys, subkeyName, &keyLength, 0, 0, 0, 0);
             if (res != ERROR_SUCCESS)
                 goto cleanup;
-            if (numKeys > 0)
-            {
-                numKeys--;
-                keyLength = ARRAY_SIZE(subkeyName);
-                res = RegEnumKeyExW(key, numKeys, subkeyName, &keyLength, 0, 0, 0, 0);
-                if (res != ERROR_SUCCESS)
-                    goto cleanup;
-                res = RegOpenKeyExW(key, subkeyName, 0, KEY_READ, &subkey);
-                if (res != ERROR_SUCCESS)
-                    goto cleanup;
-                dwBufLen = MAX_PATH + 8;
-                res = RegGetValueW(subkey, NULL, L"Assembly", RRF_RT_REG_SZ, NULL, assemblyname, &dwBufLen);
-                RegCloseKey(subkey);
-                if (res != ERROR_SUCCESS)
-                    goto cleanup;
-            }
-            else
-            {
-                dwBufLen = MAX_PATH + 8;
-                res = RegGetValueW(key, NULL, L"Assembly", RRF_RT_REG_SZ, NULL, assemblyname, &dwBufLen);
-                if (res != ERROR_SUCCESS)
-                    goto cleanup;
-            }
+            res = RegOpenKeyExW(key, subkeyName, 0, KEY_READ, &subkey);
+            if (res != ERROR_SUCCESS)
+                goto cleanup;
+            dwBufLen = MAX_PATH + 8;
+            res = RegGetValueW(subkey, NULL, wszAssembly, RRF_RT_REG_SZ, NULL, assemblyname, &dwBufLen);
+            RegCloseKey(subkey);
+            if (res != ERROR_SUCCESS)
+                goto cleanup;
 
             hr = get_file_from_strongname(assemblyname, filename, MAX_PATH);
             if (FAILED(hr))
             {
                 /*
-                 * The registry doesn't have a CodeBase entry or the file isn't there, and it's not in the GAC.
+                 * The registry doesn't have a CodeBase entry and it's not in the GAC.
                  *
                  * Use the Assembly Key to retrieve the filename.
                  *    Assembly : REG_SZ : AssemblyName, Version=X.X.X.X, Culture=neutral, PublicKeyToken=null
@@ -1872,13 +1781,13 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
                 *(ns) = '\0';
                 lstrcatW(filename, assemblyname);
                 *(ns) = '.';
-                lstrcatW(filename, L".dll");
+                lstrcatW(filename, wszDLL);
             }
         }
     }
     else
     {
-        if (!try_create_registration_free_com(clsid, classname, ARRAY_SIZE(classname), filename, ARRAY_SIZE(filename)))
+        if (!try_create_registration_free_com(riid, classname, ARRAY_SIZE(classname), filename, ARRAY_SIZE(filename)))
             return CLASS_E_CLASSNOTAVAILABLE;
 
         TRACE("classname (%s)\n", debugstr_w(classname));
@@ -1903,7 +1812,6 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             MonoClass *klass;
             MonoObject *result;
             MonoDomain *prev_domain;
-            MonoImageOpenStatus status;
             IUnknown *unk = NULL;
             char *filenameA, *ns;
             char *classA;
@@ -1913,11 +1821,11 @@ HRESULT create_monodata(REFCLSID clsid, LPVOID *ppObj)
             prev_domain = domain_attach(domain);
 
             filenameA = WtoA(filename);
-            assembly = mono_assembly_open(filenameA, &status);
+            assembly = mono_domain_assembly_open(domain, filenameA);
             HeapFree(GetProcessHeap(), 0, filenameA);
             if (!assembly)
             {
-                ERR("Cannot open assembly %s, status=%i\n", filenameA, status);
+                ERR("Cannot open assembly %s\n", filenameA);
                 domain_restore(prev_domain);
                 goto cleanup;
             }

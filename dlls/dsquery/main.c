@@ -31,6 +31,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dsquery);
 
+static HINSTANCE instance;
+
 /******************************************************************
  *      IClassFactory implementation
  */
@@ -66,7 +68,7 @@ static ULONG WINAPI ClassFactory_AddRef(IClassFactory *iface)
     struct query_class_factory *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) increasing refcount to %lu\n", iface, ref);
+    TRACE("(%p) increasing refcount to %u\n", iface, ref);
 
     return ref;
 }
@@ -76,7 +78,7 @@ static ULONG WINAPI ClassFactory_Release(IClassFactory *iface)
     struct query_class_factory *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) decreasing refcount to %lu\n", iface, ref);
+    TRACE("(%p) decreasing refcount to %u\n", iface, ref);
 
     if (ref == 0)
         HeapFree(GetProcessHeap(), 0, This);
@@ -144,7 +146,7 @@ static ULONG WINAPI CommonQuery_AddRef(ICommonQuery *iface)
     struct common_query *This = impl_from_ICommonQuery(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) increasing refcount to %lu\n", iface, ref);
+    TRACE("(%p) increasing refcount to %u\n", iface, ref);
 
     return ref;
 }
@@ -154,7 +156,7 @@ static ULONG WINAPI CommonQuery_Release(ICommonQuery *iface)
     struct common_query *This = impl_from_ICommonQuery(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) decreasing refcount to %lu\n", iface, ref);
+    TRACE("(%p) decreasing refcount to %u\n", iface, ref);
 
     if (ref == 0)
         HeapFree(GetProcessHeap(), 0, This);
@@ -195,6 +197,32 @@ static HRESULT CommonQuery_create(IUnknown *outer, REFIID riid, void **out)
 }
 
 /***********************************************************************
+ *		DllMain
+ */
+BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, void *reserved)
+{
+    TRACE("(%p, %u, %p)\n", inst, reason, reserved);
+
+    switch (reason)
+    {
+        case DLL_PROCESS_ATTACH:
+            instance = inst;
+            DisableThreadLibraryCalls(inst);
+            break;
+    }
+
+    return TRUE;
+}
+
+/***********************************************************************
+ *		DllCanUnloadNow (DSQUERY.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
+}
+
+/***********************************************************************
  *		DllGetClassObject (DSQUERY.@)
  */
 HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void **out)
@@ -224,4 +252,20 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void **out)
     FIXME("%s: no class found\n", debugstr_guid(rclsid));
     *out = NULL;
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *		DllRegisterServer (DSQUERY.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( instance );
+}
+
+/***********************************************************************
+ *		DllUnregisterServer (DSQUERY.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( instance );
 }

@@ -101,7 +101,7 @@ static RPC_STATUS rpcrt4_conn_create_pipe(RpcConnection *conn)
                                         RPC_MAX_PACKET_SIZE, RPC_MAX_PACKET_SIZE, 5000, NULL);
     if (connection->pipe == INVALID_HANDLE_VALUE)
     {
-        WARN("CreateNamedPipe failed with error %ld\n", GetLastError());
+        WARN("CreateNamedPipe failed with error %d\n", GetLastError());
         if (GetLastError() == ERROR_FILE_EXISTS)
             return RPC_S_DUPLICATE_ENDPOINT;
         else
@@ -154,12 +154,12 @@ static RPC_STATUS rpcrt4_conn_open_pipe(RpcConnection *Connection, LPCSTR pname,
         TRACE("retrying busy server\n");
         continue;
       }
-      TRACE("connection failed, error=%lx\n", err);
+      TRACE("connection failed, error=%x\n", err);
       return RPC_S_SERVER_TOO_BUSY;
     }
     if (!wait || !WaitNamedPipeA(pname, NMPWAIT_WAIT_FOREVER)) {
       err = GetLastError();
-      WARN("connection failed, error=%lx\n", err);
+      WARN("connection failed, error=%x\n", err);
       return RPC_S_SERVER_UNAVAILABLE;
     }
   }
@@ -214,7 +214,7 @@ static RPC_STATUS rpcrt4_protseq_ncalrpc_open_endpoint(RpcServerProtseq* protseq
     DWORD process_id = GetCurrentProcessId();
     ULONG id = InterlockedIncrement(&lrpc_nameless_id);
     snprintf(generated_endpoint, sizeof(generated_endpoint),
-             "LRPC%08lx.%08lx", process_id, id);
+             "LRPC%08x.%08x", process_id, id);
     endpoint = generated_endpoint;
   }
 
@@ -274,7 +274,7 @@ static RPC_STATUS rpcrt4_protseq_ncacn_np_open_endpoint(RpcServerProtseq *protse
     DWORD process_id = GetCurrentProcessId();
     ULONG id = InterlockedExchangeAdd(&np_nameless_id, 1 );
     snprintf(generated_endpoint, sizeof(generated_endpoint),
-             "\\\\pipe\\\\%08lx.%03lx", process_id, id);
+             "\\\\pipe\\\\%08x.%03x", process_id, id);
     endpoint = generated_endpoint;
   }
 
@@ -317,7 +317,7 @@ static RPC_STATUS rpcrt4_ncacn_np_handoff(RpcConnection *old_conn, RpcConnection
   new_conn->NetworkAddr = HeapAlloc(GetProcessHeap(), 0, len);
   if (!GetComputerNameA(new_conn->NetworkAddr, &len))
   {
-    ERR("Failed to retrieve the computer name, error %lu\n", GetLastError());
+    ERR("Failed to retrieve the computer name, error %u\n", GetLastError());
     return RPC_S_OUT_OF_RESOURCES;
   }
 
@@ -365,7 +365,7 @@ static RPC_STATUS rpcrt4_ncalrpc_handoff(RpcConnection *old_conn, RpcConnection 
   new_conn->NetworkAddr = HeapAlloc(GetProcessHeap(), 0, len);
   if (!GetComputerNameA(new_conn->NetworkAddr, &len))
   {
-    ERR("Failed to retrieve the computer name, error %lu\n", GetLastError());
+    ERR("Failed to retrieve the computer name, error %u\n", GetLastError());
     return RPC_S_OUT_OF_RESOURCES;
   }
 
@@ -595,7 +595,7 @@ static RPC_STATUS rpcrt4_conn_np_impersonate_client(RpcConnection *conn)
     if (!ret)
     {
         DWORD error = GetLastError();
-        WARN("ImpersonateNamedPipeClient failed with error %lu\n", error);
+        WARN("ImpersonateNamedPipeClient failed with error %u\n", error);
         switch (error)
         {
         case ERROR_CANNOT_IMPERSONATE:
@@ -617,7 +617,7 @@ static RPC_STATUS rpcrt4_conn_np_revert_to_self(RpcConnection *conn)
     ret = RevertToSelf();
     if (!ret)
     {
-        WARN("RevertToSelf failed with error %lu\n", GetLastError());
+        WARN("RevertToSelf failed with error %u\n", GetLastError());
         return RPC_S_NO_CONTEXT_AVAILABLE;
     }
     return RPC_S_OK;
@@ -677,7 +677,7 @@ static void *rpcrt4_protseq_np_get_wait_array(RpcServerProtseq *protseq, void *p
             case STATUS_PENDING:
                 break;
             default:
-                ERR("pipe listen error %lx\n", status);
+                ERR("pipe listen error %x\n", status);
                 continue;
             }
 
@@ -738,7 +738,7 @@ static int rpcrt4_protseq_np_wait_for_new_connection(RpcServerProtseq *protseq, 
         return 0;
     else if (res == WAIT_FAILED)
     {
-        ERR("wait failed with error %ld\n", GetLastError());
+        ERR("wait failed with error %d\n", GetLastError());
         return -1;
     }
     else
@@ -755,7 +755,7 @@ static int rpcrt4_protseq_np_wait_for_new_connection(RpcServerProtseq *protseq, 
                 if (conn->io_status.Status == STATUS_SUCCESS || conn->io_status.Status == STATUS_PIPE_CONNECTED)
                     cconn = rpcrt4_spawn_connection(&conn->common);
                 else
-                    ERR("listen failed %lx\n", conn->io_status.Status);
+                    ERR("listen failed %x\n", conn->io_status.Status);
                 break;
             }
         }
@@ -867,7 +867,7 @@ static RPC_STATUS rpcrt4_ncalrpc_inquire_auth_client(
     RpcConnection *conn, RPC_AUTHZ_HANDLE *privs, RPC_WSTR *server_princ_name,
     ULONG *authn_level, ULONG *authn_svc, ULONG *authz_svc, ULONG flags)
 {
-    TRACE("(%p, %p, %p, %p, %p, %p, 0x%lx)\n", conn, privs,
+    TRACE("(%p, %p, %p, %p, %p, %p, 0x%x)\n", conn, privs,
           server_princ_name, authn_level, authn_svc, authz_svc, flags);
 
     if (privs)
@@ -888,7 +888,7 @@ static RPC_STATUS rpcrt4_ncalrpc_inquire_auth_client(
         *authz_svc = RPC_C_AUTHZ_NONE;
     }
     if (flags)
-        FIXME("flags 0x%lx not implemented\n", flags);
+        FIXME("flags 0x%x not implemented\n", flags);
 
     return RPC_S_OK;
 }
@@ -941,7 +941,7 @@ static size_t rpcrt4_ip_tcp_get_top_of_tower(unsigned char *tower_data,
         ret = getaddrinfo("0.0.0.0", endpoint, &hints, &ai);
         if (ret)
         {
-            ERR("getaddrinfo failed, error %u\n", WSAGetLastError());
+            ERR("getaddrinfo failed: %s\n", gai_strerror(ret));
             return 0;
         }
     }
@@ -1082,7 +1082,7 @@ static BOOL rpcrt4_sock_wait_for_recv(RpcConnection_tcp *tcpc)
   case WAIT_OBJECT_0 + 1:
     return FALSE;
   default:
-    ERR("WaitForMultipleObjects() failed with error %ld\n", GetLastError());
+    ERR("WaitForMultipleObjects() failed with error %d\n", GetLastError());
     return FALSE;
   }
 }
@@ -1101,7 +1101,7 @@ static BOOL rpcrt4_sock_wait_for_send(RpcConnection_tcp *tcpc)
   case WAIT_OBJECT_0:
     return TRUE;
   default:
-    ERR("WaitForMultipleObjects() failed with error %ld\n", GetLastError());
+    ERR("WaitForMultipleObjects() failed with error %d\n", GetLastError());
     return FALSE;
   }
 }
@@ -1147,8 +1147,8 @@ static RPC_STATUS rpcrt4_ncacn_ip_tcp_open(RpcConnection* Connection)
   ret = getaddrinfo(Connection->NetworkAddr, Connection->Endpoint, &hints, &ai);
   if (ret)
   {
-    ERR("getaddrinfo for %s:%s failed, error %u\n", Connection->NetworkAddr,
-            Connection->Endpoint, WSAGetLastError());
+    ERR("getaddrinfo for %s:%s failed: %s\n", Connection->NetworkAddr,
+      Connection->Endpoint, gai_strerror(ret));
     return RPC_S_SERVER_UNAVAILABLE;
   }
 
@@ -1228,7 +1228,8 @@ static RPC_STATUS rpcrt4_protseq_ncacn_ip_tcp_open_endpoint(RpcServerProtseq *pr
     ret = getaddrinfo(NULL, endpoint ? endpoint : "0", &hints, &ai);
     if (ret)
     {
-        ERR("getaddrinfo for port %s failed, error %u\n", endpoint, WSAGetLastError());
+        ERR("getaddrinfo for port %s failed: %s\n", endpoint,
+            gai_strerror(ret));
         if ((ret == EAI_SERVICE) || (ret == EAI_NONAME))
             return RPC_S_INVALID_ENDPOINT_FORMAT;
         return RPC_S_CANT_CREATE_ENDPOINT;
@@ -1292,7 +1293,7 @@ static RPC_STATUS rpcrt4_protseq_ncacn_ip_tcp_open_endpoint(RpcServerProtseq *pr
                           NI_NUMERICSERV);
         if (ret)
         {
-            WARN("getnameinfo failed, error %u\n", WSAGetLastError());
+            WARN("getnameinfo failed: %s\n", gai_strerror(ret));
             closesocket(sock);
             status = RPC_S_CANT_CREATE_ENDPOINT;
             continue;
@@ -1597,7 +1598,7 @@ static int rpcrt4_protseq_sock_wait_for_new_connection(RpcServerProtseq *protseq
         return 0;
     if (res == WAIT_FAILED)
     {
-        ERR("wait failed with error %ld\n", GetLastError());
+        ERR("wait failed with error %d\n", GetLastError());
         return -1;
     }
 
@@ -1689,7 +1690,7 @@ static RPC_STATUS wait_async_request(RpcHttpAsyncData *async_data, BOOL call_ret
 
     if(GetLastError() != ERROR_IO_PENDING) {
         RpcHttpAsyncData_Release(async_data);
-        ERR("Request failed with error %ld\n", GetLastError());
+        ERR("Request failed with error %d\n", GetLastError());
         return RPC_S_SERVER_UNAVAILABLE;
     }
 
@@ -1863,7 +1864,7 @@ static RPC_STATUS rpcrt4_http_check_response(HINTERNET hor)
         ret = HttpQueryInfoW(hor, HTTP_QUERY_STATUS_TEXT, status_text, &size, &index);
     }
 
-    ERR("server returned: %ld %s\n", status_code, ret ? debugstr_w(status_text) : "<status text unavailable>");
+    ERR("server returned: %d %s\n", status_code, ret ? debugstr_w(status_text) : "<status text unavailable>");
     if(status_text != buf) HeapFree(GetProcessHeap(), 0, status_text);
 
     if (status_code == HTTP_STATUS_DENIED)
@@ -1873,6 +1874,7 @@ static RPC_STATUS rpcrt4_http_check_response(HINTERNET hor)
 
 static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
 {
+    static const WCHAR wszUserAgent[] = {'M','S','R','P','C',0};
     LPWSTR proxy = NULL;
     LPWSTR user = NULL;
     LPWSTR password = NULL;
@@ -1910,9 +1912,12 @@ static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
     for (option = httpc->common.NetworkOptions; option;
          option = (wcschr(option, ',') ? wcschr(option, ',')+1 : NULL))
     {
-        if (!wcsnicmp(option, L"RpcProxy=", ARRAY_SIZE(L"RpcProxy=")-1))
+        static const WCHAR wszRpcProxy[] = {'R','p','c','P','r','o','x','y','=',0};
+        static const WCHAR wszHttpProxy[] = {'H','t','t','p','P','r','o','x','y','=',0};
+
+        if (!wcsnicmp(option, wszRpcProxy, ARRAY_SIZE(wszRpcProxy)-1))
         {
-            const WCHAR *value_start = option + ARRAY_SIZE(L"RpcProxy=")-1;
+            const WCHAR *value_start = option + ARRAY_SIZE(wszRpcProxy)-1;
             const WCHAR *value_end;
             const WCHAR *p;
 
@@ -1929,9 +1934,9 @@ static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
             TRACE("RpcProxy value is %s\n", debugstr_wn(value_start, value_end-value_start));
             servername = RPCRT4_strndupW(value_start, value_end-value_start);
         }
-        else if (!wcsnicmp(option, L"HttpProxy=", ARRAY_SIZE(L"HttpProxy=")-1))
+        else if (!wcsnicmp(option, wszHttpProxy, ARRAY_SIZE(wszHttpProxy)-1))
         {
-            const WCHAR *value_start = option + ARRAY_SIZE(L"HttpProxy=")-1;
+            const WCHAR *value_start = option + ARRAY_SIZE(wszHttpProxy)-1;
             const WCHAR *value_end;
 
             value_end = wcschr(option, ',');
@@ -1944,7 +1949,7 @@ static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
             FIXME("unhandled option %s\n", debugstr_w(option));
     }
 
-    httpc->app_info = InternetOpenW(L"MSRPC", proxy ? INTERNET_OPEN_TYPE_PROXY : INTERNET_OPEN_TYPE_PRECONFIG,
+    httpc->app_info = InternetOpenW(wszUserAgent, proxy ? INTERNET_OPEN_TYPE_PROXY : INTERNET_OPEN_TYPE_PRECONFIG,
                                     NULL, NULL, INTERNET_FLAG_ASYNC);
     if (!httpc->app_info)
     {
@@ -1952,7 +1957,7 @@ static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
         HeapFree(GetProcessHeap(), 0, user);
         HeapFree(GetProcessHeap(), 0, proxy);
         HeapFree(GetProcessHeap(), 0, servername);
-        ERR("InternetOpenW failed with error %ld\n", GetLastError());
+        ERR("InternetOpenW failed with error %d\n", GetLastError());
         return RPC_S_SERVER_UNAVAILABLE;
     }
     InternetSetStatusCallbackW(httpc->app_info, rpcrt4_http_internet_callback);
@@ -1986,7 +1991,7 @@ static RPC_STATUS rpcrt4_http_internet_connect(RpcConnection_http *httpc)
 
     if (!httpc->session)
     {
-        ERR("InternetConnectW failed with error %ld\n", GetLastError());
+        ERR("InternetConnectW failed with error %d\n", GetLastError());
         HeapFree(GetProcessHeap(), 0, servername);
         return RPC_S_SERVER_UNAVAILABLE;
     }
@@ -2029,7 +2034,7 @@ static int rpcrt4_http_async_read(HINTERNET req, RpcHttpAsyncData *async_data, H
     HeapFree(GetProcessHeap(), 0, async_data->inet_buffers.lpvBuffer);
     async_data->inet_buffers.lpvBuffer = NULL;
 
-    TRACE("%p %p %u -> %lu\n", req, buffer, count, status);
+    TRACE("%p %p %u -> %u\n", req, buffer, count, status);
     return status == RPC_S_OK ? count : -1;
 }
 
@@ -2057,9 +2062,11 @@ static RPC_STATUS send_echo_request(HINTERNET req, RpcHttpAsyncData *async_data,
 
 static RPC_STATUS insert_content_length_header(HINTERNET request, DWORD len)
 {
-    WCHAR header[ARRAY_SIZE(L"Content-Length: %u\r\n") + 10];
+    static const WCHAR fmtW[] =
+        {'C','o','n','t','e','n','t','-','L','e','n','g','t','h',':',' ','%','u','\r','\n',0};
+    WCHAR header[ARRAY_SIZE(fmtW) + 10];
 
-    swprintf(header, ARRAY_SIZE(header), L"Content-Length: %u\r\n", len);
+    swprintf(header, ARRAY_SIZE(header), fmtW, len);
     if ((HttpAddRequestHeadersW(request, header, -1, HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD))) return RPC_S_OK;
     return RPC_S_SERVER_UNAVAILABLE;
 }
@@ -2100,7 +2107,7 @@ static RPC_STATUS rpcrt4_http_prepare_in_pipe(HINTERNET in_request, RpcHttpAsync
     RPCRT4_FreeHeader(hdr);
     if (!ret)
     {
-        ERR("InternetWriteFile failed with error %ld\n", GetLastError());
+        ERR("InternetWriteFile failed with error %d\n", GetLastError());
         return RPC_S_SERVER_UNAVAILABLE;
     }
 
@@ -2201,7 +2208,7 @@ static RPC_STATUS rpcrt4_http_prepare_out_pipe(HINTERNET out_request, RpcHttpAsy
                                             &field1);
     HeapFree(GetProcessHeap(), 0, data_from_server);
     if (status != RPC_S_OK) return status;
-    TRACE("received (%ld) from first prepare header\n", field1);
+    TRACE("received (%d) from first prepare header\n", field1);
 
     for (;;)
     {
@@ -2224,7 +2231,7 @@ static RPC_STATUS rpcrt4_http_prepare_out_pipe(HINTERNET out_request, RpcHttpAsy
                                             &field3);
     HeapFree(GetProcessHeap(), 0, data_from_server);
     if (status != RPC_S_OK) return status;
-    TRACE("received (0x%08lx 0x%08lx %ld) from second prepare header\n", field1, *flow_control_increment, field3);
+    TRACE("received (0x%08x 0x%08x %d) from second prepare header\n", field1, *flow_control_increment, field3);
 
     return RPC_S_OK;
 }
@@ -2372,6 +2379,12 @@ static void destroy_authinfo(struct authinfo *info)
     HeapFree(GetProcessHeap(), 0, info);
 }
 
+static const WCHAR basicW[]     = {'B','a','s','i','c',0};
+static const WCHAR ntlmW[]      = {'N','T','L','M',0};
+static const WCHAR passportW[]  = {'P','a','s','s','p','o','r','t',0};
+static const WCHAR digestW[]    = {'D','i','g','e','s','t',0};
+static const WCHAR negotiateW[] = {'N','e','g','o','t','i','a','t','e',0};
+
 static const struct
 {
     const WCHAR *str;
@@ -2380,11 +2393,11 @@ static const struct
 }
 auth_schemes[] =
 {
-    { L"Basic",     ARRAY_SIZE(L"Basic") - 1,     RPC_C_HTTP_AUTHN_SCHEME_BASIC },
-    { L"NTLM",      ARRAY_SIZE(L"NTLM") - 1,      RPC_C_HTTP_AUTHN_SCHEME_NTLM },
-    { L"Passport",  ARRAY_SIZE(L"Passport") - 1,  RPC_C_HTTP_AUTHN_SCHEME_PASSPORT },
-    { L"Digest",    ARRAY_SIZE(L"Digest") - 1,    RPC_C_HTTP_AUTHN_SCHEME_DIGEST },
-    { L"Negotiate", ARRAY_SIZE(L"Negotiate") - 1, RPC_C_HTTP_AUTHN_SCHEME_NEGOTIATE }
+    { basicW,     ARRAY_SIZE(basicW) - 1,     RPC_C_HTTP_AUTHN_SCHEME_BASIC },
+    { ntlmW,      ARRAY_SIZE(ntlmW) - 1,      RPC_C_HTTP_AUTHN_SCHEME_NTLM },
+    { passportW,  ARRAY_SIZE(passportW) - 1,  RPC_C_HTTP_AUTHN_SCHEME_PASSPORT },
+    { digestW,    ARRAY_SIZE(digestW) - 1,    RPC_C_HTTP_AUTHN_SCHEME_DIGEST },
+    { negotiateW, ARRAY_SIZE(negotiateW) - 1, RPC_C_HTTP_AUTHN_SCHEME_NEGOTIATE }
 };
 
 static DWORD auth_scheme_from_header( const WCHAR *header )
@@ -2445,7 +2458,7 @@ static RPC_STATUS do_authorization(HINTERNET request, SEC_WCHAR *servername,
     case RPC_C_HTTP_AUTHN_SCHEME_NEGOTIATE:
     {
 
-        static SEC_WCHAR ntlmW[] = L"NTLM", negotiateW[] = L"Negotiate";
+        static SEC_WCHAR ntlmW[] = {'N','T','L','M',0}, negotiateW[] = {'N','e','g','o','t','i','a','t','e',0};
         SECURITY_STATUS ret;
         SecBufferDesc out_desc, in_desc;
         SecBuffer out, in;
@@ -2536,7 +2549,7 @@ static RPC_STATUS do_authorization(HINTERNET request, SEC_WCHAR *servername,
         }
         else
         {
-            ERR("InitializeSecurityContextW failed with error 0x%08lx\n", ret);
+            ERR("InitializeSecurityContextW failed with error 0x%08x\n", ret);
             HeapFree(GetProcessHeap(), 0, out.pvBuffer);
             break;
         }
@@ -2544,7 +2557,7 @@ static RPC_STATUS do_authorization(HINTERNET request, SEC_WCHAR *servername,
         break;
     }
     default:
-        FIXME("scheme %lu not supported\n", creds->AuthnSchemes[0]);
+        FIXME("scheme %u not supported\n", creds->AuthnSchemes[0]);
         break;
     }
 
@@ -2584,7 +2597,7 @@ static RPC_STATUS insert_authorization_header(HINTERNET request, ULONG scheme, c
         scheme_len = ARRAY_SIZE(ntlmW);
         break;
     default:
-        ERR("unknown scheme %lu\n", scheme);
+        ERR("unknown scheme %u\n", scheme);
         return RPC_S_SERVER_UNAVAILABLE;
     }
     if ((header = HeapAlloc(GetProcessHeap(), 0, (auth_len + scheme_len + len + 2) * sizeof(WCHAR))))
@@ -2621,6 +2634,7 @@ static void drain_content(HINTERNET request, RpcHttpAsyncData *async_data, HANDL
 
 static RPC_STATUS authorize_request(RpcConnection_http *httpc, HINTERNET request)
 {
+    static const WCHAR authW[] = {'A','u','t','h','o','r','i','z','a','t','i','o','n',':','\r','\n',0};
     struct authinfo *info = NULL;
     RPC_STATUS status;
     BOOL ret;
@@ -2644,7 +2658,7 @@ static RPC_STATUS authorize_request(RpcConnection_http *httpc, HINTERNET request
     }
 
     if (info->scheme != RPC_C_HTTP_AUTHN_SCHEME_BASIC)
-        HttpAddRequestHeadersW(request, L"Authorization:\r\n", -1, HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
+        HttpAddRequestHeadersW(request, authW, -1, HTTP_ADDREQ_FLAG_REPLACE | HTTP_ADDREQ_FLAG_ADD);
 
     destroy_authinfo(info);
     return status;
@@ -2677,8 +2691,8 @@ static BOOL is_secure(RpcConnection_http *httpc)
 
 static RPC_STATUS set_auth_cookie(RpcConnection_http *httpc, const WCHAR *value)
 {
-    static WCHAR httpW[] = L"http";
-    static WCHAR httpsW[] = L"https";
+    static WCHAR httpW[] = {'h','t','t','p',0};
+    static WCHAR httpsW[] = {'h','t','t','p','s',0};
     URL_COMPONENTSW uc;
     DWORD len;
     WCHAR *url;
@@ -2723,8 +2737,12 @@ static RPC_STATUS set_auth_cookie(RpcConnection_http *httpc, const WCHAR *value)
 static RPC_STATUS rpcrt4_ncacn_http_open(RpcConnection* Connection)
 {
     RpcConnection_http *httpc = (RpcConnection_http *)Connection;
-    static const WCHAR wszRpcProxyPrefix[] = L"/rpc/rpcproxy.dll?";
-    LPCWSTR wszAcceptTypes[] = { L"application/rpc", NULL };
+    static const WCHAR wszVerbIn[] = {'R','P','C','_','I','N','_','D','A','T','A',0};
+    static const WCHAR wszVerbOut[] = {'R','P','C','_','O','U','T','_','D','A','T','A',0};
+    static const WCHAR wszRpcProxyPrefix[] = {'/','r','p','c','/','r','p','c','p','r','o','x','y','.','d','l','l','?',0};
+    static const WCHAR wszColon[] = {':',0};
+    static const WCHAR wszAcceptType[] = {'a','p','p','l','i','c','a','t','i','o','n','/','r','p','c',0};
+    LPCWSTR wszAcceptTypes[] = { wszAcceptType, NULL };
     DWORD flags;
     WCHAR *url;
     RPC_STATUS status;
@@ -2759,7 +2777,7 @@ static RPC_STATUS rpcrt4_ncacn_http_open(RpcConnection* Connection)
     memcpy(url, wszRpcProxyPrefix, sizeof(wszRpcProxyPrefix));
     MultiByteToWideChar(CP_ACP, 0, Connection->NetworkAddr, -1, url+ARRAY_SIZE(wszRpcProxyPrefix)-1,
                         strlen(Connection->NetworkAddr)+1);
-    lstrcatW(url, L":");
+    lstrcatW(url, wszColon);
     MultiByteToWideChar(CP_ACP, 0, Connection->Endpoint, -1, url+lstrlenW(url), strlen(Connection->Endpoint)+1);
 
     secure = is_secure(httpc);
@@ -2776,11 +2794,11 @@ static RPC_STATUS rpcrt4_ncacn_http_open(RpcConnection* Connection)
         HeapFree(GetProcessHeap(), 0, url);
         return status;
     }
-    httpc->in_request = HttpOpenRequestW(httpc->session, L"RPC_IN_DATA", url, NULL, NULL, wszAcceptTypes,
+    httpc->in_request = HttpOpenRequestW(httpc->session, wszVerbIn, url, NULL, NULL, wszAcceptTypes,
                                          flags, (DWORD_PTR)httpc->async_data);
     if (!httpc->in_request)
     {
-        ERR("HttpOpenRequestW failed with error %ld\n", GetLastError());
+        ERR("HttpOpenRequestW failed with error %d\n", GetLastError());
         HeapFree(GetProcessHeap(), 0, url);
         return RPC_S_SERVER_UNAVAILABLE;
     }
@@ -2802,12 +2820,12 @@ static RPC_STATUS rpcrt4_ncacn_http_open(RpcConnection* Connection)
         drain_content(httpc->in_request, httpc->async_data, httpc->cancel_event);
     }
 
-    httpc->out_request = HttpOpenRequestW(httpc->session, L"RPC_OUT_DATA", url, NULL, NULL, wszAcceptTypes,
+    httpc->out_request = HttpOpenRequestW(httpc->session, wszVerbOut, url, NULL, NULL, wszAcceptTypes,
                                           flags, (DWORD_PTR)httpc->async_data);
     HeapFree(GetProcessHeap(), 0, url);
     if (!httpc->out_request)
     {
-        ERR("HttpOpenRequestW failed with error %ld\n", GetLastError());
+        ERR("HttpOpenRequestW failed with error %d\n", GetLastError());
         return RPC_S_SERVER_UNAVAILABLE;
     }
 
@@ -2881,7 +2899,7 @@ again:
   /* read packet common header */
   dwRead = rpcrt4_ncacn_http_read(Connection, &common_hdr, sizeof(common_hdr));
   if (dwRead != sizeof(common_hdr)) {
-    WARN("Short read of header, %ld bytes\n", dwRead);
+    WARN("Short read of header, %d bytes\n", dwRead);
     status = RPC_S_PROTOCOL_ERROR;
     goto fail;
   }
@@ -2914,7 +2932,7 @@ again:
   /* read the rest of packet header */
   dwRead = rpcrt4_ncacn_http_read(Connection, &(*Header)->common + 1, hdr_length - sizeof(common_hdr));
   if (dwRead != hdr_length - sizeof(common_hdr)) {
-    WARN("bad header length, %ld bytes, hdr_length %ld\n", dwRead, hdr_length);
+    WARN("bad header length, %d bytes, hdr_length %d\n", dwRead, hdr_length);
     status = RPC_S_PROTOCOL_ERROR;
     goto fail;
   }
@@ -2931,7 +2949,7 @@ again:
     dwRead = rpcrt4_ncacn_http_read(Connection, *Payload, common_hdr.frag_len - hdr_length);
     if (dwRead != common_hdr.frag_len - hdr_length)
     {
-      WARN("bad data length, %ld/%ld\n", dwRead, common_hdr.frag_len - hdr_length);
+      WARN("bad data length, %d/%d\n", dwRead, common_hdr.frag_len - hdr_length);
       status = RPC_S_PROTOCOL_ERROR;
       goto fail;
     }
@@ -2969,7 +2987,7 @@ again:
                                                  &pipe_uuid);
       if (status != RPC_S_OK)
         goto fail;
-      TRACE("received http flow control header (0x%lx, 0x%lx, %s)\n",
+      TRACE("received http flow control header (0x%x, 0x%x, %s)\n",
             bytes_transmitted, flow_control_increment, debugstr_guid(&pipe_uuid));
       /* FIXME: do something with parsed data */
     }
@@ -2991,7 +3009,7 @@ again:
 
   httpc->bytes_received += common_hdr.frag_len;
 
-  TRACE("httpc->bytes_received = 0x%lx\n", httpc->bytes_received);
+  TRACE("httpc->bytes_received = 0x%x\n", httpc->bytes_received);
 
   if (httpc->bytes_received > httpc->flow_control_mark)
   {
@@ -3003,7 +3021,7 @@ again:
     {
       DWORD bytes_written;
       BOOL ret2;
-      TRACE("sending flow control packet at 0x%lx\n", httpc->bytes_received);
+      TRACE("sending flow control packet at 0x%x\n", httpc->bytes_received);
       ret2 = InternetWriteFile(httpc->in_request, hdr, hdr->common.frag_len, &bytes_written);
       RPCRT4_FreeHeader(hdr);
       if (ret2)
@@ -3358,7 +3376,7 @@ void rpcrt4_conn_release_and_wait(RpcConnection *connection)
 RpcConnection *RPCRT4_GrabConnection(RpcConnection *connection)
 {
     LONG ref = InterlockedIncrement(&connection->ref);
-    TRACE("%p ref=%lu\n", connection, ref);
+    TRACE("%p ref=%u\n", connection, ref);
     return connection;
 }
 
@@ -3383,7 +3401,7 @@ void RPCRT4_ReleaseConnection(RpcConnection *connection)
         ref = InterlockedDecrement(&connection->ref);
     }
 
-    TRACE("%p ref=%lu\n", connection, ref);
+    TRACE("%p ref=%u\n", connection, ref);
 
     if (!ref)
     {

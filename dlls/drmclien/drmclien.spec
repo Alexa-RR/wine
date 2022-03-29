@@ -1,4 +1,4 @@
-@ stdcall -private DllMain(long long ptr)
+@ stub DllMain
 @ stub CanDecrypt
 @ stub Decrypt
 @ stub RequestLicense
@@ -27,5 +27,5 @@
 @ stub ?GetPublicKey@CDRMLiteCrypto@@QAEJPAUPKCERT@@@Z
 @ stub ?QueryXferToPMEx@CDRMLiteCrypto@@QAEJPBDKPAKPAEK2K12@Z
 @ stub ?RestoreLicenses@CDRMLiteCrypto@@QAEJKPAEPAGPAUIUnknown@@PAHPAX@Z
-@ stdcall -private DllRegisterServer()
-@ stdcall -private DllUnregisterServer()
+@ stdcall DllRegisterServer()
+@ stub DllUnregisterServer

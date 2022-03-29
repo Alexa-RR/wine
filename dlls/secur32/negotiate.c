@@ -18,15 +18,15 @@
  */
 
 #include <stdarg.h>
-#include <stdlib.h>
 #include "windef.h"
 #include "winbase.h"
 #include "sspi.h"
 #include "rpc.h"
 #include "wincred.h"
+#include "secur32_priv.h"
 
 #include "wine/debug.h"
-#include "secur32_priv.h"
+#include "wine/unicode.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(secur32);
 
@@ -36,7 +36,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(secur32);
 static SECURITY_STATUS SEC_ENTRY nego_QueryCredentialsAttributesA(
     PCredHandle phCredential, ULONG ulAttribute, PVOID pBuffer)
 {
-    FIXME("%p, %lu, %p\n", phCredential, ulAttribute, pBuffer);
+    FIXME("%p, %u, %p\n", phCredential, ulAttribute, pBuffer);
     return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
@@ -46,7 +46,7 @@ static SECURITY_STATUS SEC_ENTRY nego_QueryCredentialsAttributesA(
 static SECURITY_STATUS SEC_ENTRY nego_QueryCredentialsAttributesW(
     PCredHandle phCredential, ULONG ulAttribute, PVOID pBuffer)
 {
-    FIXME("%p, %lu, %p\n", phCredential, ulAttribute, pBuffer);
+    FIXME("%p, %u, %p\n", phCredential, ulAttribute, pBuffer);
     return SEC_E_UNSUPPORTED_FUNCTION;
 }
 
@@ -57,8 +57,6 @@ struct sec_handle
     SecHandle       handle_krb;
     SecHandle       handle_ntlm;
 };
-
-#define WINE_NO_CACHED_CREDENTIALS 0x10000000
 
 /***********************************************************************
  *              AcquireCredentialsHandleW
@@ -74,12 +72,12 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleW(
     struct sec_handle *cred;
     SecurePackage *package;
 
-    TRACE("%s, %s, 0x%08lx, %p, %p, %p, %p, %p, %p\n",
+    TRACE("%s, %s, 0x%08x, %p, %p, %p, %p, %p, %p\n",
           debugstr_w(pszPrincipal), debugstr_w(pszPackage), fCredentialUse,
           pLogonID, pAuthData, pGetKeyFn, pGetKeyArgument, phCredential, ptsExpiry);
 
     if (!pszPackage) return SEC_E_SECPKG_NOT_FOUND;
-    if (!(cred = calloc( 1, sizeof(*cred) ))) return SEC_E_INSUFFICIENT_MEMORY;
+    if (!(cred = heap_alloc_zero( sizeof(*cred) ))) return SEC_E_INSUFFICIENT_MEMORY;
 
     if ((package = SECUR32_findPackageW( kerberosW )))
     {
@@ -90,11 +88,14 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleW(
 
     if ((package = SECUR32_findPackageW( ntlmW )))
     {
-        ULONG cred_use = pAuthData ? fCredentialUse : fCredentialUse | WINE_NO_CACHED_CREDENTIALS;
-
         ret = package->provider->fnTableW.AcquireCredentialsHandleW( pszPrincipal, ntlmW,
-                cred_use, pLogonID, pAuthData, pGetKeyFn, pGetKeyArgument, &cred->handle_ntlm, ptsExpiry );
-        if (ret == SEC_E_OK) cred->ntlm = package->provider;
+                fCredentialUse, pLogonID, pAuthData, pGetKeyFn, pGetKeyArgument, &cred->handle_ntlm, ptsExpiry );
+        if (ret == SEC_E_OK)
+        {
+            NtlmCredentials *ntlm_cred = (NtlmCredentials *)cred->handle_ntlm.dwLower;
+            ntlm_cred->no_cached_credentials = (pAuthData == NULL);
+            cred->ntlm = package->provider;
+        }
     }
 
     if (cred->krb || cred->ntlm)
@@ -104,7 +105,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleW(
         return SEC_E_OK;
     }
 
-    free( cred );
+    heap_free( cred );
     return ret;
 }
 
@@ -120,14 +121,14 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleA(
     SEC_WCHAR *user = NULL, *domain = NULL, *passwd = NULL, *package = NULL;
     SEC_WINNT_AUTH_IDENTITY_W *identityW = NULL;
 
-    TRACE("%s, %s, 0x%08lx, %p, %p, %p, %p, %p, %p\n",
+    TRACE("%s, %s, 0x%08x, %p, %p, %p, %p, %p, %p\n",
           debugstr_a(pszPrincipal), debugstr_a(pszPackage), fCredentialUse,
           pLogonID, pAuthData, pGetKeyFn, pGetKeyArgument, phCredential, ptsExpiry);
 
     if (pszPackage)
     {
         int package_len = MultiByteToWideChar( CP_ACP, 0, pszPackage, -1, NULL, 0 );
-        if (!(package = malloc( package_len * sizeof(SEC_WCHAR) ))) return SEC_E_INSUFFICIENT_MEMORY;
+        if (!(package = heap_alloc( package_len * sizeof(SEC_WCHAR) ))) return SEC_E_INSUFFICIENT_MEMORY;
         MultiByteToWideChar( CP_ACP, 0, pszPackage, -1, package, package_len );
     }
     if (pAuthData)
@@ -137,14 +138,14 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleA(
 
         if (identity->Flags == SEC_WINNT_AUTH_IDENTITY_ANSI)
         {
-            if (!(identityW = malloc( sizeof(*identityW) ))) goto done;
+            if (!(identityW = heap_alloc( sizeof(*identityW) ))) goto done;
 
             if (!identity->UserLength) user_len = 0;
             else
             {
                 user_len = MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->User,
                                                 identity->UserLength, NULL, 0 );
-                if (!(user = malloc( user_len * sizeof(SEC_WCHAR) ))) goto done;
+                if (!(user = heap_alloc( user_len * sizeof(SEC_WCHAR) ))) goto done;
                 MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->User, identity->UserLength,
                                      user, user_len );
             }
@@ -153,7 +154,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleA(
             {
                 domain_len = MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->Domain,
                                                   identity->DomainLength, NULL, 0 );
-                if (!(domain = malloc( domain_len * sizeof(SEC_WCHAR) ))) goto done;
+                if (!(domain = heap_alloc( domain_len * sizeof(SEC_WCHAR) ))) goto done;
                 MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->Domain, identity->DomainLength,
                                      domain, domain_len );
             }
@@ -162,7 +163,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleA(
             {
                 passwd_len = MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->Password,
                                                   identity->PasswordLength, NULL, 0 );
-                if (!(passwd = malloc( passwd_len * sizeof(SEC_WCHAR) ))) goto done;
+                if (!(passwd = heap_alloc( passwd_len * sizeof(SEC_WCHAR) ))) goto done;
                 MultiByteToWideChar( CP_ACP, 0, (LPCSTR)identity->Password, identity->PasswordLength,
                                      passwd, passwd_len );
             }
@@ -179,11 +180,11 @@ static SECURITY_STATUS SEC_ENTRY nego_AcquireCredentialsHandleA(
     ret = nego_AcquireCredentialsHandleW( NULL, package, fCredentialUse, pLogonID, identityW,
                                           pGetKeyFn, pGetKeyArgument, phCredential, ptsExpiry );
 done:
-    free( package );
-    free( user );
-    free( domain );
-    free( passwd );
-    free( identityW );
+    heap_free( package );
+    heap_free( user );
+    heap_free( domain );
+    heap_free( passwd );
+    heap_free( identityW );
     return ret;
 }
 
@@ -199,7 +200,7 @@ static SECURITY_STATUS SEC_ENTRY nego_InitializeSecurityContextW(
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *handle = NULL, *ctxt, *new_ctxt = NULL, *cred = NULL;
 
-    TRACE("%p, %p, %s, 0x%08lx, %lu, %lu, %p, %lu, %p, %p, %p, %p\n",
+    TRACE("%p, %p, %s, 0x%08x, %u, %u, %p, %u, %p, %p, %p, %p\n",
           phCredential, phContext, debugstr_w(pszTargetName), fContextReq,
           Reserved1, TargetDataRep, pInput, Reserved1, phNewContext, pOutput,
           pfContextAttr, ptsExpiry);
@@ -211,7 +212,7 @@ static SECURITY_STATUS SEC_ENTRY nego_InitializeSecurityContextW(
     else if (phCredential)
     {
         handle = cred = (struct sec_handle *)phCredential->dwLower;
-        if (!(new_ctxt = ctxt = calloc( 1, sizeof(*ctxt) ))) return SEC_E_INSUFFICIENT_MEMORY;
+        if (!(new_ctxt = ctxt = heap_alloc_zero( sizeof(*ctxt) ))) return SEC_E_INSUFFICIENT_MEMORY;
         ctxt->krb  = cred->krb;
         ctxt->ntlm = cred->ntlm;
     }
@@ -245,7 +246,7 @@ static SECURITY_STATUS SEC_ENTRY nego_InitializeSecurityContextW(
         }
     }
 
-    free( new_ctxt );
+    heap_free( new_ctxt );
     return ret;
 }
 
@@ -261,7 +262,7 @@ static SECURITY_STATUS SEC_ENTRY nego_InitializeSecurityContextA(
     SECURITY_STATUS ret;
     SEC_WCHAR *target = NULL;
 
-    TRACE("%p, %p, %s, 0x%08lx, %lu, %lu, %p, %lu, %p, %p, %p, %p\n",
+    TRACE("%p, %p, %s, 0x%08x, %u, %u, %p, %u, %p, %p, %p, %p\n",
           phCredential, phContext, debugstr_a(pszTargetName), fContextReq,
           Reserved1, TargetDataRep, pInput, Reserved1, phNewContext, pOutput,
           pfContextAttr, ptsExpiry);
@@ -269,13 +270,13 @@ static SECURITY_STATUS SEC_ENTRY nego_InitializeSecurityContextA(
     if (pszTargetName)
     {
         int target_len = MultiByteToWideChar( CP_ACP, 0, pszTargetName, -1, NULL, 0 );
-        if (!(target = malloc( target_len * sizeof(SEC_WCHAR) ))) return SEC_E_INSUFFICIENT_MEMORY;
+        if (!(target = heap_alloc( target_len * sizeof(SEC_WCHAR) ))) return SEC_E_INSUFFICIENT_MEMORY;
         MultiByteToWideChar( CP_ACP, 0, pszTargetName, -1, target, target_len );
     }
     ret = nego_InitializeSecurityContextW( phCredential, phContext, target, fContextReq,
                                            Reserved1, TargetDataRep, pInput, Reserved2,
                                            phNewContext, pOutput, pfContextAttr, ptsExpiry );
-    free( target );
+    heap_free( target );
     return ret;
 }
 
@@ -290,7 +291,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcceptSecurityContext(
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *handle = NULL, *ctxt, *new_ctxt = NULL, *cred = NULL;
 
-    TRACE("%p, %p, %p, 0x%08lx, %lu, %p, %p, %p, %p\n", phCredential, phContext,
+    TRACE("%p, %p, %p, 0x%08x, %u, %p, %p, %p, %p\n", phCredential, phContext,
           pInput, fContextReq, TargetDataRep, phNewContext, pOutput, pfContextAttr,
           ptsExpiry);
 
@@ -301,7 +302,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcceptSecurityContext(
     else if (phCredential)
     {
         handle = cred = (struct sec_handle *)phCredential->dwLower;
-        if (!(new_ctxt = ctxt = calloc( 1, sizeof(*ctxt) ))) return SEC_E_INSUFFICIENT_MEMORY;
+        if (!(new_ctxt = ctxt = heap_alloc_zero( sizeof(*ctxt) ))) return SEC_E_INSUFFICIENT_MEMORY;
         ctxt->krb  = cred->krb;
         ctxt->ntlm = cred->ntlm;
     }
@@ -335,7 +336,7 @@ static SECURITY_STATUS SEC_ENTRY nego_AcceptSecurityContext(
         }
     }
 
-    free( new_ctxt );
+    heap_free( new_ctxt );
     return ret;
 }
 
@@ -375,7 +376,7 @@ static SECURITY_STATUS SEC_ENTRY nego_DeleteSecurityContext(PCtxtHandle phContex
         ret = ctxt->ntlm->fnTableW.DeleteSecurityContext( &ctxt->handle_ntlm );
     }
     TRACE( "freeing %p\n", ctxt );
-    free( ctxt );
+    heap_free( ctxt );
     return ret;
 }
 
@@ -402,7 +403,7 @@ static SECURITY_STATUS SEC_ENTRY nego_QueryContextAttributesW(
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, %lu, %p\n", phContext, ulAttribute, pBuffer);
+    TRACE("%p, %u, %p\n", phContext, ulAttribute, pBuffer);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 
@@ -427,7 +428,7 @@ static SECURITY_STATUS SEC_ENTRY nego_QueryContextAttributesA(PCtxtHandle phCont
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, %lu, %p\n", phContext, ulAttribute, pBuffer);
+    TRACE("%p, %u, %p\n", phContext, ulAttribute, pBuffer);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 
@@ -478,7 +479,7 @@ static SECURITY_STATUS SEC_ENTRY nego_MakeSignature(PCtxtHandle phContext,
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, 0x%08lx, %p, %lu\n", phContext, fQOP, pMessage, MessageSeqNo);
+    TRACE("%p, 0x%08x, %p, %u\n", phContext, fQOP, pMessage, MessageSeqNo);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 
@@ -503,7 +504,7 @@ static SECURITY_STATUS SEC_ENTRY nego_VerifySignature(PCtxtHandle phContext,
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, %p, %lu, %p\n", phContext, pMessage, MessageSeqNo, pfQOP);
+    TRACE("%p, %p, %u, %p\n", phContext, pMessage, MessageSeqNo, pfQOP);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 
@@ -534,7 +535,7 @@ static SECURITY_STATUS SEC_ENTRY nego_FreeCredentialsHandle(PCredHandle phCreden
     if (cred->krb) cred->krb->fnTableW.FreeCredentialsHandle( &cred->handle_krb );
     if (cred->ntlm) cred->ntlm->fnTableW.FreeCredentialsHandle( &cred->handle_ntlm );
 
-    free( cred );
+    heap_free( cred );
     return SEC_E_OK;
 }
 
@@ -547,7 +548,7 @@ static SECURITY_STATUS SEC_ENTRY nego_EncryptMessage(PCtxtHandle phContext,
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, 0x%08lx, %p, %lu\n", phContext, fQOP, pMessage, MessageSeqNo);
+    TRACE("%p, 0x%08x, %p, %u\n", phContext, fQOP, pMessage, MessageSeqNo);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 
@@ -572,7 +573,7 @@ static SECURITY_STATUS SEC_ENTRY nego_DecryptMessage(PCtxtHandle phContext,
     SECURITY_STATUS ret = SEC_E_INVALID_HANDLE;
     struct sec_handle *ctxt;
 
-    TRACE("%p, %p, %lu, %p\n", phContext, pMessage, MessageSeqNo, pfQOP);
+    TRACE("%p, %p, %u, %p\n", phContext, pMessage, MessageSeqNo, pfQOP);
 
     if (!phContext) return SEC_E_INVALID_HANDLE;
 

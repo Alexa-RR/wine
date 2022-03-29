@@ -119,10 +119,9 @@ static HRESULT get_sd( SECURITY_DESCRIPTOR **sd, DWORD *size )
 
     if (SUCCEEDED(hr))
     {
-        if (!MakeSelfRelativeSD(&absolute_sd, *sd, size))
-        {
+        if (!MakeSelfRelativeSD(&absolute_sd, *sd, size)) {
             HeapFree( GetProcessHeap(), 0, *sd );
-            *sd = NULL;
+	    *sd = NULL;
             hr = E_FAIL;
         }
     }
@@ -130,7 +129,7 @@ static HRESULT get_sd( SECURITY_DESCRIPTOR **sd, DWORD *size )
     return hr;
 }
 
-HRESULT security_get_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT security_get_sd( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT var_sd, retval;
     IWbemClassObject *sig, *out_params = NULL;
@@ -138,9 +137,9 @@ HRESULT security_get_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
     SECURITY_DESCRIPTOR *sd;
     DWORD sd_size;
 
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
+    TRACE("%p, %p\n", in, out);
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"__SystemSecurity", L"GetSD", PARAM_OUT, &sig );
+    hr = create_signature( class_systemsecurityW, method_getsdW, PARAM_OUT, &sig );
 
     if (SUCCEEDED(hr))
     {
@@ -160,7 +159,7 @@ HRESULT security_get_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
             hr = to_byte_array( sd, sd_size, &var_sd );
 
             if (SUCCEEDED(hr))
-                hr = IWbemClassObject_Put( out_params, L"SD", 0, &var_sd, CIM_UINT8|CIM_FLAG_ARRAY );
+                hr = IWbemClassObject_Put( out_params, param_sdW, 0, &var_sd, CIM_UINT8|CIM_FLAG_ARRAY );
 
             HeapFree( GetProcessHeap(), 0, sd );
             VariantClear( &var_sd );
@@ -169,7 +168,7 @@ HRESULT security_get_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
         if (SUCCEEDED(hr))
         {
             set_variant( VT_UI4, ret, NULL, &retval );
-            hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+            hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
         }
 
         if (SUCCEEDED(hr) && out)
@@ -185,7 +184,7 @@ HRESULT security_get_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
 }
 
 
-HRESULT security_set_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT security_set_sd( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT retval;
     IWbemClassObject *sig, *out_params = NULL;
@@ -193,7 +192,7 @@ HRESULT security_set_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
 
     FIXME("stub\n");
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"__SystemSecurity", L"SetSD", PARAM_OUT, &sig );
+    hr = create_signature( class_systemsecurityW, method_setsdW, PARAM_OUT, &sig );
 
     if (SUCCEEDED(hr))
     {
@@ -205,7 +204,7 @@ HRESULT security_set_sd( IWbemClassObject *obj, IWbemContext *context, IWbemClas
     if (SUCCEEDED(hr))
     {
         set_variant( VT_UI4, S_OK, NULL, &retval );
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
         if (SUCCEEDED(hr) && out)
         {

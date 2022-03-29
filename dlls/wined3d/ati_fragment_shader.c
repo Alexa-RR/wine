@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdio.h>
 
 #include "wined3d_private.h"
@@ -1021,7 +1024,7 @@ static void set_tex_op_atifs(struct wined3d_context *context, const struct wined
     DWORD mapped_stage;
     unsigned int i;
 
-    wined3d_ffp_get_fs_settings(context, state, &settings, TRUE);
+    gen_ffp_frag_op(context, state, &settings, TRUE);
     desc = (const struct atifs_ffp_desc *)find_ffp_frag_shader(&priv->fragment_shaders, &settings);
     if (!desc)
     {

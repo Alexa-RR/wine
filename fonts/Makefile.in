@@ -13,9 +13,5 @@ FONT_SRCS = \
 	system.sfd \
 	tahoma.sfd \
 	tahomabd.sfd \
-<<<<<<< HEAD
 	times.sfd \
-=======
-	webdings.sfd \
->>>>>>> master
 	wingding.sfd

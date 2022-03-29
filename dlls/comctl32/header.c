@@ -111,7 +111,7 @@ static void HEADER_FreeCallbackItems(HEADER_ITEM *lpItem);
 static LRESULT HEADER_SendNotify(const HEADER_INFO *infoPtr, UINT code, NMHDR *hdr);
 static LRESULT HEADER_SendCtrlCustomDraw(const HEADER_INFO *infoPtr, DWORD dwDrawStage, HDC hdc, const RECT *rect);
 
-static const WCHAR themeClass[] = L"Header";
+static const WCHAR themeClass[] = {'H','e','a','d','e','r',0};
 
 static void HEADER_StoreHDItemInHeader(HEADER_ITEM *lpItem, UINT mask, const HDITEMW *phdi, BOOL fUnicode)
 {
@@ -146,7 +146,9 @@ static void HEADER_StoreHDItemInHeader(HEADER_ITEM *lpItem, UINT mask, const HDI
 
         if (phdi->pszText != LPSTR_TEXTCALLBACKW) /* covers != TEXTCALLBACKA too */
         {
-            const WCHAR *pszText = phdi->pszText != NULL ? phdi->pszText : L"";
+            static const WCHAR emptyString[] = {0};
+
+            LPCWSTR pszText = (phdi->pszText != NULL ? phdi->pszText : emptyString);
             if (fUnicode)
                 Str_SetPtrW(&lpItem->pszText, pszText);
             else
@@ -2094,7 +2096,8 @@ static LRESULT HEADER_SetRedraw(HEADER_INFO *infoPtr, WPARAM wParam, LPARAM lPar
 static INT HEADER_StyleChanged(HEADER_INFO *infoPtr, WPARAM wStyleType,
                                const STYLESTRUCT *lpss)
 {
-    TRACE("styletype %Ix, styleOld %#lx, styleNew %#lx\n", wStyleType, lpss->styleOld, lpss->styleNew);
+    TRACE("(styletype=%lx, styleOld=0x%08x, styleNew=0x%08x)\n",
+          wStyleType, lpss->styleOld, lpss->styleNew);
 
     if (wStyleType != GWL_STYLE) return 0;
 
@@ -2109,7 +2112,7 @@ static LRESULT HEADER_ThemeChanged(const HEADER_INFO *infoPtr)
     HTHEME theme = GetWindowTheme(infoPtr->hwndSelf);
     CloseThemeData(theme);
     OpenThemeData(infoPtr->hwndSelf, themeClass);
-    InvalidateRect(infoPtr->hwndSelf, NULL, TRUE);
+    InvalidateRect(infoPtr->hwndSelf, NULL, FALSE);
     return 0;
 }
 
@@ -2127,8 +2130,7 @@ HEADER_WindowProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     HEADER_INFO *infoPtr = (HEADER_INFO *)GetWindowLongPtrW(hwnd, 0);
 
-    TRACE("hwnd %p, msg %x, wparam %Ix, lParam %Ix\n", hwnd, msg, wParam, lParam);
-
+    TRACE("hwnd=%p msg=%x wparam=%lx lParam=%lx\n", hwnd, msg, wParam, lParam);
     if (!infoPtr && (msg != WM_CREATE))
 	return DefWindowProcW (hwnd, msg, wParam, lParam);
     switch (msg) {
@@ -2266,7 +2268,8 @@ HEADER_WindowProc (HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         default:
             if ((msg >= WM_USER) && (msg < WM_APP) && !COMCTL32_IsReflectedMessage(msg))
-                ERR("unknown msg %04x, wp %#Ix, lp %#Ix\n", msg, wParam, lParam );
+		ERR("unknown msg %04x wp=%04lx lp=%08lx\n",
+		     msg, wParam, lParam );
 	    return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 }

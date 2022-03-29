@@ -31,6 +31,25 @@
 WINE_DEFAULT_DEBUG_CHANNEL(sfc);
 
 /******************************************************************
+ *      DllMain
+ */
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(%p, %d, %p)\n",hinstDLL, fdwReason, lpvReserved);
+
+    switch(fdwReason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;           /* prefer native version */
+
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls( hinstDLL );
+            break;
+    }
+    return TRUE;
+}
+
+/******************************************************************
  *      SfcGetNextProtectedFile     [sfc_os.@]
  */
 BOOL WINAPI SfcGetNextProtectedFile(HANDLE handle, PROTECTED_FILE_DATA *data)
@@ -119,7 +138,7 @@ BOOL WINAPI SfcIsKeyProtected(HKEY hKey, LPCWSTR lpSubKey, REGSAM samDesired)
 
 DWORD WINAPI SfcConnectToServer(DWORD unknown)
 {
-    FIXME("%lx\n", unknown);
+    FIXME("%x\n", unknown);
     return 0;
 }
 

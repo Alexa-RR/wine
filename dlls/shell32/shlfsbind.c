@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
  */
+#include "config.h"
+#include "wine/port.h"
 
 #include <stdarg.h>
 
@@ -78,7 +80,7 @@ static ULONG WINAPI FileSystemBindData_AddRef(IFileSystemBindData *iface)
 {
     FileSystemBindData *This = impl_from_IFileSystemBindData(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p)->(%lu)\n", This, ref);
+    TRACE("(%p)->(%u)\n", This, ref);
     return ref;
 }
 
@@ -87,7 +89,7 @@ static ULONG WINAPI FileSystemBindData_Release(IFileSystemBindData *iface)
     FileSystemBindData *This = impl_from_IFileSystemBindData(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p)->(%lu)\n", This, ref);
+    TRACE("(%p)->(%u)\n", This, ref);
 
     if (!ref)
         heap_free(This);
@@ -151,6 +153,8 @@ HRESULT WINAPI IFileSystemBindData_Constructor(const WIN32_FIND_DATAW *find_data
     ret = CreateBindCtx(0, ppV);
     if (SUCCEEDED(ret))
     {
+        static const WCHAR nameW[] = {
+            'F','i','l','e',' ','S','y','s','t','e','m',' ','B','i','n','d',' ','D','a','t','a',0};
         BIND_OPTS bindOpts;
 
         bindOpts.cbStruct = sizeof(BIND_OPTS);
@@ -158,7 +162,7 @@ HRESULT WINAPI IFileSystemBindData_Constructor(const WIN32_FIND_DATAW *find_data
         bindOpts.grfMode = STGM_CREATE;
         bindOpts.dwTickCountDeadline = 0;
         IBindCtx_SetBindOptions(*ppV, &bindOpts);
-        IBindCtx_RegisterObjectParam(*ppV, (WCHAR*)L"File System Bind Data", (IUnknown*)&This->IFileSystemBindData_iface);
+        IBindCtx_RegisterObjectParam(*ppV, (WCHAR*)nameW, (IUnknown*)&This->IFileSystemBindData_iface);
 
         IFileSystemBindData_Release(&This->IFileSystemBindData_iface);
     }

@@ -1,5 +1,5 @@
 MODULE    = eject.exe
 
-EXTRADLLFLAGS = -mconsole
+EXTRADLLFLAGS = -mconsole -mno-cygwin
 
 C_SRCS = eject.c

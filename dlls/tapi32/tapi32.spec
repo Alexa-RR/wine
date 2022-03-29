@@ -67,7 +67,6 @@
 @ stdcall lineGetStatusMessages(long ptr ptr)
 @ stdcall lineGetTranslateCaps(long long ptr) lineGetTranslateCapsA
 @ stdcall lineGetTranslateCapsA(long long ptr)
-@ stdcall lineGetTranslateCapsW(ptr long ptr)
 @ stdcall lineHandoff(long str long) lineHandoffA
 @ stdcall lineHandoffA(long str long)
 @ stdcall lineHold(long)

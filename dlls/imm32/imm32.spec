@@ -86,7 +86,7 @@
 @ stub ImmSendIMEMessageExA
 @ stub ImmSendIMEMessageExW
 @ stub ImmSendMessageToActiveDefImeWndW
-@ stdcall ImmSetActiveContext(long long long)
+@ stub ImmSetActiveContext
 @ stub ImmSetActiveContextConsoleIME
 @ stdcall ImmSetCandidateWindow(long ptr)
 @ stdcall ImmSetCompositionFontA(long ptr)

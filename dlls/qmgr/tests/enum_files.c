@@ -29,6 +29,11 @@
 
 /* Globals used by many tests */
 #define NUM_FILES 2             /* At least two.  */
+static const WCHAR test_remoteNameA[] = {'r','e','m','o','t','e','A', 0};
+static const WCHAR test_localNameA[] = {'l','o','c','a','l','A', 0};
+static const WCHAR test_remoteNameB[] = {'r','e','m','o','t','e','B', 0};
+static const WCHAR test_localNameB[] = {'l','o','c','a','l','B', 0};
+static const WCHAR test_displayName[] = {'T', 'e', 's', 't', 0};
 static const ULONG test_fileCount = NUM_FILES;
 static IBackgroundCopyJob *test_job;
 static IBackgroundCopyManager *test_manager;
@@ -74,10 +79,10 @@ static HRESULT test_create_manager(void)
         IBackgroundCopyJob *job;
         GUID jobId;
 
-        hres = IBackgroundCopyManager_CreateJob(manager, L"Test", BG_JOB_TYPE_DOWNLOAD, &jobId, &job);
+        hres = IBackgroundCopyManager_CreateJob(manager, test_displayName, BG_JOB_TYPE_DOWNLOAD, &jobId, &job);
         if (hres == S_OK)
         {
-            hres = addFileHelper(job, L"localA", L"remoteA");
+            hres = addFileHelper(job, test_localNameA, test_remoteNameA);
             if (hres != S_OK)
                 win_skip("AddFile() with file:// protocol failed. Tests will be skipped.\n");
             IBackgroundCopyJob_Release(job);
@@ -100,16 +105,17 @@ static BOOL setup(void)
     if(hres != S_OK)
         return FALSE;
 
-    hres = IBackgroundCopyManager_CreateJob(test_manager, L"Test", BG_JOB_TYPE_DOWNLOAD,
-                                            &test_jobId, &test_job);
+    hres = IBackgroundCopyManager_CreateJob(test_manager, test_displayName,
+                                            BG_JOB_TYPE_DOWNLOAD, &test_jobId,
+                                            &test_job);
     if(hres != S_OK)
     {
         IBackgroundCopyManager_Release(test_manager);
         return FALSE;
     }
 
-    if (addFileHelper(test_job, L"localA", L"remoteA") != S_OK
-        || addFileHelper(test_job, L"localB", L"remoteB") != S_OK
+    if (addFileHelper(test_job, test_localNameA, test_remoteNameA) != S_OK
+        || addFileHelper(test_job, test_localNameB, test_remoteNameB) != S_OK
         || IBackgroundCopyJob_EnumFiles(test_job, &test_enumFiles) != S_OK)
     {
         IBackgroundCopyJob_Release(test_job);
@@ -135,7 +141,7 @@ static void test_GetCount(void)
     ULONG fileCount;
 
     hres = IEnumBackgroundCopyFiles_GetCount(test_enumFiles, &fileCount);
-    ok(hres == S_OK, "GetCount failed: %08lx\n", hres);
+    ok(hres == S_OK, "GetCount failed: %08x\n", hres);
     ok(fileCount == test_fileCount, "Got incorrect count\n");
 }
 
@@ -150,13 +156,13 @@ static void test_Next_walkListNull(void)
     for (i = 0; i < test_fileCount; i++)
     {
         hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, 1, &file, NULL);
-        ok(hres == S_OK, "Next failed: %08lx\n", hres);
+        ok(hres == S_OK, "Next failed: %08x\n", hres);
         IBackgroundCopyFile_Release(file);
     }
 
     /* Attempt to fetch one more than the number of available files */
     hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, 1, &file, NULL);
-    ok(hres == S_FALSE, "Next off end of available files failed: %08lx\n", hres);
+    ok(hres == S_FALSE, "Next off end of available files failed: %08x\n", hres);
 }
 
 /* Test Next by requesting one file at a time */
@@ -173,8 +179,8 @@ static void test_Next_walkList_1(void)
         file = NULL;
         fetched = 0;
         hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, 1, &file, &fetched);
-        ok(hres == S_OK, "Next failed: %08lx\n", hres);
-        ok(fetched == 1, "Next returned the incorrect number of files: %08lx\n", hres);
+        ok(hres == S_OK, "Next failed: %08x\n", hres);
+        ok(fetched == 1, "Next returned the incorrect number of files: %08x\n", hres);
         ok(file != NULL, "Next returned NULL\n");
         if (file)
             IBackgroundCopyFile_Release(file);
@@ -183,8 +189,8 @@ static void test_Next_walkList_1(void)
     /* Attempt to fetch one more than the number of available files */
     fetched = 0;
     hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, 1, &file, &fetched);
-    ok(hres == S_FALSE, "Next off end of available files failed: %08lx\n", hres);
-    ok(fetched == 0, "Next returned the incorrect number of files: %08lx\n", hres);
+    ok(hres == S_FALSE, "Next off end of available files failed: %08x\n", hres);
+    ok(fetched == 0, "Next returned the incorrect number of files: %08x\n", hres);
 }
 
 /* Test Next by requesting multiple files at a time */
@@ -200,8 +206,8 @@ static void test_Next_walkList_2(void)
 
     fetched = 0;
     hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, test_fileCount, files, &fetched);
-    ok(hres == S_OK, "Next failed: %08lx\n", hres);
-    ok(fetched == test_fileCount, "Next returned the incorrect number of files: %08lx\n", hres);
+    ok(hres == S_OK, "Next failed: %08x\n", hres);
+    ok(fetched == test_fileCount, "Next returned the incorrect number of files: %08x\n", hres);
 
     for (i = 0; i < test_fileCount; i++)
     {
@@ -219,7 +225,7 @@ static void test_Next_errors(void)
 
     /* E_INVALIDARG: pceltFetched can ONLY be NULL if celt is 1 */
     hres = IEnumBackgroundCopyFiles_Next(test_enumFiles, 2, files, NULL);
-    ok(hres == E_INVALIDARG, "Invalid call to Next succeeded: %08lx\n", hres);
+    ok(hres == E_INVALIDARG, "Invalid call to Next succeeded: %08x\n", hres);
 }
 
 /* Test skipping through the files in a list */
@@ -231,11 +237,11 @@ static void test_Skip_walkList(void)
     for (i = 0; i < test_fileCount; i++)
     {
         hres = IEnumBackgroundCopyFiles_Skip(test_enumFiles, 1);
-        ok(hres == S_OK, "Skip failed: %08lx\n", hres);
+        ok(hres == S_OK, "Skip failed: %08x\n", hres);
     }
 
     hres = IEnumBackgroundCopyFiles_Skip(test_enumFiles, 1);
-    ok(hres == S_FALSE, "Skip expected end of list: %08lx\n", hres);
+    ok(hres == S_FALSE, "Skip expected end of list: %08x\n", hres);
 }
 
 /* Test skipping off the end of the list */
@@ -244,7 +250,7 @@ static void test_Skip_offEnd(void)
     HRESULT hres;
 
     hres = IEnumBackgroundCopyFiles_Skip(test_enumFiles, test_fileCount + 1);
-    ok(hres == S_FALSE, "Skip expected end of list: %08lx\n", hres);
+    ok(hres == S_FALSE, "Skip expected end of list: %08x\n", hres);
 }
 
 /* Test resetting the file enumerator */
@@ -253,11 +259,11 @@ static void test_Reset(void)
     HRESULT hres;
 
     hres = IEnumBackgroundCopyFiles_Skip(test_enumFiles, test_fileCount);
-    ok(hres == S_OK, "Skip failed: %08lx\n", hres);
+    ok(hres == S_OK, "Skip failed: %08x\n", hres);
     hres = IEnumBackgroundCopyFiles_Reset(test_enumFiles);
-    ok(hres == S_OK, "Reset failed: %08lx\n", hres);
+    ok(hres == S_OK, "Reset failed: %08x\n", hres);
     hres = IEnumBackgroundCopyFiles_Skip(test_enumFiles, test_fileCount);
-    ok(hres == S_OK, "Reset failed: %08lx\n", hres);
+    ok(hres == S_OK, "Reset failed: %08x\n", hres);
 }
 
 typedef void (*test_t)(void);

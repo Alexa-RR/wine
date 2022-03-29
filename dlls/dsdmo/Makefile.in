@@ -1,5 +1,4 @@
 MODULE    = dsdmo.dll
-<<<<<<< HEAD
 IMPORTS   = uuid
 EXTRADLLFLAGS = -mno-cygwin
 
@@ -16,16 +15,3 @@ C_SRCS = \
 	reverb2.c
 
 IDL_SRCS = dsdmo_classes.idl
-=======
-IMPORTS   = dmoguids strmiids uuid
-
-EXTRADLLFLAGS = -Wb,--prefer-native
-
-C_SRCS = \
-	main.c
-
-IDL_SRCS = \
-	dsdmo.idl
-
-RC_SRCS = version.rc
->>>>>>> master

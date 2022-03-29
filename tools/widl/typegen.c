@@ -20,9 +20,13 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
@@ -349,8 +353,6 @@ enum typegen_type typegen_detect_type(const type_t *type, const attr_list_t *att
         return TGT_ENUM;
     case TYPE_POINTER:
         if (type_get_type(type_pointer_get_ref_type(type)) == TYPE_INTERFACE ||
-            type_get_type(type_pointer_get_ref_type(type)) == TYPE_RUNTIMECLASS ||
-            type_get_type(type_pointer_get_ref_type(type)) == TYPE_DELEGATE ||
             (type_get_type(type_pointer_get_ref_type(type)) == TYPE_VOID && is_attr(attrs, ATTR_IIDIS)))
             return TGT_IFACE_POINTER;
         else if (is_aliaschain_attr(type_pointer_get_ref_type(type), ATTR_CONTEXTHANDLE))
@@ -371,14 +373,6 @@ enum typegen_type typegen_detect_type(const type_t *type, const attr_list_t *att
     case TYPE_VOID:
     case TYPE_ALIAS:
     case TYPE_BITFIELD:
-    case TYPE_RUNTIMECLASS:
-    case TYPE_DELEGATE:
-        break;
-    case TYPE_APICONTRACT:
-    case TYPE_PARAMETERIZED_TYPE:
-    case TYPE_PARAMETER:
-        /* not supposed to be here */
-        assert(0);
         break;
     }
     return TGT_INVALID;
@@ -1972,11 +1966,6 @@ unsigned int type_memsize_and_alignment(const type_t *t, unsigned int *align)
     case TYPE_MODULE:
     case TYPE_FUNCTION:
     case TYPE_BITFIELD:
-    case TYPE_APICONTRACT:
-    case TYPE_RUNTIMECLASS:
-    case TYPE_PARAMETERIZED_TYPE:
-    case TYPE_PARAMETER:
-    case TYPE_DELEGATE:
         /* these types should not be encountered here due to language
          * restrictions (interface, void, coclass, module), logical
          * restrictions (alias - due to type_get_type call above) or
@@ -2078,11 +2067,6 @@ static unsigned int type_buffer_alignment(const type_t *t)
     case TYPE_MODULE:
     case TYPE_FUNCTION:
     case TYPE_BITFIELD:
-    case TYPE_APICONTRACT:
-    case TYPE_RUNTIMECLASS:
-    case TYPE_PARAMETERIZED_TYPE:
-    case TYPE_PARAMETER:
-    case TYPE_DELEGATE:
         /* these types should not be encountered here due to language
          * restrictions (interface, void, coclass, module), logical
          * restrictions (alias - due to type_get_type call above) or
@@ -2169,9 +2153,6 @@ static unsigned int write_nonsimple_pointer(FILE *file, const attr_list_t *attrs
         type_t *ref = type_pointer_get_ref_type(type);
         if(is_declptr(ref) && !is_user_type(ref))
             flags |= FC_POINTER_DEREF;
-        if (pointer_type != FC_RP) {
-            flags |= get_attrv(type->attrs, ATTR_ALLOCATE);
-        }
     }
 
     print_file(file, 2, "0x%x, 0x%x,\t\t/* %s",
@@ -2184,10 +2165,6 @@ static unsigned int write_nonsimple_pointer(FILE *file, const attr_list_t *attrs
             fprintf(file, " [allocated_on_stack]");
         if (flags & FC_POINTER_DEREF)
             fprintf(file, " [pointer_deref]");
-        if (flags & FC_DONT_FREE)
-            fprintf(file, " [dont_free]");
-        if (flags & FC_ALLOCATE_ALL_NODES)
-            fprintf(file, " [all_nodes]");
         fprintf(file, " */\n");
     }
 
@@ -3506,7 +3483,7 @@ static unsigned int write_ip_tfs(FILE *file, const attr_list_t *attrs, type_t *t
     else
     {
         const type_t *base = is_ptr(type) ? type_pointer_get_ref_type(type) : type;
-        const struct uuid *uuid = get_attrp(base->attrs, ATTR_UUID);
+        const UUID *uuid = get_attrp(base->attrs, ATTR_UUID);
 
         if (! uuid)
             error("%s: interface %s missing UUID\n", __FUNCTION__, base->name);
@@ -3747,13 +3724,13 @@ static void process_tfs_iface(type_t *iface, FILE *file, int indent, unsigned in
         }
         case STMT_TYPEDEF:
         {
-            typeref_t *ref;
-            if (stmt->u.type_list) LIST_FOR_EACH_ENTRY(ref, stmt->u.type_list, typeref_t, entry)
+            const type_list_t *type_entry;
+            for (type_entry = stmt->u.type_list; type_entry; type_entry = type_entry->next)
             {
-                if (is_attr(ref->type->attrs, ATTR_ENCODE)
-                    || is_attr(ref->type->attrs, ATTR_DECODE))
-                    ref->type->typestring_offset = write_type_tfs( file,
-                            ref->type->attrs, ref->type, ref->type->name,
+                if (is_attr(type_entry->type->attrs, ATTR_ENCODE)
+                    || is_attr(type_entry->type->attrs, ATTR_DECODE))
+                    type_entry->type->typestring_offset = write_type_tfs( file,
+                            type_entry->type->attrs, type_entry->type, type_entry->type->name,
                             TYPE_CONTEXT_CONTAINER, offset);
             }
             break;
@@ -4836,21 +4813,20 @@ void write_func_param_struct( FILE *file, const type_t *iface, const type_t *fun
         if (is_array( arg->declspec.type ) || is_ptr( arg->declspec.type )) align = pointer_size;
         else type_memsize_and_alignment( arg->declspec.type, &align );
 
-        if (align < pointer_size)
-            fprintf( file, "DECLSPEC_ALIGN(%u) ", pointer_size );
-        fprintf( file, "%s;\n", arg->name );
+        if (align >= pointer_size)
+            fprintf( file, "%s;\n", arg->name );
+        else
+            fprintf( file, "%s DECLSPEC_ALIGN(%u);\n", arg->name, pointer_size );
     }
     if (add_retval && !is_void( retval->declspec.type ))
     {
         print_file(file, 2, "%s", "");
-        write_type_left( file, &retval->declspec, NAME_DEFAULT, TRUE, TRUE );
-        if (needs_space_after( retval->declspec.type )) fputc( ' ', file );
-        if (!is_array( retval->declspec.type ) && !is_ptr( retval->declspec.type ) &&
-            type_memsize( retval->declspec.type ) != pointer_size)
-        {
-            fprintf( file, "DECLSPEC_ALIGN(%u) ", pointer_size );
-        }
-        fprintf( file, "%s;\n", retval->name );
+        write_type_decl( file, &retval->declspec, retval->name );
+        if (is_array( retval->declspec.type ) || is_ptr( retval->declspec.type ) ||
+            type_memsize( retval->declspec.type ) == pointer_size)
+            fprintf( file, ";\n" );
+        else
+            fprintf( file, " DECLSPEC_ALIGN(%u);\n", pointer_size );
     }
     print_file(file, 1, "} %s;\n", var_decl );
     if (needs_packing) print_file( file, 0, "#include <poppack.h>\n" );

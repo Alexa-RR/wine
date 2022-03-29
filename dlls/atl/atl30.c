@@ -32,6 +32,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(atl);
 
+extern HINSTANCE atl_instance;
+
 #define ATLVer1Size FIELD_OFFSET(_ATL_MODULEW, dwAtlBuildVer)
 
 HRESULT WINAPI AtlModuleInit(_ATL_MODULEW* pM, _ATL_OBJMAP_ENTRYW* p, HINSTANCE h)
@@ -134,7 +136,7 @@ HRESULT WINAPI AtlModuleRegisterClassObjects(_ATL_MODULEW *pM, DWORD dwClsContex
     _ATL_OBJMAP_ENTRYW_V1 *obj;
     int i=0;
 
-    TRACE("(%p %li %li)\n",pM, dwClsContext, dwFlags);
+    TRACE("(%p %i %i)\n",pM, dwClsContext, dwFlags);
 
     if (pM == NULL)
         return E_INVALIDARG;
@@ -155,7 +157,7 @@ HRESULT WINAPI AtlModuleRegisterClassObjects(_ATL_MODULEW *pM, DWORD dwClsContex
                                            dwFlags, &obj->dwRegister);
 
                 if (FAILED (rc) )
-                    WARN("Failed to register object %i: 0x%08lx\n", i, rc);
+                    WARN("Failed to register object %i: 0x%08x\n", i, rc);
 
                 if (pUnknown)
                     IUnknown_Release(pUnknown);
@@ -525,4 +527,28 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID riid, LPVOID *ppvObject)
 
     FIXME("Not supported class %s\n", debugstr_guid(clsid));
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *              DllRegisterServer (ATL.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( atl_instance );
+}
+
+/***********************************************************************
+ *              DllUnRegisterServer (ATL.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( atl_instance );
+}
+
+/***********************************************************************
+ *              DllCanUnloadNow (ATL.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
 }

@@ -20,9 +20,13 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <string.h>
 #include <ctype.h>
 
@@ -200,7 +204,7 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
       if (get_stub_mode() == MODE_Oif && !is_callas( func->attrs )) return;
       write_type_decl_left(proxy, &retval->declspec);
       print_proxy( " %s %s_%s_Proxy(\n", callconv, iface->name, get_name(func));
-      write_args(proxy, args, iface->name, 1, TRUE, NAME_DEFAULT);
+      write_args(proxy, args, iface->name, 1, TRUE);
       print_proxy( ")\n");
       write_client_call_routine( proxy, iface, func, "Object", proc_offset );
       return;
@@ -217,7 +221,7 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
 
   write_type_decl_left(proxy, &retval->declspec);
   print_proxy( " %s %s_%s_Proxy(\n", callconv, iface->name, get_name(func));
-  write_args(proxy, args, iface->name, 1, TRUE, NAME_DEFAULT);
+  write_args(proxy, args, iface->name, 1, TRUE);
   print_proxy( ")\n");
   print_proxy( "{\n");
   indent ++;
@@ -847,9 +851,9 @@ static int cmp_iid( const void *ptr1, const void *ptr2 )
 {
     const type_t * const *iface1 = ptr1;
     const type_t * const *iface2 = ptr2;
-    const struct uuid *uuid1 = get_attrp( (*iface1)->attrs, ATTR_UUID );
-    const struct uuid *uuid2 = get_attrp( (*iface2)->attrs, ATTR_UUID );
-    return memcmp( uuid1, uuid2, sizeof(*uuid1) );
+    const UUID *uuid1 = get_attrp( (*iface1)->attrs, ATTR_UUID );
+    const UUID *uuid2 = get_attrp( (*iface2)->attrs, ATTR_UUID );
+    return memcmp( uuid1, uuid2, sizeof(UUID) );
 }
 
 static void build_iface_list( const statement_list_t *stmts, type_t **ifaces[], int *count )

@@ -18,15 +18,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
-#include <stdlib.h>
+#ifdef HAVE_LDAP_H
+#include <ldap.h>
+#endif
+
 #include "windef.h"
 #include "winbase.h"
 #include "winnls.h"
-#include "winldap.h"
 
-#include "wine/debug.h"
 #include "winldap_private.h"
+#include "wldap32.h"
+#include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wldap32);
 
@@ -36,7 +42,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(wldap32);
  * Count the number of values in an array of berval structures.
  *
  * PARAMS
- *  values  [I] Pointer to an array of berval structures.
+ *  vals  [I] Pointer to an array of berval structures.
  *
  * RETURNS
  *  Success: The number of values counted.
@@ -46,15 +52,15 @@ WINE_DEFAULT_DEBUG_CHANNEL(wldap32);
  *  Call ldap_count_values_len with the result of a call to
  *  ldap_get_values_len.
  */
-ULONG CDECL ldap_count_values_len( struct berval **values )
+ULONG CDECL WLDAP32_ldap_count_values_len( struct WLDAP32_berval **vals )
 {
-    ULONG ret = 0;
-    struct berval **ptr = values;
+    ULONG ret = WLDAP32_LDAP_NOT_SUPPORTED;
+#ifdef HAVE_LDAP
 
-    TRACE( "(%p)\n", values );
+    TRACE( "(%p)\n", vals );
+    ret = ldap_count_values_len( (struct berval **)vals );
 
-    if (!values) return 0;
-    while (*ptr++) ret++;
+#endif
     return ret;
 }
 
@@ -63,15 +69,23 @@ ULONG CDECL ldap_count_values_len( struct berval **values )
  *
  * See ldap_count_valuesW.
  */
-ULONG CDECL ldap_count_valuesA( char **values )
+ULONG CDECL ldap_count_valuesA( PCHAR *vals )
 {
-    ULONG ret = 0;
-    char **ptr = values;
+    ULONG ret = WLDAP32_LDAP_NOT_SUPPORTED;
+#ifdef HAVE_LDAP
+    WCHAR **valsW = NULL;
 
-    TRACE( "(%p)\n", values );
+    TRACE( "(%p)\n", vals );
 
-    if (!values) return 0;
-    while (*ptr++) ret++;
+    if (!vals) return 0;
+
+    valsW = strarrayAtoW( vals );
+    if (!valsW) return WLDAP32_LDAP_NO_MEMORY;
+
+    ret = ldap_count_valuesW( valsW );
+    strarrayfreeW( valsW );
+
+#endif
     return ret;
 }
 
@@ -81,7 +95,7 @@ ULONG CDECL ldap_count_valuesA( char **values )
  * Count the number of values in a string array.
  *
  * PARAMS
- *  values  [I] Pointer to an array of strings.
+ *  vals  [I] Pointer to an array of strings.
  *
  * RETURNS
  *  Success: The number of values counted.
@@ -91,15 +105,20 @@ ULONG CDECL ldap_count_valuesA( char **values )
  *  Call ldap_count_valuesW with the result of a call to
  *  ldap_get_valuesW.
  */
-ULONG CDECL ldap_count_valuesW( WCHAR **values )
+ULONG CDECL ldap_count_valuesW( PWCHAR *vals )
 {
-    ULONG ret = 0;
-    WCHAR **p = values;
+    ULONG ret = WLDAP32_LDAP_NOT_SUPPORTED;
+#ifdef HAVE_LDAP
+    WCHAR **p = vals;
 
-    TRACE( "(%p)\n", values );
+    TRACE( "(%p)\n", vals );
 
-    if (!values) return 0;
+    if (!vals) return 0;
+
+    ret = 0;
     while (*p++) ret++;
+
+#endif
     return ret;
 }
 
@@ -108,29 +127,36 @@ ULONG CDECL ldap_count_valuesW( WCHAR **values )
  *
  * See ldap_get_valuesW.
  */
-char ** CDECL ldap_get_valuesA( LDAP *ld, LDAPMessage *entry, char *attr )
+PCHAR * CDECL ldap_get_valuesA( WLDAP32_LDAP *ld, WLDAP32_LDAPMessage *entry, PCHAR attr )
 {
-    char **ret;
+    PCHAR *ret = NULL;
+#ifdef HAVE_LDAP
     WCHAR *attrW = NULL, **retW;
 
     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_a(attr) );
 
-    if (!ld || !entry || !attr || !(attrW = strAtoW( attr ))) return NULL;
+    if (!ld || !entry || !attr) return NULL;
+
+    attrW = strAtoW( attr );
+    if (!attrW) return NULL;
 
     retW = ldap_get_valuesW( ld, entry, attrW );
-    ret = strarrayWtoA( retW );
 
+    ret = strarrayWtoA( retW );
     ldap_value_freeW( retW );
-    free( attrW );
+    strfreeW( attrW );
+
+#endif
     return ret;
 }
 
-static char *bv2str( struct bervalU *bv )
+#ifdef HAVE_LDAP
+static char *bv2str( struct berval *bv )
 {
     char *str = NULL;
     unsigned int len = bv->bv_len;
 
-    if ((str = malloc( len + 1 )))
+    if ((str = heap_alloc( len + 1 )))
     {
         memcpy( str, bv->bv_val, len );
         str[len] = '\0';
@@ -138,10 +164,10 @@ static char *bv2str( struct bervalU *bv )
     return str;
 }
 
-static char **bv2str_array( struct bervalU **bv )
+static char **bv2str_array( struct berval **bv )
 {
     unsigned int len = 0, i = 0;
-    struct bervalU **p = bv;
+    struct berval **p = bv;
     char **str;
 
     while (*p)
@@ -149,7 +175,7 @@ static char **bv2str_array( struct bervalU **bv )
         len++;
         p++;
     }
-    if (!(str = malloc( (len + 1) * sizeof(char *) ))) return NULL;
+    if (!(str = heap_alloc( (len + 1) * sizeof(char *) ))) return NULL;
 
     p = bv;
     while (*p)
@@ -157,16 +183,17 @@ static char **bv2str_array( struct bervalU **bv )
         str[i] = bv2str( *p );
         if (!str[i])
         {
-            while (i > 0) free( str[--i] );
-            free( str );
+            while (i > 0) heap_free( str[--i] );
+            heap_free( str );
             return NULL;
-        }
+        } 
         i++;
-        p++;
+        p++; 
     }
     str[i] = NULL;
     return str;
 }
+#endif
 
 /***********************************************************************
  *      ldap_get_valuesW     (WLDAP32.@)
@@ -187,28 +214,32 @@ static char **bv2str_array( struct bervalU **bv )
  *  ldap_first_entry or ldap_next_entry. Free the returned
  *  array with a call to ldap_value_freeW.
  */
-WCHAR ** CDECL ldap_get_valuesW( LDAP *ld, LDAPMessage *entry, WCHAR *attr )
+PWCHAR * CDECL ldap_get_valuesW( WLDAP32_LDAP *ld, WLDAP32_LDAPMessage *entry, PWCHAR attr )
 {
-    WCHAR **ret = NULL;
-    char *attrU, **retU;
-    struct bervalU **bv;
+    PWCHAR *ret = NULL;
+#ifdef HAVE_LDAP
+    char *attrU = NULL, **retU;
+    struct berval **bv;
 
     TRACE( "(%p, %p, %s)\n", ld, entry, debugstr_w(attr) );
 
-    if (ld && entry && attr && (attrU = strWtoU( attr )))
+    if (!ld || !entry || !attr) return NULL;
+
+    attrU = strWtoU( attr );
+    if (!attrU) return NULL;
+
+    bv = ldap_get_values_len( ld->ld, entry, attrU );
+    if (bv)
     {
-        struct ldap_get_values_len_params params = { CTX(ld), MSG(entry), attrU, &bv };
+        retU = bv2str_array( bv );
+        ret = strarrayUtoW( retU );
 
-        if (!LDAP_CALL( ldap_get_values_len, &params ))
-        {
-            retU = bv2str_array( bv );
-            ret = strarrayUtoW( retU );
-
-            LDAP_CALL( ldap_value_free_len, bv );
-            strarrayfreeU( retU );
-        }
-        free( attrU );
+        ldap_value_free_len( bv );
+        strarrayfreeU( retU );
     }
+    strfreeU( attrU );
+
+#endif
     return ret;
 }
 
@@ -217,19 +248,28 @@ WCHAR ** CDECL ldap_get_valuesW( LDAP *ld, LDAPMessage *entry, WCHAR *attr )
  *
  * See ldap_get_values_lenW.
  */
-struct berval ** CDECL ldap_get_values_lenA( LDAP *ld, LDAPMessage *message, char *attr )
+struct WLDAP32_berval ** CDECL ldap_get_values_lenA( WLDAP32_LDAP *ld,
+    WLDAP32_LDAPMessage *message, PCHAR attr )
 {
-    WCHAR *attrW;
-    struct berval **ret;
+#ifdef HAVE_LDAP
+    WCHAR *attrW = NULL;
+    struct WLDAP32_berval **ret;
 
     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_a(attr) );
 
-    if (!ld || !message || !attr || !(attrW = strAtoW( attr ))) return NULL;
+    if (!ld || !message || !attr) return NULL;
+
+    attrW = strAtoW( attr );
+    if (!attrW) return NULL;
 
     ret = ldap_get_values_lenW( ld, message, attrW );
 
-    free( attrW );
+    strfreeW( attrW );
     return ret;
+
+#else
+    return NULL;
+#endif
 }
 
 /***********************************************************************
@@ -251,27 +291,28 @@ struct berval ** CDECL ldap_get_values_lenA( LDAP *ld, LDAPMessage *message, cha
  *  ldap_first_entry or ldap_next_entry. Free the returned
  *  array with a call to ldap_value_free_len.
  */
-struct berval ** CDECL ldap_get_values_lenW( LDAP *ld, LDAPMessage *message, WCHAR *attr )
+struct WLDAP32_berval ** CDECL ldap_get_values_lenW( WLDAP32_LDAP *ld,
+    WLDAP32_LDAPMessage *message, PWCHAR attr )
 {
+#ifdef HAVE_LDAP
     char *attrU = NULL;
-    struct bervalU **retU;
-    struct berval **ret = NULL;
+    struct berval **ret;
 
     TRACE( "(%p, %p, %s)\n", ld, message, debugstr_w(attr) );
 
-    if (ld && message && attr && (attrU = strWtoU( attr )))
-    {
-        struct ldap_get_values_len_params params = { CTX(ld), MSG(message), attrU, &retU };
+    if (!ld || !message || !attr) return NULL;
 
-        if (!LDAP_CALL( ldap_get_values_len, &params ))
-        {
-            ret = bvarrayUtoW( retU );
-            bvarrayfreeU( retU );
-        }
+    attrU = strWtoU( attr );
+    if (!attrU) return NULL;
 
-        free( attrU );
-    }
-    return ret;
+    ret = ldap_get_values_len( ld->ld, message, attrU );
+
+    strfreeU( attrU );
+    return (struct WLDAP32_berval **)ret;
+
+#else
+    return NULL;
+#endif
 }
 
 /***********************************************************************
@@ -280,18 +321,21 @@ struct berval ** CDECL ldap_get_values_lenW( LDAP *ld, LDAPMessage *message, WCH
  * Free an array of berval structures.
  *
  * PARAMS
- *  values  [I] Array of berval structures.
+ *  vals  [I] Array of berval structures.
  *
  * RETURNS
  *  Success: LDAP_SUCCESS
  *  Failure: An LDAP error code.
  */
-ULONG CDECL ldap_value_free_len( struct berval **values )
+ULONG CDECL WLDAP32_ldap_value_free_len( struct WLDAP32_berval **vals )
 {
-    TRACE( "(%p)\n", values );
+#ifdef HAVE_LDAP
 
-    bvarrayfreeW( values );
-    return LDAP_SUCCESS;
+    TRACE( "(%p)\n", vals );
+    ldap_value_free_len( (struct berval **)vals );
+
+#endif
+    return WLDAP32_LDAP_SUCCESS;
 }
 
 /***********************************************************************
@@ -299,12 +343,12 @@ ULONG CDECL ldap_value_free_len( struct berval **values )
  *
  * See ldap_value_freeW.
  */
-ULONG CDECL ldap_value_freeA( char **values )
+ULONG CDECL ldap_value_freeA( PCHAR *vals )
 {
-    TRACE( "(%p)\n", values );
+    TRACE( "(%p)\n", vals );
 
-    strarrayfreeA( values );
-    return LDAP_SUCCESS;
+    strarrayfreeA( vals );
+    return WLDAP32_LDAP_SUCCESS;
 }
 
 /***********************************************************************
@@ -313,16 +357,16 @@ ULONG CDECL ldap_value_freeA( char **values )
  * Free an array of string values.
  *
  * PARAMS
- *  values  [I] Array of string values.
+ *  vals  [I] Array of string values.
  *
  * RETURNS
  *  Success: LDAP_SUCCESS
  *  Failure: An LDAP error code.
  */
-ULONG CDECL ldap_value_freeW( WCHAR **values )
+ULONG CDECL ldap_value_freeW( PWCHAR *vals )
 {
-    TRACE( "(%p)\n", values );
+    TRACE( "(%p)\n", vals );
 
-    strarrayfreeW( values );
-    return LDAP_SUCCESS;
+    strarrayfreeW( vals );
+    return WLDAP32_LDAP_SUCCESS;
 }

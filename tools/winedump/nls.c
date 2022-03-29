@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -367,7 +368,7 @@ static void dump_norm(void)
     {
         unsigned int pos, len = (dump_total_len - info->comp_seq * offset_scale) / sizeof(WCHAR);
         const WCHAR *seq = GET_TABLE( info, comp_seq );
-        unsigned int *map = xmalloc( len * sizeof(*map) );
+        unsigned int *map = malloc( len * sizeof(*map) );
 
         printf( "\nCompositions:\n\n" );
 
@@ -709,7 +710,9 @@ static void dump_sort( int old_version )
 
 void nls_dump(void)
 {
-    const char *name = get_basename( globals.input_name );
+    const char *name = strrchr( globals.input_name, '/' );
+    if (name) name++;
+    else name = globals.input_name;
     if (!strcasecmp( name, "l_intl.nls" )) return dump_casemap();
     if (!strncasecmp( name, "c_", 2 )) return dump_codepage();
     if (!strncasecmp( name, "norm", 4 )) return dump_norm();

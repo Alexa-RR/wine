@@ -1,5 +1,4 @@
 TESTDLL   = combase.dll
-IMPORTS   = combase
 
 C_SRCS = \
 	roapi.c \

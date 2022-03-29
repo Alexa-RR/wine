@@ -36,7 +36,7 @@ struct _diskfree_t {
 extern "C" {
 #endif
 
-_ACRTIMP unsigned int __cdecl _getdiskfree(unsigned int, struct _diskfree_t *);
+unsigned int __cdecl _getdiskfree(unsigned int, struct _diskfree_t *);
 
 #ifdef __cplusplus
 }

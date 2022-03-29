@@ -25,7 +25,6 @@
 
 #include "ole2.h"
 #include "rpcproxy.h"
-#include "d3d9.h"
 
 #include "evr_private.h"
 
@@ -33,18 +32,22 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(evr);
 
+static HINSTANCE instance_evr;
+
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
+    TRACE("(%p, %d, %p)\n", instance, reason, reserved);
+
     switch (reason)
     {
-    case DLL_PROCESS_ATTACH:
-        DisableThreadLibraryCalls(instance);
-        break;
-    case DLL_PROCESS_DETACH:
-        if (reserved) break;
-        strmbase_release_typelibs();
-        break;
+        case DLL_WINE_PREATTACH:
+            return FALSE;    /* prefer native version */
+        case DLL_PROCESS_ATTACH:
+            instance_evr = instance;
+            DisableThreadLibraryCalls(instance);
+            break;
     }
+
     return TRUE;
 }
 
@@ -69,8 +72,6 @@ struct object_creation_info
 static const struct object_creation_info object_creation[] =
 {
     { &CLSID_EnhancedVideoRenderer, evr_filter_create },
-    { &CLSID_MFVideoMixer9, evr_mixer_create },
-    { &CLSID_MFVideoPresenter9, evr_presenter_create },
 };
 
 static HRESULT WINAPI classfactory_QueryInterface(IClassFactory *iface, REFIID riid, void **ppobj)
@@ -180,55 +181,17 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void **ppv)
     return S_OK;
 }
 
-HRESULT WINAPI MFCreateVideoMixerAndPresenter(IUnknown *mixer_outer, IUnknown *presenter_outer,
-        REFIID riid_mixer, void **mixer, REFIID riid_presenter, void **presenter)
+HRESULT WINAPI DllCanUnloadNow(void)
 {
-    HRESULT hr;
-
-    TRACE("%p, %p, %s, %p, %s, %p.\n", mixer_outer, presenter_outer, debugstr_guid(riid_mixer), mixer,
-            debugstr_guid(riid_presenter), presenter);
-
-    if (!mixer || !presenter)
-        return E_POINTER;
-
-    *mixer = *presenter = NULL;
-
-    if (SUCCEEDED(hr = CoCreateInstance(&CLSID_MFVideoMixer9, mixer_outer, CLSCTX_INPROC_SERVER, riid_mixer, mixer)))
-        hr = CoCreateInstance(&CLSID_MFVideoPresenter9, presenter_outer, CLSCTX_INPROC_SERVER, riid_presenter, presenter);
-
-    if (FAILED(hr))
-    {
-        if (*mixer)
-            IUnknown_Release((IUnknown *)*mixer);
-        if (*presenter)
-            IUnknown_Release((IUnknown *)*presenter);
-        *mixer = *presenter = NULL;
-    }
-
-    return hr;
+    return S_FALSE;
 }
 
-/***********************************************************************
- *      MFIsFormatYUV (evr.@)
- */
-BOOL WINAPI MFIsFormatYUV(DWORD format)
+HRESULT WINAPI DllRegisterServer(void)
 {
-    TRACE("%s.\n", debugstr_an((char *)&format, 4));
+    return __wine_register_resources(instance_evr);
+}
 
-    switch (format)
-    {
-        case D3DFMT_UYVY:
-        case D3DFMT_YUY2:
-        case MAKEFOURCC('A','Y','U','V'):
-        case MAKEFOURCC('I','M','C','1'):
-        case MAKEFOURCC('I','M','C','2'):
-        case MAKEFOURCC('Y','V','1','2'):
-        case MAKEFOURCC('N','V','1','1'):
-        case MAKEFOURCC('N','V','1','2'):
-        case MAKEFOURCC('Y','2','1','0'):
-        case MAKEFOURCC('Y','2','1','6'):
-            return TRUE;
-        default:
-            return FALSE;
-    }
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources(instance_evr);
 }

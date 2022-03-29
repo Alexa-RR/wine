@@ -2,8 +2,6 @@ MODULE    = glu32.dll
 IMPORTLIB = glu32
 IMPORTS   = opengl32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
-
 C_SRCS = \
 	geom.c \
 	glu.c \

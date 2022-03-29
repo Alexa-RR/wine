@@ -34,11 +34,11 @@ extern const unsigned short wine_scripts_table[] DECLSPEC_HIDDEN;
 /* Number of characters needed for LOCALE_SNATIVEDIGITS */
 #define NATIVE_DIGITS_LEN 11
 
-struct dwritescript_properties
-{
+struct dwritescript_properties {
     DWRITE_SCRIPT_PROPERTIES props;
     UINT32 scripttags[3]; /* Maximum 2 script tags, 0-terminated. */
     BOOL is_complex;
+    const struct scriptshaping_ops *ops;
 };
 
 #define _OT(a,b,c,d) DWRITE_MAKE_OPENTYPE_TAG(a,b,c,d)
@@ -94,7 +94,7 @@ static const struct dwritescript_properties dwritescripts_properties[Script_Last
     { /* Khar */ { 0x7261684b, 305, 15, 0x0020, 1, 0, 1, 0, 0, 0, 0 }, { _OT('k','h','a','r') } },
     { /* Khmr */ { 0x726d684b, 355,  8, 0x0020, 1, 0, 1, 0, 1, 0, 0 }, { _OT('k','h','m','r') }, TRUE },
     { /* Laoo */ { 0x6f6f614c, 356,  8, 0x0020, 1, 0, 1, 0, 1, 0, 0 }, { _OT('l','a','o',' ') }, TRUE },
-    { /* Latn */ { 0x6e74614c, 215,  1, 0x0020, 0, 1, 1, 0, 0, 0, 0 }, { _OT('l','a','t','n') } },
+    { /* Latn */ { 0x6e74614c, 215,  1, 0x0020, 0, 1, 1, 0, 0, 0, 0 }, { _OT('l','a','t','n') }, FALSE, &latn_shaping_ops },
     { /* Lepc */ { 0x6370654c, 335,  8, 0x0020, 1, 1, 1, 0, 0, 0, 0 }, { _OT('l','e','p','c') } },
     { /* Limb */ { 0x626d694c, 336,  8, 0x0020, 1, 1, 1, 0, 0, 0, 0 }, { _OT('l','i','m','b') } },
     { /* Linb */ { 0x626e694c, 401,  1, 0x0020, 0, 0, 1, 1, 0, 0, 0 }, { _OT('l','i','n','b') } },
@@ -194,14 +194,6 @@ static const struct dwritescript_properties dwritescripts_properties[Script_Last
     { /* Medf */ { 0x6664654d, 265,  8, 0x0020, 0, 1, 1, 0, 0, 0, 0 }, { _OT('m','e','d','f') } },
     { /* Sogo */ { 0x6f676f53, 142,  8, 0x0020, 1, 1, 1, 0, 0, 0, 0 }, { _OT('s','o','g','o') } },
     { /* Sogd */ { 0x64676f53, 141,  8, 0x0020, 1, 1, 0, 0, 0, 1, 1 }, { _OT('s','o','g','d') } },
-    { /* Elym */ { 0x6d796c45, 128,  1, 0x0020, 0, 0, 1, 0, 0, 0, 0 }, { _OT('e','l','y','m') } },
-    { /* Hmnp */ { 0x706e6d48, 451,  8, 0x0020, 1, 1, 0, 0, 0, 0, 0 }, { _OT('h','m','n','p') } },
-    { /* Nand */ { 0x646e614e, 311,  8, 0x0020, 1, 1, 0, 0, 0, 1, 0 }, { _OT('n','a','n','d') } },
-    { /* Wcho */ { 0x6f686357, 283,  8, 0x0020, 1, 1, 0, 0, 0, 0, 0 }, { _OT('w','c','h','o') } },
-    { /* Chrs */ { 0x73726843, 109,  8, 0x0020, 0, 1, 0, 0, 0, 1, 1 }, { _OT('c','h','r','s') } },
-    { /* Diak */ { 0x6b616944, 342,  8, 0x0020, 1, 1, 0, 0, 0, 0, 0 }, { _OT('d','i','a','k') } },
-    { /* Kits */ { 0x7374694b, 288,  8, 0x0020, 1, 0, 1, 1, 0, 0, 0 }, { _OT('k','i','t','s') } },
-    { /* Yezi */ { 0x697a6559, 192,  8, 0x0020, 0, 1, 1, 0, 0, 0, 0 }, { _OT('y','e','z','i') } },
 };
 #undef _OT
 
@@ -211,7 +203,9 @@ const char *debugstr_sa_script(UINT16 script)
 }
 
 /* system font falback configuration */
-static const WCHAR *cjk_families[] = { L"Meiryo" };
+static const WCHAR meiryoW[] = {'M','e','i','r','y','o',0};
+
+static const WCHAR *cjk_families[] = { meiryoW };
 
 static const DWRITE_UNICODE_RANGE cjk_ranges[] =
 {
@@ -260,10 +254,9 @@ struct dwrite_fontfallback_builder
     size_t count;
 };
 
-struct dwrite_numbersubstitution
-{
+struct dwrite_numbersubstitution {
     IDWriteNumberSubstitution IDWriteNumberSubstitution_iface;
-    LONG refcount;
+    LONG ref;
 
     DWRITE_NUMBER_SUBSTITUTION_METHOD method;
     WCHAR *locale;
@@ -287,6 +280,16 @@ static inline struct dwrite_fontfallback_builder *impl_from_IDWriteFontFallbackB
     return CONTAINING_RECORD(iface, struct dwrite_fontfallback_builder, IDWriteFontFallbackBuilder_iface);
 }
 
+static inline UINT32 decode_surrogate_pair(const WCHAR *str, UINT32 index, UINT32 end)
+{
+    if (index < end-1 && IS_SURROGATE_PAIR(str[index], str[index+1])) {
+        UINT32 ch = 0x10000 + ((str[index] - 0xd800) << 10) + (str[index+1] - 0xdc00);
+        TRACE("surrogate pair (%x %x) => %x\n", str[index], str[index+1], ch);
+        return ch;
+    }
+    return 0;
+}
+
 static inline UINT16 get_char_script(WCHAR c)
 {
     UINT16 script = get_table_entry(wine_scripts_table, c);
@@ -296,11 +299,9 @@ static inline UINT16 get_char_script(WCHAR c)
 static DWRITE_SCRIPT_ANALYSIS get_char_sa(WCHAR c)
 {
     DWRITE_SCRIPT_ANALYSIS sa;
-    WORD type;
 
-    GetStringTypeW(CT_CTYPE1, &c, 1, &type);
     sa.script = get_char_script(c);
-    sa.shapes = (type & C1_CNTRL) || c == 0x2028 /* LINE SEPARATOR */ || c == 0x2029 /* PARAGRAPH SEPARATOR */ ?
+    sa.shapes = iscntrlW(c) || c == 0x2028 /* LINE SEPARATOR */ || c == 0x2029 /* PARAGRAPH SEPARATOR */ ?
         DWRITE_SCRIPT_SHAPES_NO_VISUAL : DWRITE_SCRIPT_SHAPES_DEFAULT;
     return sa;
 }
@@ -456,7 +457,8 @@ static HRESULT analyze_linebreaks(const WCHAR *text, UINT32 count, DWRITE_LINE_B
     short *break_class;
     int i, j;
 
-    if (!(break_class = calloc(count, sizeof(*break_class))))
+    break_class = heap_calloc(count, sizeof(*break_class));
+    if (!break_class)
         return E_OUTOFMEMORY;
 
     state.breakpoints = breakpoints;
@@ -468,7 +470,7 @@ static HRESULT analyze_linebreaks(const WCHAR *text, UINT32 count, DWRITE_LINE_B
 
         breakpoints[i].breakConditionBefore = DWRITE_BREAK_CONDITION_NEUTRAL;
         breakpoints[i].breakConditionAfter  = DWRITE_BREAK_CONDITION_NEUTRAL;
-        breakpoints[i].isWhitespace = !!iswspace(text[i]);
+        breakpoints[i].isWhitespace = !!isspaceW(text[i]);
         breakpoints[i].isSoftHyphen = text[i] == 0x00ad /* Unicode Soft Hyphen */;
         breakpoints[i].padding = 0;
 
@@ -816,13 +818,13 @@ static HRESULT analyze_linebreaks(const WCHAR *text, UINT32 count, DWRITE_LINE_B
         set_break_condition(i, BreakConditionAfter, DWRITE_BREAK_CONDITION_CAN_BREAK, &state);
     }
 
-    free(break_class);
+    heap_free(break_class);
     return S_OK;
 }
 
 static HRESULT WINAPI dwritetextanalyzer_QueryInterface(IDWriteTextAnalyzer2 *iface, REFIID riid, void **obj)
 {
-    TRACE("%s, %p.\n", debugstr_guid(riid), obj);
+    TRACE("(%s %p)\n", debugstr_guid(riid), obj);
 
     if (IsEqualIID(riid, &IID_IDWriteTextAnalyzer2) ||
         IsEqualIID(riid, &IID_IDWriteTextAnalyzer1) ||
@@ -865,24 +867,20 @@ static HRESULT get_text_source_ptr(IDWriteTextAnalysisSource *source, UINT32 pos
     if (len < length) {
         UINT32 read;
 
-        *buff = calloc(length, sizeof(WCHAR));
+        *buff = heap_alloc(length*sizeof(WCHAR));
         if (!*buff)
             return E_OUTOFMEMORY;
-        if (*text)
-            memcpy(*buff, *text, len*sizeof(WCHAR));
+        memcpy(*buff, *text, len*sizeof(WCHAR));
         read = len;
 
         while (read < length && *text) {
             *text = NULL;
             len = 0;
-            hr = IDWriteTextAnalysisSource_GetTextAtPosition(source, position+read, text, &len);
-            if (FAILED(hr))
-            {
-                free(*buff);
+            hr = IDWriteTextAnalysisSource_GetTextAtPosition(source, read, text, &len);
+            if (FAILED(hr)) {
+                heap_free(*buff);
                 return hr;
             }
-            if (!*text)
-                break;
             memcpy(*buff + read, *text, min(len, length-read)*sizeof(WCHAR));
             read += len;
         }
@@ -900,7 +898,7 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeScript(IDWriteTextAnalyzer2 *ifa
     const WCHAR *text;
     HRESULT hr;
 
-    TRACE("%p, %u, %u, %p.\n", source, position, length, sink);
+    TRACE("(%p %u %u %p)\n", source, position, length, sink);
 
     if (length == 0)
         return S_OK;
@@ -910,7 +908,7 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeScript(IDWriteTextAnalyzer2 *ifa
         return hr;
 
     hr = analyze_script(text, position, length, sink);
-    free(buff);
+    heap_free(buff);
 
     return hr;
 }
@@ -925,7 +923,7 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeBidi(IDWriteTextAnalyzer2 *iface
     const WCHAR *text;
     HRESULT hr;
 
-    TRACE("%p, %u, %u, %p.\n", source, position, length, sink);
+    TRACE("(%p %u %u %p)\n", source, position, length, sink);
 
     if (!length)
         return S_OK;
@@ -934,8 +932,8 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeBidi(IDWriteTextAnalyzer2 *iface
     if (FAILED(hr))
         return hr;
 
-    levels = calloc(length, sizeof(*levels));
-    explicit = calloc(length, sizeof(*explicit));
+    levels = heap_calloc(length, sizeof(*levels));
+    explicit = heap_calloc(length, sizeof(*explicit));
 
     if (!levels || !explicit) {
         hr = E_OUTOFMEMORY;
@@ -970,9 +968,9 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeBidi(IDWriteTextAnalyzer2 *iface
     hr = IDWriteTextAnalysisSink_SetBidiLevel(sink, pos, seq_length, explicit_level, level);
 
 done:
-    free(explicit);
-    free(levels);
-    free(buff);
+    heap_free(explicit);
+    heap_free(levels);
+    heap_free(buff);
 
     return hr;
 }
@@ -996,7 +994,7 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeLineBreakpoints(IDWriteTextAnaly
     HRESULT hr;
     UINT32 len;
 
-    TRACE("%p, %u, %u, %p.\n", source, position, length, sink);
+    TRACE("(%p %u %u %p)\n", source, position, length, sink);
 
     if (length == 0)
         return S_OK;
@@ -1010,20 +1008,18 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeLineBreakpoints(IDWriteTextAnaly
     if (len < length) {
         UINT32 read;
 
-        if (!(buff = calloc(length, sizeof(*buff))))
+        buff = heap_calloc(length, sizeof(*buff));
+        if (!buff)
             return E_OUTOFMEMORY;
-        if (text)
-            memcpy(buff, text, len*sizeof(WCHAR));
+        memcpy(buff, text, len*sizeof(WCHAR));
         read = len;
 
         while (read < length && text) {
             text = NULL;
             len = 0;
-            hr = IDWriteTextAnalysisSource_GetTextAtPosition(source, position+read, &text, &len);
+            hr = IDWriteTextAnalysisSource_GetTextAtPosition(source, read, &text, &len);
             if (FAILED(hr))
                 goto done;
-            if (!text)
-                break;
             memcpy(&buff[read], text, min(len, length-read)*sizeof(WCHAR));
             read += len;
         }
@@ -1031,8 +1027,8 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeLineBreakpoints(IDWriteTextAnaly
         text = buff;
     }
 
-    if (!(breakpoints = calloc(length, sizeof(*breakpoints))))
-    {
+    breakpoints = heap_calloc(length, sizeof(*breakpoints));
+    if (!breakpoints) {
         hr = E_OUTOFMEMORY;
         goto done;
     }
@@ -1044,8 +1040,8 @@ static HRESULT WINAPI dwritetextanalyzer_AnalyzeLineBreakpoints(IDWriteTextAnaly
     hr = IDWriteTextAnalysisSink_SetLineBreakpoints(sink, position, length, breakpoints);
 
 done:
-    free(breakpoints);
-    free(buff);
+    heap_free(breakpoints);
+    heap_free(buff);
 
     return hr;
 }
@@ -1063,17 +1059,15 @@ static UINT32 get_opentype_language(const WCHAR *locale)
     return language;
 }
 
-static void get_number_substitutes(IDWriteNumberSubstitution *substitution, BOOL is_rtl, WCHAR *digits)
+static DWRITE_NUMBER_SUBSTITUTION_METHOD get_number_substitutes(IDWriteNumberSubstitution *substitution, WCHAR *digits)
 {
     struct dwrite_numbersubstitution *numbersubst = unsafe_impl_from_IDWriteNumberSubstitution(substitution);
     DWRITE_NUMBER_SUBSTITUTION_METHOD method;
     WCHAR isolang[9];
     DWORD lctype;
 
-    digits[0] = 0;
-
     if (!numbersubst)
-        return;
+        return DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE;
 
     lctype = numbersubst->ignore_user_override ? LOCALE_NOUSEROVERRIDE : 0;
 
@@ -1093,7 +1087,7 @@ static void get_number_substitutes(IDWriteNumberSubstitution *substitution, BOOL
             case 1:
             default:
                 if (value != 1)
-                    WARN("Unknown IDIGITSUBSTITUTION value %lu, locale %s.\n", value, debugstr_w(numbersubst->locale));
+                    WARN("Unknown IDIGITSUBSTITUTION value %u, locale %s.\n", value, debugstr_w(numbersubst->locale));
             }
         }
         else
@@ -1102,6 +1096,7 @@ static void get_number_substitutes(IDWriteNumberSubstitution *substitution, BOOL
     else
         method = numbersubst->method;
 
+    digits[0] = 0;
     switch (method)
     {
     case DWRITE_NUMBER_SUBSTITUTION_METHOD_NATIONAL:
@@ -1109,14 +1104,13 @@ static void get_number_substitutes(IDWriteNumberSubstitution *substitution, BOOL
         break;
     case DWRITE_NUMBER_SUBSTITUTION_METHOD_CONTEXTUAL:
     case DWRITE_NUMBER_SUBSTITUTION_METHOD_TRADITIONAL:
-        if (GetLocaleInfoEx(numbersubst->locale, LOCALE_SISO639LANGNAME, isolang, ARRAY_SIZE(isolang)))
-        {
+        if (GetLocaleInfoEx(numbersubst->locale, LOCALE_SISO639LANGNAME, isolang, ARRAY_SIZE(isolang))) {
+             static const WCHAR arW[] = {'a','r',0};
              static const WCHAR arabicW[] = {0x640,0x641,0x642,0x643,0x644,0x645,0x646,0x647,0x648,0x649,0};
 
              /* For some Arabic locales Latin digits are returned for SNATIVEDIGITS */
-             if (!wcscmp(L"ar", isolang))
-             {
-                 wcscpy(digits, arabicW);
+             if (!strcmpW(arW, isolang)) {
+                 strcpyW(digits, arabicW);
                  break;
              }
         }
@@ -1131,8 +1125,7 @@ static void get_number_substitutes(IDWriteNumberSubstitution *substitution, BOOL
         method = DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE;
     }
 
-    if ((method == DWRITE_NUMBER_SUBSTITUTION_METHOD_CONTEXTUAL && !is_rtl) || method == DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE)
-        digits[0] = 0;
+    return method;
 }
 
 static void analyzer_dump_user_features(DWRITE_TYPOGRAPHIC_FEATURES const **features,
@@ -1156,87 +1149,133 @@ static HRESULT WINAPI dwritetextanalyzer_GetGlyphs(IDWriteTextAnalyzer2 *iface,
     BOOL is_rtl, DWRITE_SCRIPT_ANALYSIS const* analysis, WCHAR const* locale,
     IDWriteNumberSubstitution* substitution, DWRITE_TYPOGRAPHIC_FEATURES const** features,
     UINT32 const* feature_range_lengths, UINT32 feature_ranges, UINT32 max_glyph_count,
-    UINT16* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES* text_props, UINT16 *glyphs,
+    UINT16* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES* text_props, UINT16* glyph_indices,
     DWRITE_SHAPING_GLYPH_PROPERTIES* glyph_props, UINT32* actual_glyph_count)
 {
-    const struct dwritescript_properties *scriptprops;
-    struct scriptshaping_context context = { 0 };
+    DWRITE_NUMBER_SUBSTITUTION_METHOD method;
+    struct scriptshaping_context context;
     struct dwrite_fontface *font_obj;
     WCHAR digits[NATIVE_DIGITS_LEN];
-    unsigned int glyph_count;
-    HRESULT hr;
+    BOOL update_cluster;
+    WCHAR *string;
+    UINT32 i, g;
+    HRESULT hr = S_OK;
 
-    TRACE("%s:%u, %p, %d, %d, %s, %s, %p, %p, %p, %u, %u, %p, %p, %p, %p, %p.\n", debugstr_wn(text, length),
+    TRACE("(%s:%u %p %d %d %s %s %p %p %p %u %u %p %p %p %p %p)\n", debugstr_wn(text, length),
         length, fontface, is_sideways, is_rtl, debugstr_sa_script(analysis->script), debugstr_w(locale), substitution,
-        features, feature_range_lengths, feature_ranges, max_glyph_count, clustermap, text_props, glyphs,
+        features, feature_range_lengths, feature_ranges, max_glyph_count, clustermap, text_props, glyph_indices,
         glyph_props, actual_glyph_count);
 
     analyzer_dump_user_features(features, feature_range_lengths, feature_ranges);
 
-    get_number_substitutes(substitution, is_rtl, digits);
+    if (max_glyph_count < length)
+        return E_NOT_SUFFICIENT_BUFFER;
+
+    string = heap_calloc(length, sizeof(*string));
+    if (!string)
+        return E_OUTOFMEMORY;
+
+    method = get_number_substitutes(substitution, digits);
+
+    for (i = 0; i < length; i++) {
+        /* FIXME: set to better values */
+        glyph_props[i].justification = text[i] == ' ' ? SCRIPT_JUSTIFY_BLANK : SCRIPT_JUSTIFY_CHARACTER;
+        glyph_props[i].isClusterStart = 1;
+        glyph_props[i].isDiacritic = 0;
+        glyph_props[i].isZeroWidthSpace = 0;
+        glyph_props[i].reserved = 0;
+
+        /* FIXME: have the shaping engine set this */
+        text_props[i].isShapedAlone = 0;
+        text_props[i].reserved = 0;
+
+        clustermap[i] = i;
+
+        string[i] = text[i];
+        switch (method)
+        {
+        case DWRITE_NUMBER_SUBSTITUTION_METHOD_CONTEXTUAL:
+            if (!is_rtl)
+                break;
+            /* fallthrough */
+        default:
+            if (string[i] >= '0' && string[i] <= '9')
+                string[i] = digits[string[i] - '0'];
+            break;
+        case DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE:
+            ;
+        }
+    }
+
+    for (; i < max_glyph_count; i++) {
+        glyph_props[i].justification = SCRIPT_JUSTIFY_NONE;
+        glyph_props[i].isClusterStart = 0;
+        glyph_props[i].isDiacritic = 0;
+        glyph_props[i].isZeroWidthSpace = 0;
+        glyph_props[i].reserved = 0;
+    }
+
+    for (i = 0, g = 0, update_cluster = FALSE; i < length; i++) {
+        UINT32 codepoint;
+
+        if (!update_cluster) {
+            codepoint = decode_surrogate_pair(string, i, length);
+            if (!codepoint)
+                codepoint = is_rtl ? bidi_get_mirrored_char(string[i]) : string[i];
+            else
+                update_cluster = TRUE;
+
+            hr = IDWriteFontFace_GetGlyphIndices(fontface, &codepoint, 1, &glyph_indices[g]);
+            if (FAILED(hr))
+                goto done;
+
+            g++;
+        }
+        else {
+            INT32 k;
+
+            update_cluster = FALSE;
+            /* mark surrogate halves with same cluster */
+            clustermap[i] = clustermap[i-1];
+            /* update following clusters */
+            for (k = i + 1; k >= 0 && k < length; k++)
+                clustermap[k]--;
+        }
+    }
+    *actual_glyph_count = g;
+
     font_obj = unsafe_impl_from_IDWriteFontFace(fontface);
-    glyph_count = max(max_glyph_count, length);
 
     context.cache = fontface_get_shaping_cache(font_obj);
-    context.script = analysis->script > Script_LastId ? Script_Unknown : analysis->script;
     context.text = text;
     context.length = length;
     context.is_rtl = is_rtl;
-    context.is_sideways = is_sideways;
-    context.u.subst.glyphs = calloc(glyph_count, sizeof(*glyphs));
-    context.u.subst.glyph_props = calloc(glyph_count, sizeof(*glyph_props));
-    context.u.subst.text_props = text_props;
-    context.u.subst.clustermap = clustermap;
-    context.u.subst.max_glyph_count = max_glyph_count;
-    context.u.subst.capacity = glyph_count;
-    context.u.subst.digits = digits;
     context.language_tag = get_opentype_language(locale);
-    context.user_features.features = features;
-    context.user_features.range_lengths = feature_range_lengths;
-    context.user_features.range_count = feature_ranges;
-    context.glyph_infos = calloc(glyph_count, sizeof(*context.glyph_infos));
-    context.table = &context.cache->gsub;
 
-    *actual_glyph_count = 0;
+    /* FIXME: apply default features */
 
-    if (!context.u.subst.glyphs || !context.u.subst.glyph_props || !context.glyph_infos)
-    {
-        hr = E_OUTOFMEMORY;
-        goto failed;
-    }
+    hr = default_shaping_ops.set_text_glyphs_props(&context, clustermap, glyph_indices, *actual_glyph_count, text_props, glyph_props);
 
-    scriptprops = &dwritescripts_properties[context.script];
-    hr = shape_get_glyphs(&context, scriptprops->scripttags);
-    if (SUCCEEDED(hr))
-    {
-        *actual_glyph_count = context.glyph_count;
-        memcpy(glyphs, context.u.subst.glyphs, context.glyph_count * sizeof(*glyphs));
-        memcpy(glyph_props, context.u.subst.glyph_props, context.glyph_count * sizeof(*glyph_props));
-    }
-
-failed:
-    free(context.u.subst.glyph_props);
-    free(context.u.subst.glyphs);
-    free(context.glyph_infos);
+done:
+    heap_free(string);
 
     return hr;
 }
 
 static HRESULT WINAPI dwritetextanalyzer_GetGlyphPlacements(IDWriteTextAnalyzer2 *iface,
-    WCHAR const* text, UINT16 const* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES *text_props,
+    WCHAR const* text, UINT16 const* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES* props,
     UINT32 text_len, UINT16 const* glyphs, DWRITE_SHAPING_GLYPH_PROPERTIES const* glyph_props,
     UINT32 glyph_count, IDWriteFontFace *fontface, float emSize, BOOL is_sideways, BOOL is_rtl,
     DWRITE_SCRIPT_ANALYSIS const* analysis, WCHAR const* locale, DWRITE_TYPOGRAPHIC_FEATURES const** features,
     UINT32 const* feature_range_lengths, UINT32 feature_ranges, float *advances, DWRITE_GLYPH_OFFSET *offsets)
 {
     const struct dwritescript_properties *scriptprops;
-    struct scriptshaping_context context;
     struct dwrite_fontface *font_obj;
-    unsigned int i;
-    HRESULT hr;
+    unsigned int i, script;
+    HRESULT hr = S_OK;
 
-    TRACE("%s, %p, %p, %u, %p, %p, %u, %p, %.2f, %d, %d, %s, %s, %p, %p, %u, %p, %p.\n", debugstr_wn(text, text_len),
-        clustermap, text_props, text_len, glyphs, glyph_props, glyph_count, fontface, emSize, is_sideways,
+    TRACE("(%s %p %p %u %p %p %u %p %.2f %d %d %s %s %p %p %u %p %p)\n", debugstr_wn(text, text_len),
+        clustermap, props, text_len, glyphs, glyph_props, glyph_count, fontface, emSize, is_sideways,
         is_rtl, debugstr_sa_script(analysis->script), debugstr_w(locale), features, feature_range_lengths,
         feature_ranges, advances, offsets);
 
@@ -1258,45 +1297,34 @@ static HRESULT WINAPI dwritetextanalyzer_GetGlyphPlacements(IDWriteTextAnalyzer2
         offsets[i].ascenderOffset = 0.0f;
     }
 
-    context.cache = fontface_get_shaping_cache(font_obj);
-    context.script = analysis->script > Script_LastId ? Script_Unknown : analysis->script;
-    context.text = text;
-    context.length = text_len;
-    context.is_rtl = is_rtl;
-    context.is_sideways = is_sideways;
-    context.u.pos.glyphs = glyphs;
-    context.u.pos.glyph_props = glyph_props;
-    context.u.pos.text_props = text_props;
-    context.u.pos.clustermap = clustermap;
-    context.glyph_count = glyph_count;
-    context.emsize = emSize;
-    context.measuring_mode = DWRITE_MEASURING_MODE_NATURAL;
-    context.advances = advances;
-    context.offsets = offsets;
-    context.language_tag = get_opentype_language(locale);
-    context.user_features.features = features;
-    context.user_features.range_lengths = feature_range_lengths;
-    context.user_features.range_count = feature_ranges;
-    context.glyph_infos = calloc(glyph_count, sizeof(*context.glyph_infos));
-    context.table = &context.cache->gpos;
+    script = analysis->script > Script_LastId ? Script_Unknown : analysis->script;
 
-    if (!context.glyph_infos)
+    scriptprops = &dwritescripts_properties[script];
+    if (scriptprops->ops && scriptprops->ops->gpos_features)
     {
-        hr = E_OUTOFMEMORY;
-        goto failed;
+        struct scriptshaping_context context;
+
+        context.cache = fontface_get_shaping_cache(font_obj);
+        context.text = text;
+        context.length = text_len;
+        context.is_rtl = is_rtl;
+        context.u.pos.glyphs = glyphs;
+        context.u.pos.glyph_props = glyph_props;
+        context.glyph_count = glyph_count;
+        context.emsize = emSize;
+        context.measuring_mode = DWRITE_MEASURING_MODE_NATURAL;
+        context.advances = advances;
+        context.offsets = offsets;
+        context.language_tag = get_opentype_language(locale);
+
+        hr = shape_get_positions(&context, scriptprops->scripttags, scriptprops->ops->gpos_features);
     }
-
-    scriptprops = &dwritescripts_properties[context.script];
-    hr = shape_get_positions(&context, scriptprops->scripttags);
-
-failed:
-    free(context.glyph_infos);
 
     return hr;
 }
 
 static HRESULT WINAPI dwritetextanalyzer_GetGdiCompatibleGlyphPlacements(IDWriteTextAnalyzer2 *iface,
-    WCHAR const* text, UINT16 const* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES *text_props,
+    WCHAR const* text, UINT16 const* clustermap, DWRITE_SHAPING_TEXT_PROPERTIES* props,
     UINT32 text_len, UINT16 const* glyphs, DWRITE_SHAPING_GLYPH_PROPERTIES const* glyph_props,
     UINT32 glyph_count, IDWriteFontFace *fontface, float emSize, float ppdip,
     DWRITE_MATRIX const* transform, BOOL use_gdi_natural, BOOL is_sideways, BOOL is_rtl,
@@ -1304,16 +1332,15 @@ static HRESULT WINAPI dwritetextanalyzer_GetGdiCompatibleGlyphPlacements(IDWrite
     UINT32 const* feature_range_lengths, UINT32 feature_ranges, float *advances, DWRITE_GLYPH_OFFSET *offsets)
 {
     const struct dwritescript_properties *scriptprops;
-    struct scriptshaping_context context;
     DWRITE_MEASURING_MODE measuring_mode;
     struct dwrite_fontface *font_obj;
-    unsigned int i;
-    HRESULT hr;
+    unsigned int i, script;
+    HRESULT hr = S_OK;
 
-    TRACE("%s, %p, %p, %u, %p, %p, %u, %p, %.2f, %.2f, %p, %d, %d, %d, %s, %s, %p, %p, %u, %p, %p.\n",
-            debugstr_wn(text, text_len), clustermap, text_props, text_len, glyphs, glyph_props, glyph_count, fontface,
-            emSize, ppdip, transform, use_gdi_natural, is_sideways, is_rtl, debugstr_sa_script(analysis->script),
-            debugstr_w(locale), features, feature_range_lengths, feature_ranges, advances, offsets);
+    TRACE("(%s %p %p %u %p %p %u %p %.2f %.2f %p %d %d %d %s %s %p %p %u %p %p)\n", debugstr_wn(text, text_len),
+        clustermap, props, text_len, glyphs, glyph_props, glyph_count, fontface, emSize, ppdip,
+        transform, use_gdi_natural, is_sideways, is_rtl, debugstr_sa_script(analysis->script), debugstr_w(locale),
+        features, feature_range_lengths, feature_ranges, advances, offsets);
 
     analyzer_dump_user_features(features, feature_range_lengths, feature_ranges);
 
@@ -1335,39 +1362,28 @@ static HRESULT WINAPI dwritetextanalyzer_GetGdiCompatibleGlyphPlacements(IDWrite
         offsets[i].ascenderOffset = 0.0f;
     }
 
-    context.cache = fontface_get_shaping_cache(font_obj);
-    context.script = analysis->script > Script_LastId ? Script_Unknown : analysis->script;
-    context.text = text;
-    context.length = text_len;
-    context.is_rtl = is_rtl;
-    context.is_sideways = is_sideways;
-    context.u.pos.glyphs = glyphs;
-    context.u.pos.glyph_props = glyph_props;
-    context.u.pos.text_props = text_props;
-    context.u.pos.clustermap = clustermap;
-    context.glyph_count = glyph_count;
-    context.emsize = emSize * ppdip;
-    context.measuring_mode = measuring_mode;
-    context.advances = advances;
-    context.offsets = offsets;
-    context.language_tag = get_opentype_language(locale);
-    context.user_features.features = features;
-    context.user_features.range_lengths = feature_range_lengths;
-    context.user_features.range_count = feature_ranges;
-    context.glyph_infos = calloc(glyph_count, sizeof(*context.glyph_infos));
-    context.table = &context.cache->gpos;
+    script = analysis->script > Script_LastId ? Script_Unknown : analysis->script;
 
-    if (!context.glyph_infos)
+    scriptprops = &dwritescripts_properties[script];
+    if (scriptprops->ops && scriptprops->ops->gpos_features)
     {
-        hr = E_OUTOFMEMORY;
-        goto failed;
+        struct scriptshaping_context context;
+
+        context.cache = fontface_get_shaping_cache(font_obj);
+        context.text = text;
+        context.length = text_len;
+        context.is_rtl = is_rtl;
+        context.u.pos.glyphs = glyphs;
+        context.u.pos.glyph_props = glyph_props;
+        context.glyph_count = glyph_count;
+        context.emsize = emSize * ppdip;
+        context.measuring_mode = measuring_mode;
+        context.advances = advances;
+        context.offsets = offsets;
+        context.language_tag = get_opentype_language(locale);
+
+        hr = shape_get_positions(&context, scriptprops->scripttags, scriptprops->ops->gpos_features);
     }
-
-    scriptprops = &dwritescripts_properties[context.script];
-    hr = shape_get_positions(&context, scriptprops->scripttags);
-
-failed:
-    free(context.glyph_infos);
 
     return hr;
 }
@@ -1403,7 +1419,8 @@ static HRESULT apply_cluster_spacing(float leading_spacing, float trailing_spaci
             break;
     }
 
-    if (!(deltas = calloc(end - start + 1, sizeof(*deltas))))
+    deltas = heap_calloc(end - start + 1, sizeof(*deltas));
+    if (!deltas)
         return E_OUTOFMEMORY;
 
     /* Cluster advance, note that properties are ignored. */
@@ -1483,7 +1500,7 @@ static HRESULT apply_cluster_spacing(float leading_spacing, float trailing_spaci
                 modified_advances[i - 1];
     }
 
-    free(deltas);
+    heap_free(deltas);
 
     return S_OK;
 }
@@ -1541,7 +1558,7 @@ static HRESULT WINAPI dwritetextanalyzer1_ApplyCharacterSpacing(IDWriteTextAnaly
 {
     unsigned int i;
 
-    TRACE("%.2f, %.2f, %.2f, %u, %u, %p, %p, %p, %p, %p, %p.\n", leading_spacing, trailing_spacing, min_advance_width,
+    TRACE("(%.2f %.2f %.2f %u %u %p %p %p %p %p %p)\n", leading_spacing, trailing_spacing, min_advance_width,
         len, glyph_count, clustermap, advances, offsets, props, modified_advances, modified_offsets);
 
     if (min_advance_width < 0.0f) {
@@ -1567,63 +1584,13 @@ static HRESULT WINAPI dwritetextanalyzer1_ApplyCharacterSpacing(IDWriteTextAnaly
     return S_OK;
 }
 
-static HRESULT WINAPI dwritetextanalyzer1_GetBaseline(IDWriteTextAnalyzer2 *iface, IDWriteFontFace *fontface,
+static HRESULT WINAPI dwritetextanalyzer1_GetBaseline(IDWriteTextAnalyzer2 *iface, IDWriteFontFace *face,
     DWRITE_BASELINE baseline, BOOL vertical, BOOL is_simulation_allowed, DWRITE_SCRIPT_ANALYSIS sa,
     const WCHAR *localeName, INT32 *baseline_coord, BOOL *exists)
 {
-    struct dwrite_fontface *font_obj;
-    const DWRITE_FONT_METRICS1 *metrics;
-
-    TRACE("%p, %d, %d, %u, %s, %p, %p.\n", fontface, vertical, is_simulation_allowed, sa.script, debugstr_w(localeName),
-            baseline_coord, exists);
-
-    *exists = FALSE;
-    *baseline_coord = 0;
-
-    if (baseline == DWRITE_BASELINE_DEFAULT)
-        baseline = vertical ? DWRITE_BASELINE_CENTRAL : DWRITE_BASELINE_ROMAN;
-
-    if ((unsigned int)baseline > DWRITE_BASELINE_MAXIMUM)
-        return E_INVALIDARG;
-
-    /* TODO: fetch BASE table data if available. */
-
-    if (!*exists && is_simulation_allowed)
-    {
-        font_obj = unsafe_impl_from_IDWriteFontFace(fontface);
-        metrics = &font_obj->metrics;
-
-        switch (baseline)
-        {
-            case DWRITE_BASELINE_ROMAN:
-                *baseline_coord = vertical ? metrics->descent : 0;
-                break;
-            case DWRITE_BASELINE_CENTRAL:
-                *baseline_coord = vertical ? (metrics->ascent + metrics->descent) / 2 :
-                        -(metrics->ascent - metrics->descent) / 2;
-                break;
-            case DWRITE_BASELINE_MATH:
-                *baseline_coord = vertical ? (metrics->ascent + metrics->descent) / 2 :
-                        -(metrics->ascent + metrics->descent) / 2;
-                break;
-            case DWRITE_BASELINE_HANGING:
-                /* FIXME: this one isn't accurate, but close. */
-                *baseline_coord = vertical ? metrics->capHeight * 6 / 7 + metrics->descent : metrics->capHeight * 6 / 7;
-                break;
-            case DWRITE_BASELINE_IDEOGRAPHIC_BOTTOM:
-            case DWRITE_BASELINE_MINIMUM:
-                *baseline_coord = vertical ? 0 : metrics->descent;
-                break;
-            case DWRITE_BASELINE_IDEOGRAPHIC_TOP:
-            case DWRITE_BASELINE_MAXIMUM:
-                *baseline_coord = vertical ? metrics->ascent + metrics->descent : -metrics->ascent;
-                break;
-            default:
-                ;
-        }
-    }
-
-    return S_OK;
+    FIXME("(%p %d %d %u %s %p %p): stub\n", face, vertical, is_simulation_allowed, sa.script, debugstr_w(localeName),
+        baseline_coord, exists);
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI dwritetextanalyzer1_AnalyzeVerticalGlyphOrientation(IDWriteTextAnalyzer2 *iface,
@@ -1636,15 +1603,14 @@ static HRESULT WINAPI dwritetextanalyzer1_AnalyzeVerticalGlyphOrientation(IDWrit
 static HRESULT WINAPI dwritetextanalyzer1_GetGlyphOrientationTransform(IDWriteTextAnalyzer2 *iface,
     DWRITE_GLYPH_ORIENTATION_ANGLE angle, BOOL is_sideways, DWRITE_MATRIX *transform)
 {
-    TRACE("%d, %d, %p.\n", angle, is_sideways, transform);
-
+    TRACE("(%d %d %p)\n", angle, is_sideways, transform);
     return IDWriteTextAnalyzer2_GetGlyphOrientationTransform(iface, angle, is_sideways, 0.0, 0.0, transform);
 }
 
 static HRESULT WINAPI dwritetextanalyzer1_GetScriptProperties(IDWriteTextAnalyzer2 *iface, DWRITE_SCRIPT_ANALYSIS sa,
     DWRITE_SCRIPT_PROPERTIES *props)
 {
-    TRACE("%u, %p.\n", sa.script, props);
+    TRACE("(%u %p)\n", sa.script, props);
 
     if (sa.script > Script_LastId)
         return E_INVALIDARG;
@@ -1671,7 +1637,7 @@ static HRESULT WINAPI dwritetextanalyzer1_GetTextComplexity(IDWriteTextAnalyzer2
     HRESULT hr = S_OK;
     int i;
 
-    TRACE("%s:%u, %p, %p, %p, %p.\n", debugstr_wn(text, len), len, face, is_simple, len_read, indices);
+    TRACE("(%s:%u %p %p %p %p)\n", debugstr_wn(text, len), len, face, is_simple, len_read, indices);
 
     *is_simple = FALSE;
     *len_read = 0;
@@ -1697,18 +1663,16 @@ static HRESULT WINAPI dwritetextanalyzer1_GetTextComplexity(IDWriteTextAnalyzer2
     *len_read = i;
 
     /* fetch indices */
-    if (*is_simple && indices)
-    {
-        UINT32 *codepoints;
-
-        if (!(codepoints = calloc(*len_read, sizeof(*codepoints))))
+    if (*is_simple && indices) {
+        UINT32 *codepoints = heap_calloc(*len_read, sizeof(*codepoints));
+        if (!codepoints)
             return E_OUTOFMEMORY;
 
         for (i = 0; i < *len_read; i++)
             codepoints[i] = text[i];
 
         hr = IDWriteFontFace_GetGlyphIndices(face, codepoints, *len_read, indices);
-        free(codepoints);
+        heap_free(codepoints);
     }
 
     return hr;
@@ -1755,7 +1719,7 @@ static HRESULT WINAPI dwritetextanalyzer2_GetGlyphOrientationTransform(IDWriteTe
         {  0.0f, -1.0f,  1.0f,  0.0f, 0.0f, 0.0f }
     };
 
-    TRACE("%d, %d, %.2f, %.2f, %p.\n", angle, is_sideways, originX, originY, m);
+    TRACE("(%d %d %.2f %.2f %p)\n", angle, is_sideways, originX, originY, m);
 
     if ((UINT32)angle > DWRITE_GLYPH_ORIENTATION_ANGLE_270_DEGREES) {
         memset(m, 0, sizeof(*m));
@@ -1798,58 +1762,41 @@ static HRESULT WINAPI dwritetextanalyzer2_GetTypographicFeatures(IDWriteTextAnal
     IDWriteFontFace *fontface, DWRITE_SCRIPT_ANALYSIS sa, const WCHAR *locale,
     UINT32 max_tagcount, UINT32 *actual_tagcount, DWRITE_FONT_FEATURE_TAG *tags)
 {
-    struct scriptshaping_context context = { 0 };
     const struct dwritescript_properties *props;
-    struct dwrite_fontface *font_obj;
+    const DWORD *scripts;
+    HRESULT hr = S_OK;
+    UINT32 language;
 
-    TRACE("%p, %p, %u, %s, %u, %p, %p.\n", iface, fontface, sa.script, debugstr_w(locale), max_tagcount,
-            actual_tagcount, tags);
+    TRACE("(%p %u %s %u %p %p)\n", fontface, sa.script, debugstr_w(locale), max_tagcount, actual_tagcount,
+        tags);
 
     if (sa.script > Script_LastId)
         return E_INVALIDARG;
 
-    font_obj = unsafe_impl_from_IDWriteFontFace(fontface);
-
-    context.cache = fontface_get_shaping_cache(font_obj);
-    context.language_tag = get_opentype_language(locale);
+    language = get_opentype_language(locale);
     props = &dwritescripts_properties[sa.script];
+    *actual_tagcount = 0;
 
-    return shape_get_typographic_features(&context, props->scripttags, max_tagcount, actual_tagcount, tags);
+    scripts = props->scripttags;
+    while (*scripts && !*actual_tagcount)
+    {
+        hr = opentype_get_typographic_features(fontface, *scripts, language, max_tagcount, actual_tagcount, tags);
+        scripts++;
+    }
+
+    return hr;
 };
 
 static HRESULT WINAPI dwritetextanalyzer2_CheckTypographicFeature(IDWriteTextAnalyzer2 *iface,
-        IDWriteFontFace *fontface, DWRITE_SCRIPT_ANALYSIS sa, const WCHAR *locale, DWRITE_FONT_FEATURE_TAG feature,
+        IDWriteFontFace *face, DWRITE_SCRIPT_ANALYSIS sa, const WCHAR *locale, DWRITE_FONT_FEATURE_TAG feature,
         UINT32 glyph_count, const UINT16 *glyphs, UINT8 *feature_applies)
 {
-    struct scriptshaping_context context = { 0 };
-    const struct dwritescript_properties *props;
-    struct dwrite_fontface *font_obj;
-    HRESULT hr;
-
-    TRACE("%p, %p, %u, %s, %s, %u, %p, %p.\n", iface, fontface, sa.script, debugstr_w(locale), debugstr_tag(feature),
-            glyph_count, glyphs, feature_applies);
-
-    if (sa.script > Script_LastId)
-        return E_INVALIDARG;
-
-    font_obj = unsafe_impl_from_IDWriteFontFace(fontface);
-
-    context.cache = fontface_get_shaping_cache(font_obj);
-    context.language_tag = get_opentype_language(locale);
-    if (!(context.glyph_infos = calloc(glyph_count, sizeof(*context.glyph_infos))))
-        return E_OUTOFMEMORY;
-
-    props = &dwritescripts_properties[sa.script];
-
-    hr = shape_check_typographic_feature(&context, props->scripttags, feature, glyph_count, glyphs, feature_applies);
-
-    free(context.glyph_infos);
-
-    return hr;
+    FIXME("(%p %u %s %s %u %p %p): stub\n", face, sa.script, debugstr_w(locale), debugstr_tag(feature), glyph_count,
+            glyphs, feature_applies);
+    return E_NOTIMPL;
 }
 
-static const IDWriteTextAnalyzer2Vtbl textanalyzervtbl =
-{
+static const struct IDWriteTextAnalyzer2Vtbl textanalyzervtbl = {
     dwritetextanalyzer_QueryInterface,
     dwritetextanalyzer_AddRef,
     dwritetextanalyzer_Release,
@@ -1876,14 +1823,16 @@ static const IDWriteTextAnalyzer2Vtbl textanalyzervtbl =
 
 static IDWriteTextAnalyzer2 textanalyzer = { &textanalyzervtbl };
 
-IDWriteTextAnalyzer2 *get_text_analyzer(void)
+IDWriteTextAnalyzer *get_text_analyzer(void)
 {
-    return &textanalyzer;
+    return (IDWriteTextAnalyzer *)&textanalyzer;
 }
 
 static HRESULT WINAPI dwritenumbersubstitution_QueryInterface(IDWriteNumberSubstitution *iface, REFIID riid, void **obj)
 {
-    TRACE("%p, %s, %p.\n", iface, debugstr_guid(riid), obj);
+    struct dwrite_numbersubstitution *This = impl_from_IDWriteNumberSubstitution(iface);
+
+    TRACE("(%p)->(%s %p)\n", This, debugstr_guid(riid), obj);
 
     if (IsEqualIID(riid, &IID_IDWriteNumberSubstitution) ||
         IsEqualIID(riid, &IID_IUnknown))
@@ -1902,32 +1851,28 @@ static HRESULT WINAPI dwritenumbersubstitution_QueryInterface(IDWriteNumberSubst
 
 static ULONG WINAPI dwritenumbersubstitution_AddRef(IDWriteNumberSubstitution *iface)
 {
-    struct dwrite_numbersubstitution *object = impl_from_IDWriteNumberSubstitution(iface);
-    ULONG refcount = InterlockedIncrement(&object->refcount);
-
-    TRACE("%p, refcount %ld.\n", iface, refcount);
-
-    return refcount;
+    struct dwrite_numbersubstitution *This = impl_from_IDWriteNumberSubstitution(iface);
+    ULONG ref = InterlockedIncrement(&This->ref);
+    TRACE("(%p)->(%d)\n", This, ref);
+    return ref;
 }
 
 static ULONG WINAPI dwritenumbersubstitution_Release(IDWriteNumberSubstitution *iface)
 {
-    struct dwrite_numbersubstitution *object = impl_from_IDWriteNumberSubstitution(iface);
-    ULONG refcount = InterlockedDecrement(&object->refcount);
+    struct dwrite_numbersubstitution *This = impl_from_IDWriteNumberSubstitution(iface);
+    ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("%p, refcount %ld.\n", iface, refcount);
+    TRACE("(%p)->(%d)\n", This, ref);
 
-    if (!refcount)
-    {
-        free(object->locale);
-        free(object);
+    if (!ref) {
+        heap_free(This->locale);
+        heap_free(This);
     }
 
-    return refcount;
+    return ref;
 }
 
-static const IDWriteNumberSubstitutionVtbl numbersubstitutionvtbl =
-{
+static const struct IDWriteNumberSubstitutionVtbl numbersubstitutionvtbl = {
     dwritenumbersubstitution_QueryInterface,
     dwritenumbersubstitution_AddRef,
     dwritenumbersubstitution_Release
@@ -1953,17 +1898,17 @@ HRESULT create_numbersubstitution(DWRITE_NUMBER_SUBSTITUTION_METHOD method, cons
     if (method != DWRITE_NUMBER_SUBSTITUTION_METHOD_NONE && !IsValidLocaleName(locale))
         return E_INVALIDARG;
 
-    if (!(substitution = calloc(1, sizeof(*substitution))))
+    substitution = heap_alloc(sizeof(*substitution));
+    if (!substitution)
         return E_OUTOFMEMORY;
 
     substitution->IDWriteNumberSubstitution_iface.lpVtbl = &numbersubstitutionvtbl;
-    substitution->refcount = 1;
+    substitution->ref = 1;
     substitution->ignore_user_override = ignore_user_override;
     substitution->method = method;
-    substitution->locale = wcsdup(locale);
-    if (locale && !substitution->locale)
-    {
-        free(substitution);
+    substitution->locale = heap_strdupW(locale);
+    if (locale && !substitution->locale) {
+        heap_free(substitution);
         return E_OUTOFMEMORY;
     }
 
@@ -2009,7 +1954,7 @@ static ULONG WINAPI fontfallback_Release(IDWriteFontFallback1 *iface)
     return IDWriteFactory7_Release(fallback->factory);
 }
 
-static int __cdecl compare_mapping_range(const void *a, const void *b)
+static int compare_mapping_range(const void *a, const void *b)
 {
     UINT32 ch = *(UINT32 *)a;
     DWRITE_UNICODE_RANGE *range = (DWRITE_UNICODE_RANGE *)b;
@@ -2129,7 +2074,7 @@ static HRESULT fallback_get_fallback_font(struct dwrite_fontfallback *fallback, 
 
     hr = fallback_map_characters(*mapped_font, text, length, mapped_length);
     if (FAILED(hr))
-        WARN("Mapping with fallback family %s failed, hr %#lx.\n", debugstr_w(mapping->families[i]), hr);
+        WARN("Mapping with fallback family %s failed, hr %#x.\n", debugstr_w(mapping->families[i]), hr);
 
     if (!*mapped_length) {
         IDWriteFont_Release(*mapped_font);
@@ -2232,7 +2177,7 @@ static HRESULT WINAPI fontfallback_MapCharacters(IDWriteFontFallback1 *iface, ID
     }
 
 done:
-    free(buff);
+    heap_free(buff);
     return hr;
 }
 
@@ -2262,7 +2207,8 @@ HRESULT create_system_fontfallback(IDWriteFactory7 *factory, IDWriteFontFallback
 
     *ret = NULL;
 
-    if (!(fallback = calloc(1, sizeof(*fallback))))
+    fallback = heap_alloc(sizeof(*fallback));
+    if (!fallback)
         return E_OUTOFMEMORY;
 
     fallback->IDWriteFontFallback1_iface.lpVtbl = &fontfallbackvtbl;
@@ -2280,7 +2226,7 @@ void release_system_fontfallback(IDWriteFontFallback1 *iface)
 {
     struct dwrite_fontfallback *fallback = impl_from_IDWriteFontFallback1(iface);
     IDWriteFontCollection1_Release(fallback->systemcollection);
-    free(fallback);
+    heap_free(fallback);
 }
 
 static ULONG WINAPI customfontfallback_AddRef(IDWriteFontFallback1 *iface)
@@ -2288,7 +2234,7 @@ static ULONG WINAPI customfontfallback_AddRef(IDWriteFontFallback1 *iface)
     struct dwrite_fontfallback *fallback = impl_from_IDWriteFontFallback1(iface);
     ULONG refcount = InterlockedIncrement(&fallback->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p, refcount %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -2298,12 +2244,12 @@ static ULONG WINAPI customfontfallback_Release(IDWriteFontFallback1 *iface)
     struct dwrite_fontfallback *fallback = impl_from_IDWriteFontFallback1(iface);
     ULONG refcount = InterlockedDecrement(&fallback->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p, refcount %u.\n", iface, refcount);
 
     if (!refcount)
     {
         IDWriteFactory7_Release(fallback->factory);
-        free(fallback);
+        heap_free(fallback);
     }
 
     return refcount;
@@ -2361,7 +2307,7 @@ static ULONG WINAPI fontfallbackbuilder_AddRef(IDWriteFontFallbackBuilder *iface
     struct dwrite_fontfallback_builder *fallbackbuilder = impl_from_IDWriteFontFallbackBuilder(iface);
     ULONG refcount = InterlockedIncrement(&fallbackbuilder->refcount);
 
-    TRACE("%p, refcount %ld.\n", iface, refcount);
+    TRACE("%p, refcount %d.\n", iface, refcount);
 
     return refcount;
 }
@@ -2372,7 +2318,7 @@ static ULONG WINAPI fontfallbackbuilder_Release(IDWriteFontFallbackBuilder *ifac
     ULONG refcount = InterlockedDecrement(&fallbackbuilder->refcount);
     size_t i;
 
-    TRACE("%p, refcount %ld.\n", iface, refcount);
+    TRACE("%p, refcount %d.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -2382,18 +2328,18 @@ static ULONG WINAPI fontfallbackbuilder_Release(IDWriteFontFallbackBuilder *ifac
             UINT32 j;
 
             for (j = 0; j < mapping->families_count; j++)
-                free(mapping->families[j]);
-            free(mapping->families);
+                heap_free(mapping->families[j]);
+            heap_free(mapping->families);
 
             if (mapping->collection)
                 IDWriteFontCollection_Release(mapping->collection);
-            free(mapping->ranges);
-            free(mapping->locale);
+            heap_free(mapping->ranges);
+            heap_free(mapping->locale);
         }
 
         IDWriteFactory7_Release(fallbackbuilder->factory);
-        free(fallbackbuilder->mappings);
-        free(fallbackbuilder);
+        heap_free(fallbackbuilder->mappings);
+        heap_free(fallbackbuilder);
     }
 
     return refcount;
@@ -2424,17 +2370,17 @@ static HRESULT WINAPI fontfallbackbuilder_AddMapping(IDWriteFontFallbackBuilder 
 
     mapping = &fallbackbuilder->mappings[fallbackbuilder->count++];
 
-    mapping->ranges = calloc(ranges_count, sizeof(*mapping->ranges));
+    mapping->ranges = heap_calloc(ranges_count, sizeof(*mapping->ranges));
     memcpy(mapping->ranges, ranges, sizeof(*mapping->ranges) * ranges_count);
     mapping->ranges_count = ranges_count;
-    mapping->families = calloc(families_count, sizeof(*mapping->families));
+    mapping->families = heap_alloc_zero(sizeof(*mapping->families) * families_count);
     mapping->families_count = families_count;
     for (i = 0; i < families_count; i++)
-        mapping->families[i] = wcsdup(target_families[i]);
+        mapping->families[i] = heap_strdupW(target_families[i]);
     mapping->collection = collection;
     if (mapping->collection)
         IDWriteFontCollection_AddRef(mapping->collection);
-    mapping->locale = wcsdup(locale);
+    mapping->locale = heap_strdupW(locale);
     mapping->scale = scale;
 
     return S_OK;
@@ -2453,11 +2399,12 @@ static HRESULT WINAPI fontfallbackbuilder_CreateFontFallback(IDWriteFontFallback
     struct dwrite_fontfallback_builder *fallbackbuilder = impl_from_IDWriteFontFallbackBuilder(iface);
     struct dwrite_fontfallback *fallback;
 
-    TRACE("%p, %p.\n", iface, ret);
+    FIXME("%p, %p stub.\n", iface, ret);
 
     *ret = NULL;
 
-    if (!(fallback = calloc(1, sizeof(*fallback))))
+    fallback = heap_alloc(sizeof(*fallback));
+    if (!fallback)
         return E_OUTOFMEMORY;
 
     fallback->IDWriteFontFallback1_iface.lpVtbl = &customfontfallbackvtbl;
@@ -2485,7 +2432,8 @@ HRESULT create_fontfallback_builder(IDWriteFactory7 *factory, IDWriteFontFallbac
 
     *ret = NULL;
 
-    if (!(builder = calloc(1, sizeof(*builder))))
+    builder = heap_alloc_zero(sizeof(*builder));
+    if (!builder)
         return E_OUTOFMEMORY;
 
     builder->IDWriteFontFallbackBuilder_iface.lpVtbl = &fontfallbackbuildervtbl;

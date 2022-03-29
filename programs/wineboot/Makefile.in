@@ -1,14 +1,9 @@
 MODULE    = wineboot.exe
-<<<<<<< HEAD
 APPMODE   = -mconsole
 IMPORTS   = uuid advapi32
 DELAYIMPORTS = shell32 shlwapi version user32 setupapi newdev wininet
-=======
-IMPORTS   = uuid advapi32 ws2_32 kernelbase
-DELAYIMPORTS = shell32 shlwapi version user32 setupapi newdev
->>>>>>> master
 
-EXTRADLLFLAGS = -mconsole
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	shutdown.c \

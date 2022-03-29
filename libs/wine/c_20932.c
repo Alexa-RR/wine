@@ -6,7 +6,7 @@
 
 #ifdef __ASM_OBSOLETE
 
-#include "unicode.h"
+#include "wine/unicode.h"
 
 static const WCHAR cp2uni[23808] =
 {

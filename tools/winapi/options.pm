@@ -19,7 +19,6 @@
 package options;
 
 use strict;
-use warnings 'all';
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 require Exporter;
@@ -59,7 +58,6 @@ sub parse_value($$) {
 package _options;
 
 use strict;
-use warnings 'all';
 
 use output qw($output);
 

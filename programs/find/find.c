@@ -29,8 +29,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(find);
 static BOOL read_char_from_handle(HANDLE handle, char *char_out)
 {
     static char buffer[4096];
-    static DWORD buffer_max = 0;
-    static DWORD buffer_pos = 0;
+    static UINT buffer_max = 0;
+    static UINT buffer_pos = 0;
 
     /* Read next content into buffer */
     if (buffer_pos >= buffer_max)
@@ -117,6 +117,7 @@ static void write_to_stdout(const WCHAR *str)
 static BOOL run_find_for_line(const WCHAR *line, const WCHAR *tofind)
 {
     void *found;
+    WCHAR lineending[] = {'\r', '\n', 0};
 
     if (lstrlenW(line) == 0 || lstrlenW(tofind) == 0)
         return FALSE;
@@ -126,7 +127,7 @@ static BOOL run_find_for_line(const WCHAR *line, const WCHAR *tofind)
     if (found)
     {
         write_to_stdout(line);
-        write_to_stdout(L"\r\n");
+        write_to_stdout(lineending);
         return TRUE;
     }
 
@@ -146,9 +147,7 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     WCHAR *tofind = NULL;
     int i;
     int exitcode;
-    int file_paths_len = 0;
-    int file_paths_max = 0;
-    WCHAR** file_paths = NULL;
+    HANDLE input;
 
     TRACE("running find:");
     for (i = 0; i < argc; i++)
@@ -157,6 +156,8 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     }
     TRACE("\n");
 
+    input = GetStdHandle(STD_INPUT_HANDLE);
+
     for (i = 1; i < argc; i++)
     {
         if (argv[i][0] == '/')
@@ -164,18 +165,14 @@ int __cdecl wmain(int argc, WCHAR *argv[])
             output_resource_message(IDS_INVALID_SWITCH);
             return 2;
         }
-        else if (tofind == NULL)
+        else if(tofind == NULL)
         {
             tofind = argv[i];
         }
         else
         {
-            if (file_paths_len >= file_paths_max)
-            {
-                file_paths_max = file_paths_max ? file_paths_max * 2 : 2;
-                file_paths = heap_realloc(file_paths, sizeof(WCHAR*) * file_paths_max);
-            }
-            file_paths[file_paths_len++] = argv[i];
+            FIXME("Searching files not supported yet\n");
+            return 1000;
         }
     }
 
@@ -186,56 +183,13 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     }
 
     exitcode = 1;
-
-    if (file_paths_len > 0)
+    while ((line = read_line_from_handle(input)) != NULL)
     {
-        for (i = 0; i < file_paths_len; i++)
-        {
-            HANDLE input;
-            WCHAR file_path_upper[MAX_PATH];
+        if (run_find_for_line(line, tofind))
+            exitcode = 0;
 
-            wcscpy(file_path_upper, file_paths[i]);
-            wcsupr(file_path_upper);
-
-            input = CreateFileW(file_paths[i], GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
-
-            if (input == INVALID_HANDLE_VALUE)
-            {
-                WCHAR buffer_message[64];
-                WCHAR message[300];
-
-                LoadStringW(GetModuleHandleW(NULL), IDS_FILE_NOT_FOUND, buffer_message, ARRAY_SIZE(buffer_message));
-
-                wsprintfW(message, buffer_message, file_path_upper);
-                write_to_stdout(message);
-                continue;
-            }
-
-            write_to_stdout(L"\r\n---------- ");
-            write_to_stdout(file_path_upper);
-            write_to_stdout(L"\r\n");
-            while ((line = read_line_from_handle(input)) != NULL)
-            {
-                if (run_find_for_line(line, tofind))
-                    exitcode = 0;
-
-                heap_free(line);
-            }
-            CloseHandle(input);
-        }
-    }
-    else
-    {
-        HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
-        while ((line = read_line_from_handle(input)) != NULL)
-        {
-            if (run_find_for_line(line, tofind))
-                exitcode = 0;
-
-            heap_free(line);
-        }
+        heap_free(line);
     }
 
-    heap_free(file_paths);
     return exitcode;
 }

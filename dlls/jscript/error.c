@@ -28,27 +28,31 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
+static const WCHAR descriptionW[] = {'d','e','s','c','r','i','p','t','i','o','n',0};
+static const WCHAR messageW[] = {'m','e','s','s','a','g','e',0};
+static const WCHAR nameW[] = {'n','a','m','e',0};
+static const WCHAR numberW[] = {'n','u','m','b','e','r',0};
+static const WCHAR toStringW[] = {'t','o','S','t','r','i','n','g',0};
+
 /* ECMA-262 3rd Edition    15.11.4.4 */
-static HRESULT Error_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT Error_toString(script_ctx_t *ctx, vdisp_t *vthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
+    jsdisp_t *jsthis;
     jsstr_t *name = NULL, *msg = NULL, *ret = NULL;
-    jsdisp_t *jsthis = NULL;
     jsval_t v;
     HRESULT hres;
 
+    static const WCHAR object_errorW[] = {'[','o','b','j','e','c','t',' ','E','r','r','o','r',']',0};
+
     TRACE("\n");
 
-    if(is_object_instance(vthis))
-        jsthis = to_jsdisp(get_object(vthis));
-    else if(ctx->version >= SCRIPTLANGUAGEVERSION_ES5)
-        return JS_E_OBJECT_EXPECTED;
-
+    jsthis = get_jsdisp(vthis);
     if(!jsthis || ctx->version < 2) {
         if(r) {
             jsstr_t *str;
 
-            str = jsstr_alloc(L"[object Error]");
+            str = jsstr_alloc(object_errorW);
             if(!str)
                 return E_OUTOFMEMORY;
             *r = jsval_string(str);
@@ -56,7 +60,7 @@ static HRESULT Error_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags,
         return S_OK;
     }
 
-    hres = jsdisp_propget_name(jsthis, L"name", &v);
+    hres = jsdisp_propget_name(jsthis, nameW, &v);
     if(FAILED(hres))
         return hres;
 
@@ -67,7 +71,7 @@ static HRESULT Error_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags,
             return hres;
     }
 
-    hres = jsdisp_propget_name(jsthis, L"message", &v);
+    hres = jsdisp_propget_name(jsthis, messageW, &v);
     if(SUCCEEDED(hres)) {
         if(!is_undefined(v)) {
             hres = to_string(ctx, v, &msg);
@@ -98,7 +102,7 @@ static HRESULT Error_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags,
             ret = msg;
             msg = NULL;
         }else {
-            ret = jsstr_alloc(L"[object Error]");
+            ret = jsstr_alloc(object_errorW);
         }
     }
 
@@ -118,7 +122,7 @@ static HRESULT Error_toString(script_ctx_t *ctx, jsval_t vthis, WORD flags,
     return S_OK;
 }
 
-static HRESULT Error_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT Error_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
@@ -135,12 +139,12 @@ static HRESULT Error_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
 }
 
 static const builtin_prop_t Error_props[] = {
-    {L"toString",               Error_toString,                     PROPF_METHOD}
+    {toStringW,                 Error_toString,                     PROPF_METHOD}
 };
 
 static const builtin_info_t Error_info = {
     JSCLASS_ERROR,
-    Error_value,
+    {NULL, Error_value, 0},
     ARRAY_SIZE(Error_props),
     Error_props,
     NULL,
@@ -149,7 +153,7 @@ static const builtin_info_t Error_info = {
 
 static const builtin_info_t ErrorInst_info = {
     JSCLASS_ERROR,
-    Error_value,
+    {NULL, Error_value, 0},
     0,
     NULL,
     NULL,
@@ -190,18 +194,18 @@ static HRESULT create_error(script_ctx_t *ctx, jsdisp_t *constr,
     if(FAILED(hres))
         return hres;
 
-    hres = jsdisp_define_data_property(err, L"number", PROPF_WRITABLE | PROPF_CONFIGURABLE,
+    hres = jsdisp_define_data_property(err, numberW, PROPF_WRITABLE | PROPF_CONFIGURABLE,
                                        jsval_number((INT)number));
     if(FAILED(hres)) {
         jsdisp_release(err);
         return hres;
     }
 
-    hres = jsdisp_define_data_property(err, L"message",
+    hres = jsdisp_define_data_property(err, messageW,
                                        PROPF_WRITABLE | PROPF_ENUMERABLE | PROPF_CONFIGURABLE,
                                        jsval_string(msg));
     if(SUCCEEDED(hres))
-        hres = jsdisp_define_data_property(err, L"description", PROPF_WRITABLE | PROPF_CONFIGURABLE,
+        hres = jsdisp_define_data_property(err, descriptionW, PROPF_WRITABLE | PROPF_CONFIGURABLE,
                                            jsval_string(msg));
     if(FAILED(hres)) {
         jsdisp_release(err);
@@ -264,56 +268,56 @@ static HRESULT error_constr(script_ctx_t *ctx, WORD flags, unsigned argc, jsval_
     }
 }
 
-static HRESULT ErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT ErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->error_constr);
 }
 
-static HRESULT EvalErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT EvalErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->eval_error_constr);
 }
 
-static HRESULT RangeErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT RangeErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->range_error_constr);
 }
 
-static HRESULT ReferenceErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT ReferenceErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->reference_error_constr);
 }
 
-static HRESULT RegExpErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT RegExpErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->regexp_error_constr);
 }
 
-static HRESULT SyntaxErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT SyntaxErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->syntax_error_constr);
 }
 
-static HRESULT TypeErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT TypeErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
     return error_constr(ctx, flags, argc, argv, r, ctx->type_error_constr);
 }
 
-static HRESULT URIErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags,
+static HRESULT URIErrorConstr_value(script_ctx_t *ctx, vdisp_t *jsthis, WORD flags,
         unsigned argc, jsval_t *argv, jsval_t *r)
 {
     TRACE("\n");
@@ -322,8 +326,16 @@ static HRESULT URIErrorConstr_value(script_ctx_t *ctx, jsval_t vthis, WORD flags
 
 HRESULT init_error_constr(script_ctx_t *ctx, jsdisp_t *object_prototype)
 {
-    static const WCHAR *names[] = {L"Error", L"EvalError", L"RangeError",
-        L"ReferenceError", L"RegExpError", L"SyntaxError", L"TypeError", L"URIError"};
+    static const WCHAR ErrorW[] = {'E','r','r','o','r',0};
+    static const WCHAR EvalErrorW[] = {'E','v','a','l','E','r','r','o','r',0};
+    static const WCHAR RangeErrorW[] = {'R','a','n','g','e','E','r','r','o','r',0};
+    static const WCHAR ReferenceErrorW[] = {'R','e','f','e','r','e','n','c','e','E','r','r','o','r',0};
+    static const WCHAR RegExpErrorW[] = {'R','e','g','E','x','p','E','r','r','o','r',0};
+    static const WCHAR SyntaxErrorW[] = {'S','y','n','t','a','x','E','r','r','o','r',0};
+    static const WCHAR TypeErrorW[] = {'T','y','p','e','E','r','r','o','r',0};
+    static const WCHAR URIErrorW[] = {'U','R','I','E','r','r','o','r',0};
+    static const WCHAR *names[] = {ErrorW, EvalErrorW, RangeErrorW,
+        ReferenceErrorW, RegExpErrorW, SyntaxErrorW, TypeErrorW, URIErrorW};
     jsdisp_t **constr_addr[] = {&ctx->error_constr, &ctx->eval_error_constr,
         &ctx->range_error_constr, &ctx->reference_error_constr, &ctx->regexp_error_constr,
         &ctx->syntax_error_constr, &ctx->type_error_constr,
@@ -348,7 +360,7 @@ HRESULT init_error_constr(script_ctx_t *ctx, jsdisp_t *object_prototype)
             return E_OUTOFMEMORY;
         }
 
-        hres = jsdisp_define_data_property(err, L"name", PROPF_WRITABLE | PROPF_CONFIGURABLE,
+        hres = jsdisp_define_data_property(err, nameW, PROPF_WRITABLE | PROPF_CONFIGURABLE,
                                            jsval_string(str));
         jsstr_release(str);
         if(SUCCEEDED(hres))
@@ -400,7 +412,7 @@ static jsstr_t *format_error_message(HRESULT error, const WCHAR *arg)
 HRESULT throw_error(script_ctx_t *ctx, HRESULT error, const WCHAR *str)
 {
     jsexcept_t *ei = ctx->ei;
-    TRACE("%08lx\n", error);
+    TRACE("%08x\n", error);
     reset_ei(ei);
     ei->error = error;
     if(str)
@@ -475,11 +487,7 @@ jsdisp_t *create_builtin_error(script_ctx_t *ctx)
         case JS_E_INVALID_DELETE:
         case JS_E_JSCRIPT_EXPECTED:
         case JS_E_ENUMERATOR_EXPECTED:
-        case JS_E_REGEXP_EXPECTED:
         case JS_E_ARRAY_EXPECTED:
-        case JS_E_CYCLIC_PROTO_VALUE:
-        case JS_E_CANNOT_CREATE_FOR_NONEXTENSIBLE:
-        case JS_E_OBJECT_NONEXTENSIBLE:
         case JS_E_NONCONFIGURABLE_REDEFINED:
         case JS_E_NONWRITABLE_MODIFIED:
         case JS_E_PROP_DESC_MISMATCH:

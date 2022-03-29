@@ -31,7 +31,6 @@
 #include "softpub.h"
 #include "mscat.h"
 #include "shlobj.h"
-#include "shlwapi.h"
 
 #include "wine/debug.h"
 
@@ -811,7 +810,7 @@ DWORD WINAPI CMP_WaitNoPendingInstallEvents( DWORD dwTimeout )
 
     if (!warned)
     {
-        FIXME("%ld\n", dwTimeout);
+        FIXME("%d\n", dwTimeout);
         warned = TRUE;
     }
     return WAIT_OBJECT_0;
@@ -844,7 +843,7 @@ BOOL WINAPI SetupCopyOEMInfA( PCSTR source, PCSTR location,
     LPWSTR destW = NULL, sourceW = NULL, locationW = NULL;
     DWORD size;
 
-    TRACE("%s, %s, %ld, %ld, %p, %ld, %p, %p\n", debugstr_a(source), debugstr_a(location),
+    TRACE("%s, %s, %d, %d, %p, %d, %p, %p\n", debugstr_a(source), debugstr_a(location),
           media_type, style, dest, buffer_size, required_size, component);
 
     if (dest && !(destW = MyMalloc( buffer_size * sizeof(WCHAR) ))) return FALSE;
@@ -934,8 +933,6 @@ static BOOL find_existing_inf(const WCHAR *source, WCHAR *target)
             if (dest_file == INVALID_HANDLE_VALUE)
                 continue;
 
-            SetFilePointer( source_file, 0, NULL, FILE_BEGIN );
-
             if (GetFileSizeEx( dest_file, &dest_file_size )
                     && dest_file_size.QuadPart == source_file_size.QuadPart
                     && !compare_files( source_file, dest_file ))
@@ -963,16 +960,15 @@ BOOL WINAPI SetupCopyOEMInfW( PCWSTR source, PCWSTR location,
                               DWORD buffer_size, DWORD *required_size, WCHAR **filepart )
 {
     BOOL ret = FALSE;
-    WCHAR target[MAX_PATH], catalog_file[MAX_PATH], pnf_path[MAX_PATH], *p;
+    WCHAR target[MAX_PATH], catalog_file[MAX_PATH], *p;
     static const WCHAR inf[] = { '\\','i','n','f','\\',0 };
     static const WCHAR wszVersion[] = { 'V','e','r','s','i','o','n',0 };
     static const WCHAR wszCatalogFile[] = { 'C','a','t','a','l','o','g','F','i','l','e',0 };
-    FILE *pnf_file;
     unsigned int i;
     DWORD size;
     HINF hinf;
 
-    TRACE("%s, %s, %ld, %ld, %p, %ld, %p, %p\n", debugstr_w(source), debugstr_w(location),
+    TRACE("%s, %s, %d, %d, %p, %d, %p, %p\n", debugstr_w(source), debugstr_w(location),
           media_type, style, dest, buffer_size, required_size, filepart);
 
     if (!source)
@@ -1071,19 +1067,6 @@ done:
     if (style & SP_COPY_DELETESOURCE)
         DeleteFileW( source );
 
-    if (ret)
-    {
-        wcscpy(pnf_path, target);
-        PathRemoveExtensionW(pnf_path);
-        PathAddExtensionW(pnf_path, L".pnf");
-        if ((pnf_file = _wfopen(pnf_path, L"w")))
-        {
-            fputws(PNF_HEADER, pnf_file);
-            fputws(source, pnf_file);
-            fclose(pnf_file);
-        }
-    }
-
     size = lstrlenW( target ) + 1;
     if (dest)
     {
@@ -1113,7 +1096,7 @@ BOOL WINAPI SetupUninstallOEMInfA( PCSTR inf_file, DWORD flags, PVOID reserved )
     BOOL ret;
     WCHAR *inf_fileW = NULL;
 
-    TRACE("%s, 0x%08lx, %p\n", debugstr_a(inf_file), flags, reserved);
+    TRACE("%s, 0x%08x, %p\n", debugstr_a(inf_file), flags, reserved);
 
     if (inf_file && !(inf_fileW = strdupAtoW( inf_file ))) return FALSE;
     ret = SetupUninstallOEMInfW( inf_fileW, flags, reserved );
@@ -1129,7 +1112,7 @@ BOOL WINAPI SetupUninstallOEMInfW( PCWSTR inf_file, DWORD flags, PVOID reserved 
     static const WCHAR infW[] = {'\\','i','n','f','\\',0};
     WCHAR target[MAX_PATH];
 
-    TRACE("%s, 0x%08lx, %p\n", debugstr_w(inf_file), flags, reserved);
+    TRACE("%s, 0x%08x, %p\n", debugstr_w(inf_file), flags, reserved);
 
     if (!inf_file)
     {
@@ -1313,7 +1296,7 @@ BOOL WINAPI SetupGetFileCompressionInfoExA( PCSTR source, PSTR name, DWORD len, 
     DWORD nb_chars = 0;
     LPSTR nameA;
 
-    TRACE("%s, %p, %ld, %p, %p, %p, %p\n", debugstr_a(source), name, len, required,
+    TRACE("%s, %p, %d, %p, %p, %p, %p\n", debugstr_a(source), name, len, required,
           source_size, target_size, type);
 
     if (!source || !(sourceW = MultiByteToUnicode( source, CP_ACP ))) return FALSE;
@@ -1373,7 +1356,7 @@ BOOL WINAPI SetupGetFileCompressionInfoExW( PCWSTR source, PWSTR name, DWORD len
     BOOL ret = FALSE;
     DWORD source_len;
 
-    TRACE("%s, %p, %ld, %p, %p, %p, %p\n", debugstr_w(source), name, len, required,
+    TRACE("%s, %p, %d, %p, %p, %p, %p\n", debugstr_w(source), name, len, required,
           source_size, target_size, type);
 
     if (!source) return FALSE;
@@ -1498,7 +1481,7 @@ static DWORD decompress_file_lz( LPCWSTR source, LPCWSTR target )
     if ((error = LZCopy( src, dst )) >= 0) ret = ERROR_SUCCESS;
     else
     {
-        WARN("failed to decompress file %ld\n", error);
+        WARN("failed to decompress file %d\n", error);
         ret = ERROR_INVALID_DATA;
     }
 
@@ -1781,7 +1764,7 @@ BOOL WINAPI SetupLogErrorW(LPCWSTR message, LogSeverity severity)
         WideCharToMultiByte(CP_ACP, 0, message, -1, msg, len, NULL, NULL);
     }
 
-    /* This is the normal way to proceed. The log files are ANSI files
+    /* This is the normal way to proceed. The log files are ASCII files
      * and W is to be converted.
      */
     ret = SetupLogErrorA(msg, severity);

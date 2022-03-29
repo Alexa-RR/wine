@@ -212,8 +212,7 @@ typedef enum {
     ARG_INT,
     ARG_UINT,
     ARG_ADDR,
-    ARG_DOUBLE,
-    ARG_DATE
+    ARG_DOUBLE
 } instr_arg_type_t;
 
 #define OP_LIST                                   \
@@ -226,7 +225,6 @@ typedef enum {
     X(case,           0, ARG_ADDR,    0)          \
     X(concat,         1, 0,           0)          \
     X(const,          1, ARG_BSTR,    0)          \
-    X(date,           1, ARG_DATE,    0)          \
     X(deref,          1, 0,           0)          \
     X(dim,            1, ARG_BSTR,    ARG_UINT)   \
     X(div,            1, 0,           0)          \
@@ -242,7 +240,6 @@ typedef enum {
     X(gteq,           1, 0,           0)          \
     X(icall,          1, ARG_BSTR,    ARG_UINT)   \
     X(icallv,         1, ARG_BSTR,    ARG_UINT)   \
-    X(ident,          1, ARG_BSTR,    0)          \
     X(idiv,           1, 0,           0)          \
     X(imp,            1, 0,           0)          \
     X(incc,           1, ARG_BSTR,    0)          \
@@ -268,7 +265,6 @@ typedef enum {
     X(or,             1, 0,           0)          \
     X(pop,            1, ARG_UINT,    0)          \
     X(redim,          1, ARG_BSTR,    ARG_UINT)   \
-    X(redim_preserve, 1, ARG_BSTR,    ARG_UINT)   \
     X(ret,            0, 0,           0)          \
     X(retval,         1, 0,           0)          \
     X(set_ident,      1, ARG_BSTR,    ARG_UINT)   \
@@ -296,7 +292,6 @@ typedef union {
     unsigned uint;
     LONG lng;
     double *dbl;
-    DATE *date;
 } instr_arg_t;
 
 typedef struct {
@@ -318,6 +313,7 @@ typedef enum {
     FUNC_PROPGET,
     FUNC_PROPLET,
     FUNC_PROPSET,
+    FUNC_DEFGET
 } function_type_t;
 
 typedef struct {
@@ -397,7 +393,7 @@ static inline BOOL is_digit(WCHAR c)
 }
 
 HRESULT create_regexp(IDispatch**) DECLSPEC_HIDDEN;
-BSTR string_replace(BSTR,BSTR,BSTR,int,int,int) DECLSPEC_HIDDEN;
+BSTR string_replace(BSTR,BSTR,BSTR,int,int) DECLSPEC_HIDDEN;
 
 HRESULT map_hres(HRESULT) DECLSPEC_HIDDEN;
 

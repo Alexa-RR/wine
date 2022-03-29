@@ -1,16 +1,8 @@
-<<<<<<< HEAD
 MODULE = dxva2.dll
 IMPORTS = ole32 advapi32
 
 IDL_SRCS = \
 	backend.idl
-=======
-MODULE    = dxva2.dll
-IMPORTS   = uuid ole32
-IMPORTLIB = dxva2
-
-EXTRADLLFLAGS = -Wb,--prefer-native
->>>>>>> master
 
 C_SRCS = \
 	devicemanager.c \

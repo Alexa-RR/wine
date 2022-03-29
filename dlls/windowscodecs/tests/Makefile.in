@@ -1,11 +1,10 @@
 TESTDLL   = windowscodecs.dll
-IMPORTS   = windowscodecs propsys oleaut32 ole32 user32 gdi32 shlwapi uuid
+IMPORTS   = windowscodecs propsys oleaut32 ole32 user32 gdi32 shlwapi
 
 C_SRCS = \
 	bitmap.c \
 	bmpformat.c \
 	converter.c \
-	ddsformat.c \
 	gifformat.c \
 	icoformat.c \
 	info.c \
@@ -15,5 +14,4 @@ C_SRCS = \
 	pngformat.c \
 	propertybag.c \
 	stream.c \
-	tiffformat.c \
-	wmpformat.c
+	tiffformat.c

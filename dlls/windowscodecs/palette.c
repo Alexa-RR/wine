@@ -18,6 +18,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -74,7 +76,7 @@ static ULONG WINAPI PaletteImpl_AddRef(IWICPalette *iface)
     PaletteImpl *This = impl_from_IWICPalette(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -84,7 +86,7 @@ static ULONG WINAPI PaletteImpl_Release(IWICPalette *iface)
     PaletteImpl *This = impl_from_IWICPalette(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
     {
@@ -679,7 +681,7 @@ static HRESULT WINAPI PaletteImpl_InitializeFromBitmap(IWICPalette *palette,
     else
         rgb24_source = source;
 
-    hr = create_instance(&CLSID_WICImagingFactory, &IID_IWICImagingFactory, (void **)&factory);
+    hr = ImagingFactory_CreateInstance(&IID_IWICImagingFactory, (void **)&factory);
     if (hr != S_OK) goto fail;
 
     hr = IWICImagingFactory_CreateBitmapFromSource(factory, rgb24_source, WICBitmapCacheOnLoad, &rgb24_bitmap);

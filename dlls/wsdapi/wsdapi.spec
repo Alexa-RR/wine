@@ -15,7 +15,7 @@
 @ stub WSDCreateDeviceProxy
 @ stub WSDCreateDeviceProxyAdvanced
 @ stub WSDCreateDiscoveryProvider2
-@ stdcall WSDCreateDiscoveryProvider(ptr ptr)
+@ stub WSDCreateDiscoveryProvider
 @ stub WSDCreateDiscoveryPublisher2
 @ stdcall WSDCreateDiscoveryPublisher(ptr ptr)
 @ stub WSDCreateHttpAddress

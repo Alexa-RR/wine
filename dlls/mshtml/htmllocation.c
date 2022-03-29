@@ -64,7 +64,7 @@ static HRESULT get_url_components(HTMLLocation *This, URL_COMPONENTSW *url)
         return hres;
 
     if(!InternetCrackUrlW(doc_url, 0, 0, url)) {
-        FIXME("InternetCrackUrlW failed: 0x%08lx\n", GetLastError());
+        FIXME("InternetCrackUrlW failed: 0x%08x\n", GetLastError());
         SetLastError(0);
         return E_FAIL;
     }
@@ -108,7 +108,7 @@ static ULONG WINAPI HTMLLocation_AddRef(IHTMLLocation *iface)
     HTMLLocation *This = impl_from_IHTMLLocation(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -118,7 +118,7 @@ static ULONG WINAPI HTMLLocation_Release(IHTMLLocation *iface)
     HTMLLocation *This = impl_from_IHTMLLocation(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
         if(This->window)
@@ -240,7 +240,7 @@ static HRESULT WINAPI HTMLLocation_get_href(IHTMLLocation *iface, BSTR *p)
     }
 
     if(GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-        FIXME("InternetCreateUrl failed with error: %08lx\n", GetLastError());
+        FIXME("InternetCreateUrl failed with error: %08x\n", GetLastError());
         SetLastError(0);
         ret = E_FAIL;
         goto cleanup;
@@ -254,7 +254,7 @@ static HRESULT WINAPI HTMLLocation_get_href(IHTMLLocation *iface, BSTR *p)
     }
 
     if(!InternetCreateUrlW(&url, ICU_ESCAPE, buf, &len)) {
-        FIXME("InternetCreateUrl failed with error: %08lx\n", GetLastError());
+        FIXME("InternetCreateUrl failed with error: %08x\n", GetLastError());
         SetLastError(0);
         ret = E_FAIL;
         goto cleanup;
@@ -350,11 +350,12 @@ static HRESULT WINAPI HTMLLocation_get_host(IHTMLLocation *iface, BSTR *p)
 
     if(url.nPort) {
         /* <hostname>:<port> */
+        static const WCHAR format[] = {'%','u',0};
         DWORD len, port_len;
         WCHAR portW[6];
         WCHAR *buf;
 
-        port_len = swprintf(portW, ARRAY_SIZE(portW), L"%u", url.nPort);
+        port_len = swprintf(portW, ARRAY_SIZE(portW), format, url.nPort);
         len = url.dwHostNameLength + 1 /* ':' */ + port_len;
         buf = *p = SysAllocStringLen(NULL, len);
         memcpy(buf, url.lpszHostName, url.dwHostNameLength * sizeof(WCHAR));
@@ -434,9 +435,10 @@ static HRESULT WINAPI HTMLLocation_get_port(IHTMLLocation *iface, BSTR *p)
         return hres;
 
     if(hres == S_OK) {
+        static const WCHAR formatW[] = {'%','u',0};
         WCHAR buf[12];
 
-        swprintf(buf, ARRAY_SIZE(buf), L"%u", port);
+        swprintf(buf, ARRAY_SIZE(buf), formatW, port);
         *p = SysAllocString(buf);
     }else {
         *p = SysAllocStringLen(NULL, 0);
@@ -638,7 +640,6 @@ static const tid_t HTMLLocation_iface_tids[] = {
     0
 };
 static dispex_static_data_t HTMLLocation_dispex = {
-    L"Object",
     NULL,
     DispHTMLLocation_tid,
     HTMLLocation_iface_tids
@@ -657,8 +658,7 @@ HRESULT HTMLLocation_Create(HTMLInnerWindow *window, HTMLLocation **ret)
     location->ref = 1;
     location->window = window;
 
-    init_dispatch(&location->dispex, (IUnknown*)&location->IHTMLLocation_iface, &HTMLLocation_dispex,
-                  dispex_compat_mode(&window->event_target.dispex));
+    init_dispex(&location->dispex, (IUnknown*)&location->IHTMLLocation_iface, &HTMLLocation_dispex);
 
     *ret = location;
     return S_OK;

@@ -24,6 +24,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +35,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "wingdi.h"
+#include "wine/unicode.h"
 #include "winnls.h"
 #include "controls.h"
 #include "usp10.h"
@@ -91,7 +95,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(text);
 #define FORWARD_SLASH '/'
 #define BACK_SLASH '\\'
 
-static const WCHAR ELLIPSISW[] = L"...";
+static const WCHAR ELLIPSISW[] = {'.','.','.', 0};
 
 typedef struct tag_ellipsis_data
 {
@@ -138,7 +142,7 @@ static void TEXT_Ellipsify (HDC hdc, WCHAR *str, unsigned int max_len,
     unsigned int len_ellipsis;
     unsigned int lo, mid, hi;
 
-    len_ellipsis = lstrlenW (ELLIPSISW);
+    len_ellipsis = strlenW (ELLIPSISW);
     if (len_ellipsis > max_len) len_ellipsis = max_len;
     if (*len_str > max_len - len_ellipsis)
         *len_str = max_len - len_ellipsis;
@@ -235,7 +239,7 @@ static void TEXT_PathEllipsify (HDC hdc, WCHAR *str, unsigned int max_len,
     int len_under;
     WCHAR *lastBkSlash, *lastFwdSlash, *lastSlash;
 
-    len_ellipsis = lstrlenW (ELLIPSISW);
+    len_ellipsis = strlenW (ELLIPSISW);
     if (!max_len) return;
     if (len_ellipsis >= max_len) len_ellipsis = max_len - 1;
     if (*len_str + len_ellipsis >= max_len)
@@ -245,8 +249,8 @@ static void TEXT_PathEllipsify (HDC hdc, WCHAR *str, unsigned int max_len,
          */
     str[*len_str] = '\0'; /* to simplify things */
 
-    lastBkSlash  = wcsrchr (str, BACK_SLASH);
-    lastFwdSlash = wcsrchr (str, FORWARD_SLASH);
+    lastBkSlash  = strrchrW (str, BACK_SLASH);
+    lastFwdSlash = strrchrW (str, FORWARD_SLASH);
     lastSlash = lastBkSlash > lastFwdSlash ? lastBkSlash : lastFwdSlash;
     if (!lastSlash) lastSlash = str;
     len_trailing = *len_str - (lastSlash - str);
@@ -920,7 +924,7 @@ INT WINAPI DrawTextExW( HDC hdc, LPWSTR str, INT i_count,
 
     if (count == -1)
     {
-        count = lstrlenW(str);
+        count = strlenW(str);
         if (count == 0)
         {
             if( flags & DT_CALCRECT)
@@ -1183,7 +1187,7 @@ INT WINAPI DrawTextA( HDC hdc, LPCSTR str, INT count, LPRECT rect, UINT flags )
  *           GrayString functions
  */
 
-/* callback for ANSI gray string proc */
+/* callback for ASCII gray string proc */
 static BOOL CALLBACK gray_string_callbackA( HDC hdc, LPARAM param, INT len )
 {
     return TextOutA( hdc, 0, 0, (LPCSTR)param, len );
@@ -1280,7 +1284,7 @@ BOOL WINAPI GrayStringW( HDC hdc, HBRUSH hbr, GRAYSTRINGPROC gsprc,
                          LPARAM lParam, INT cch, INT x, INT y,
                          INT cx, INT cy )
 {
-    if (!cch) cch = lstrlenW( (LPCWSTR)lParam );
+    if (!cch) cch = strlenW( (LPCWSTR)lParam );
     if ((cx == 0 || cy == 0) && cch != -1)
     {
         SIZE s;

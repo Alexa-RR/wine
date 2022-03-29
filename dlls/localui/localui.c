@@ -38,6 +38,32 @@ WINE_DEFAULT_DEBUG_CHANNEL(localui);
 
 static HINSTANCE LOCALUI_hInstance;
 
+static const WCHAR cmd_AddPortW[] = {'A','d','d','P','o','r','t',0};
+static const WCHAR cmd_ConfigureLPTPortCommandOKW[] = {'C','o','n','f','i','g','u','r','e',
+                                    'L','P','T','P','o','r','t',
+                                    'C','o','m','m','a','n','d','O','K',0};
+static const WCHAR cmd_DeletePortW[] = {'D','e','l','e','t','e','P','o','r','t',0};
+static const WCHAR cmd_GetDefaultCommConfigW[] = {'G','e','t',
+                                    'D','e','f','a','u','l','t',
+                                    'C','o','m','m','C','o','n','f','i','g',0};
+static const WCHAR cmd_GetTransmissionRetryTimeoutW[] = {'G','e','t',
+                                    'T','r','a','n','s','m','i','s','s','i','o','n',
+                                    'R','e','t','r','y','T','i','m','e','o','u','t',0};
+static const WCHAR cmd_PortIsValidW[] = {'P','o','r','t','I','s','V','a','l','i','d',0};
+static const WCHAR cmd_SetDefaultCommConfigW[] = {'S','e','t',
+                                    'D','e','f','a','u','l','t',
+                                    'C','o','m','m','C','o','n','f','i','g',0};
+
+static const WCHAR fmt_uW[]  = {'%','u',0};
+static const WCHAR portname_LPT[]  = {'L','P','T',0};
+static const WCHAR portname_COM[]  = {'C','O','M',0};
+static const WCHAR portname_FILE[] = {'F','I','L','E',':',0};
+static const WCHAR portname_CUPS[] = {'C','U','P','S',':',0};
+static const WCHAR portname_LPR[]  = {'L','P','R',':',0};
+
+static const WCHAR XcvMonitorW[] = {',','X','c','v','M','o','n','i','t','o','r',' ',0};
+static const WCHAR XcvPortW[] = {',','X','c','v','P','o','r','t',' ',0};
+
 /*****************************************************/
 
 typedef struct tag_addportui_t {
@@ -95,7 +121,7 @@ static BOOL dlg_configure_com(HANDLE hXcv, HWND hWnd, PCWSTR pPortName)
         /* get current settings */
         len = FIELD_OFFSET(COMMCONFIG, wcProviderData[1]);
         status = ERROR_SUCCESS;
-        res = XcvDataW( hXcv, L"GetDefaultCommConfig",
+        res = XcvDataW( hXcv, cmd_GetDefaultCommConfigW,
                         (PBYTE) shortname,
                         (lstrlenW(shortname) +1) * sizeof(WCHAR),
                         (PBYTE) &cfg, len, &len, &status);
@@ -106,7 +132,7 @@ static BOOL dlg_configure_com(HANDLE hXcv, HWND hWnd, PCWSTR pPortName)
             if (res) {
                 status = ERROR_SUCCESS;
                 /* set new settings */
-                res = XcvDataW(hXcv, L"SetDefaultCommConfig",
+                res = XcvDataW(hXcv, cmd_SetDefaultCommConfigW,
                                (PBYTE) &cfg, len,
                                (PBYTE) &dummy, 0, &len, &status);
             }
@@ -134,7 +160,7 @@ static BOOL dlg_configure_lpt(HANDLE hXcv, HWND hWnd)
     res = DialogBoxParamW(LOCALUI_hInstance, MAKEINTRESOURCEW(LPTCONFIG_DIALOG), hWnd,
                                dlgproc_lptconfig, (LPARAM) &data);
 
-    TRACE("got %u with %lu\n", res, GetLastError());
+    TRACE("got %u with %u\n", res, GetLastError());
 
     if (!res) SetLastError(ERROR_CANCELLED);
     return res;
@@ -266,11 +292,11 @@ static INT_PTR CALLBACK dlgproc_addport(HWND hwnd, UINT msg, WPARAM wparam, LPAR
             /* length is in WCHAR, including the '\0' */
             GetDlgItemTextW(hwnd, ADDPORT_EDIT, data->portname, len + 1);
             status = ERROR_SUCCESS;
-            res = XcvDataW( data->hXcv, L"PortIsValid", (BYTE *) data->portname,
+            res = XcvDataW( data->hXcv, cmd_PortIsValidW, (PBYTE) data->portname,
                             (lstrlenW(data->portname) + 1) * sizeof(WCHAR),
                             (PBYTE) &dummy, 0, &len, &status);
 
-            TRACE("got %lu with status %lu\n", res, status);
+            TRACE("got %u with status %u\n", res, status);
             if (res && (status == ERROR_SUCCESS)) {
                 /* The caller must free data->portname */
                 EndDialog(hwnd, TRUE);
@@ -330,11 +356,11 @@ static INT_PTR CALLBACK dlgproc_lptconfig(HWND hwnd, UINT msg, WPARAM wparam, LP
         /* Get current setting */
         data->value = 45;
         status = ERROR_SUCCESS;
-        res = XcvDataW( data->hXcv, L"GetTransmissionRetryTimeout",
+        res = XcvDataW( data->hXcv, cmd_GetTransmissionRetryTimeoutW,
                         (PBYTE) &dummy, 0,
                         (PBYTE) &data->value, sizeof(data->value), &len, &status);
 
-        TRACE("got %lu with status %lu\n", res, status);
+        TRACE("got %u with status %u\n", res, status);
 
         /* Set current setting as the initial value in the Dialog */
         SetDlgItemInt(hwnd, LPTCONFIG_EDIT, data->value, FALSE);
@@ -349,17 +375,17 @@ static INT_PTR CALLBACK dlgproc_lptconfig(HWND hwnd, UINT msg, WPARAM wparam, LP
             res = GetDlgItemInt(hwnd, LPTCONFIG_EDIT, (BOOL *) &status, FALSE);
             /* length is in WCHAR, including the '\0' */
             GetDlgItemTextW(hwnd, LPTCONFIG_EDIT, bufferW, ARRAY_SIZE(bufferW));
-            TRACE("got %s and %lu (translated: %lu)\n", debugstr_w(bufferW), res, status);
+            TRACE("got %s and %u (translated: %u)\n", debugstr_w(bufferW), res, status);
 
             /* native localui.dll use the same limits */
             if ((res > 0) && (res < 1000000) && status) {
-                swprintf(bufferW, ARRAY_SIZE(bufferW), L"%u", res);
-                res = XcvDataW( data->hXcv, L"ConfigureLPTPortCommandOK",
+                swprintf(bufferW, ARRAY_SIZE(bufferW), fmt_uW, res);
+                res = XcvDataW( data->hXcv, cmd_ConfigureLPTPortCommandOKW,
                         (PBYTE) bufferW,
                         (lstrlenW(bufferW) +1) * sizeof(WCHAR),
                         (PBYTE) &dummy, 0, &len, &status);
 
-                TRACE("got %lu with status %lu\n", res, status);
+                TRACE("got %u with status %u\n", res, status);
                 EndDialog(hwnd, TRUE);
                 return TRUE;
             }
@@ -389,13 +415,13 @@ static DWORD get_type_from_name(LPCWSTR name)
 {
     HANDLE  hfile;
 
-    if (!wcsnicmp(name, L"LPT", ARRAY_SIZE(L"LPT") -1))
+    if (!wcsnicmp(name, portname_LPT, ARRAY_SIZE(portname_LPT) -1))
         return PORT_IS_LPT;
 
-    if (!wcsnicmp(name, L"COM", ARRAY_SIZE(L"COM") -1))
+    if (!wcsnicmp(name, portname_COM, ARRAY_SIZE(portname_COM) -1))
         return PORT_IS_COM;
 
-    if (!wcsicmp(name, L"FILE:"))
+    if (!wcsicmp(name, portname_FILE))
         return PORT_IS_FILE;
 
     if (name[0] == '/')
@@ -404,10 +430,10 @@ static DWORD get_type_from_name(LPCWSTR name)
     if (name[0] == '|')
         return PORT_IS_PIPE;
 
-    if (!wcsncmp(name, L"CUPS:", ARRAY_SIZE(L"CUPS:") -1))
+    if (!wcsncmp(name, portname_CUPS, ARRAY_SIZE(portname_CUPS) -1))
         return PORT_IS_CUPS;
 
-    if (!wcsncmp(name, L"LPR:", ARRAY_SIZE(L"LPR:") -1))
+    if (!wcsncmp(name, portname_LPR, ARRAY_SIZE(portname_LPR) -1))
         return PORT_IS_LPR;
 
     /* Must be a file or a directory. Does the file exist ? */
@@ -482,23 +508,23 @@ static BOOL WINAPI localui_AddPortUI(PCWSTR pName, HWND hWnd, PCWSTR pMonitorNam
     TRACE(  "(%s, %p, %s, %p) (*ppPortName: %p)\n", debugstr_w(pName), hWnd,
             debugstr_w(pMonitorName), ppPortName, ppPortName ? *ppPortName : NULL);
 
-    if (open_monitor_by_name(L",XcvMonitor ", pMonitorName, &hXcv)) {
+    if (open_monitor_by_name(XcvMonitorW, pMonitorName, &hXcv)) {
 
         ZeroMemory(&data, sizeof(addportui_t));
         data.hXcv = hXcv;
         res = DialogBoxParamW(LOCALUI_hInstance, MAKEINTRESOURCEW(ADDPORT_DIALOG), hWnd,
                                dlgproc_addport, (LPARAM) &data);
 
-        TRACE("got %lu with %lu for %s\n", res, GetLastError(), debugstr_w(data.portname));
+        TRACE("got %u with %u for %s\n", res, GetLastError(), debugstr_w(data.portname));
 
         if (ppPortName) *ppPortName = NULL;
 
         if (res) {
-            res = XcvDataW(hXcv, L"AddPort", (BYTE *) data.portname,
+            res = XcvDataW(hXcv, cmd_AddPortW, (PBYTE) data.portname,
                             (lstrlenW(data.portname)+1) * sizeof(WCHAR),
                             (PBYTE) &dummy, 0, &needed, &status);
 
-            TRACE("got %lu with status %lu\n", res, status);
+            TRACE("got %u with status %u\n", res, status);
             if (res && (status == ERROR_SUCCESS) && ppPortName) {
                 /* Native localui uses GlobalAlloc also.
                    The caller must GlobalFree the buffer */
@@ -520,7 +546,7 @@ static BOOL WINAPI localui_AddPortUI(PCWSTR pName, HWND hWnd, PCWSTR pMonitorNam
         ClosePrinter(hXcv);
     }
 
-    TRACE("=> %lu with %lu\n", res, GetLastError());
+    TRACE("=> %u with %u\n", res, GetLastError());
     return res;
 }
 
@@ -546,7 +572,7 @@ static BOOL WINAPI localui_ConfigurePortUI(PCWSTR pName, HWND hWnd, PCWSTR pPort
     DWORD   res;
 
     TRACE("(%s, %p, %s)\n", debugstr_w(pName), hWnd, debugstr_w(pPortName));
-    if (open_monitor_by_name(L",XcvPort ", pPortName, &hXcv)) {
+    if (open_monitor_by_name(XcvPortW, pPortName, &hXcv)) {
 
         res = get_type_from_name(pPortName);
         switch(res)
@@ -605,10 +631,10 @@ static BOOL WINAPI localui_DeletePortUI(PCWSTR pName, HWND hWnd, PCWSTR pPortNam
         return FALSE;
     }
 
-    if (open_monitor_by_name(L",XcvPort ", pPortName, &hXcv)) {
+    if (open_monitor_by_name(XcvPortW, pPortName, &hXcv)) {
         /* native localui tests here for LPT / COM - Ports and failed with
            ERROR_NOT_SUPPORTED. */
-        if (XcvDataW(hXcv, L"DeletePort", (BYTE *) pPortName,
+        if (XcvDataW(hXcv, cmd_DeletePortW, (LPBYTE) pPortName,
             (lstrlenW(pPortName)+1) * sizeof(WCHAR), (LPBYTE) &dummy, 0, &needed, &status)) {
 
             ClosePrinter(hXcv);
@@ -652,7 +678,7 @@ PMONITORUI WINAPI InitializePrintMonitorUI(void)
  */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    TRACE("(%p, %ld, %p)\n",hinstDLL, fdwReason, lpvReserved);
+    TRACE("(%p, %d, %p)\n",hinstDLL, fdwReason, lpvReserved);
 
     switch(fdwReason)
     {

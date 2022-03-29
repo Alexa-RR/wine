@@ -102,7 +102,7 @@ UINT cp_from_charset_string(BSTR charset)
 
     hres = IMultiLanguage2_GetCharsetInfo(mlang, charset, &info);
     if(FAILED(hres)) {
-        FIXME("GetCharsetInfo failed: %08lx\n", hres);
+        FIXME("GetCharsetInfo failed: %08x\n", hres);
         return CP_UTF8;
     }
 
@@ -119,7 +119,7 @@ BSTR charset_string_from_cp(UINT cp)
 
     hres = IMultiLanguage2_GetCodePageInfo(mlang, cp, GetUserDefaultUILanguage(), &info);
     if(FAILED(hres)) {
-        ERR("GetCodePageInfo failed: %08lx\n", hres);
+        ERR("GetCodePageInfo failed: %08x\n", hres);
         return SysAllocString(NULL);
     }
 
@@ -149,8 +149,10 @@ static BOOL read_compat_mode(HKEY key, compat_mode_t *r)
     DWORD type, size;
     LSTATUS status;
 
+    static const WCHAR max_compat_modeW[] = {'M','a','x','C','o','m','p','a','t','M','o','d','e',0};
+
     size = sizeof(version);
-    status = RegQueryValueExW(key, L"MaxCompatMode", NULL, &type, (BYTE*)version, &size);
+    status = RegQueryValueExW(key, max_compat_modeW, NULL, &type, (BYTE*)version, &size);
     if(status != ERROR_SUCCESS || type != REG_SZ)
         return FALSE;
 
@@ -166,8 +168,14 @@ static BOOL WINAPI load_compat_settings(INIT_ONCE *once, void *param, void **con
     HKEY key, host_key;
     DWORD res;
 
+    static const WCHAR key_nameW[] = {
+        'S','o','f','t','w','a','r','e',
+        '\\','W','i','n','e',
+        '\\','M','S','H','T','M','L',
+        '\\','C','o','m','p','a','t','M','o','d','e',0};
+
     /* @@ Wine registry key: HKCU\Software\Wine\MSHTML\CompatMode */
-    res = RegOpenKeyW(HKEY_CURRENT_USER, L"Software\\Wine\\MSHTML\\CompatMode", &key);
+    res = RegOpenKeyW(HKEY_CURRENT_USER, key_nameW, &key);
     if(res != ERROR_SUCCESS)
         return TRUE;
 
@@ -182,7 +190,7 @@ static BOOL WINAPI load_compat_settings(INIT_ONCE *once, void *param, void **con
             break;
         index++;
         if(res != ERROR_SUCCESS) {
-            WARN("RegEnumKey failed: %lu\n", GetLastError());
+            WARN("RegEnumKey failed: %u\n", GetLastError());
             continue;
         }
 
@@ -342,10 +350,13 @@ HRESULT do_query_service(IUnknown *unk, REFGUID guid_service, REFIID riid, void 
 
 HINSTANCE get_shdoclc(void)
 {
+    static const WCHAR wszShdoclc[] =
+        {'s','h','d','o','c','l','c','.','d','l','l',0};
+
     if(shdoclc)
         return shdoclc;
 
-    return shdoclc = LoadLibraryExW(L"shdoclc.dll", NULL, LOAD_LIBRARY_AS_DATAFILE);
+    return shdoclc = LoadLibraryExW(wszShdoclc, NULL, LOAD_LIBRARY_AS_DATAFILE);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID reserved)
@@ -397,7 +408,7 @@ static ULONG WINAPI ClassFactory_AddRef(IClassFactory *iface)
 {
     ClassFactory *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p) ref = %lu\n", This, ref);
+    TRACE("(%p) ref = %u\n", This, ref);
     return ref;
 }
 
@@ -406,7 +417,7 @@ static ULONG WINAPI ClassFactory_Release(IClassFactory *iface)
     ClassFactory *This = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref = %lu\n", This, ref);
+    TRACE("(%p) ref = %u\n", This, ref);
 
     if(!ref) {
         heap_free(This);
@@ -490,6 +501,16 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
+/******************************************************************
+ *              DllCanUnloadNow (MSHTML.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    TRACE("()\n");
+    /* The cost of keeping this DLL in memory is small. */
+    return S_FALSE;
+}
+
 /***********************************************************************
  *          RunHTMLApplication (MSHTML.@)
  *
@@ -514,15 +535,9 @@ DWORD WINAPI RNIGetCompatibleVersion(void)
 /***********************************************************************
  *          DllInstall (MSHTML.@)
  */
-HRESULT WINAPI DllInstall(BOOL install, const WCHAR *cmdline)
+HRESULT WINAPI DllInstall(BOOL bInstall, LPCWSTR cmdline)
 {
-    TRACE("(%x %s)\n", install, debugstr_w(cmdline));
-
-    if(cmdline && *cmdline)
-        FIXME("unsupported cmdline: %s\n", debugstr_w(cmdline));
-    else if(install)
-        load_gecko();
-
+    FIXME("stub %d %s: returning S_OK\n", bInstall, debugstr_w(cmdline));
     return S_OK;
 }
 
@@ -587,6 +602,8 @@ static HRESULT register_server(BOOL do_register)
     static CLSID const *clsids[35];
     unsigned int i = 0;
 
+    static const WCHAR wszAdvpack[] = {'a','d','v','p','a','c','k','.','d','l','l',0};
+
     TRACE("(%x)\n", do_register);
 
     INF_SET_CLSID(AboutProtocol);
@@ -627,7 +644,7 @@ static HRESULT register_server(BOOL do_register)
 
     for(i=0; i < ARRAY_SIZE(pse); i++) {
         pse[i].pszValue = heap_alloc(39);
-        sprintf(pse[i].pszValue, "{%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+        sprintf(pse[i].pszValue, "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
                 clsids[i]->Data1, clsids[i]->Data2, clsids[i]->Data3, clsids[i]->Data4[0],
                 clsids[i]->Data4[1], clsids[i]->Data4[2], clsids[i]->Data4[3], clsids[i]->Data4[4],
                 clsids[i]->Data4[5], clsids[i]->Data4[6], clsids[i]->Data4[7]);
@@ -636,7 +653,7 @@ static HRESULT register_server(BOOL do_register)
     strtable.cEntries = ARRAY_SIZE(pse);
     strtable.pse = pse;
 
-    hAdvpack = LoadLibraryW(L"advpack.dll");
+    hAdvpack = LoadLibraryW(wszAdvpack);
     pRegInstall = (void *)GetProcAddress(hAdvpack, "RegInstall");
 
     hres = pRegInstall(hInst, do_register ? "RegisterDll" : "UnregisterDll", &strtable);
@@ -647,7 +664,7 @@ static HRESULT register_server(BOOL do_register)
         heap_free(pse[i].pszValue);
 
     if(FAILED(hres))
-        ERR("RegInstall failed: %08lx\n", hres);
+        ERR("RegInstall failed: %08x\n", hres);
 
     return hres;
 }
@@ -662,9 +679,12 @@ HRESULT WINAPI DllRegisterServer(void)
 {
     HRESULT hres;
 
-    hres = __wine_register_resources();
+    hres = __wine_register_resources( hInst );
     if(SUCCEEDED(hres))
         hres = register_server(TRUE);
+    if(SUCCEEDED(hres))
+        load_gecko();
+
     return hres;
 }
 
@@ -673,7 +693,7 @@ HRESULT WINAPI DllRegisterServer(void)
  */
 HRESULT WINAPI DllUnregisterServer(void)
 {
-    HRESULT hres = __wine_unregister_resources();
+    HRESULT hres = __wine_unregister_resources( hInst );
     if(SUCCEEDED(hres)) hres = register_server(FALSE);
     return hres;
 }

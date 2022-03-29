@@ -31,7 +31,6 @@
 #include "winbase.h"
 #include "wownt32.h"
 #include "user_private.h"
-#include "ntuser.h"
 #include "wine/list.h"
 #include "wine/debug.h"
 
@@ -300,7 +299,7 @@ static HICON store_icon_32( HICON16 icon16, HICON icon )
         {
             memcpy( &ret, (char *)(ptr + 1) + and_size + xor_size, sizeof(ret) );
             memcpy( (char *)(ptr + 1) + and_size + xor_size, &icon, sizeof(icon) );
-            NtUserCallTwoParam( HandleToUlong(icon), icon16, NtUserSetIconParam );
+            wow_handlers32.set_icon_param( icon, icon16 );
         }
         release_icon_ptr( icon16, ptr );
     }
@@ -342,7 +341,7 @@ HICON get_icon_32( HICON16 icon16 )
                 DeleteObject( iinfo.hbmMask );
                 DeleteObject( iinfo.hbmColor );
                 memcpy( (char *)(ptr + 1) + xor_size + and_size, &ret, sizeof(ret) );
-                NtUserCallTwoParam( HandleToUlong(ret), icon16, NtUserSetIconParam );
+                wow_handlers32.set_icon_param( ret, icon16 );
             }
         }
         release_icon_ptr( icon16, ptr );
@@ -353,7 +352,7 @@ HICON get_icon_32( HICON16 icon16 )
 /* retrieve the 16-bit counterpart of a 32-bit icon, creating it if needed */
 HICON16 get_icon_16( HICON icon )
 {
-    HICON16 ret = NtUserCallOneParam( HandleToUlong(icon), NtUserGetIconParam );
+    HICON16 ret = wow_handlers32.get_icon_param( icon );
 
     if (!ret)
     {
@@ -1395,15 +1394,11 @@ DWORD WINAPI GetTabbedTextExtent16( HDC16 hdc, LPCSTR lpstr, INT16 count,
  */
 DWORD WINAPI UserSeeUserDo16(WORD wReqType, WORD wParam1, WORD wParam2, WORD wParam3)
 {
-<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL((SEGPTR)NtCurrentTeb()->SystemReserved1[0]);
     HANDLE16 oldDS = stack16->ds;
-=======
-    HANDLE16 oldDS = CURRENT_DS;
->>>>>>> master
     DWORD ret = (DWORD)-1;
 
-    CURRENT_DS = USER_HeapSel;
+    stack16->ds = USER_HeapSel;
     switch (wReqType)
     {
     case USUD_LOCALALLOC:
@@ -1424,7 +1419,7 @@ DWORD WINAPI UserSeeUserDo16(WORD wReqType, WORD wParam1, WORD wParam2, WORD wPa
     default:
         WARN("wReqType %04x (unknown)\n", wReqType);
     }
-    CURRENT_DS = oldDS;
+    stack16->ds = oldDS;
     return ret;
 }
 
@@ -1665,7 +1660,7 @@ HMODULE16 WINAPI GetDriverModuleHandle16(HDRVR16 hDrvr)
 LRESULT WINAPI DefDriverProc16(DWORD dwDevID, HDRVR16 hDriv, UINT16 wMsg,
                                LPARAM lParam1, LPARAM lParam2)
 {
-    FIXME( "devID=0x%08lx hDrv=0x%04x wMsg=%04x lP1=0x%08lx lP2=0x%08lx: stub\n",
+    FIXME( "devID=0x%08x hDrv=0x%04x wMsg=%04x lP1=0x%08lx lP2=0x%08lx: stub\n",
 	  dwDevID, hDriv, wMsg, lParam1, lParam2);
     return 0;
 }
@@ -1687,7 +1682,7 @@ BOOL16 WINAPI GetDriverInfo16(HDRVR16 hDrvr, struct DRIVERINFOSTRUCT16 *lpDrvInf
  */
 HDRVR16 WINAPI GetNextDriver16(HDRVR16 hDrvr, DWORD dwFlags)
 {
-    FIXME( "(%04x, %08lx): stub\n", hDrvr, dwFlags);
+    FIXME( "(%04x, %08x): stub\n", hDrvr, dwFlags);
     return 0;
 }
 
@@ -1792,36 +1787,32 @@ UINT16 WINAPI RealizePalette16( HDC16 hdc )
  */
 WORD WINAPI GetFreeSystemResources16( WORD resType )
 {
-<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL((SEGPTR)NtCurrentTeb()->SystemReserved1[0]);
     HANDLE16 oldDS = stack16->ds;
-=======
-    HANDLE16 oldDS = CURRENT_DS;
->>>>>>> master
     int userPercent, gdiPercent;
 
     switch(resType)
     {
     case GFSR_USERRESOURCES:
-        CURRENT_DS = USER_HeapSel;
+        stack16->ds = USER_HeapSel;
         userPercent = (int)LocalCountFree16() * 100 / LocalHeapSize16();
         gdiPercent  = 100;
-        CURRENT_DS = oldDS;
+        stack16->ds = oldDS;
         break;
 
     case GFSR_GDIRESOURCES:
-        CURRENT_DS = gdi_inst;
+        stack16->ds = gdi_inst;
         gdiPercent  = (int)LocalCountFree16() * 100 / LocalHeapSize16();
         userPercent = 100;
-        CURRENT_DS = oldDS;
+        stack16->ds = oldDS;
         break;
 
     case GFSR_SYSTEMRESOURCES:
-        CURRENT_DS = USER_HeapSel;
+        stack16->ds = USER_HeapSel;
         userPercent = (int)LocalCountFree16() * 100 / LocalHeapSize16();
-        CURRENT_DS = gdi_inst;
+        stack16->ds = gdi_inst;
         gdiPercent  = (int)LocalCountFree16() * 100 / LocalHeapSize16();
-        CURRENT_DS = oldDS;
+        stack16->ds = oldDS;
         break;
 
     default:
@@ -3181,7 +3172,7 @@ DWORD WINAPI FormatMessage16(
     BOOL        eos = FALSE;
     LPSTR       allocstring = NULL;
 
-    TRACE("(0x%lx,%lx,%d,0x%x,%p,%d,%p)\n",
+    TRACE("(0x%x,%x,%d,0x%x,%p,%d,%p)\n",
           dwFlags,lpSource,dwMessageId,dwLanguageId,lpBuffer,nSize,args);
         if ((dwFlags & FORMAT_MESSAGE_FROM_SYSTEM)
                 && (dwFlags & FORMAT_MESSAGE_FROM_HMODULE)) return 0;
@@ -3190,7 +3181,7 @@ DWORD WINAPI FormatMessage16(
                         || (dwFlags & FORMAT_MESSAGE_FROM_HMODULE))) return 0;
 
     if (width && width != FORMAT_MESSAGE_MAX_WIDTH_MASK)
-        FIXME("line wrapping (%lu) not supported.\n", width);
+        FIXME("line wrapping (%u) not supported.\n", width);
     from = NULL;
     if (dwFlags & FORMAT_MESSAGE_FROM_STRING)
     {

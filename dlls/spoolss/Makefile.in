@@ -2,7 +2,7 @@ MODULE      = spoolss.dll
 IMPORTLIB   = spoolss
 IMPORTS     = winspool
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	router.c \

@@ -93,21 +93,21 @@ static HRESULT WINAPI TaskFolder_GetTypeInfoCount(ITaskFolder *iface, UINT *coun
 
 static HRESULT WINAPI TaskFolder_GetTypeInfo(ITaskFolder *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskFolder_GetIDsOfNames(ITaskFolder *iface, REFIID riid, LPOLESTR *names,
                                                 UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskFolder_Invoke(ITaskFolder *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                          DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -163,12 +163,12 @@ static HRESULT WINAPI TaskFolder_GetFolders(ITaskFolder *iface, LONG flags, ITas
 {
     TaskFolder *folder = impl_from_ITaskFolder(iface);
 
-    TRACE("%p,%lx,%p: stub\n", iface, flags, folders);
+    TRACE("%p,%x,%p: stub\n", iface, flags, folders);
 
     if (!folders) return E_POINTER;
 
     if (flags)
-        FIXME("unsupported flags %lx\n", flags);
+        FIXME("unsupported flags %x\n", flags);
 
     return TaskFolderCollection_create(folder->path, folders);
 }
@@ -203,6 +203,7 @@ static HRESULT WINAPI TaskFolder_CreateFolder(ITaskFolder *iface, BSTR path, VAR
 
 WCHAR *get_full_path(const WCHAR *parent, const WCHAR *path)
 {
+    static const WCHAR bslash[] = { '\\', 0 };
     WCHAR *folder_path;
     int len = 0;
 
@@ -223,7 +224,7 @@ WCHAR *get_full_path(const WCHAR *parent, const WCHAR *path)
     {
         len = lstrlenW(folder_path);
         if (!len || folder_path[len - 1] != '\\')
-            lstrcatW(folder_path, L"\\");
+            lstrcatW(folder_path, bslash);
 
         while (*path == '\\') path++;
         lstrcatW(folder_path, path);
@@ -231,7 +232,7 @@ WCHAR *get_full_path(const WCHAR *parent, const WCHAR *path)
 
     len = lstrlenW(folder_path);
     if (!len)
-        lstrcatW(folder_path, L"\\");
+        lstrcatW(folder_path, bslash);
 
     return folder_path;
 }
@@ -242,12 +243,12 @@ static HRESULT WINAPI TaskFolder_DeleteFolder(ITaskFolder *iface, BSTR name, LON
     WCHAR *folder_path;
     HRESULT hr;
 
-    TRACE("%p,%s,%lx\n", iface, debugstr_w(name), flags);
+    TRACE("%p,%s,%x\n", iface, debugstr_w(name), flags);
 
     if (!name || !*name) return E_ACCESSDENIED;
 
     if (flags)
-        FIXME("unsupported flags %lx\n", flags);
+        FIXME("unsupported flags %x\n", flags);
 
     folder_path = get_full_path(folder->path, name);
     if (!folder_path) return E_OUTOFMEMORY;
@@ -280,7 +281,7 @@ static HRESULT WINAPI TaskFolder_GetTasks(ITaskFolder *iface, LONG flags, IRegis
 {
     TaskFolder *folder = impl_from_ITaskFolder(iface);
 
-    TRACE("%p,%lx,%p: stub\n", iface, flags, tasks);
+    TRACE("%p,%x,%p: stub\n", iface, flags, tasks);
 
     if (!tasks) return E_POINTER;
 
@@ -293,12 +294,12 @@ static HRESULT WINAPI TaskFolder_DeleteTask(ITaskFolder *iface, BSTR name, LONG 
     WCHAR *folder_path;
     HRESULT hr;
 
-    TRACE("%p,%s,%lx\n", iface, debugstr_w(name), flags);
+    TRACE("%p,%s,%x\n", iface, debugstr_w(name), flags);
 
     if (!name || !*name) return E_ACCESSDENIED;
 
     if (flags)
-        FIXME("unsupported flags %lx\n", flags);
+        FIXME("unsupported flags %x\n", flags);
 
     folder_path = get_full_path(folder->path, name);
     if (!folder_path) return E_OUTOFMEMORY;
@@ -317,7 +318,7 @@ static HRESULT WINAPI TaskFolder_RegisterTask(ITaskFolder *iface, BSTR name, BST
     ITaskDefinition *taskdef;
     HRESULT hr;
 
-    TRACE("%p,%s,%s,%lx,%s,%s,%d,%s,%p\n", iface, debugstr_w(name), debugstr_w(xml), flags,
+    TRACE("%p,%s,%s,%x,%s,%s,%d,%s,%p\n", iface, debugstr_w(name), debugstr_w(xml), flags,
           debugstr_variant(&user), debugstr_variant(&password), logon, debugstr_variant(&sddl), task);
 
     if (!xml) return HRESULT_FROM_WIN32(RPC_X_NULL_REF_POINTER);
@@ -348,7 +349,7 @@ static HRESULT WINAPI TaskFolder_RegisterTaskDefinition(ITaskFolder *iface, BSTR
     IRegisteredTask *regtask = NULL;
     HRESULT hr;
 
-    FIXME("%p,%s,%p,%lx,%s,%s,%d,%s,%p: stub\n", iface, debugstr_w(name), definition, flags,
+    FIXME("%p,%s,%p,%x,%s,%s,%d,%s,%p: stub\n", iface, debugstr_w(name), definition, flags,
           debugstr_variant(&user), debugstr_variant(&password), logon, debugstr_variant(&sddl), task);
 
     if (!is_variant_null(&sddl))
@@ -372,13 +373,13 @@ static HRESULT WINAPI TaskFolder_RegisterTaskDefinition(ITaskFolder *iface, BSTR
 
 static HRESULT WINAPI TaskFolder_GetSecurityDescriptor(ITaskFolder *iface, LONG info, BSTR *sddl)
 {
-    FIXME("%p,%lx,%p: stub\n", iface, info, sddl);
+    FIXME("%p,%x,%p: stub\n", iface, info, sddl);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskFolder_SetSecurityDescriptor(ITaskFolder *iface, BSTR sddl, LONG flags)
 {
-    FIXME("%p,%s,%lx: stub\n", iface, debugstr_w(sddl), flags);
+    FIXME("%p,%s,%x: stub\n", iface, debugstr_w(sddl), flags);
     return E_NOTIMPL;
 }
 

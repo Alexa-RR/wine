@@ -69,7 +69,9 @@ static ULONG STDMETHODCALLTYPE d3d11_vertex_shader_AddRef(ID3D11VertexShader *if
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -86,7 +88,9 @@ static ULONG STDMETHODCALLTYPE d3d11_vertex_shader_Release(ID3D11VertexShader *i
     {
         ID3D11Device2 *device = shader->device;
 
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);
@@ -361,7 +365,9 @@ static ULONG STDMETHODCALLTYPE d3d11_hull_shader_AddRef(ID3D11HullShader *iface)
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -377,7 +383,11 @@ static ULONG STDMETHODCALLTYPE d3d11_hull_shader_Release(ID3D11HullShader *iface
     if (!refcount)
     {
         ID3D11Device2 *device = shader->device;
+
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
+
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);
@@ -548,7 +558,9 @@ static ULONG STDMETHODCALLTYPE d3d11_domain_shader_AddRef(ID3D11DomainShader *if
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -564,7 +576,11 @@ static ULONG STDMETHODCALLTYPE d3d11_domain_shader_Release(ID3D11DomainShader *i
     if (!refcount)
     {
         ID3D11Device2 *device = shader->device;
+
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
+
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);
@@ -745,7 +761,9 @@ static ULONG STDMETHODCALLTYPE d3d11_geometry_shader_AddRef(ID3D11GeometryShader
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -761,7 +779,11 @@ static ULONG STDMETHODCALLTYPE d3d11_geometry_shader_Release(ID3D11GeometryShade
     if (!refcount)
     {
         ID3D11Device2 *device = shader->device;
+
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
+
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);
@@ -1098,24 +1120,24 @@ static HRESULT d3d_geometry_shader_init(struct d3d_geometry_shader *shader,
         WARN("Invalid rasterizer stream %u.\n", rasterizer_stream);
         return E_INVALIDARG;
     }
-    if (device->state->feature_level < D3D_FEATURE_LEVEL_11_0)
+    if (device->feature_level < D3D_FEATURE_LEVEL_11_0)
     {
         if (rasterizer_stream)
         {
             WARN("Invalid rasterizer stream %u for feature level %#x.\n",
-                    rasterizer_stream, device->state->feature_level);
+                    rasterizer_stream, device->feature_level);
             return E_INVALIDARG;
         }
         if (buffer_stride_count && buffer_stride_count != 1)
         {
             WARN("Invalid buffer stride count %u for feature level %#x.\n",
-                    buffer_stride_count, device->state->feature_level);
+                    buffer_stride_count, device->feature_level);
             return E_INVALIDARG;
         }
     }
 
     if (FAILED(hr = validate_stream_output_entries(so_entries, so_entry_count,
-            buffer_strides, buffer_stride_count, device->state->feature_level)))
+            buffer_strides, buffer_stride_count, device->feature_level)))
         return hr;
 
     desc.byte_code = byte_code;
@@ -1243,7 +1265,9 @@ static ULONG STDMETHODCALLTYPE d3d11_pixel_shader_AddRef(ID3D11PixelShader *ifac
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -1259,7 +1283,10 @@ static ULONG STDMETHODCALLTYPE d3d11_pixel_shader_Release(ID3D11PixelShader *ifa
     if (!refcount)
     {
         ID3D11Device2 *device = shader->device;
+
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);
@@ -1533,7 +1560,9 @@ static ULONG STDMETHODCALLTYPE d3d11_compute_shader_AddRef(ID3D11ComputeShader *
     if (refcount == 1)
     {
         ID3D11Device2_AddRef(shader->device);
+        wined3d_mutex_lock();
         wined3d_shader_incref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
     }
 
     return refcount;
@@ -1549,7 +1578,11 @@ static ULONG STDMETHODCALLTYPE d3d11_compute_shader_Release(ID3D11ComputeShader 
     if (!refcount)
     {
         ID3D11Device2 *device = shader->device;
+
+        wined3d_mutex_lock();
         wined3d_shader_decref(shader->wined3d_shader);
+        wined3d_mutex_unlock();
+
         /* Release the device last, it may cause the wined3d device to be
          * destroyed. */
         ID3D11Device2_Release(device);

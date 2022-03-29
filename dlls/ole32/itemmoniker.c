@@ -198,7 +198,7 @@ static ULONG WINAPI ItemMonikerImpl_Release(IMoniker* iface)
     ItemMonikerImpl *moniker = impl_from_IMoniker(iface);
     ULONG refcount = InterlockedDecrement(&moniker->ref);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p, refcount %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -286,7 +286,7 @@ static HRESULT item_moniker_load_string_record(IStream *stream, WCHAR **ret)
 
         if (str_len % sizeof(WCHAR))
         {
-            WARN("Unexpected Unicode name length %ld.\n", str_len);
+            WARN("Unexpected Unicode name length %d.\n", str_len);
             hr = E_FAIL;
             goto end;
         }
@@ -451,7 +451,7 @@ static HRESULT WINAPI ItemMonikerImpl_BindToObject(IMoniker* iface,
     if (SUCCEEDED(hr))
     {
         if (FAILED(hr = set_container_lock(container, pbc)))
-            WARN("Failed to lock container, hr %#lx.\n", hr);
+            WARN("Failed to lock container, hr %#x.\n", hr);
 
         hr = IOleItemContainer_GetObject(container, This->itemName, get_bind_speed_from_bindctx(pbc), pbc,
                 riid, ppvResult);
@@ -482,7 +482,7 @@ static HRESULT WINAPI ItemMonikerImpl_BindToStorage(IMoniker *iface, IBindCtx *p
     if (SUCCEEDED(hr))
     {
         if (FAILED(hr = set_container_lock(container, pbc)))
-            WARN("Failed to lock container, hr %#lx.\n", hr);
+            WARN("Failed to lock container, hr %#x.\n", hr);
 
         hr = IOleItemContainer_GetObjectStorage(container, moniker->itemName, pbc, riid, ppvResult);
         IOleItemContainer_Release(container);
@@ -491,10 +491,16 @@ static HRESULT WINAPI ItemMonikerImpl_BindToStorage(IMoniker *iface, IBindCtx *p
     return hr;
 }
 
-static HRESULT WINAPI ItemMonikerImpl_Reduce(IMoniker* iface, IBindCtx* pbc,
-        DWORD dwReduceHowFar, IMoniker** ppmkToLeft, IMoniker** ppmkReduced)
+/******************************************************************************
+ *        ItemMoniker_Reduce
+ ******************************************************************************/
+static HRESULT WINAPI ItemMonikerImpl_Reduce(IMoniker* iface,
+                                             IBindCtx* pbc,
+                                             DWORD dwReduceHowFar,
+                                             IMoniker** ppmkToLeft,
+                                             IMoniker** ppmkReduced)
 {
-    TRACE("%p, %p, %ld, %p, %p.\n", iface, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced);
+    TRACE("(%p,%p,%d,%p,%p)\n",iface,pbc,dwReduceHowFar,ppmkToLeft,ppmkReduced);
 
     if (ppmkReduced==NULL)
         return E_POINTER;
@@ -505,23 +511,77 @@ static HRESULT WINAPI ItemMonikerImpl_Reduce(IMoniker* iface, IBindCtx* pbc,
 
     return MK_S_REDUCED_TO_SELF;
 }
-
-static HRESULT WINAPI ItemMonikerImpl_ComposeWith(IMoniker *iface, IMoniker *right,
-        BOOL only_if_not_generic, IMoniker **result)
+/******************************************************************************
+ *        ItemMoniker_ComposeWith
+ ******************************************************************************/
+static HRESULT WINAPI ItemMonikerImpl_ComposeWith(IMoniker* iface,
+                                                  IMoniker* pmkRight,
+                                                  BOOL fOnlyIfNotGeneric,
+                                                  IMoniker** ppmkComposite)
 {
-    DWORD order;
+    HRESULT res=S_OK;
+    DWORD mkSys,mkSys2, order;
+    IEnumMoniker* penumMk=0;
+    IMoniker *pmostLeftMk=0;
+    IMoniker* tempMkComposite=0;
 
-    TRACE("%p, %p, %d, %p\n", iface, right, only_if_not_generic, result);
+    TRACE("(%p,%p,%d,%p)\n",iface,pmkRight,fOnlyIfNotGeneric,ppmkComposite);
 
-    if (!result || !right)
-        return E_POINTER;
+    if ((ppmkComposite==NULL)||(pmkRight==NULL))
+	return E_POINTER;
 
-    *result = NULL;
+    *ppmkComposite=0;
 
-    if (is_anti_moniker(right, &order))
-        return order > 1 ? create_anti_moniker(order - 1, result) : S_OK;
+    if (is_anti_moniker(pmkRight, &order))
+    {
+        return order > 1 ? create_anti_moniker(order - 1, ppmkComposite) : S_OK;
+    }
+    else
+        /* if pmkRight is a composite whose leftmost component is an anti-moniker,           */
+        /* the returned moniker is the composite after the leftmost anti-moniker is removed. */
+        IMoniker_IsSystemMoniker(pmkRight,&mkSys);
+         if(mkSys==MKSYS_GENERICCOMPOSITE){
 
-    return only_if_not_generic ? MK_E_NEEDGENERIC : CreateGenericComposite(iface, right, result);
+            res=IMoniker_Enum(pmkRight,TRUE,&penumMk);
+
+            if (FAILED(res))
+                return res;
+
+            res=IEnumMoniker_Next(penumMk,1,&pmostLeftMk,NULL);
+
+            IMoniker_IsSystemMoniker(pmostLeftMk,&mkSys2);
+
+            if(mkSys2==MKSYS_ANTIMONIKER){
+
+                IMoniker_Release(pmostLeftMk);
+
+                tempMkComposite=iface;
+                IMoniker_AddRef(iface);
+
+                while(IEnumMoniker_Next(penumMk,1,&pmostLeftMk,NULL)==S_OK){
+
+                    res=CreateGenericComposite(tempMkComposite,pmostLeftMk,ppmkComposite);
+
+                    IMoniker_Release(tempMkComposite);
+                    IMoniker_Release(pmostLeftMk);
+
+                    tempMkComposite=*ppmkComposite;
+                    IMoniker_AddRef(tempMkComposite);
+                }
+                return res;
+            }
+            else
+                return CreateGenericComposite(iface,pmkRight,ppmkComposite);
+         }
+         /* If pmkRight is not an anti-moniker, the method combines the two monikers into a generic
+          composite if fOnlyIfNotGeneric is FALSE; if fOnlyIfNotGeneric is TRUE, the method returns
+          a NULL moniker and a return value of MK_E_NEEDGENERIC */
+          else
+            if (!fOnlyIfNotGeneric)
+                return CreateGenericComposite(iface,pmkRight,ppmkComposite);
+
+            else
+                return MK_E_NEEDGENERIC;
 }
 
 /******************************************************************************
@@ -693,29 +753,44 @@ static HRESULT WINAPI ItemMonikerImpl_Inverse(IMoniker* iface,IMoniker** ppmk)
     return CreateAntiMoniker(ppmk);
 }
 
-static HRESULT WINAPI ItemMonikerImpl_CommonPrefixWith(IMoniker *iface, IMoniker *other,
-        IMoniker **prefix)
+/******************************************************************************
+ *        ItemMoniker_CommonPrefixWith
+ ******************************************************************************/
+static HRESULT WINAPI ItemMonikerImpl_CommonPrefixWith(IMoniker* iface,IMoniker* pmkOther,IMoniker** ppmkPrefix)
 {
-    TRACE("%p, %p, %p\n", iface, other, prefix);
+    DWORD mkSys;
+    
+    TRACE("(%p,%p)\n", pmkOther, ppmkPrefix);
 
-    if (IMoniker_IsEqual(iface, other) == S_OK)
-    {
-        *prefix = iface;
+    IMoniker_IsSystemMoniker(pmkOther,&mkSys);
+    /* If the other moniker is an item moniker that is equal to this moniker, this method sets *ppmkPrefix */
+    /* to this moniker and returns MK_S_US */
+
+    if((mkSys==MKSYS_ITEMMONIKER) && (IMoniker_IsEqual(iface,pmkOther)==S_OK) ){
+
+        *ppmkPrefix=iface;
+
         IMoniker_AddRef(iface);
+
         return MK_S_US;
     }
-
-    return MonikerCommonPrefixWith(iface, other, prefix);
+    else
+        /* otherwise, the method calls the MonikerCommonPrefixWith function. This function correctly handles */
+        /* the case where the other moniker is a generic composite. */
+        return MonikerCommonPrefixWith(iface,pmkOther,ppmkPrefix);
 }
 
-static HRESULT WINAPI ItemMonikerImpl_RelativePathTo(IMoniker *iface, IMoniker *other, IMoniker **result)
+/******************************************************************************
+ *        ItemMoniker_RelativePathTo
+ ******************************************************************************/
+static HRESULT WINAPI ItemMonikerImpl_RelativePathTo(IMoniker* iface,IMoniker* pmOther, IMoniker** ppmkRelPath)
 {
-    TRACE("%p, %p, %p.\n", iface, other, result);
+    TRACE("(%p,%p,%p)\n",iface,pmOther,ppmkRelPath);
 
-    if (!other || !result)
-        return E_INVALIDARG;
+    if (ppmkRelPath==NULL)
+        return E_POINTER;
 
-    *result = NULL;
+    *ppmkRelPath=0;
 
     return MK_E_NOTBINDABLE;
 }
@@ -858,7 +933,7 @@ static HRESULT WINAPI ItemMonikerROTDataImpl_GetComparisonData(IROTData *iface, 
     int delim_len, i;
     WCHAR *ptrW;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buffer, max_len, data_len);
+    TRACE("(%p, %p, %u, %p)\n", iface, buffer, max_len, data_len);
 
     delim_len = This->itemDelimiter && This->itemDelimiter[0] ? lstrlenW(This->itemDelimiter) : 0;
     *data_len = sizeof(CLSID) + sizeof(WCHAR) + (delim_len + name_len) * sizeof(WCHAR);
@@ -980,6 +1055,7 @@ failed:
 
 HRESULT WINAPI ItemMoniker_CreateInstance(IClassFactory *iface, IUnknown *outer, REFIID riid, void **ppv)
 {
+    static const WCHAR emptyW[] = { 0 };
     IMoniker *moniker;
     HRESULT hr;
 
@@ -990,7 +1066,7 @@ HRESULT WINAPI ItemMoniker_CreateInstance(IClassFactory *iface, IUnknown *outer,
     if (outer)
         return CLASS_E_NOAGGREGATION;
 
-    if (FAILED(hr = CreateItemMoniker(L"", L"", &moniker)))
+    if (FAILED(hr = CreateItemMoniker(emptyW, emptyW, &moniker)))
         return hr;
 
     hr = IMoniker_QueryInterface(moniker, riid, ppv);

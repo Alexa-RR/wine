@@ -21,7 +21,6 @@
 #define __BCRYPT_INTERNAL_H
 
 #include <stdarg.h>
-<<<<<<< HEAD
 #ifdef HAVE_GNUTLS_CIPHER_INIT
 #include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>
@@ -33,18 +32,10 @@
 #include <AvailabilityMacros.h>
 #include <CommonCrypto/CommonCryptor.h>
 #endif
-=======
->>>>>>> master
 
 #include "windef.h"
 #include "winbase.h"
-#include "winternl.h"
-#include "wincrypt.h"
 #include "bcrypt.h"
-#include "wine/unixlib.h"
-
-#define MAGIC_DSS1 ('D' | ('S' << 8) | ('S' << 16) | ('1' << 24))
-#define MAGIC_DSS2 ('D' | ('S' << 8) | ('S' << 16) | ('2' << 24))
 
 typedef struct
 {
@@ -120,7 +111,6 @@ VOID WINAPI A_SHAFinal(SHA_CTX *ctx, PULONG result);
 #define MAGIC_ALG  (('A' << 24) | ('L' << 16) | ('G' << 8) | '0')
 #define MAGIC_HASH (('H' << 24) | ('A' << 16) | ('S' << 8) | 'H')
 #define MAGIC_KEY  (('K' << 24) | ('E' << 16) | ('Y' << 8) | '0')
-#define MAGIC_SECRET (('S' << 24) | ('C' << 16) | ('R' << 8) | 'T')
 struct object
 {
     ULONG magic;
@@ -129,7 +119,6 @@ struct object
 enum alg_id
 {
     /* cipher */
-    ALG_ID_3DES,
     ALG_ID_AES,
 
     /* hash */
@@ -151,7 +140,6 @@ enum alg_id
     ALG_ID_RSA_SIGN,
     ALG_ID_ECDSA_P256,
     ALG_ID_ECDSA_P384,
-    ALG_ID_DSA,
 
     /* rng */
     ALG_ID_RNG,
@@ -169,10 +157,9 @@ struct algorithm
     struct object hdr;
     enum alg_id   id;
     enum mode_id  mode;
-    unsigned      flags;
+    ULONG         flags;
 };
 
-<<<<<<< HEAD
 struct secret
 {
     UCHAR *data;
@@ -240,46 +227,24 @@ struct key
     } u;
 };
 #else
-=======
->>>>>>> master
 struct key_symmetric
 {
     enum mode_id mode;
-    ULONG        block_size;
-    UCHAR       *vector;
-    ULONG        vector_len;
-    UCHAR       *secret;
-    unsigned     secret_len;
-    CRITICAL_SECTION cs;
-};
-
-#define KEY_FLAG_LEGACY_DSA_V2  0x00000001
-
-struct key_asymmetric
-{
-    ULONG             bitlen;     /* ignored for ECC keys */
-    unsigned          flags;
-    DSSSEED           dss_seed;
 };
 
 struct key
 {
     struct object hdr;
     enum alg_id   alg_id;
-    UINT64        private[2];  /* private data for backend */
     union
     {
         struct key_symmetric s;
-        struct key_asymmetric a;
     } u;
 };
+#endif
 
-struct secret
-{
-    struct object hdr;
-};
+NTSTATUS get_alg_property( const struct algorithm *, const WCHAR *, UCHAR *, ULONG, ULONG * ) DECLSPEC_HIDDEN;
 
-<<<<<<< HEAD
 NTSTATUS key_set_property( struct key *, const WCHAR *, UCHAR *, ULONG, ULONG ) DECLSPEC_HIDDEN;
 NTSTATUS key_symmetric_init( struct key *, struct algorithm *, const UCHAR *, ULONG ) DECLSPEC_HIDDEN;
 NTSTATUS key_symmetric_set_vector( struct key *, UCHAR *, ULONG ) DECLSPEC_HIDDEN;
@@ -296,118 +261,12 @@ BOOL key_is_symmetric( struct key * ) DECLSPEC_HIDDEN;
 NTSTATUS key_export_ecc( struct key *, UCHAR *, ULONG, ULONG * ) DECLSPEC_HIDDEN;
 NTSTATUS key_import_ecc( struct key *, UCHAR *, ULONG ) DECLSPEC_HIDDEN;
 NTSTATUS compute_secret_ecc (struct key *pubkey_in, struct key *privkey_in, struct secret *secret) DECLSPEC_HIDDEN;
-=======
-struct key_symmetric_set_auth_data_params
-{
-    struct key  *key;
-    UCHAR       *auth_data;
-    ULONG        len;
-};
->>>>>>> master
 
-struct key_symmetric_encrypt_params
-{
-    struct key  *key;
-    const UCHAR *input;
-    unsigned     input_len;
-    UCHAR       *output;
-    ULONG        output_len;
-};
+BOOL is_zero_vector( const UCHAR *, ULONG ) DECLSPEC_HIDDEN;
+BOOL is_equal_vector( const UCHAR *, ULONG, const UCHAR *, ULONG ) DECLSPEC_HIDDEN;
 
-struct key_symmetric_decrypt_params
-{
-    struct key  *key;
-    const UCHAR *input;
-    unsigned     input_len;
-    UCHAR       *output;
-    ULONG        output_len;
-};
-
-struct key_symmetric_get_tag_params
-{
-    struct key  *key;
-    UCHAR       *tag;
-    ULONG        len;
-};
-
-struct key_asymmetric_decrypt_params
-{
-    struct key  *key;
-    UCHAR       *input;
-    unsigned     input_len;
-    UCHAR       *output;
-    ULONG        output_len;
-    ULONG       *ret_len;
-};
-
-struct key_asymmetric_duplicate_params
-{
-    struct key  *key_orig;
-    struct key  *key_copy;
-};
-
-struct key_asymmetric_sign_params
-{
-    struct key  *key;
-    void        *padding;
-    UCHAR       *input;
-    unsigned     input_len;
-    UCHAR       *output;
-    ULONG        output_len;
-    ULONG       *ret_len;
-    unsigned     flags;
-};
-
-struct key_asymmetric_verify_params
-{
-    struct key *key;
-    void       *padding;
-    UCHAR      *hash;
-    unsigned    hash_len;
-    UCHAR      *signature;
-    ULONG       signature_len;
-    unsigned    flags;
-};
-
-#define KEY_EXPORT_FLAG_PUBLIC   0x00000001
-#define KEY_EXPORT_FLAG_RSA_FULL 0x00000002
-struct key_asymmetric_export_params
-{
-    struct key  *key;
-    ULONG        flags;
-    UCHAR       *buf;
-    ULONG        len;
-    ULONG       *ret_len;
-};
-
-#define KEY_IMPORT_FLAG_PUBLIC   0x00000001
-struct key_asymmetric_import_params
-{
-    struct key  *key;
-    ULONG        flags;
-    UCHAR       *buf;
-    ULONG        len;
-};
-
-enum key_funcs
-{
-    unix_process_attach,
-    unix_process_detach,
-    unix_key_symmetric_vector_reset,
-    unix_key_symmetric_set_auth_data,
-    unix_key_symmetric_encrypt,
-    unix_key_symmetric_decrypt,
-    unix_key_symmetric_get_tag,
-    unix_key_symmetric_destroy,
-    unix_key_asymmetric_generate,
-    unix_key_asymmetric_decrypt,
-    unix_key_asymmetric_duplicate,
-    unix_key_asymmetric_sign,
-    unix_key_asymmetric_verify,
-    unix_key_asymmetric_destroy,
-    unix_key_asymmetric_export,
-    unix_key_asymmetric_import,
-};
+BOOL gnutls_initialize(void) DECLSPEC_HIDDEN;
+void gnutls_uninitialize(void) DECLSPEC_HIDDEN;
 
 BOOL gcrypt_initialize(void) DECLSPEC_HIDDEN;
 void gcrypt_uninitialize(void) DECLSPEC_HIDDEN;

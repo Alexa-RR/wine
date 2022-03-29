@@ -43,11 +43,11 @@ static inline float __port_ind(void)
 }
 #define IND __port_ind()
 
-static int (__cdecl *p__vscprintf)(const char *format, va_list valist);
-static int (__cdecl *p__vscwprintf)(const wchar_t *format, va_list valist);
+static int (__cdecl *p__vscprintf)(const char *format, __ms_va_list valist);
+static int (__cdecl *p__vscwprintf)(const wchar_t *format, __ms_va_list valist);
 static int (__cdecl *p__vsnwprintf_s)(wchar_t *str, size_t sizeOfBuffer,
                                       size_t count, const wchar_t *format,
-                                      va_list valist);
+                                      __ms_va_list valist);
 static int (__cdecl *p__ecvt_s)(char *buffer, size_t length, double number,
                                 int ndigits, int *decpt, int *sign);
 static int (__cdecl *p__fcvt_s)(char *buffer, size_t length, double number,
@@ -55,17 +55,17 @@ static int (__cdecl *p__fcvt_s)(char *buffer, size_t length, double number,
 static unsigned int (__cdecl *p__get_output_format)(void);
 static unsigned int (__cdecl *p__set_output_format)(unsigned int);
 static int (WINAPIV *p_sprintf)(char*, ...);
-static int (__cdecl *p__vsprintf_p)(char*, size_t, const char*, va_list);
-static int (__cdecl *p_vswprintf)(wchar_t *str, const wchar_t *format, va_list valist);
-static int (__cdecl *p__vswprintf)(wchar_t *str, const wchar_t *format, va_list valist);
+static int (__cdecl *p__vsprintf_p)(char*, size_t, const char*, __ms_va_list);
+static int (__cdecl *p_vswprintf)(wchar_t *str, const wchar_t *format, __ms_va_list valist);
+static int (__cdecl *p__vswprintf)(wchar_t *str, const wchar_t *format, __ms_va_list valist);
 static int (__cdecl *p__vswprintf_l)(wchar_t *str, const wchar_t *format,
-                                     void *locale, va_list valist);
+                                     void *locale, __ms_va_list valist);
 static int (__cdecl *p__vswprintf_c)(wchar_t *str, size_t size, const wchar_t *format,
-                                     va_list valist);
+                                     __ms_va_list valist);
 static int (__cdecl *p__vswprintf_c_l)(wchar_t *str, size_t size, const wchar_t *format,
-                                       void *locale, va_list valist);
+                                       void *locale, __ms_va_list valist);
 static int (__cdecl *p__vswprintf_p_l)(wchar_t *str, size_t size, const wchar_t *format,
-                                       void *locale, va_list valist);
+                                       void *locale, __ms_va_list valist);
 
 static void init( void )
 {
@@ -248,8 +248,8 @@ static void test_sprintf( void )
         { "%lld", "-8589934591", "1", ULONGLONG_ARG, 0, ((ULONGLONG)0xffffffff)*0xffffffff },
         { "%I32d", "1", "I32d", INT_ARG, 1 },
         { "%.0f", "-2", 0, DOUBLE_ARG, 0, 0, -1.5 },
-        { "%.0f", "-1", 0, DOUBLE_ARG, 0, 0, -0.5 },
-        { "%.0f", "1", 0, DOUBLE_ARG, 0, 0, 0.5 },
+        { "%.0f", "-1", 0, TODO_FLAG | DOUBLE_ARG, 0, 0, -0.5 },
+        { "%.0f", "1", 0, TODO_FLAG | DOUBLE_ARG, 0, 0, 0.5 },
         { "%.0f", "2", 0, DOUBLE_ARG, 0, 0, 1.5 },
         { "%.30f", "0.333333333333333310000000000000", 0, TODO_FLAG | DOUBLE_ARG, 0, 0, 1.0/3.0 },
         { "%.30lf", "1.414213562373095100000000000000", 0, TODO_FLAG | DOUBLE_ARG, 0, 0, sqrt(2) },
@@ -396,34 +396,28 @@ static void test_sprintf( void )
     ok(!strcmp(buffer, "string to copy"), "failed: \"%s\"\n", buffer);
 
     setlocale(LC_ALL, "C");
-
-    r = p_sprintf(buffer, "%*1d", 1, 3);
-    ok(r==11, "r = %d\n", r);
-    ok(!strcmp(buffer, "          3"), "failed: \"%s\"\n", buffer);
-
-    r = p_sprintf(buffer, "%0*0d", 1, 2);
-    ok(r==10, "r = %d\n", r);
-    ok(!strcmp(buffer, "0000000002"), "failed: \"%s\"\n", buffer);
-
-    r = p_sprintf(buffer, "% *2d", 0, 7);
-    ok(r==2, "r = %d\n", r);
-    ok(!strcmp(buffer, " 7"), "failed: \"%s\"\n", buffer);
 }
 
 static void test_swprintf( void )
 {
     wchar_t buffer[100];
-    double pnumber = 789456123;
+    const wchar_t I64d[] = {'%','I','6','4','d',0};
+    double pnumber=789456123;
+    const wchar_t TwentyThreePoint15e[]= {'%','+','#','2','3','.','1','5','e',0};
+    const wchar_t e008[] = {'e','+','0','0','8',0};
+    const wchar_t string_w[] = {'s','t','r','i','n','g',0};
     const char string[] = "string";
+    const wchar_t S[]={'%','S',0};
+    const wchar_t hs[] = {'%', 'h', 's', 0};
 
-    swprintf(buffer, L"%+#23.15e", pnumber);
-    ok(wcsstr(buffer, L"e+008") != 0, "Sprintf different\n");
-    swprintf(buffer, L"%I64d", ((ULONGLONG)0xffffffff)*0xffffffff);
-    ok(wcslen(buffer) == 11, "Problem with long long\n");
-    swprintf(buffer, L"%S", string);
-    ok(wcslen(buffer) == 6, "Problem with \"%%S\" interpretation\n");
-    swprintf(buffer, L"%hs", string);
-    ok(!wcscmp(L"string", buffer), "swprintf failed with %%hs\n");
+    swprintf(buffer,TwentyThreePoint15e,pnumber);
+    ok(wcsstr(buffer,e008) != 0,"Sprintf different\n");
+    swprintf(buffer,I64d,((ULONGLONG)0xffffffff)*0xffffffff);
+      ok(wcslen(buffer) == 11,"Problem with long long\n");
+    swprintf(buffer,S,string);
+      ok(wcslen(buffer) == 6,"Problem with \"%%S\" interpretation\n");
+   swprintf(buffer, hs, string);
+   ok( wcscmp(string_w,buffer) == 0, "swprintf failed with %%hs\n");
 }
 
 static void test_snprintf (void)
@@ -456,7 +450,10 @@ static void test_snprintf (void)
 
 static void test_fprintf(void)
 {
-    FILE *fp = fopen("fprintf.tst", "wb");
+    static const char file_name[] = "fprintf.tst";
+    static const WCHAR utf16_test[] = {'u','n','i','c','o','d','e','\n',0};
+
+    FILE *fp = fopen(file_name, "wb");
     char buf[1024];
     int ret;
 
@@ -470,14 +467,14 @@ static void test_fprintf(void)
     ret = ftell(fp);
     ok(ret == 26, "ftell returned %d\n", ret);
 
-    ret = fwprintf(fp, L"unicode\n");
+    ret = fwprintf(fp, utf16_test);
     ok(ret == 8, "ret = %d\n", ret);
     ret = ftell(fp);
     ok(ret == 42, "ftell returned %d\n", ret);
 
     fclose(fp);
 
-    fp = fopen("fprintf.tst", "rb");
+    fp = fopen(file_name, "rb");
     ret = fscanf(fp, "%[^\n] ", buf);
     ok(ret == 1, "ret = %d\n", ret);
     ret = ftell(fp);
@@ -493,11 +490,12 @@ static void test_fprintf(void)
     fgets(buf, sizeof(buf), fp);
     ret = ftell(fp);
     ok(ret == 41, "ret =  %d\n", ret);
-    ok(!wcscmp((wchar_t*)buf, L"unicode\n"), "buf = %s\n", wine_dbgstr_w((WCHAR*)buf));
+    ok(!memcmp(buf, utf16_test, sizeof(utf16_test)),
+            "buf = %s\n", wine_dbgstr_w((WCHAR*)buf));
 
     fclose(fp);
 
-    fp = fopen("fprintf.tst", "wt");
+    fp = fopen(file_name, "wt");
 
     ret = fprintf(fp, "simple test\n");
     ok(ret == 12, "ret = %d\n", ret);
@@ -509,14 +507,14 @@ static void test_fprintf(void)
     ret = ftell(fp);
     ok(ret == 28, "ftell returned %d\n", ret);
 
-    ret = fwprintf(fp, L"unicode\n");
+    ret = fwprintf(fp, utf16_test);
     ok(ret == 8, "ret = %d\n", ret);
     ret = ftell(fp);
     ok(ret == 37, "ftell returned %d\n", ret);
 
     fclose(fp);
 
-    fp = fopen("fprintf.tst", "rb");
+    fp = fopen(file_name, "rb");
     ret = fscanf(fp, "%[^\n] ", buf);
     ok(ret == 1, "ret = %d\n", ret);
     ret = ftell(fp);
@@ -534,7 +532,7 @@ static void test_fprintf(void)
     ok(!strcmp(buf, "unicode\r\n"), "buf = %s\n", buf);
 
     fclose(fp);
-    unlink("fprintf.tst");
+    unlink(file_name);
 }
 
 static void test_fcvt(void)
@@ -646,23 +644,27 @@ static struct {
     int expsign;
 } test_cvt_testcases[] = {
     {          45.0,   2,        "45",           "4500",          2,      2,      0 },
+    /* Numbers less than 1.0 with different precisions */
     {        0.0001,   1,         "1",               "",         -3,     -3,     0 },
     {        0.0001,  10,"1000000000",        "1000000",         -3,     -3,     0 },
+    /* Basic sign test */
     {     -111.0001,   5,     "11100",       "11100010",          3,      3,     1 },
     {      111.0001,   5,     "11100",       "11100010",          3,      3,     0 },
+    /* big numbers with low precision */
     {        3333.3,   2,        "33",         "333330",          4,      4,     0 },
     {999999999999.9,   3,       "100","999999999999900",         13,     12,     0 },
+    /* 0.0 with different precisions */
     {           0.0,   5,     "00000",          "00000",          0,      0,     0 },
     {           0.0,   0,          "",               "",          0,      0,     0 },
     {           0.0,  -1,          "",               "",          0,      0,     0 },
-    {          -0.0,   5,     "00000",          "00000",          0,      0,     1 },
-    {          -0.0,   0,          "",               "",          0,      0,     1 },
-    {          -0.0,  -1,          "",               "",          0,      0,     1 },
+    /* Numbers > 1.0 with 0 or -ve precision */
     {     -123.0001,   0,          "",            "123",          3,      3,     1 },
     {     -123.0001,  -1,          "",             "12",          3,      3,     1 },
     {     -123.0001,  -2,          "",              "1",          3,      3,     1 },
     {     -123.0001,  -3,          "",               "",          3,      3,     1 },
+    /* Numbers > 1.0, but with rounding at the point of precision */
     {         99.99,   1,         "1",           "1000",          3,      3,     0 },
+    /* Numbers < 1.0 where rounding occurs at the point of precision */
     {        0.0063,   2,        "63",              "1",         -2,     -1,     0 },
     {        0.0063,   3,        "630",             "6",         -2,     -2,     0 },
     { 0.09999999996,   2,        "10",             "10",          0,      0,     0 },
@@ -671,18 +673,12 @@ static struct {
     {           0.4,   0,          "",               "",          0,      0,     0 },
     {          0.49,   0,          "",               "",          0,      0,     0 },
     {          0.51,   0,          "",              "1",          1,      1,     0 },
-    {           NAN,   2,        "1$",            "1#R",          1,      1,     0 },
-    {           NAN,   5,     "1#QNB",         "1#QNAN",          1,      1,     0 },
-    {          -NAN,   2,        "1$",            "1#J",          1,      1,     1 },
-    {          -NAN,   5,     "1#IND",         "1#IND0",          1,      1,     1 },
-    {      INFINITY,   2,        "1$",            "1#J",          1,      1,     0 },
-    {      INFINITY,   5,     "1#INF",         "1#INF0",          1,      1,     0 },
-    {     -INFINITY,   2,        "1$",            "1#J",          1,      1,     1 },
-    {     -INFINITY,   5,     "1#INF",         "1#INF0",          1,      1,     1 },
+    /* ask for ridiculous precision, ruin formatting this table */
     {           1.0,  30, "100000000000000000000000000000",
                       "1000000000000000000000000000000",          1,      1,      0},
     {           123456789012345678901.0,  30, "123456789012345680000000000000",
                       "123456789012345680000000000000000000000000000000000",         21,    21,      0},
+    /* end marker */
     { 0, 0, "END"}
 };
 
@@ -697,14 +693,14 @@ static void test_xcvt(void)
                 test_cvt_testcases[i].nrdigits,
                 &decpt,
                 &sign);
-        ok( !strncmp( str, test_cvt_testcases[i].expstr_e, 15),
-               "%d) _ecvt() bad return, got '%s' expected '%s'\n", i, str,
+        ok( 0 == strncmp( str, test_cvt_testcases[i].expstr_e, 15),
+               "_ecvt() bad return, got \n'%s' expected \n'%s'\n", str,
               test_cvt_testcases[i].expstr_e);
         ok( decpt == test_cvt_testcases[i].expdecpt_e,
-                "%d) _ecvt() decimal point wrong, got %d expected %d\n", i, decpt,
+                "_ecvt() decimal point wrong, got %d expected %d\n", decpt,
                 test_cvt_testcases[i].expdecpt_e);
         ok( sign == test_cvt_testcases[i].expsign,
-                "%d) _ecvt() sign wrong, got %d expected %d\n", i, sign,
+                "_ecvt() sign wrong, got %d expected %d\n", sign,
                 test_cvt_testcases[i].expsign);
     }
     for( i = 0; strcmp( test_cvt_testcases[i].expstr_e, "END"); i++){
@@ -713,14 +709,14 @@ static void test_xcvt(void)
                 test_cvt_testcases[i].nrdigits,
                 &decpt,
                 &sign);
-        ok( !strncmp( str, test_cvt_testcases[i].expstr_f, 15),
-               "%d) _fcvt() bad return, got '%s' expected '%s'\n", i, str,
+        ok( 0 == strncmp( str, test_cvt_testcases[i].expstr_f, 15),
+               "_fcvt() bad return, got \n'%s' expected \n'%s'\n", str,
               test_cvt_testcases[i].expstr_f);
         ok( decpt == test_cvt_testcases[i].expdecpt_f,
-                "%d) _fcvt() decimal point wrong, got %d expected %d\n", i, decpt,
+                "_fcvt() decimal point wrong, got %d expected %d\n", decpt,
                 test_cvt_testcases[i].expdecpt_f);
         ok( sign == test_cvt_testcases[i].expsign,
-                "%d) _fcvt() sign wrong, got %d expected %d\n", i, sign,
+                "_fcvt() sign wrong, got %d expected %d\n", sign,
                 test_cvt_testcases[i].expsign);
     }
 
@@ -731,14 +727,14 @@ static void test_xcvt(void)
             decpt = sign = 100;
             err = p__ecvt_s(str, 1024, test_cvt_testcases[i].value, test_cvt_testcases[i].nrdigits, &decpt, &sign);
             ok(err == 0, "_ecvt_s() failed with error code %d\n", err);
-            ok( !strncmp( str, test_cvt_testcases[i].expstr_e, 15),
-                   "%d) _ecvt_s() bad return, got '%s' expected '%s'\n", i, str,
+            ok( 0 == strncmp( str, test_cvt_testcases[i].expstr_e, 15),
+                   "_ecvt_s() bad return, got \n'%s' expected \n'%s'\n", str,
                   test_cvt_testcases[i].expstr_e);
             ok( decpt == test_cvt_testcases[i].expdecpt_e,
-                    "%d) _ecvt_s() decimal point wrong, got %d expected %d\n", i, decpt,
+                    "_ecvt_s() decimal point wrong, got %d expected %d\n", decpt,
                     test_cvt_testcases[i].expdecpt_e);
             ok( sign == test_cvt_testcases[i].expsign,
-                    "%d) _ecvt_s() sign wrong, got %d expected %d\n", i, sign,
+                    "_ecvt_s() sign wrong, got %d expected %d\n", sign,
                     test_cvt_testcases[i].expsign);
         }
         free(str);
@@ -775,15 +771,15 @@ static void test_xcvt(void)
         for( i = 0; strcmp( test_cvt_testcases[i].expstr_e, "END"); i++){
             decpt = sign = 100;
             err = p__fcvt_s(str, 1024, test_cvt_testcases[i].value, test_cvt_testcases[i].nrdigits, &decpt, &sign);
-            ok(!err, "%d) _fcvt_s() failed with error code %d\n", i, err);
-            ok( !strncmp( str, test_cvt_testcases[i].expstr_f, 15),
-                   "%d) _fcvt_s() bad return, got '%s' expected '%s'. test %d\n", i, str,
+            ok(err == 0, "_fcvt_s() failed with error code %d\n", err);
+            ok( 0 == strncmp( str, test_cvt_testcases[i].expstr_f, 15),
+                   "_fcvt_s() bad return, got '%s' expected '%s'. test %d\n", str,
                   test_cvt_testcases[i].expstr_f, i);
             ok( decpt == test_cvt_testcases[i].expdecpt_f,
-                    "%d) _fcvt_s() decimal point wrong, got %d expected %d\n", i, decpt,
+                    "_fcvt_s() decimal point wrong, got %d expected %d\n", decpt,
                     test_cvt_testcases[i].expdecpt_f);
             ok( sign == test_cvt_testcases[i].expsign,
-                    "%d) _fcvt_s() sign wrong, got %d expected %d\n", i, sign,
+                    "_fcvt_s() sign wrong, got %d expected %d\n", sign,
                     test_cvt_testcases[i].expsign);
         }
         free(str);
@@ -795,94 +791,104 @@ static void test_xcvt(void)
 static int WINAPIV _vsnwprintf_wrapper(wchar_t *str, size_t len, const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = _vsnwprintf(str, len, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static void test_vsnwprintf(void)
 {
+    const wchar_t format[] = {'%','w','s','%','w','s','%','w','s',0};
+    const wchar_t one[]    = {'o','n','e',0};
+    const wchar_t two[]    = {'t','w','o',0};
+    const wchar_t three[]  = {'t','h','r','e','e',0};
+
     int ret;
     wchar_t str[32];
     char buf[32];
 
-    ret = _vsnwprintf_wrapper( str, ARRAY_SIZE(str), L"%ws%ws%ws", L"one", L"two", L"three" );
+    ret = _vsnwprintf_wrapper( str, ARRAY_SIZE(str), format, one, two, three );
+
     ok( ret == 11, "got %d expected 11\n", ret );
     WideCharToMultiByte( CP_ACP, 0, str, -1, buf, sizeof(buf), NULL, NULL );
     ok( !strcmp(buf, "onetwothree"), "got %s expected 'onetwothree'\n", buf );
 
-    ret = _vsnwprintf_wrapper( str, 0, L"%ws%ws%ws", L"one", L"two", L"three" );
+    ret = _vsnwprintf_wrapper( str, 0, format, one, two, three );
     ok( ret == -1, "got %d, expected -1\n", ret );
 
-    ret = _vsnwprintf_wrapper( NULL, 0, L"%ws%ws%ws", L"one", L"two", L"three" );
+    ret = _vsnwprintf_wrapper( NULL, 0, format, one, two, three );
     ok( ret == 11 || broken(ret == -1 /* Win2k */), "got %d, expected 11\n", ret );
 }
 
 static int WINAPIV vswprintf_wrapper(wchar_t *str, const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p_vswprintf(str, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static int WINAPIV _vswprintf_wrapper(wchar_t *str, const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vswprintf(str, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static int WINAPIV _vswprintf_l_wrapper(wchar_t *str, const wchar_t *format, void *locale, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, locale);
+    __ms_va_list valist;
+    __ms_va_start(valist, locale);
     ret = p__vswprintf_l(str, format, locale, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static int WINAPIV _vswprintf_c_wrapper(wchar_t *str, size_t size, const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vswprintf_c(str, size, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static int WINAPIV _vswprintf_c_l_wrapper(wchar_t *str, size_t size, const wchar_t *format, void *locale, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, locale);
+    __ms_va_list valist;
+    __ms_va_start(valist, locale);
     ret = p__vswprintf_c_l(str, size, format, locale, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static int WINAPIV _vswprintf_p_l_wrapper(wchar_t *str, size_t size, const wchar_t *format, void *locale, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, locale);
+    __ms_va_list valist;
+    __ms_va_start(valist, locale);
     ret = p__vswprintf_p_l(str, size, format, locale, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static void test_vswprintf(void)
 {
+    const wchar_t format[] = {'%','s',' ','%','d',0};
+    const wchar_t number[] = {'n','u','m','b','e','r',0};
+    const wchar_t out[] = {'n','u','m','b','e','r',' ','1','2','3',0};
     wchar_t buf[20];
+
     int ret;
 
     if (!p_vswprintf || !p__vswprintf || !p__vswprintf_l ||!p__vswprintf_c
@@ -892,48 +898,43 @@ static void test_vswprintf(void)
         return;
     }
 
-    ret = vswprintf_wrapper(buf, L"%s %d", L"number", 123);
+    ret = vswprintf_wrapper(buf, format, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 
     memset(buf, 0, sizeof(buf));
-    ret = _vswprintf_wrapper(buf, L"%s %d", L"number", 123);
+    ret = _vswprintf_wrapper(buf, format, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 
     memset(buf, 0, sizeof(buf));
-    ret = _vswprintf_l_wrapper(buf, L"%s %d", NULL, L"number", 123);
+    ret = _vswprintf_l_wrapper(buf, format, NULL, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 
     memset(buf, 0, sizeof(buf));
-    ret = _vswprintf_c_wrapper(buf, 20, L"%s %d", L"number", 123);
+    ret = _vswprintf_c_wrapper(buf, 20, format, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
-
-    memset(buf, 'x', sizeof(buf));
-    ret = _vswprintf_c_wrapper(buf, 10, L"%s %d", L"number", 123);
-    ok(ret == -1, "got %d, expected -1\n", ret);
-    ok(!wcscmp(buf, L"number 12"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 
     memset(buf, 0, sizeof(buf));
-    ret = _vswprintf_c_l_wrapper(buf, 20, L"%s %d", NULL, L"number", 123);
+    ret = _vswprintf_c_l_wrapper(buf, 20, format, NULL, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 
     memset(buf, 0, sizeof(buf));
-    ret = _vswprintf_p_l_wrapper(buf, 20, L"%s %d", NULL, L"number", 123);
+    ret = _vswprintf_p_l_wrapper(buf, 20, format, NULL, number, 123);
     ok(ret == 10, "got %d, expected 10\n", ret);
-    ok(!wcscmp(buf, L"number 123"), "buf = %s\n", wine_dbgstr_w(buf));
+    ok(!memcmp(buf, out, sizeof(out)), "buf = %s\n", wine_dbgstr_w(buf));
 }
 
 static int WINAPIV _vscprintf_wrapper(const char *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vscprintf(format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
@@ -954,15 +955,18 @@ static void test_vscprintf(void)
 static int WINAPIV _vscwprintf_wrapper(const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vscwprintf(format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static void test_vscwprintf(void)
 {
+    const wchar_t format[] = {'%','s',' ','%','d',0};
+    const wchar_t number[] = {'n','u','m','b','e','r',0};
+
     int ret;
 
     if (!p__vscwprintf)
@@ -971,7 +975,7 @@ static void test_vscwprintf(void)
         return;
     }
 
-    ret = _vscwprintf_wrapper(L"%s %d", L"number", 1 );
+    ret = _vscwprintf_wrapper( format, number, 1 );
     ok( ret == 8, "got %d expected 8\n", ret );
 }
 
@@ -979,17 +983,22 @@ static int WINAPIV _vsnwprintf_s_wrapper(wchar_t *str, size_t sizeOfBuffer,
                                  size_t count, const wchar_t *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vsnwprintf_s(str, sizeOfBuffer, count, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 
 static void test_vsnwprintf_s(void)
 {
+    const wchar_t format[] = { 'A','B','%','u','C',0 };
+    const wchar_t out7[] = { 'A','B','1','2','3','C',0 };
+    const wchar_t out6[] = { 'A','B','1','2','3',0 };
+    const wchar_t out2[] = { 'A',0 };
+    const wchar_t out1[] = { 0 };
     wchar_t buffer[14] = { 0 };
-    int ret;
+    int exp, got;
 
     if (!p__vsnwprintf_s)
     {
@@ -998,40 +1007,44 @@ static void test_vsnwprintf_s(void)
     }
 
     /* Enough room. */
-    ret = _vsnwprintf_s_wrapper(buffer, 14, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == 6, "length wrong, expect=6, got=%d\n", ret);
-    ok( !wcscmp(L"AB123C", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    exp = wcslen(out7);
 
-    ret = _vsnwprintf_s_wrapper(buffer, 12, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == 6, "length wrong, expect=6, got=%d\n", ret);
-    ok( !wcscmp(L"AB123C", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    got = _vsnwprintf_s_wrapper(buffer, 14, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out7, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
 
-    ret = _vsnwprintf_s_wrapper(buffer, 7, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == 6, "length wrong, expect=6, got=%d\n", ret);
-    ok( !wcscmp(L"AB123C", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    got = _vsnwprintf_s_wrapper(buffer, 12, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out7, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+
+    got = _vsnwprintf_s_wrapper(buffer, 7, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out7, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
 
     /* Not enough room. */
-    ret = _vsnwprintf_s_wrapper(buffer, 6, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == -1, "length wrong, expect=-1, got=%d\n", ret);
-    ok( !wcscmp(L"AB123", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    exp = -1;
 
-    ret = _vsnwprintf_s_wrapper(buffer, 2, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == -1, "length wrong, expect=-1, got=%d\n", ret);
-    ok( !wcscmp(L"A", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    got = _vsnwprintf_s_wrapper(buffer, 6, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out6, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
 
-    ret = _vsnwprintf_s_wrapper(buffer, 1, _TRUNCATE, L"AB%uC", 123);
-    ok( ret == -1, "length wrong, expect=-1, got=%d\n", ret);
-    ok( !wcscmp(L"", buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+    got = _vsnwprintf_s_wrapper(buffer, 2, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out2, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
+
+    got = _vsnwprintf_s_wrapper(buffer, 1, _TRUNCATE, format, 123);
+    ok( exp == got, "length wrong, expect=%d, got=%d\n", exp, got);
+    ok( !wcscmp(out1, buffer), "buffer wrong, got=%s\n", wine_dbgstr_w(buffer));
 }
 
 static int WINAPIV _vsprintf_p_wrapper(char *str, size_t sizeOfBuffer,
                                  const char *format, ...)
 {
     int ret;
-    va_list valist;
-    va_start(valist, format);
+    __ms_va_list valist;
+    __ms_va_start(valist, format);
     ret = p__vsprintf_p(str, sizeOfBuffer, format, valist);
-    va_end(valist);
+    __ms_va_end(valist);
     return ret;
 }
 

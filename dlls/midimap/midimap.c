@@ -36,15 +36,7 @@
 /*
  * Here's how Windows stores the midiOut mapping information.
  *
- * Windows XP form (in HKU) is:
- *
- * [Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\MIDIMap]
- * "szPname"="TiMidity port 0"
- * (incomplete)
- *
- * szPname:             name of midiOut device to use.
- *
- * If szPname isn't defined, we use Windows 2000 form (also in HKU):
+ * Full form (in HKU) is:
  *
  * [Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\MIDIMap] 988836060
  * "AutoScheme"=dword:00000000
@@ -83,7 +75,7 @@
  * This last part isn't implemented (.idf file support).
  */
 
-WINE_DEFAULT_DEBUG_CHANNEL(midi);
+WINE_DEFAULT_DEBUG_CHANNEL(msacm);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
 typedef struct tagMIDIOUTPORT
@@ -222,47 +214,41 @@ static BOOL	MIDIMAP_LoadSettings(MIDIMAPDATA* mom)
     else
     {
 	DWORD	type, size, out;
-	WCHAR	buffer[256];
+	WCHAR   buffer[256];
 
-	size = sizeof(buffer);
-	if (!RegQueryValueExW(hKey, L"szPname", 0, &type, (void*)buffer, &size))
+	ret = 2;
+	size = sizeof(out);
+	if (!RegQueryValueExA(hKey, "UseScheme", 0, &type, (void*)&out, &size) && out)
 	{
-	    ret = MIDIMAP_LoadSettingsDefault(mom, buffer);
-	}
-	else
-	{
-	    ret = 2;
-	    size = sizeof(out);
-	    if (!RegQueryValueExA(hKey, "UseScheme", 0, &type, (void*)&out, &size) && out)
+            static const WCHAR cs[] = {'C','u','r','r','e','n','t','S','c','h','e','m','e',0};
+	    size = sizeof(buffer);
+	    if (!RegQueryValueExW(hKey, cs, 0, &type, (void*)buffer, &size))
 	    {
-		size = sizeof(buffer);
-		if (!RegQueryValueExW(hKey, L"CurrentScheme", 0, &type, (void*)buffer, &size))
-		{
-		    if (!(ret = MIDIMAP_LoadSettingsScheme(mom, buffer)))
-			ret = MIDIMAP_LoadSettingsDefault(mom, NULL);
-		}
-		else
-		{
-		    ERR("Wrong registry: UseScheme is active, but no CurrentScheme found\n");
-		}
-	    }
-	    if (ret == 2)
-	    {
-		size = sizeof(buffer);
-		if (!RegQueryValueExW(hKey, L"CurrentInstrument", 0, &type, (void*)buffer, &size) && *buffer)
-		{
-		    ret = MIDIMAP_LoadSettingsDefault(mom, buffer);
-		}
-		else
-		{
+		if (!(ret = MIDIMAP_LoadSettingsScheme(mom, buffer)))
 		    ret = MIDIMAP_LoadSettingsDefault(mom, NULL);
-		}
+	    }
+	    else
+	    {
+		ERR("Wrong registry: UseScheme is active, but no CurrentScheme found\n");
+	    }
+	}
+	if (ret == 2)
+	{
+            static const WCHAR ci[] = {'C','u','r','r','e','n','t','I','n','s','t','r','u','m','e','n','t',0};
+	    size = sizeof(buffer);
+	    if (!RegQueryValueExW(hKey, ci, 0, &type, (void*)buffer, &size) && *buffer)
+	    {
+		ret = MIDIMAP_LoadSettingsDefault(mom, buffer);
+	    }
+	    else
+	    {
+		ret = MIDIMAP_LoadSettingsDefault(mom, NULL);
 	    }
 	}
     }
     RegCloseKey(hKey);
 
-    if (ret && TRACE_ON(midi))
+    if (ret && TRACE_ON(msacm))
     {
 	unsigned	i;
 
@@ -286,7 +272,7 @@ static DWORD modOpen(DWORD_PTR *lpdwUser, LPMIDIOPENDESC lpDesc, DWORD dwFlags)
 {
     MIDIMAPDATA*	mom = HeapAlloc(GetProcessHeap(), 0, sizeof(MIDIMAPDATA));
 
-    TRACE("(%p %p %08lx)\n", lpdwUser, lpDesc, dwFlags);
+    TRACE("(%p %p %08x)\n", lpdwUser, lpDesc, dwFlags);
 
     if (!mom) return MMSYSERR_NOMEM;
     if (!lpDesc) {
@@ -432,7 +418,7 @@ static DWORD modData(MIDIMAPDATA* mom, DWORD_PTR dwParam)
 	}
 	break;
     default:
-	FIXME("ooch %Ix\n", dwParam);
+	FIXME("ooch %lx\n", dwParam);
     }
 
     return ret;
@@ -484,7 +470,8 @@ static DWORD modGetDevCaps(UINT wDevID, MIDIMAPDATA* mom, LPMIDIOUTCAPSW lpMidiC
 {
     static const MIDIOUTCAPSW mappercaps = {
 	0x00FF, 0x0001, 0x0100, /* Manufacturer and Product ID */
-        L"Wine midi mapper", MOD_MAPPER, 0, 0, 0xFFFF,
+	{'W','i','n','e',' ','m','i','d','i',' ','m','a','p','p','e','r',0},
+	MOD_MAPPER, 0, 0, 0xFFFF,
 	/* Native returns volume caps of underlying device + MIDICAPS_STREAM */
 	MIDICAPS_VOLUME|MIDICAPS_LRVOLUME
     };
@@ -523,7 +510,7 @@ static LRESULT MIDIMAP_drvClose(void);
 DWORD WINAPI MIDIMAP_modMessage(UINT wDevID, UINT wMsg, DWORD_PTR dwUser,
 				DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
-    TRACE("(%u, %04X, %08IX, %08IX, %08IX);\n",
+    TRACE("(%u, %04X, %08lX, %08lX, %08lX);\n",
 	  wDevID, wMsg, dwUser, dwParam1, dwParam2);
 
     switch (wMsg)
@@ -565,6 +552,7 @@ DWORD WINAPI MIDIMAP_modMessage(UINT wDevID, UINT wMsg, DWORD_PTR dwUser,
  */
 static LRESULT MIDIMAP_drvOpen(void)
 {
+    static const WCHAR  throughportW[] = {'M','i','d','i',' ','T','h','r','o','u','g','h',0};
     MIDIOUTCAPSW	moc;
     unsigned		dev, i;
     BOOL                found_valid_port = FALSE;
@@ -586,7 +574,7 @@ static LRESULT MIDIMAP_drvOpen(void)
 	    midiOutPorts[dev].lpbPatch = NULL;
 	    for (i = 0; i < 16; i++)
 		midiOutPorts[dev].aChn[i] = i;
-            if (wcsncmp(midiOutPorts[dev].name, L"Midi Through", lstrlenW(L"Midi Through")) != 0)
+	    if (wcsncmp(midiOutPorts[dev].name, throughportW, lstrlenW(throughportW)) != 0)
 	        found_valid_port = TRUE;
 	}
 	else

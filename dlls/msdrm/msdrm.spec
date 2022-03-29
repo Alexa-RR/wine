@@ -70,7 +70,7 @@
 @ stub DRMIsWindowProtected
 @ stub DRMLoadLibrary
 @ stub DRMParseUnboundLicense
-@ stdcall DRMRegisterContent(long)
+@ stub DRMRegisterContent
 @ stub DRMRegisterProtectedWindow
 @ stub DRMRegisterRevocationList
 @ stub DRMRepair
@@ -82,8 +82,8 @@
 @ stub DRMSetRevocationPoint
 @ stub DRMSetUsagePolicy
 @ stub DRMVerify
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
-@ stdcall -private DllRegisterServer()
-@ stdcall -private DllUnregisterServer()
+@ stub DllRegisterServer
+@ stub DllUnregisterServer
 @ stub __AddMachineCertToLicenseStore

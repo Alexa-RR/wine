@@ -18,14 +18,21 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+
+#include "config.h"
+
 #include <assert.h>
-#include <libxml/tree.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/tree.h>
+#endif
 
 #include "wine/debug.h"
 
 /* Both XDR and XSD are valid XML
  * We just convert the doc tree, no need for a parser.
  */
+
+#ifdef HAVE_LIBXML2
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -817,3 +824,5 @@ xmlDocPtr XDR_to_XSD_doc(xmlDocPtr xdr_doc, xmlChar const* nsURI)
 
     return xsd_doc;
 }
+
+#endif /* HAVE_LIBXML2 */

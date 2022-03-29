@@ -23,11 +23,11 @@
 @ stub BluetoothFindFirstServiceEx
 @ stub BluetoothFindNextBrowseGroup
 @ stub BluetoothFindNextClassId
-@ stdcall BluetoothFindNextDevice(ptr ptr)
+@ stub BluetoothFindNextDevice
 @ stub BluetoothFindNextProfileDescriptor
 @ stub BluetoothFindNextProtocolDescriptorStack
 @ stub BluetoothFindNextProtocolEntry
-@ stdcall BluetoothFindNextRadio(ptr ptr)
+@ stub BluetoothFindNextRadio
 @ stub BluetoothFindNextService
 @ stub BluetoothFindProfileDescriptorClose
 @ stub BluetoothFindProtocolDescriptorStackClose
@@ -35,7 +35,7 @@
 @ stdcall BluetoothFindRadioClose(ptr)
 @ stub BluetoothFindServiceClose
 @ stub BluetoothGetDeviceInfo
-@ stdcall BluetoothGetRadioInfo(ptr ptr)
+@ stub BluetoothGetRadioInfo
 @ stub BluetoothIsConnectable
 @ stub BluetoothIsDiscoverable
 @ stub BluetoothIsVersionAvailable
@@ -61,5 +61,5 @@
 @ stub BthpFindPnpInfo
 @ stub BthpMapStatusToErr
 #@ stub CPlApplet
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject

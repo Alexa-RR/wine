@@ -402,7 +402,8 @@ static BOOL REGPROC_unescape_string(WCHAR *str, WCHAR **unparsed)
                 str[val_idx] = '\r';
                 break;
             case '0':
-                return FALSE;
+                str[val_idx] = '\0';
+                break;
             case '\\':
             case '"':
                 str[val_idx] = str[str_idx];
