@@ -21,10 +21,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
+#define COBJMACROS
 
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -40,9 +40,8 @@
 #define NO_SHLWAPI_STREAM
 #include "shlwapi.h"
 #include "shell32_main.h"
-#include "undocshell.h"
+#include "shfldr.h"
 #include "wine/debug.h"
-#include "xdg.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
@@ -56,8 +55,20 @@ WINE_DEFAULT_DEBUG_CHANNEL(shell);
 #define DE_SAMEFILE      0x71
 #define DE_DESTSAMETREE  0x7D
 
+<<<<<<< HEAD
 static const WCHAR wWildcardFile[] = {'*',0};
 static const WCHAR wWildcardChars[] = {'*','?',0};
+=======
+static DWORD SHNotifyCreateDirectoryA(LPCSTR path, LPSECURITY_ATTRIBUTES sec);
+static DWORD SHNotifyCreateDirectoryW(LPCWSTR path, LPSECURITY_ATTRIBUTES sec);
+static DWORD SHNotifyRemoveDirectoryA(LPCSTR path);
+static DWORD SHNotifyRemoveDirectoryW(LPCWSTR path);
+static DWORD SHNotifyDeleteFileA(LPCSTR path);
+static DWORD SHNotifyDeleteFileW(LPCWSTR path);
+static DWORD SHNotifyMoveFileW(LPCWSTR src, LPCWSTR dest);
+static DWORD SHNotifyCopyFileW(LPCWSTR src, LPCWSTR dest, BOOL bFailIfExists);
+static DWORD SHFindAttrW(LPCWSTR pName, BOOL fileOnly);
+>>>>>>> github-desktop-wine-mirror/master
 
 typedef struct
 {
@@ -115,8 +126,6 @@ static DWORD CALLBACK progressbar_copy_routine(LARGE_INTEGER total_size, LARGE_I
 
 /* Confirm dialogs with an optional "Yes To All" as used in file operations confirmations
  */
-static const WCHAR CONFIRM_MSG_PROP[] = {'W','I','N','E','_','C','O','N','F','I','R','M',0};
-
 struct confirm_msg_info
 {
     LPWSTR lpszText;
@@ -164,7 +173,7 @@ static INT_PTR ConfirmMsgBox_Paint(HWND hDlg)
     /* this will remap the rect to dialog coords */
     MapWindowPoints(GetDlgItem(hDlg, IDD_MESSAGE), hDlg, (LPPOINT)&r, 2);
     hOldFont = SelectObject(hdc, (HFONT)SendDlgItemMessageW(hDlg, IDD_MESSAGE, WM_GETFONT, 0, 0));
-    DrawTextW(hdc, GetPropW(hDlg, CONFIRM_MSG_PROP), -1, &r, DT_NOPREFIX | DT_PATH_ELLIPSIS | DT_WORDBREAK);
+    DrawTextW(hdc, GetPropW(hDlg, L"WINE_CONFIRM"), -1, &r, DT_NOPREFIX | DT_PATH_ELLIPSIS | DT_WORDBREAK);
     SelectObject(hdc, hOldFont);
     EndPaint(hDlg, &ps);
     return TRUE;
@@ -181,7 +190,7 @@ static INT_PTR ConfirmMsgBox_Init(HWND hDlg, LPARAM lParam)
 
     SetWindowTextW(hDlg, info->lpszCaption);
     ShowWindow(GetDlgItem(hDlg, IDD_MESSAGE), SW_HIDE);
-    SetPropW(hDlg, CONFIRM_MSG_PROP, info->lpszText);
+    SetPropW(hDlg, L"WINE_CONFIRM", info->lpszText);
     SendDlgItemMessageW(hDlg, IDD_ICON, STM_SETICON, (WPARAM)info->hIcon, 0);
 
     /* compute the text height and resize the dialog */
@@ -230,14 +239,13 @@ static INT_PTR CALLBACK ConfirmMsgBoxProc(HWND hDlg, UINT uMsg, WPARAM wParam, L
 
 static int SHELL_ConfirmMsgBox(HWND hWnd, LPWSTR lpszText, LPWSTR lpszCaption, HICON hIcon, BOOL bYesToAll)
 {
-    static const WCHAR wszTemplate[] = {'S','H','E','L','L','_','Y','E','S','T','O','A','L','L','_','M','S','G','B','O','X',0};
     struct confirm_msg_info info;
 
     info.lpszText = lpszText;
     info.lpszCaption = lpszCaption;
     info.hIcon = hIcon;
     info.bYesToAll = bYesToAll;
-    return DialogBoxParamW(shell32_hInstance, wszTemplate, hWnd, ConfirmMsgBoxProc, (LPARAM)&info);
+    return DialogBoxParamW(shell32_hInstance, L"SHELL_YESTOALL_MSGBOX", hWnd, ConfirmMsgBoxProc, (LPARAM)&info);
 }
 
 /* confirmation dialogs content */
@@ -327,10 +335,16 @@ static BOOL SHELL_ConfirmDialogW(HWND hWnd, int nKindOfDialog, LPCWSTR szDir, FI
     LoadStringW(shell32_hInstance, ids.caption_resource_id, szCaption, ARRAY_SIZE(szCaption));
     LoadStringW(shell32_hInstance, ids.text_resource_id, szText, ARRAY_SIZE(szText));
 
+<<<<<<< HEAD
     args[0] = (DWORD_PTR)szDir;
     FormatMessageW(FORMAT_MESSAGE_FROM_STRING|FORMAT_MESSAGE_ARGUMENT_ARRAY,
         szText, 0, 0, szBuffer, ARRAY_SIZE(szBuffer), (__ms_va_list*)args);
     hIcon = LoadIconW(ids.hIconInstance, (LPWSTR)MAKEINTRESOURCE(ids.icon_resource_id));
+=======
+        args[0] = (DWORD_PTR)szDir;
+        FormatMessageW(FORMAT_MESSAGE_FROM_STRING|FORMAT_MESSAGE_ARGUMENT_ARRAY,
+            szText, 0, 0, szBuffer, ARRAY_SIZE(szBuffer), (va_list*)args);
+>>>>>>> github-desktop-wine-mirror/master
 
     ret = SHELL_ConfirmMsgBox(hWnd, szBuffer, szCaption, hIcon, op && op->bManyItems);
     if (op) {
@@ -386,7 +400,7 @@ static DWORD SHELL_DeleteDirectoryW(FILE_OPERATION *op, LPCWSTR pszDir, BOOL bSh
     WIN32_FIND_DATAW wfd;
     WCHAR   szTemp[MAX_PATH];
 
-    PathCombineW(szTemp, pszDir, wWildcardFile);
+    PathCombineW(szTemp, pszDir, L"*");
     hFind = FindFirstFileW(szTemp, &wfd);
 
     if (hFind != INVALID_HANDLE_VALUE)
@@ -853,10 +867,17 @@ int WINAPI SHCreateDirectoryExW(HWND hWnd, LPCWSTR path, LPSECURITY_ATTRIBUTES s
  */
 static DWORD SHFindAttrW(LPCWSTR pName, BOOL fileOnly)
 {
+<<<<<<< HEAD
     WIN32_FIND_DATAW wfd;
     BOOL b_FileMask = fileOnly && (NULL != StrPBrkW(pName, wWildcardChars));
     DWORD dwAttr = INVALID_FILE_ATTRIBUTES;
     HANDLE hFind = FindFirstFileW(pName, &wfd);
+=======
+	WIN32_FIND_DATAW wfd;
+	BOOL b_FileMask = fileOnly && (NULL != StrPBrkW(pName, L"*?"));
+	DWORD dwAttr = INVALID_FILE_ATTRIBUTES;
+	HANDLE hFind = FindFirstFileW(pName, &wfd);
+>>>>>>> github-desktop-wine-mirror/master
 
     TRACE("%s %d\n", debugstr_w(pName), fileOnly);
     if (INVALID_HANDLE_VALUE != hFind)
@@ -878,9 +899,9 @@ static DWORD SHFindAttrW(LPCWSTR pName, BOOL fileOnly)
  *
  * SHNameTranslate HelperFunction for SHFileOperationA
  *
- * Translates a list of 0 terminated ASCII strings into Unicode. If *wString
+ * Translates a list of 0 terminated ANSI strings into Unicode. If *wString
  * is NULL, only the necessary size of the string is determined and returned,
- * otherwise the ASCII strings are copied into it and the buffer is increased
+ * otherwise the ANSI strings are copied into it and the buffer is increased
  * to point to the location after the final 0 termination char.
  */
 static DWORD SHNameTranslate(LPWSTR* wString, LPCWSTR* pWToFrom, BOOL more)
@@ -1085,7 +1106,7 @@ static HRESULT parse_file_list(FILE_LIST *flList, LPCWSTR szFiles)
         for (p = szCurFile; *p; p++) if (*p == '/') *p = '\\';
 
         /* parse wildcard files if they are in the filename */
-        if (StrPBrkW(szCurFile, wWildcardChars))
+        if (StrPBrkW(szCurFile, L"*?"))
         {
             parse_wildcard_files(flList, szCurFile, &i);
             flList->bAnyFromWildcard = TRUE;
@@ -1133,8 +1154,6 @@ static void copy_dir_to_dir(FILE_OPERATION *op, const FILE_ENTRY *feFrom, LPCWST
     WCHAR szFrom[MAX_PATH], szTo[MAX_PATH];
     FILE_LIST flFromNew, flToNew;
 
-    static const WCHAR wildCardFiles[] = {'*','.','*',0};
-
     if (IsDotDir(feFrom->szFilename))
         return;
 
@@ -1156,7 +1175,7 @@ static void copy_dir_to_dir(FILE_OPERATION *op, const FILE_ENTRY *feFrom, LPCWST
     szTo[lstrlenW(szTo) + 1] = '\0';
     SHNotifyCreateDirectoryW(szTo, NULL);
 
-    PathCombineW(szFrom, feFrom->szFullPath, wildCardFiles);
+    PathCombineW(szFrom, feFrom->szFullPath, L"*.*");
     szFrom[lstrlenW(szFrom) + 1] = '\0';
 
     ZeroMemory(&flFromNew, sizeof(FILE_LIST));
@@ -1242,7 +1261,11 @@ static int copy_files(FILE_OPERATION *op, BOOL multidest, const FILE_LIST *flFro
         fileDest = &flTo->feFiles[0];
     }
 
+<<<<<<< HEAD
     if (multidest)
+=======
+    if (op->req->fFlags & FOF_MULTIDESTFILES && flTo->dwNumFiles > 1)
+>>>>>>> github-desktop-wine-mirror/master
     {
         if (flFrom->bAnyFromWildcard)
             return ERROR_CANCELLED;
@@ -1349,10 +1372,9 @@ static BOOL confirm_delete_list(HWND hWnd, DWORD fFlags, BOOL fTrash, const FILE
 {
     if (flFrom->dwNumFiles > 1)
     {
-        static const WCHAR format[] = {'%','d',0};
-        WCHAR tmp[8];
+        WCHAR tmp[12];
 
-        wnsprintfW(tmp, ARRAY_SIZE(tmp), format, flFrom->dwNumFiles);
+        swprintf(tmp, ARRAY_SIZE(tmp), L"%d", flFrom->dwNumFiles);
         return SHELL_ConfirmDialogW(hWnd, (fTrash?ASK_TRASH_MULTIPLE_ITEM:ASK_DELETE_MULTIPLE_ITEM), tmp, NULL);
     }
     else
@@ -1379,8 +1401,12 @@ static int delete_files(FILE_OPERATION *op, const FILE_LIST *flFrom)
         return ERROR_SUCCESS;
 
     /* Windows also checks only the first item */
+<<<<<<< HEAD
     bTrash = (op->req->fFlags & FOF_ALLOWUNDO)
              && TRASH_CanTrashFile(flFrom->feFiles[0].szFullPath);
+=======
+    bTrash = (lpFileOp->fFlags & FOF_ALLOWUNDO) && is_trash_available();
+>>>>>>> github-desktop-wine-mirror/master
 
     if (!(op->req->fFlags & FOF_NOCONFIRMATION) || (!bTrash && op->req->fFlags & FOF_WANTNUKEWARNING))
         if (!confirm_delete_list(op->req->hwnd, op->req->fFlags, bTrash, flFrom))
@@ -1400,7 +1426,7 @@ static int delete_files(FILE_OPERATION *op, const FILE_LIST *flFrom)
         if (bTrash)
         {
             BOOL bDelete;
-            if (TRASH_TrashFile(fileEntry->szFullPath))
+            if (trash_file(fileEntry->szFullPath))
                 continue;
 
             /* Note: Windows silently deletes the file in such a situation, we show a dialog */
@@ -1828,10 +1854,10 @@ HRESULT WINAPI SHPathPrepareForWriteW(HWND hwnd, IUnknown *modless, LPCWSTR path
     WCHAR* last_slash;
     WCHAR* temppath=NULL;
 
-    TRACE("%p %p %s 0x%08x\n", hwnd, modless, debugstr_w(path), flags);
+    TRACE("%p %p %s 0x%08lx\n", hwnd, modless, debugstr_w(path), flags);
 
     if (flags & ~(SHPPFW_DIRCREATE|SHPPFW_ASKDIRCREATE|SHPPFW_IGNOREFILENAME))
-        FIXME("unimplemented flags 0x%08x\n", flags);
+        FIXME("unimplemented flags 0x%08lx\n", flags);
 
     /* cut off filename if necessary */
     if (flags & SHPPFW_IGNOREFILENAME)
@@ -1885,10 +1911,11 @@ HRESULT WINAPI SHPathPrepareForWriteW(HWND hwnd, IUnknown *modless, LPCWSTR path
 
 HRESULT WINAPI SHMultiFileProperties(IDataObject *pdtobj, DWORD flags)
 {
-    FIXME("stub: %p %u\n", pdtobj, flags);
+    FIXME("stub: %p %lu\n", pdtobj, flags);
     return E_NOTIMPL;
 }
 
+<<<<<<< HEAD
 static BOOL progressbar_calc_size(FILE_OPERATION *op, LPWSTR buf, BOOL is_folder, DWORD *ticks)
 {
     WIN32_FIND_DATAW wfd;
@@ -2073,4 +2100,251 @@ static DWORD CALLBACK progressbar_copy_routine(LARGE_INTEGER total_size, LARGE_I
 
     op->bCancelled |= IProgressDialog_HasUserCancelled(op->progress);
     return op->bCancelled ? PROGRESS_CANCEL : PROGRESS_CONTINUE;
+=======
+struct file_operation
+{
+    IFileOperation IFileOperation_iface;
+    LONG ref;
+};
+
+static inline struct file_operation *impl_from_IFileOperation(IFileOperation *iface)
+{
+    return CONTAINING_RECORD(iface, struct file_operation, IFileOperation_iface);
+}
+
+static HRESULT WINAPI file_operation_QueryInterface(IFileOperation *iface, REFIID riid, void **out)
+{
+    struct file_operation *operation = impl_from_IFileOperation(iface);
+
+    TRACE("(%p, %s, %p).\n", iface, debugstr_guid(riid), out);
+
+    if (IsEqualIID(&IID_IFileOperation, riid) ||
+        IsEqualIID(&IID_IUnknown, riid))
+        *out = &operation->IFileOperation_iface;
+    else
+    {
+        FIXME("not implemented for %s.\n", debugstr_guid(riid));
+        *out = NULL;
+        return E_NOINTERFACE;
+    }
+
+    IUnknown_AddRef((IUnknown *)*out);
+    return S_OK;
+}
+
+static ULONG WINAPI file_operation_AddRef(IFileOperation *iface)
+{
+    struct file_operation *operation = impl_from_IFileOperation(iface);
+    ULONG ref = InterlockedIncrement(&operation->ref);
+
+    TRACE("(%p): ref=%lu.\n", iface, ref);
+
+    return ref;
+}
+
+static ULONG WINAPI file_operation_Release(IFileOperation *iface)
+{
+    struct file_operation *operation = impl_from_IFileOperation(iface);
+    ULONG ref = InterlockedDecrement(&operation->ref);
+
+    TRACE("(%p): ref=%lu.\n", iface, ref);
+
+    if (!ref)
+    {
+        HeapFree(GetProcessHeap(), 0, operation);
+    }
+
+    return ref;
+}
+
+static HRESULT WINAPI file_operation_Advise(IFileOperation *iface, IFileOperationProgressSink *sink, DWORD *cookie)
+{
+    FIXME("(%p, %p, %p): stub.\n", iface, sink, cookie);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_Unadvise(IFileOperation *iface, DWORD cookie)
+{
+    FIXME("(%p, %lx): stub.\n", iface, cookie);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_SetOperationFlags(IFileOperation *iface, DWORD flags)
+{
+    FIXME("(%p, %lx): stub.\n", iface, flags);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_SetProgressMessage(IFileOperation *iface, LPCWSTR message)
+{
+    FIXME("(%p, %s): stub.\n", iface, debugstr_w(message));
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_SetProgressDialog(IFileOperation *iface, IOperationsProgressDialog *dialog)
+{
+    FIXME("(%p, %p): stub.\n", iface, dialog);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_SetProperties(IFileOperation *iface, IPropertyChangeArray *array)
+{
+    FIXME("(%p, %p): stub.\n", iface, array);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_SetOwnerWindow(IFileOperation *iface, HWND owner)
+{
+    FIXME("(%p, %p): stub.\n", iface, owner);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_ApplyPropertiesToItem(IFileOperation *iface, IShellItem *item)
+{
+    FIXME("(%p, %p): stub.\n", iface, item);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_ApplyPropertiesToItems(IFileOperation *iface, IUnknown *items)
+{
+    FIXME("(%p, %p): stub.\n", iface, items);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_RenameItem(IFileOperation *iface, IShellItem *item, LPCWSTR name,
+        IFileOperationProgressSink *sink)
+{
+    FIXME("(%p, %p, %s, %p): stub.\n", iface, item, debugstr_w(name), sink);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_RenameItems(IFileOperation *iface, IUnknown *items, LPCWSTR name)
+{
+    FIXME("(%p, %p, %s): stub.\n", iface, items, debugstr_w(name));
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_MoveItem(IFileOperation *iface, IShellItem *item, IShellItem *folder,
+        LPCWSTR name, IFileOperationProgressSink *sink)
+{
+    FIXME("(%p, %p, %p, %s, %p): stub.\n", iface, item, folder, debugstr_w(name), sink);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_MoveItems(IFileOperation *iface, IUnknown *items, IShellItem *folder)
+{
+    FIXME("(%p, %p, %p): stub.\n", iface, items, folder);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_CopyItem(IFileOperation *iface, IShellItem *item, IShellItem *folder,
+        LPCWSTR name, IFileOperationProgressSink *sink)
+{
+    FIXME("(%p, %p, %p, %s, %p): stub.\n", iface, item, folder, debugstr_w(name), sink);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_CopyItems(IFileOperation *iface, IUnknown *items, IShellItem *folder)
+{
+    FIXME("(%p, %p, %p): stub.\n", iface, items, folder);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_DeleteItem(IFileOperation *iface, IShellItem *item,
+        IFileOperationProgressSink *sink)
+{
+    FIXME("(%p, %p, %p): stub.\n", iface, item, sink);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_DeleteItems(IFileOperation *iface, IUnknown *items)
+{
+    FIXME("(%p, %p): stub.\n", iface, items);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_NewItem(IFileOperation *iface, IShellItem *folder, DWORD attributes,
+        LPCWSTR name, LPCWSTR template, IFileOperationProgressSink *sink)
+{
+    FIXME("(%p, %p, %lx, %s, %s, %p): stub.\n", iface, folder, attributes,
+          debugstr_w(name), debugstr_w(template), sink);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_PerformOperations(IFileOperation *iface)
+{
+    FIXME("(%p): stub.\n", iface);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI file_operation_GetAnyOperationsAborted(IFileOperation *iface, BOOL *aborted)
+{
+    FIXME("(%p, %p): stub.\n", iface, aborted);
+
+    return E_NOTIMPL;
+}
+
+static const IFileOperationVtbl file_operation_vtbl =
+{
+    file_operation_QueryInterface,
+    file_operation_AddRef,
+    file_operation_Release,
+    file_operation_Advise,
+    file_operation_Unadvise,
+    file_operation_SetOperationFlags,
+    file_operation_SetProgressMessage,
+    file_operation_SetProgressDialog,
+    file_operation_SetProperties,
+    file_operation_SetOwnerWindow,
+    file_operation_ApplyPropertiesToItem,
+    file_operation_ApplyPropertiesToItems,
+    file_operation_RenameItem,
+    file_operation_RenameItems,
+    file_operation_MoveItem,
+    file_operation_MoveItems,
+    file_operation_CopyItem,
+    file_operation_CopyItems,
+    file_operation_DeleteItem,
+    file_operation_DeleteItems,
+    file_operation_NewItem,
+    file_operation_PerformOperations,
+    file_operation_GetAnyOperationsAborted
+};
+
+HRESULT WINAPI IFileOperation_Constructor(IUnknown *outer, REFIID riid, void **out)
+{
+    struct file_operation *object;
+    HRESULT hr;
+
+    object = heap_alloc_zero(sizeof(*object));
+    if (!object)
+        return E_OUTOFMEMORY;
+
+    object->IFileOperation_iface.lpVtbl = &file_operation_vtbl;
+    object->ref = 1;
+
+    hr = IFileOperation_QueryInterface(&object->IFileOperation_iface, riid, out);
+    IFileOperation_Release(&object->IFileOperation_iface);
+
+    return hr;
+>>>>>>> github-desktop-wine-mirror/master
 }

@@ -18,28 +18,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#define NONAMELESSUNION
 #define COBJMACROS
-#define _GNU_SOURCE
-
-#include "config.h"
-#include <poll.h>
-#include <pthread.h>
 
 #include <stdarg.h>
-#include <unistd.h>
-#include <math.h>
-#include <stdio.h>
-#include <errno.h>
-
-#include <pulse/pulseaudio.h>
+#include <assert.h>
 
 #include "windef.h"
 #include "winbase.h"
-#include "winnls.h"
-#include "winreg.h"
+#include "winternl.h"
 #include "wine/debug.h"
-#include "wine/unicode.h"
 #include "wine/list.h"
 
 #include "ole2.h"
@@ -57,7 +44,11 @@
 #include "endpointvolume.h"
 #include "audiopolicy.h"
 
+#include "unixlib.h"
+
 WINE_DEFAULT_DEBUG_CHANNEL(pulse);
+
+static unixlib_handle_t pulse_handle;
 
 #define NULL_PTR_ERR MAKE_HRESULT(SEVERITY_ERROR, FACILITY_WIN32, RPC_X_NULL_REF_POINTER)
 
@@ -69,17 +60,13 @@ enum DriverPriority {
     Priority_Preferred
 };
 
-static const REFERENCE_TIME MinimumPeriod = 30000;
-static const REFERENCE_TIME DefaultPeriod = 100000;
-
-static pa_context *pulse_ctx;
-static pa_mainloop *pulse_ml;
+static struct pulse_config pulse_config;
 
 static HANDLE pulse_thread;
-static pthread_mutex_t pulse_lock;
-static pthread_cond_t pulse_cond = PTHREAD_COND_INITIALIZER;
 static struct list g_sessions = LIST_INIT(g_sessions);
+static struct list g_devices_cache = LIST_INIT(g_devices_cache);
 
+<<<<<<< HEAD
 typedef struct _PhysDevice {
     struct list entry;
     GUID guid;
@@ -95,6 +82,14 @@ static struct list g_phys_sources = LIST_INIT(g_phys_sources);
 /* Mixer format + period times */
 static WAVEFORMATEXTENSIBLE pulse_fmt[2];
 static REFERENCE_TIME pulse_min_period[2], pulse_def_period[2];
+=======
+struct device_cache {
+    struct list entry;
+    GUID guid;
+    EDataFlow dataflow;
+    char pulse_name[0];
+};
+>>>>>>> github-desktop-wine-mirror/master
 
 static const WCHAR drv_key_devicesW[] = {'S','o','f','t','w','a','r','e','\\',
     'W','i','n','e','\\','D','r','i','v','e','r','s','\\',
@@ -106,22 +101,28 @@ static GUID pulse_render_guid =
 static GUID pulse_capture_guid =
 { 0x25da76d0, 0x033c, 0x4235, { 0x90, 0x02, 0x19, 0xf4, 0x88, 0x94, 0xac, 0x6f } };
 
-static UINT8 mult_alaw_sample(UINT8, float);
-static UINT8 mult_ulaw_sample(UINT8, float);
+static const WCHAR *drv_key_devicesW = L"Software\\Wine\\Drivers\\winepulse.drv\\devices";
+
+static CRITICAL_SECTION session_cs;
+static CRITICAL_SECTION_DEBUG session_cs_debug = {
+    0, 0, &session_cs,
+    { &session_cs_debug.ProcessLocksList,
+      &session_cs_debug.ProcessLocksList },
+    0, 0, { (DWORD_PTR)(__FILE__ ": session_cs") }
+};
+static CRITICAL_SECTION session_cs = { &session_cs_debug, -1, 0, 0, 0, 0 };
 
 BOOL WINAPI DllMain(HINSTANCE dll, DWORD reason, void *reserved)
 {
     if (reason == DLL_PROCESS_ATTACH) {
-        pthread_mutexattr_t attr;
-
         DisableThreadLibraryCalls(dll);
-
-        pthread_mutexattr_init(&attr);
-        pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT);
-
-        if (pthread_mutex_init(&pulse_lock, &attr) != 0)
-            pthread_mutex_init(&pulse_lock, NULL);
+        if (NtQueryVirtualMemory( GetCurrentProcess(), dll, MemoryWineUnixFuncs,
+                                  &pulse_handle, sizeof(pulse_handle), NULL ))
+            return FALSE;
+        if (__wine_unix_call(pulse_handle, process_attach, NULL))
+            return FALSE;
     } else if (reason == DLL_PROCESS_DETACH) {
+<<<<<<< HEAD
         PhysDevice *dev, *dev_next;
 
         LIST_FOR_EACH_ENTRY_SAFE(dev, dev_next, &g_phys_speakers, PhysDevice, entry)
@@ -137,6 +138,13 @@ BOOL WINAPI DllMain(HINSTANCE dll, DWORD reason, void *reserved)
         }
         if (pulse_ml)
             pa_mainloop_quit(pulse_ml, 0);
+=======
+        struct device_cache *device, *device_next;
+
+        LIST_FOR_EACH_ENTRY_SAFE(device, device_next, &g_devices_cache, struct device_cache, entry)
+            free(device);
+        __wine_unix_call(pulse_handle, process_detach, NULL);
+>>>>>>> github-desktop-wine-mirror/master
         if (pulse_thread) {
             WaitForSingleObject(pulse_thread, INFINITE);
             CloseHandle(pulse_thread);
@@ -172,15 +180,8 @@ typedef struct _AudioSessionWrapper {
     AudioSession *session;
 } AudioSessionWrapper;
 
-typedef struct _ACPacket {
-    struct list entry;
-    UINT64 qpcpos;
-    BYTE *data;
-    UINT32 discont;
-} ACPacket;
-
 struct ACImpl {
-    IAudioClient IAudioClient_iface;
+    IAudioClient3 IAudioClient3_iface;
     IAudioRenderClient IAudioRenderClient_iface;
     IAudioCaptureClient IAudioCaptureClient_iface;
     IAudioClock IAudioClock_iface;
@@ -189,6 +190,7 @@ struct ACImpl {
     IUnknown *marshal;
     IMMDevice *parent;
     struct list entry;
+<<<<<<< HEAD
     float vol[PA_CHANNELS_MAX];
     char device[256];
 
@@ -213,14 +215,28 @@ struct ACImpl {
     pa_buffer_attr attr;
 
     INT64 clock_lastpos, clock_written;
+=======
+    float *vol;
+
+    LONG ref;
+    EDataFlow dataflow;
+    UINT32 channel_count;
+    HANDLE timer;
+
+    struct pulse_stream *pulse_stream;
+>>>>>>> github-desktop-wine-mirror/master
 
     AudioSession *session;
     AudioSessionWrapper *session_wrapper;
-    struct list packet_free_head;
-    struct list packet_filled_head;
+
+    char pulse_name[0];
 };
 
+<<<<<<< HEAD
 static const IAudioClientVtbl AudioClient_Vtbl;
+=======
+static const IAudioClient3Vtbl AudioClient3_Vtbl;
+>>>>>>> github-desktop-wine-mirror/master
 static const IAudioRenderClientVtbl AudioRenderClient_Vtbl;
 static const IAudioCaptureClientVtbl AudioCaptureClient_Vtbl;
 static const IAudioSessionControl2Vtbl AudioSessionControl2_Vtbl;
@@ -232,9 +248,9 @@ static const IAudioStreamVolumeVtbl AudioStreamVolume_Vtbl;
 
 static AudioSessionWrapper *AudioSessionWrapper_Create(ACImpl *client);
 
-static inline ACImpl *impl_from_IAudioClient(IAudioClient *iface)
+static inline ACImpl *impl_from_IAudioClient3(IAudioClient3 *iface)
 {
-    return CONTAINING_RECORD(iface, ACImpl, IAudioClient_iface);
+    return CONTAINING_RECORD(iface, ACImpl, IAudioClient3_iface);
 }
 
 static inline ACImpl *impl_from_IAudioRenderClient(IAudioRenderClient *iface)
@@ -277,138 +293,36 @@ static inline ACImpl *impl_from_IAudioStreamVolume(IAudioStreamVolume *iface)
     return CONTAINING_RECORD(iface, ACImpl, IAudioStreamVolume_iface);
 }
 
-/* Following pulseaudio design here, mainloop has the lock taken whenever
- * it is handling something for pulse, and the lock is required whenever
- * doing any pa_* call that can affect the state in any way
- *
- * pa_cond_wait is used when waiting on results, because the mainloop needs
- * the same lock taken to affect the state
- *
- * This is basically the same as the pa_threaded_mainloop implementation,
- * but that cannot be used because it uses pthread_create directly
- *
- * pa_threaded_mainloop_(un)lock -> pthread_mutex_(un)lock
- * pa_threaded_mainloop_signal -> pthread_cond_broadcast
- * pa_threaded_mainloop_wait -> pthread_cond_wait
- */
-
-static int pulse_poll_func(struct pollfd *ufds, unsigned long nfds, int timeout, void *userdata) {
-    int r;
-    pthread_mutex_unlock(&pulse_lock);
-    r = poll(ufds, nfds, timeout);
-    pthread_mutex_lock(&pulse_lock);
-    return r;
-}
-
-static DWORD CALLBACK pulse_mainloop_thread(void *tmp) {
-    int ret;
-    pulse_ml = pa_mainloop_new();
-    pa_mainloop_set_poll_func(pulse_ml, pulse_poll_func, NULL);
-    pthread_mutex_lock(&pulse_lock);
-    pthread_cond_broadcast(&pulse_cond);
-    pa_mainloop_run(pulse_ml, &ret);
-    pthread_mutex_unlock(&pulse_lock);
-    pa_mainloop_free(pulse_ml);
-    return ret;
-}
-
-static void pulse_contextcallback(pa_context *c, void *userdata)
+static void pulse_call(enum unix_funcs code, void *params)
 {
-    switch (pa_context_get_state(c)) {
-        default:
-            FIXME("Unhandled state: %i\n", pa_context_get_state(c));
-            return;
-
-        case PA_CONTEXT_CONNECTING:
-        case PA_CONTEXT_UNCONNECTED:
-        case PA_CONTEXT_AUTHORIZING:
-        case PA_CONTEXT_SETTING_NAME:
-        case PA_CONTEXT_TERMINATED:
-            TRACE("State change to %i\n", pa_context_get_state(c));
-            return;
-
-        case PA_CONTEXT_READY:
-            TRACE("Ready\n");
-            break;
-
-        case PA_CONTEXT_FAILED:
-            WARN("Context failed: %s\n", pa_strerror(pa_context_errno(c)));
-            break;
-    }
-    pthread_cond_broadcast(&pulse_cond);
+    NTSTATUS status;
+    status = __wine_unix_call(pulse_handle, code, params);
+    assert(!status);
 }
 
-static void pulse_stream_state(pa_stream *s, void *user)
+static void pulse_release_stream(struct pulse_stream *stream, HANDLE timer)
 {
-    pa_stream_state_t state = pa_stream_get_state(s);
-    TRACE("Stream state changed to %i\n", state);
-    pthread_cond_broadcast(&pulse_cond);
+    struct release_stream_params params;
+    params.stream = stream;
+    params.timer  = timer;
+    pulse_call(release_stream, &params);
 }
 
-static const enum pa_channel_position pulse_pos_from_wfx[] = {
-    PA_CHANNEL_POSITION_FRONT_LEFT,
-    PA_CHANNEL_POSITION_FRONT_RIGHT,
-    PA_CHANNEL_POSITION_FRONT_CENTER,
-    PA_CHANNEL_POSITION_LFE,
-    PA_CHANNEL_POSITION_REAR_LEFT,
-    PA_CHANNEL_POSITION_REAR_RIGHT,
-    PA_CHANNEL_POSITION_FRONT_LEFT_OF_CENTER,
-    PA_CHANNEL_POSITION_FRONT_RIGHT_OF_CENTER,
-    PA_CHANNEL_POSITION_REAR_CENTER,
-    PA_CHANNEL_POSITION_SIDE_LEFT,
-    PA_CHANNEL_POSITION_SIDE_RIGHT,
-    PA_CHANNEL_POSITION_TOP_CENTER,
-    PA_CHANNEL_POSITION_TOP_FRONT_LEFT,
-    PA_CHANNEL_POSITION_TOP_FRONT_CENTER,
-    PA_CHANNEL_POSITION_TOP_FRONT_RIGHT,
-    PA_CHANNEL_POSITION_TOP_REAR_LEFT,
-    PA_CHANNEL_POSITION_TOP_REAR_CENTER,
-    PA_CHANNEL_POSITION_TOP_REAR_RIGHT
-};
-
-static DWORD pulse_channel_map_to_channel_mask(const pa_channel_map *map)
+static DWORD CALLBACK pulse_mainloop_thread(void *event)
 {
-    int i;
-    DWORD mask = 0;
-
-    for (i = 0; i < map->channels; ++i) {
-        switch (map->map[i]) {
-            default: FIXME("Unhandled channel %s\n", pa_channel_position_to_string(map->map[i])); break;
-            case PA_CHANNEL_POSITION_FRONT_LEFT: mask |= SPEAKER_FRONT_LEFT; break;
-            case PA_CHANNEL_POSITION_MONO:
-            case PA_CHANNEL_POSITION_FRONT_CENTER: mask |= SPEAKER_FRONT_CENTER; break;
-            case PA_CHANNEL_POSITION_FRONT_RIGHT: mask |= SPEAKER_FRONT_RIGHT; break;
-            case PA_CHANNEL_POSITION_REAR_LEFT: mask |= SPEAKER_BACK_LEFT; break;
-            case PA_CHANNEL_POSITION_REAR_CENTER: mask |= SPEAKER_BACK_CENTER; break;
-            case PA_CHANNEL_POSITION_REAR_RIGHT: mask |= SPEAKER_BACK_RIGHT; break;
-            case PA_CHANNEL_POSITION_LFE: mask |= SPEAKER_LOW_FREQUENCY; break;
-            case PA_CHANNEL_POSITION_SIDE_LEFT: mask |= SPEAKER_SIDE_LEFT; break;
-            case PA_CHANNEL_POSITION_SIDE_RIGHT: mask |= SPEAKER_SIDE_RIGHT; break;
-            case PA_CHANNEL_POSITION_TOP_CENTER: mask |= SPEAKER_TOP_CENTER; break;
-            case PA_CHANNEL_POSITION_TOP_FRONT_LEFT: mask |= SPEAKER_TOP_FRONT_LEFT; break;
-            case PA_CHANNEL_POSITION_TOP_FRONT_CENTER: mask |= SPEAKER_TOP_FRONT_CENTER; break;
-            case PA_CHANNEL_POSITION_TOP_FRONT_RIGHT: mask |= SPEAKER_TOP_FRONT_RIGHT; break;
-            case PA_CHANNEL_POSITION_TOP_REAR_LEFT: mask |= SPEAKER_TOP_BACK_LEFT; break;
-            case PA_CHANNEL_POSITION_TOP_REAR_CENTER: mask |= SPEAKER_TOP_BACK_CENTER; break;
-            case PA_CHANNEL_POSITION_TOP_REAR_RIGHT: mask |= SPEAKER_TOP_BACK_RIGHT; break;
-            case PA_CHANNEL_POSITION_FRONT_LEFT_OF_CENTER: mask |= SPEAKER_FRONT_LEFT_OF_CENTER; break;
-            case PA_CHANNEL_POSITION_FRONT_RIGHT_OF_CENTER: mask |= SPEAKER_FRONT_RIGHT_OF_CENTER; break;
-        }
-    }
-
-    return mask;
+    struct main_loop_params params;
+    params.event = event;
+    pulse_call(main_loop, &params);
+    return 0;
 }
 
-/* For most hardware on Windows, users must choose a configuration with an even
- * number of channels (stereo, quad, 5.1, 7.1). Users can then disable
- * channels, but those channels are still reported to applications from
- * GetMixFormat! Some applications behave badly if given an odd number of
- * channels (e.g. 2.1).  Here, we find the nearest configuration that Windows
- * would report for a given channel layout. */
-static void convert_channel_map(const pa_channel_map *pa_map, WAVEFORMATEXTENSIBLE *fmt)
+typedef struct tagLANGANDCODEPAGE
 {
-    DWORD pa_mask = pulse_channel_map_to_channel_mask(pa_map);
+    WORD wLanguage;
+    WORD wCodePage;
+} LANGANDCODEPAGE;
 
+<<<<<<< HEAD
     TRACE("got mask for PA: 0x%x\n", pa_mask);
 
     if (pa_map->channels == 1)
@@ -664,28 +578,23 @@ out:
 }
 
 static HRESULT pulse_connect(void)
+=======
+static BOOL query_productname(void *data, LANGANDCODEPAGE *lang, LPVOID *buffer, DWORD *len)
 {
-    int len;
+    WCHAR pn[37];
+    swprintf(pn, ARRAY_SIZE(pn), L"\\StringFileInfo\\%04x%04x\\ProductName", lang->wLanguage, lang->wCodePage);
+    return VerQueryValueW(data, pn, buffer, len) && *len;
+}
+
+static char *get_application_name(BOOL query_app_name)
+>>>>>>> github-desktop-wine-mirror/master
+{
     WCHAR path[MAX_PATH], *name;
-    char *str;
-
-    if (!pulse_thread)
-    {
-        if (!(pulse_thread = CreateThread(NULL, 0, pulse_mainloop_thread, NULL, 0, NULL)))
-        {
-            ERR("Failed to create mainloop thread.\n");
-            return E_FAIL;
-        }
-        SetThreadPriority(pulse_thread, THREAD_PRIORITY_TIME_CRITICAL);
-        pthread_cond_wait(&pulse_cond, &pulse_lock);
-    }
-
-    if (pulse_ctx && PA_CONTEXT_IS_GOOD(pa_context_get_state(pulse_ctx)))
-        return S_OK;
-    if (pulse_ctx)
-        pa_context_unref(pulse_ctx);
+    char *str = NULL;
+    size_t len;
 
     GetModuleFileNameW(NULL, path, ARRAY_SIZE(path));
+<<<<<<< HEAD
     str = get_programname(path);
     if (!str) {
         name = strrchrW(path, '\\');
@@ -1008,54 +917,51 @@ static int write_buffer(const ACImpl *This, BYTE *buffer, UINT32 bytes)
 
     if (!bytes) return 0;
     if (This->session->mute)
-    {
-        silence_buffer(This->ss.format, buffer, bytes);
-        goto write;
-    }
+=======
 
-    /* Adjust the buffer based on the volume for each channel */
-    channels = This->ss.channels;
-    for (i = 0; i < channels; i++)
+    if (query_app_name)
+>>>>>>> github-desktop-wine-mirror/master
     {
-        vol[i] = This->vol[i] * This->session->master_vol * This->session->channel_vols[i];
-        adjust |= vol[i] != 1.0f;
-    }
-    if (!adjust) goto write;
+        UINT translate_size, productname_size;
+        LANGANDCODEPAGE *translate;
+        LPVOID productname;
+        BOOL found = FALSE;
+        void *data = NULL;
+        unsigned int i;
+        LCID locale;
+        DWORD size;
 
-    end = buffer + bytes;
-    switch (This->ss.format)
-    {
-#ifndef WORDS_BIGENDIAN
-#define PROCESS_BUFFER(type) do         \
-{                                       \
-    type *p = (type*)buffer;            \
-    do                                  \
-    {                                   \
-        for (i = 0; i < channels; i++)  \
-            p[i] = p[i] * vol[i];       \
-        p += i;                         \
-    } while ((BYTE*)p != end);          \
-} while (0)
-    case PA_SAMPLE_S16LE:
-        PROCESS_BUFFER(INT16);
-        break;
-    case PA_SAMPLE_S32LE:
-        PROCESS_BUFFER(INT32);
-        break;
-    case PA_SAMPLE_FLOAT32LE:
-        PROCESS_BUFFER(float);
-        break;
-#undef PROCESS_BUFFER
-    case PA_SAMPLE_S24_32LE:
-    {
-        UINT32 *p = (UINT32*)buffer;
-        do
-        {
-            for (i = 0; i < channels; i++)
-            {
-                p[i] = (INT32)((INT32)(p[i] << 8) * vol[i]);
-                p[i] >>= 8;
+        size = GetFileVersionInfoSizeW(path, NULL);
+        if (!size)
+            goto skip;
+
+        data = malloc(size);
+        if (!data)
+            goto skip;
+
+        if (!GetFileVersionInfoW(path, 0, size, data))
+            goto skip;
+
+        if (!VerQueryValueW(data, L"\\VarFileInfo\\Translation", (LPVOID *)&translate, &translate_size))
+            goto skip;
+
+        /* no translations found */
+        if (translate_size < sizeof(LANGANDCODEPAGE))
+            goto skip;
+
+        /* The following code will try to find the best translation. We first search for an
+         * exact match of the language, then a match of the language PRIMARYLANGID, then we
+         * search for a LANG_NEUTRAL match, and if that still doesn't work we pick the
+         * first entry which contains a proper productname. */
+        locale = GetThreadLocale();
+
+        for (i = 0; i < translate_size / sizeof(LANGANDCODEPAGE); i++) {
+            if (translate[i].wLanguage == locale &&
+                    query_productname(data, &translate[i], &productname, &productname_size)) {
+                found = TRUE;
+                break;
             }
+<<<<<<< HEAD
             p += i;
         } while ((BYTE*)p != end);
         break;
@@ -1296,12 +1202,21 @@ static void pulse_read(ACImpl *This)
 
                     This->peek_len = src_len - copy;
                     This->peek_ofs = 0;
-                }
+=======
+        }
 
-                pa_stream_drop(This->stream);
+        if (!found) {
+            for (i = 0; i < translate_size / sizeof(LANGANDCODEPAGE); i++) {
+                if (PRIMARYLANGID(translate[i].wLanguage) == PRIMARYLANGID(locale) &&
+                        query_productname(data, &translate[i], &productname, &productname_size)) {
+                    found = TRUE;
+                    break;
+>>>>>>> github-desktop-wine-mirror/master
+                }
             }
         }
 
+<<<<<<< HEAD
         bytes -= This->period_bytes;
     }
 }
@@ -1465,9 +1380,121 @@ HRESULT WINAPI AUDDRV_GetEndpointIDs(EDataFlow flow, WCHAR ***ids, GUID **keys,
     PhysDevice *dev;
     DWORD count;
     WCHAR *id;
+=======
+        if (!found) {
+            for (i = 0; i < translate_size / sizeof(LANGANDCODEPAGE); i++) {
+                if (PRIMARYLANGID(translate[i].wLanguage) == LANG_NEUTRAL &&
+                        query_productname(data, &translate[i], &productname, &productname_size)) {
+                    found = TRUE;
+                    break;
+                }
+            }
+        }
 
-    TRACE("%d %p %p %p\n", flow, ids, num, def_index);
+        if (!found) {
+            for (i = 0; i < translate_size / sizeof(LANGANDCODEPAGE); i++) {
+                if (query_productname(data, &translate[i], &productname, &productname_size)) {
+                    found = TRUE;
+                    break;
+                }
+            }
+        }
 
+        if (found) {
+            len = WideCharToMultiByte(CP_UTF8, 0, productname, -1, NULL, 0, NULL, NULL);
+            str = malloc(len);
+            if (str) WideCharToMultiByte(CP_UTF8, 0, productname, -1, str, len, NULL, NULL);
+        }
+
+    skip:
+        free(data);
+        if (str) return str;
+    }
+
+    name = wcsrchr(path, '\\');
+    if (!name)
+        name = path;
+    else
+        name++;
+    len = WideCharToMultiByte(CP_UTF8, 0, name, -1, NULL, 0, NULL, NULL);
+    if (!(str = malloc(len)))
+        return NULL;
+    WideCharToMultiByte(CP_UNIXCP, 0, name, -1, str, len, NULL, NULL);
+    return str;
+}
+
+static DWORD WINAPI pulse_timer_cb(void *user)
+{
+    struct timer_loop_params params;
+    ACImpl *This = user;
+    params.stream = This->pulse_stream;
+    pulse_call(timer_loop, &params);
+    return 0;
+}
+
+static void set_stream_volumes(ACImpl *This)
+{
+    struct set_volumes_params params;
+    params.stream          = This->pulse_stream;
+    params.master_volume   = This->session->mute ? 0.0f : This->session->master_vol;
+    params.volumes         = This->vol;
+    params.session_volumes = This->session->channel_vols;
+    pulse_call(set_volumes, &params);
+}
+
+static void get_device_guid(HKEY drv_key, EDataFlow flow, const char *pulse_name, GUID *guid)
+{
+    WCHAR key_name[MAX_PULSE_NAME_LEN + 2];
+    DWORD type, size = sizeof(*guid);
+    LSTATUS status;
+    HKEY dev_key;
+
+    if (!pulse_name[0]) {
+        *guid = (flow == eRender) ? pulse_render_guid : pulse_capture_guid;
+        return;
+    }
+
+    if (!drv_key) {
+        CoCreateGuid(guid);
+        return;
+    }
+
+    key_name[0] = (flow == eRender) ? '0' : '1';
+    key_name[1] = ',';
+    MultiByteToWideChar(CP_UNIXCP, 0, pulse_name, -1, key_name + 2, ARRAY_SIZE(key_name) - 2);
+
+    status = RegCreateKeyExW(drv_key, key_name, 0, NULL, 0, KEY_READ | KEY_WRITE | KEY_WOW64_64KEY,
+                             NULL, &dev_key, NULL);
+    if (status != ERROR_SUCCESS) {
+        ERR("Failed to open registry key for device %s: %u\n", pulse_name, status);
+        CoCreateGuid(guid);
+        return;
+    }
+
+    status = RegQueryValueExW(dev_key, L"guid", 0, &type, (BYTE*)guid, &size);
+    if (status != ERROR_SUCCESS || type != REG_BINARY || size != sizeof(*guid)) {
+        CoCreateGuid(guid);
+        status = RegSetValueExW(dev_key, L"guid", 0, REG_BINARY, (BYTE*)guid, sizeof(*guid));
+        if (status != ERROR_SUCCESS)
+            ERR("Failed to store device GUID for %s to registry: %u\n", pulse_name, status);
+    }
+    RegCloseKey(dev_key);
+}
+
+HRESULT WINAPI AUDDRV_GetEndpointIDs(EDataFlow flow, WCHAR ***ids_out, GUID **keys,
+        UINT *num, UINT *def_index)
+{
+    struct get_endpoint_ids_params params;
+    GUID *guids = NULL;
+    WCHAR **ids = NULL;
+    unsigned int i = 0;
+    LSTATUS status;
+    HKEY drv_key;
+>>>>>>> github-desktop-wine-mirror/master
+
+    TRACE("%d %p %p %p\n", flow, ids_out, num, def_index);
+
+<<<<<<< HEAD
     *num = count = list_count(list);
     *def_index = 0;
 
@@ -1505,15 +1532,155 @@ err:
     *ids = NULL;
     *keys = NULL;
     return E_OUTOFMEMORY;
+=======
+    params.flow = flow;
+    params.size = MAX_PULSE_NAME_LEN * 4;
+    params.endpoints = NULL;
+    do {
+        HeapFree(GetProcessHeap(), 0, params.endpoints);
+        params.endpoints = HeapAlloc(GetProcessHeap(), 0, params.size);
+        pulse_call(get_endpoint_ids, &params);
+    } while(params.result == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
+
+    if (FAILED(params.result))
+        goto end;
+
+    ids = HeapAlloc(GetProcessHeap(), 0, params.num * sizeof(*ids));
+    guids = HeapAlloc(GetProcessHeap(), 0, params.num * sizeof(*guids));
+    if (!ids || !guids) {
+        params.result = E_OUTOFMEMORY;
+        goto end;
+    }
+
+    status = RegCreateKeyExW(HKEY_CURRENT_USER, drv_key_devicesW, 0, NULL, 0,
+                             KEY_WRITE | KEY_WOW64_64KEY, NULL, &drv_key, NULL);
+    if (status != ERROR_SUCCESS) {
+        ERR("Failed to open devices registry key: %u\n", status);
+        drv_key = NULL;
+    }
+
+    for (i = 0; i < params.num; i++) {
+        unsigned int size = (wcslen(params.endpoints[i].name) + 1) * sizeof(WCHAR);
+        if (!(ids[i] = HeapAlloc(GetProcessHeap(), 0, size))) {
+            params.result = E_OUTOFMEMORY;
+            break;
+        }
+        memcpy(ids[i], params.endpoints[i].name, size);
+        get_device_guid(drv_key, flow, params.endpoints[i].pulse_name, &guids[i]);
+    }
+    if (drv_key)
+        RegCloseKey(drv_key);
+
+end:
+    HeapFree(GetProcessHeap(), 0, params.endpoints);
+    if (FAILED(params.result)) {
+        HeapFree(GetProcessHeap(), 0, guids);
+        while (i--) HeapFree(GetProcessHeap(), 0, ids[i]);
+        HeapFree(GetProcessHeap(), 0, ids);
+    } else {
+        *ids_out = ids;
+        *keys = guids;
+        *num = params.num;
+        *def_index = params.default_idx;
+    }
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 int WINAPI AUDDRV_GetPriority(void)
 {
-    HRESULT hr;
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_test_connect();
-    pthread_mutex_unlock(&pulse_lock);
-    return SUCCEEDED(hr) ? Priority_Preferred : Priority_Unavailable;
+    struct test_connect_params params;
+    char *name;
+
+    params.name   = name = get_application_name(FALSE);
+    params.config = &pulse_config;
+    pulse_call(test_connect, &params);
+    free(name);
+    return SUCCEEDED(params.result) ? Priority_Preferred : Priority_Unavailable;
+}
+
+static BOOL get_pulse_name_by_guid(const GUID *guid, char pulse_name[MAX_PULSE_NAME_LEN], EDataFlow *flow)
+{
+    struct device_cache *device;
+    WCHAR key_name[MAX_PULSE_NAME_LEN + 2];
+    DWORD key_name_size;
+    DWORD index = 0;
+    HKEY key;
+
+    /* Return empty string for default PulseAudio device */
+    pulse_name[0] = 0;
+    if (IsEqualGUID(guid, &pulse_render_guid)) {
+        *flow = eRender;
+        return TRUE;
+    } else if (IsEqualGUID(guid, &pulse_capture_guid)) {
+        *flow = eCapture;
+        return TRUE;
+    }
+
+    /* Check the cache first */
+    LIST_FOR_EACH_ENTRY(device, &g_devices_cache, struct device_cache, entry) {
+        if (!IsEqualGUID(guid, &device->guid))
+            continue;
+        *flow = device->dataflow;
+        strcpy(pulse_name, device->pulse_name);
+        return TRUE;
+    }
+
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, drv_key_devicesW, 0, KEY_READ | KEY_WOW64_64KEY, &key) != ERROR_SUCCESS) {
+        WARN("No devices found in registry\n");
+        return FALSE;
+    }
+
+    for (;;) {
+        DWORD size, type;
+        LSTATUS status;
+        GUID reg_guid;
+        HKEY dev_key;
+        int len;
+
+        key_name_size = ARRAY_SIZE(key_name);
+        if (RegEnumKeyExW(key, index++, key_name, &key_name_size, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
+            break;
+
+        if (RegOpenKeyExW(key, key_name, 0, KEY_READ | KEY_WOW64_64KEY, &dev_key) != ERROR_SUCCESS) {
+            ERR("Couldn't open key: %s\n", wine_dbgstr_w(key_name));
+            continue;
+        }
+
+        size = sizeof(reg_guid);
+        status = RegQueryValueExW(dev_key, L"guid", 0, &type, (BYTE *)&reg_guid, &size);
+        RegCloseKey(dev_key);
+
+        if (status == ERROR_SUCCESS && type == REG_BINARY && size == sizeof(reg_guid) && IsEqualGUID(&reg_guid, guid)) {
+            RegCloseKey(key);
+
+            TRACE("Found matching device key: %s\n", wine_dbgstr_w(key_name));
+
+            if (key_name[0] == '0')
+                *flow = eRender;
+            else if (key_name[0] == '1')
+                *flow = eCapture;
+            else {
+                WARN("Unknown device type: %c\n", key_name[0]);
+                return FALSE;
+            }
+
+            if (!(len = WideCharToMultiByte(CP_UNIXCP, 0, key_name + 2, -1, pulse_name, MAX_PULSE_NAME_LEN, NULL, NULL)))
+                return FALSE;
+
+            if ((device = malloc(FIELD_OFFSET(struct device_cache, pulse_name[len])))) {
+                device->guid = reg_guid;
+                device->dataflow = *flow;
+                strcpy(device->pulse_name, pulse_name);
+                list_add_tail(&g_devices_cache, &device->entry);
+            }
+            return TRUE;
+        }
+    }
+
+    RegCloseKey(key);
+    WARN("No matching device in registry for GUID %s\n", debugstr_guid(guid));
+    return FALSE;
 }
 
 static BOOL get_pulse_name_by_guid(const GUID *guid, char *name, DWORD name_size, EDataFlow *flow)
@@ -1577,26 +1744,32 @@ HRESULT WINAPI AUDDRV_GetAudioEndpoint(GUID *guid, IMMDevice *dev, IAudioClient 
 {
     char pulse_name[256] = {0};
     ACImpl *This;
-    int i;
+    char pulse_name[MAX_PULSE_NAME_LEN];
     EDataFlow dataflow;
+    unsigned len;
     HRESULT hr;
 
     TRACE("%s %p %p\n", debugstr_guid(guid), dev, out);
 
+<<<<<<< HEAD
     if (IsEqualGUID(guid, &pulse_render_guid))
         dataflow = eRender;
     else if (IsEqualGUID(guid, &pulse_capture_guid))
         dataflow = eCapture;
     else if(!get_pulse_name_by_guid(guid, pulse_name, sizeof(pulse_name), &dataflow))
+=======
+    if (!get_pulse_name_by_guid(guid, pulse_name, &dataflow))
+>>>>>>> github-desktop-wine-mirror/master
         return AUDCLNT_E_DEVICE_INVALIDATED;
 
     *out = NULL;
 
-    This = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*This));
+    len = strlen(pulse_name) + 1;
+    This = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, FIELD_OFFSET(ACImpl, pulse_name[len]));
     if (!This)
         return E_OUTOFMEMORY;
 
-    This->IAudioClient_iface.lpVtbl = &AudioClient_Vtbl;
+    This->IAudioClient3_iface.lpVtbl = &AudioClient3_Vtbl;
     This->IAudioRenderClient_iface.lpVtbl = &AudioRenderClient_Vtbl;
     This->IAudioCaptureClient_iface.lpVtbl = &AudioCaptureClient_Vtbl;
     This->IAudioClock_iface.lpVtbl = &AudioClock_Vtbl;
@@ -1604,27 +1777,31 @@ HRESULT WINAPI AUDDRV_GetAudioEndpoint(GUID *guid, IMMDevice *dev, IAudioClient 
     This->IAudioStreamVolume_iface.lpVtbl = &AudioStreamVolume_Vtbl;
     This->dataflow = dataflow;
     This->parent = dev;
+<<<<<<< HEAD
     for (i = 0; i < PA_CHANNELS_MAX; ++i)
         This->vol[i] = 1.f;
     strcpy(This->device, pulse_name);
+=======
+    memcpy(This->pulse_name, pulse_name, len);
+>>>>>>> github-desktop-wine-mirror/master
 
-    hr = CoCreateFreeThreadedMarshaler((IUnknown*)&This->IAudioClient_iface, &This->marshal);
-    if (hr) {
+    hr = CoCreateFreeThreadedMarshaler((IUnknown*)&This->IAudioClient3_iface, &This->marshal);
+    if (FAILED(hr)) {
         HeapFree(GetProcessHeap(), 0, This);
         return hr;
     }
     IMMDevice_AddRef(This->parent);
 
-    *out = &This->IAudioClient_iface;
-    IAudioClient_AddRef(&This->IAudioClient_iface);
+    *out = (IAudioClient *)&This->IAudioClient3_iface;
+    IAudioClient3_AddRef(&This->IAudioClient3_iface);
 
     return S_OK;
 }
 
-static HRESULT WINAPI AudioClient_QueryInterface(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_QueryInterface(IAudioClient3 *iface,
         REFIID riid, void **ppv)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
+    ACImpl *This = impl_from_IAudioClient3(iface);
 
     TRACE("(%p)->(%s, %p)\n", iface, debugstr_guid(riid), ppv);
 
@@ -1632,7 +1809,10 @@ static HRESULT WINAPI AudioClient_QueryInterface(IAudioClient *iface,
         return E_POINTER;
 
     *ppv = NULL;
-    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IAudioClient))
+    if (IsEqualIID(riid, &IID_IUnknown) ||
+            IsEqualIID(riid, &IID_IAudioClient) ||
+            IsEqualIID(riid, &IID_IAudioClient2) ||
+            IsEqualIID(riid, &IID_IAudioClient3))
         *ppv = iface;
     if (*ppv) {
         IUnknown_AddRef((IUnknown*)*ppv);
@@ -1646,22 +1826,23 @@ static HRESULT WINAPI AudioClient_QueryInterface(IAudioClient *iface,
     return E_NOINTERFACE;
 }
 
-static ULONG WINAPI AudioClient_AddRef(IAudioClient *iface)
+static ULONG WINAPI AudioClient_AddRef(IAudioClient3 *iface)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
+    ACImpl *This = impl_from_IAudioClient3(iface);
     ULONG ref;
     ref = InterlockedIncrement(&This->ref);
     TRACE("(%p) Refcount now %u\n", This, ref);
     return ref;
 }
 
-static ULONG WINAPI AudioClient_Release(IAudioClient *iface)
+static ULONG WINAPI AudioClient_Release(IAudioClient3 *iface)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
+    ACImpl *This = impl_from_IAudioClient3(iface);
     ULONG ref;
     ref = InterlockedDecrement(&This->ref);
     TRACE("(%p) Refcount now %u\n", This, ref);
     if (!ref) {
+<<<<<<< HEAD
         if (This->stream) {
             if(This->timer){
                 This->please_quit = TRUE;
@@ -1676,14 +1857,17 @@ static ULONG WINAPI AudioClient_Release(IAudioClient *iface)
             }
             pa_stream_unref(This->stream);
             This->stream = NULL;
+=======
+        if (This->pulse_stream) {
+            pulse_release_stream(This->pulse_stream, This->timer);
+            This->pulse_stream = NULL;
+            EnterCriticalSection(&session_cs);
+>>>>>>> github-desktop-wine-mirror/master
             list_remove(&This->entry);
-            pthread_mutex_unlock(&pulse_lock);
+            LeaveCriticalSection(&session_cs);
         }
         IUnknown_Release(This->marshal);
         IMMDevice_Release(This->parent);
-        HeapFree(GetProcessHeap(), 0, This->tmp_buffer);
-        HeapFree(GetProcessHeap(), 0, This->peek_buffer);
-        HeapFree(GetProcessHeap(), 0, This->local_buffer);
         HeapFree(GetProcessHeap(), 0, This);
     }
     return ref;
@@ -1742,32 +1926,6 @@ static WAVEFORMATEX *clone_format(const WAVEFORMATEX *fmt)
     ret->cbSize = size - sizeof(WAVEFORMATEX);
 
     return ret;
-}
-
-static DWORD get_channel_mask(unsigned int channels)
-{
-    switch(channels) {
-    case 0:
-        return 0;
-    case 1:
-        return KSAUDIO_SPEAKER_MONO;
-    case 2:
-        return KSAUDIO_SPEAKER_STEREO;
-    case 3:
-        return KSAUDIO_SPEAKER_STEREO | SPEAKER_LOW_FREQUENCY;
-    case 4:
-        return KSAUDIO_SPEAKER_QUAD;    /* not _SURROUND */
-    case 5:
-        return KSAUDIO_SPEAKER_QUAD | SPEAKER_LOW_FREQUENCY;
-    case 6:
-        return KSAUDIO_SPEAKER_5POINT1; /* not 5POINT1_SURROUND */
-    case 7:
-        return KSAUDIO_SPEAKER_5POINT1 | SPEAKER_BACK_CENTER;
-    case 8:
-        return KSAUDIO_SPEAKER_7POINT1_SURROUND; /* Vista deprecates 7POINT1 */
-    }
-    FIXME("Unknown speaker configuration: %u\n", channels);
-    return 0;
 }
 
 static void session_init_vols(AudioSession *session, UINT channels)
@@ -1849,127 +2007,30 @@ static HRESULT get_audio_session(const GUID *sessionguid,
     return S_OK;
 }
 
-static HRESULT pulse_spec_from_waveformat(ACImpl *This, const WAVEFORMATEX *fmt)
-{
-    pa_channel_map_init(&This->map);
-    This->ss.rate = fmt->nSamplesPerSec;
-    This->ss.format = PA_SAMPLE_INVALID;
-
-    switch(fmt->wFormatTag) {
-    case WAVE_FORMAT_IEEE_FLOAT:
-        if (!fmt->nChannels || fmt->nChannels > 2 || fmt->wBitsPerSample != 32)
-            break;
-        This->ss.format = PA_SAMPLE_FLOAT32LE;
-        pa_channel_map_init_auto(&This->map, fmt->nChannels, PA_CHANNEL_MAP_ALSA);
-        break;
-    case WAVE_FORMAT_PCM:
-        if (!fmt->nChannels || fmt->nChannels > 2)
-            break;
-        if (fmt->wBitsPerSample == 8)
-            This->ss.format = PA_SAMPLE_U8;
-        else if (fmt->wBitsPerSample == 16)
-            This->ss.format = PA_SAMPLE_S16LE;
-        else
-            return AUDCLNT_E_UNSUPPORTED_FORMAT;
-        pa_channel_map_init_auto(&This->map, fmt->nChannels, PA_CHANNEL_MAP_ALSA);
-        break;
-    case WAVE_FORMAT_EXTENSIBLE: {
-        WAVEFORMATEXTENSIBLE *wfe = (WAVEFORMATEXTENSIBLE*)fmt;
-        DWORD mask = wfe->dwChannelMask;
-        DWORD i = 0, j;
-        if (fmt->cbSize != (sizeof(*wfe) - sizeof(*fmt)) && fmt->cbSize != sizeof(*wfe))
-            break;
-        if (IsEqualGUID(&wfe->SubFormat, &KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) &&
-            (!wfe->Samples.wValidBitsPerSample || wfe->Samples.wValidBitsPerSample == 32) &&
-            fmt->wBitsPerSample == 32)
-            This->ss.format = PA_SAMPLE_FLOAT32LE;
-        else if (IsEqualGUID(&wfe->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM)) {
-            DWORD valid = wfe->Samples.wValidBitsPerSample;
-            if (!valid)
-                valid = fmt->wBitsPerSample;
-            if (!valid || valid > fmt->wBitsPerSample)
-                break;
-            switch (fmt->wBitsPerSample) {
-                case 8:
-                    if (valid == 8)
-                        This->ss.format = PA_SAMPLE_U8;
-                    break;
-                case 16:
-                    if (valid == 16)
-                        This->ss.format = PA_SAMPLE_S16LE;
-                    break;
-                case 24:
-                    if (valid == 24)
-                        This->ss.format = PA_SAMPLE_S24LE;
-                    break;
-                case 32:
-                    if (valid == 24)
-                        This->ss.format = PA_SAMPLE_S24_32LE;
-                    else if (valid == 32)
-                        This->ss.format = PA_SAMPLE_S32LE;
-                    break;
-                default:
-                    return AUDCLNT_E_UNSUPPORTED_FORMAT;
-            }
-        }
-        This->map.channels = fmt->nChannels;
-        if (!mask || (mask & (SPEAKER_ALL|SPEAKER_RESERVED)))
-            mask = get_channel_mask(fmt->nChannels);
-        for (j = 0; j < ARRAY_SIZE(pulse_pos_from_wfx) && i < fmt->nChannels; ++j) {
-            if (mask & (1 << j))
-                This->map.map[i++] = pulse_pos_from_wfx[j];
-        }
-
-        /* Special case for mono since pulse appears to map it differently */
-        if (mask == SPEAKER_FRONT_CENTER)
-            This->map.map[0] = PA_CHANNEL_POSITION_MONO;
-
-        if (i < fmt->nChannels || (mask & SPEAKER_RESERVED)) {
-            This->map.channels = 0;
-            ERR("Invalid channel mask: %i/%i and %x(%x)\n", i, fmt->nChannels, mask, wfe->dwChannelMask);
-            break;
-        }
-        break;
-        }
-    case WAVE_FORMAT_ALAW:
-    case WAVE_FORMAT_MULAW:
-        if (fmt->wBitsPerSample != 8) {
-            FIXME("Unsupported bpp %u for LAW\n", fmt->wBitsPerSample);
-            return AUDCLNT_E_UNSUPPORTED_FORMAT;
-        }
-        if (fmt->nChannels != 1 && fmt->nChannels != 2) {
-            FIXME("Unsupported channels %u for LAW\n", fmt->nChannels);
-            return AUDCLNT_E_UNSUPPORTED_FORMAT;
-        }
-        This->ss.format = fmt->wFormatTag == WAVE_FORMAT_MULAW ? PA_SAMPLE_ULAW : PA_SAMPLE_ALAW;
-        pa_channel_map_init_auto(&This->map, fmt->nChannels, PA_CHANNEL_MAP_ALSA);
-        break;
-    default:
-        WARN("Unhandled tag %x\n", fmt->wFormatTag);
-        return AUDCLNT_E_UNSUPPORTED_FORMAT;
-    }
-    This->ss.channels = This->map.channels;
-    if (!pa_channel_map_valid(&This->map) || This->ss.format == PA_SAMPLE_INVALID) {
-        ERR("Invalid format! Channel spec valid: %i, format: %i\n", pa_channel_map_valid(&This->map), This->ss.format);
-        return AUDCLNT_E_UNSUPPORTED_FORMAT;
-    }
-    return S_OK;
-}
-
-static HRESULT WINAPI AudioClient_Initialize(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_Initialize(IAudioClient3 *iface,
         AUDCLNT_SHAREMODE mode, DWORD flags, REFERENCE_TIME duration,
         REFERENCE_TIME period, const WAVEFORMATEX *fmt,
         const GUID *sessionguid)
 {
+<<<<<<< HEAD
     ACImpl *This = impl_from_IAudioClient(iface);
     HRESULT hr = S_OK;
     UINT32 bufsize_bytes;
+=======
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct create_stream_params params;
+    unsigned int i, channel_count;
+    struct pulse_stream *stream;
+    char *name;
+    HRESULT hr;
+>>>>>>> github-desktop-wine-mirror/master
 
     TRACE("(%p)->(%x, %x, %s, %s, %p, %s)\n", This, mode, flags,
           wine_dbgstr_longlong(duration), wine_dbgstr_longlong(period), fmt, debugstr_guid(sessionguid));
 
     if (!fmt)
         return E_POINTER;
+    dump_fmt(fmt);
 
     if (mode != AUDCLNT_SHAREMODE_SHARED && mode != AUDCLNT_SHAREMODE_EXCLUSIVE)
         return E_INVALIDARG;
@@ -1983,29 +2044,64 @@ static HRESULT WINAPI AudioClient_Initialize(IAudioClient *iface,
                 AUDCLNT_STREAMFLAGS_RATEADJUST |
                 AUDCLNT_SESSIONFLAGS_EXPIREWHENUNOWNED |
                 AUDCLNT_SESSIONFLAGS_DISPLAY_HIDE |
-                AUDCLNT_SESSIONFLAGS_DISPLAY_HIDEWHENEXPIRED)) {
-        TRACE("Unknown flags: %08x\n", flags);
+                AUDCLNT_SESSIONFLAGS_DISPLAY_HIDEWHENEXPIRED |
+                AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY |
+                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM)) {
+        FIXME("Unknown flags: %08x\n", flags);
         return E_INVALIDARG;
     }
 
-    pthread_mutex_lock(&pulse_lock);
+    EnterCriticalSection(&session_cs);
 
-    hr = pulse_connect();
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
-        return hr;
-    }
-
-    if (This->stream) {
-        pthread_mutex_unlock(&pulse_lock);
+    if (This->pulse_stream) {
+        LeaveCriticalSection(&session_cs);
         return AUDCLNT_E_ALREADY_INITIALIZED;
     }
 
-    hr = pulse_spec_from_waveformat(This, fmt);
-    TRACE("Obtaining format returns %08x\n", hr);
-    dump_fmt(fmt);
+    if (!pulse_thread)
+    {
+        HANDLE event = CreateEventW(NULL, TRUE, FALSE, NULL);
+        if (!(pulse_thread = CreateThread(NULL, 0, pulse_mainloop_thread, event, 0, NULL)))
+        {
+            ERR("Failed to create mainloop thread.\n");
+            LeaveCriticalSection(&session_cs);
+            CloseHandle(event);
+            return E_FAIL;
+        }
+        SetThreadPriority(pulse_thread, THREAD_PRIORITY_TIME_CRITICAL);
+        WaitForSingleObject(event, INFINITE);
+        CloseHandle(event);
+    }
 
+    params.name = name = get_application_name(TRUE);
+    params.pulse_name  = This->pulse_name;
+    params.dataflow = This->dataflow;
+    params.mode     = mode;
+    params.flags    = flags;
+    params.duration = duration;
+    params.fmt      = fmt;
+    params.stream   = &stream;
+    params.channel_count = &channel_count;
+    pulse_call(create_stream, &params);
+    free(name);
+    if (FAILED(hr = params.result))
+    {
+        LeaveCriticalSection(&session_cs);
+        return hr;
+    }
+
+    if (!(This->vol = malloc(channel_count * sizeof(*This->vol))))
+    {
+        pulse_release_stream(stream, NULL);
+        LeaveCriticalSection(&session_cs);
+        return E_OUTOFMEMORY;
+    }
+    for (i = 0; i < channel_count; i++)
+        This->vol[i] = 1.f;
+
+    hr = get_audio_session(sessionguid, This->parent, channel_count, &This->session);
     if (FAILED(hr))
+<<<<<<< HEAD
         goto exit;
 
     period = pulse_def_period[This->dataflow == eCapture];
@@ -2076,41 +2172,58 @@ exit:
     }
     pthread_mutex_unlock(&pulse_lock);
     return hr;
+=======
+    {
+        free(This->vol);
+        This->vol = NULL;
+        LeaveCriticalSection(&session_cs);
+        pulse_release_stream(stream, NULL);
+        return E_OUTOFMEMORY;
+    }
+
+    This->pulse_stream = stream;
+    This->channel_count = channel_count;
+    list_add_tail(&This->session->clients, &This->entry);
+    set_stream_volumes(This);
+
+    LeaveCriticalSection(&session_cs);
+    return S_OK;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
-static HRESULT WINAPI AudioClient_GetBufferSize(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_GetBufferSize(IAudioClient3 *iface,
         UINT32 *out)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct get_buffer_size_params params;
 
     TRACE("(%p)->(%p)\n", This, out);
 
     if (!out)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (SUCCEEDED(hr))
-        *out = This->bufsize_frames;
-    pthread_mutex_unlock(&pulse_lock);
-
-    return hr;
+    params.stream = This->pulse_stream;
+    params.size = out;
+    pulse_call(get_buffer_size, &params);
+    return params.result;
 }
 
-static HRESULT WINAPI AudioClient_GetStreamLatency(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_GetStreamLatency(IAudioClient3 *iface,
         REFERENCE_TIME *latency)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    const pa_buffer_attr *attr;
-    REFERENCE_TIME lat;
-    HRESULT hr;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct get_latency_params params;
 
     TRACE("(%p)->(%p)\n", This, latency);
 
     if (!latency)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     hr = pulse_stream_valid(This);
     if (FAILED(hr)) {
@@ -2149,38 +2262,38 @@ static void ACImpl_GetCapturePad(ACImpl *This, UINT32 *out)
 }
 
 static HRESULT WINAPI AudioClient_GetCurrentPadding(IAudioClient *iface,
+=======
+    params.stream  = This->pulse_stream;
+    params.latency = latency;
+    pulse_call(get_latency, &params);
+    return params.result;
+}
+
+static HRESULT WINAPI AudioClient_GetCurrentPadding(IAudioClient3 *iface,
+>>>>>>> github-desktop-wine-mirror/master
         UINT32 *out)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct get_current_padding_params params;
 
     TRACE("(%p)->(%p)\n", This, out);
 
     if (!out)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
-        return hr;
-    }
-
-    if (This->dataflow == eRender)
-        ACImpl_GetRenderPad(This, out);
-    else
-        ACImpl_GetCapturePad(This, out);
-    pthread_mutex_unlock(&pulse_lock);
-
-    TRACE("%p Pad: %u ms (%u)\n", This, MulDiv(*out, 1000, This->ss.rate), *out);
-    return S_OK;
+    params.stream  = This->pulse_stream;
+    params.padding = out;
+    pulse_call(get_current_padding, &params);
+    return params.result;
 }
 
-static HRESULT WINAPI AudioClient_IsFormatSupported(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_IsFormatSupported(IAudioClient3 *iface,
         AUDCLNT_SHAREMODE mode, const WAVEFORMATEX *fmt,
         WAVEFORMATEX **out)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
+    ACImpl *This = impl_from_IAudioClient3(iface);
     HRESULT hr = S_OK;
     WAVEFORMATEX *closest = NULL;
     BOOL exclusive;
@@ -2329,28 +2442,27 @@ static HRESULT WINAPI AudioClient_IsFormatSupported(IAudioClient *iface,
     return hr;
 }
 
-static HRESULT WINAPI AudioClient_GetMixFormat(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_GetMixFormat(IAudioClient3 *iface,
         WAVEFORMATEX **pwfx)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    WAVEFORMATEXTENSIBLE *fmt = &pulse_fmt[This->dataflow == eCapture];
+    ACImpl *This = impl_from_IAudioClient3(iface);
 
     TRACE("(%p)->(%p)\n", This, pwfx);
 
     if (!pwfx)
         return E_POINTER;
 
-    *pwfx = clone_format(&fmt->Format);
+    *pwfx = clone_format(&pulse_config.modes[This->dataflow == eCapture].format.Format);
     if (!*pwfx)
         return E_OUTOFMEMORY;
     dump_fmt(*pwfx);
     return S_OK;
 }
 
-static HRESULT WINAPI AudioClient_GetDevicePeriod(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_GetDevicePeriod(IAudioClient3 *iface,
         REFERENCE_TIME *defperiod, REFERENCE_TIME *minperiod)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
+    ACImpl *This = impl_from_IAudioClient3(iface);
 
     TRACE("(%p)->(%p, %p)\n", This, defperiod, minperiod);
 
@@ -2358,29 +2470,35 @@ static HRESULT WINAPI AudioClient_GetDevicePeriod(IAudioClient *iface,
         return E_POINTER;
 
     if (defperiod)
-        *defperiod = pulse_def_period[This->dataflow == eCapture];
+        *defperiod = pulse_config.modes[This->dataflow == eCapture].def_period;
     if (minperiod)
-        *minperiod = pulse_min_period[This->dataflow == eCapture];
+        *minperiod = pulse_config.modes[This->dataflow == eCapture].min_period;
 
     return S_OK;
 }
 
-static HRESULT WINAPI AudioClient_Start(IAudioClient *iface)
+static HRESULT WINAPI AudioClient_Start(IAudioClient3 *iface)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr = S_OK;
-    int success;
-    pa_operation *o;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct start_params params;
+    HRESULT hr;
 
     TRACE("(%p)\n", This);
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+
+    params.stream = This->pulse_stream;
+    pulse_call(start, &params);
+    if (FAILED(hr = params.result))
         return hr;
+
+    if (!This->timer) {
+        This->timer = CreateThread(NULL, 0, pulse_timer_cb, This, 0, NULL);
+        SetThreadPriority(This->timer, THREAD_PRIORITY_TIME_CRITICAL);
     }
 
+<<<<<<< HEAD
     if ((This->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK) && !This->event) {
         pthread_mutex_unlock(&pulse_lock);
         return AUDCLNT_E_EVENTHANDLE_NOT_SET;
@@ -2414,61 +2532,37 @@ static HRESULT WINAPI AudioClient_Start(IAudioClient *iface)
     }
     pthread_mutex_unlock(&pulse_lock);
     return hr;
+=======
+    return S_OK;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
-static HRESULT WINAPI AudioClient_Stop(IAudioClient *iface)
+static HRESULT WINAPI AudioClient_Stop(IAudioClient3 *iface)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr = S_OK;
-    pa_operation *o;
-    int success;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct stop_params params;
 
     TRACE("(%p)\n", This);
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
-        return hr;
-    }
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
-    if (!This->started) {
-        pthread_mutex_unlock(&pulse_lock);
-        return S_FALSE;
-    }
-
-    if (This->dataflow == eRender) {
-        o = pa_stream_cork(This->stream, 1, pulse_op_cb, &success);
-        if (o) {
-            while(pa_operation_get_state(o) == PA_OPERATION_RUNNING)
-                pthread_cond_wait(&pulse_cond, &pulse_lock);
-            pa_operation_unref(o);
-        } else
-            success = 0;
-        if (!success)
-            hr = E_FAIL;
-    }
-    if (SUCCEEDED(hr)) {
-        This->started = FALSE;
-    }
-    pthread_mutex_unlock(&pulse_lock);
-    return hr;
+    params.stream = This->pulse_stream;
+    pulse_call(stop, &params);
+    return params.result;
 }
 
-static HRESULT WINAPI AudioClient_Reset(IAudioClient *iface)
+static HRESULT WINAPI AudioClient_Reset(IAudioClient3 *iface)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr = S_OK;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct reset_params params;
 
     TRACE("(%p)\n", This);
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
-        return hr;
-    }
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
+<<<<<<< HEAD
     if (This->started) {
         pthread_mutex_unlock(&pulse_lock);
         return AUDCLNT_E_NOT_STOPPED;
@@ -2508,41 +2602,36 @@ static HRESULT WINAPI AudioClient_Reset(IAudioClient *iface)
     pthread_mutex_unlock(&pulse_lock);
 
     return hr;
+=======
+    params.stream = This->pulse_stream;
+    pulse_call(reset, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
-static HRESULT WINAPI AudioClient_SetEventHandle(IAudioClient *iface,
+static HRESULT WINAPI AudioClient_SetEventHandle(IAudioClient3 *iface,
         HANDLE event)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr;
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    struct set_event_handle_params params;
 
     TRACE("(%p)->(%p)\n", This, event);
 
     if (!event)
         return E_INVALIDARG;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr)) {
-        pthread_mutex_unlock(&pulse_lock);
-        return hr;
-    }
-
-    if (!(This->flags & AUDCLNT_STREAMFLAGS_EVENTCALLBACK))
-        hr = AUDCLNT_E_EVENTHANDLE_NOT_EXPECTED;
-    else if (This->event)
-        hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
-    else
-        This->event = event;
-    pthread_mutex_unlock(&pulse_lock);
-    return hr;
+    params.stream = This->pulse_stream;
+    params.event  = event;
+    pulse_call(set_event_handle, &params);
+    return params.result;
 }
 
-static HRESULT WINAPI AudioClient_GetService(IAudioClient *iface, REFIID riid,
+static HRESULT WINAPI AudioClient_GetService(IAudioClient3 *iface, REFIID riid,
         void **ppv)
 {
-    ACImpl *This = impl_from_IAudioClient(iface);
-    HRESULT hr;
+    ACImpl *This = impl_from_IAudioClient3(iface);
 
     TRACE("(%p)->(%s, %p)\n", This, debugstr_guid(riid), ppv);
 
@@ -2550,11 +2639,8 @@ static HRESULT WINAPI AudioClient_GetService(IAudioClient *iface, REFIID riid,
         return E_POINTER;
     *ppv = NULL;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    pthread_mutex_unlock(&pulse_lock);
-    if (FAILED(hr))
-        return hr;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
     if (IsEqualIID(riid, &IID_IAudioRenderClient)) {
         if (This->dataflow != eRender)
@@ -2593,7 +2679,98 @@ static HRESULT WINAPI AudioClient_GetService(IAudioClient *iface, REFIID riid,
     return E_NOINTERFACE;
 }
 
-static const IAudioClientVtbl AudioClient_Vtbl =
+static HRESULT WINAPI AudioClient_IsOffloadCapable(IAudioClient3 *iface,
+        AUDIO_STREAM_CATEGORY category, BOOL *offload_capable)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+
+    TRACE("(%p)->(0x%x, %p)\n", This, category, offload_capable);
+
+    if(!offload_capable)
+        return E_INVALIDARG;
+
+    *offload_capable = FALSE;
+
+    return S_OK;
+}
+
+static HRESULT WINAPI AudioClient_SetClientProperties(IAudioClient3 *iface,
+        const AudioClientProperties *prop)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+    const Win8AudioClientProperties *legacy_prop = (const Win8AudioClientProperties *)prop;
+
+    TRACE("(%p)->(%p)\n", This, prop);
+
+    if(!legacy_prop)
+        return E_POINTER;
+
+    if(legacy_prop->cbSize == sizeof(AudioClientProperties)){
+        TRACE("{ bIsOffload: %u, eCategory: 0x%x, Options: 0x%x }\n",
+                legacy_prop->bIsOffload,
+                legacy_prop->eCategory,
+                prop->Options);
+    }else if(legacy_prop->cbSize == sizeof(Win8AudioClientProperties)){
+        TRACE("{ bIsOffload: %u, eCategory: 0x%x }\n",
+                legacy_prop->bIsOffload,
+                legacy_prop->eCategory);
+    }else{
+        WARN("Unsupported Size = %d\n", legacy_prop->cbSize);
+        return E_INVALIDARG;
+    }
+
+
+    if(legacy_prop->bIsOffload)
+        return AUDCLNT_E_ENDPOINT_OFFLOAD_NOT_CAPABLE;
+
+    return S_OK;
+}
+
+static HRESULT WINAPI AudioClient_GetBufferSizeLimits(IAudioClient3 *iface,
+        const WAVEFORMATEX *format, BOOL event_driven, REFERENCE_TIME *min_duration,
+        REFERENCE_TIME *max_duration)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+
+    FIXME("(%p)->(%p, %u, %p, %p)\n", This, format, event_driven, min_duration, max_duration);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI AudioClient_GetSharedModeEnginePeriod(IAudioClient3 *iface,
+        const WAVEFORMATEX *format, UINT32 *default_period_frames, UINT32 *unit_period_frames,
+        UINT32 *min_period_frames, UINT32 *max_period_frames)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+
+    FIXME("(%p)->(%p, %p, %p, %p, %p)\n", This, format, default_period_frames, unit_period_frames,
+            min_period_frames, max_period_frames);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI AudioClient_GetCurrentSharedModeEnginePeriod(IAudioClient3 *iface,
+        WAVEFORMATEX **cur_format, UINT32 *cur_period_frames)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+
+    FIXME("(%p)->(%p, %p)\n", This, cur_format, cur_period_frames);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI AudioClient_InitializeSharedAudioStream(IAudioClient3 *iface,
+        DWORD flags, UINT32 period_frames, const WAVEFORMATEX *format,
+        const GUID *session_guid)
+{
+    ACImpl *This = impl_from_IAudioClient3(iface);
+
+    FIXME("(%p)->(0x%x, %u, %p, %s)\n", This, flags, period_frames, format, debugstr_guid(session_guid));
+
+    return E_NOTIMPL;
+}
+
+static const IAudioClient3Vtbl AudioClient3_Vtbl =
 {
     AudioClient_QueryInterface,
     AudioClient_AddRef,
@@ -2609,7 +2786,13 @@ static const IAudioClientVtbl AudioClient_Vtbl =
     AudioClient_Stop,
     AudioClient_Reset,
     AudioClient_SetEventHandle,
-    AudioClient_GetService
+    AudioClient_GetService,
+    AudioClient_IsOffloadCapable,
+    AudioClient_SetClientProperties,
+    AudioClient_GetBufferSizeLimits,
+    AudioClient_GetSharedModeEnginePeriod,
+    AudioClient_GetCurrentSharedModeEnginePeriod,
+    AudioClient_InitializeSharedAudioStream,
 };
 
 static HRESULT WINAPI AudioRenderClient_QueryInterface(
@@ -2640,39 +2823,36 @@ static HRESULT WINAPI AudioRenderClient_QueryInterface(
 static ULONG WINAPI AudioRenderClient_AddRef(IAudioRenderClient *iface)
 {
     ACImpl *This = impl_from_IAudioRenderClient(iface);
-    return AudioClient_AddRef(&This->IAudioClient_iface);
+    return AudioClient_AddRef(&This->IAudioClient3_iface);
 }
 
 static ULONG WINAPI AudioRenderClient_Release(IAudioRenderClient *iface)
 {
     ACImpl *This = impl_from_IAudioRenderClient(iface);
-    return AudioClient_Release(&This->IAudioClient_iface);
-}
-
-static void alloc_tmp_buffer(ACImpl *This, UINT32 bytes)
-{
-    if(This->tmp_buffer_bytes >= bytes)
-        return;
-
-    HeapFree(GetProcessHeap(), 0, This->tmp_buffer);
-    This->tmp_buffer = HeapAlloc(GetProcessHeap(), 0, bytes);
-    This->tmp_buffer_bytes = bytes;
+    return AudioClient_Release(&This->IAudioClient3_iface);
 }
 
 static HRESULT WINAPI AudioRenderClient_GetBuffer(IAudioRenderClient *iface,
         UINT32 frames, BYTE **data)
 {
     ACImpl *This = impl_from_IAudioRenderClient(iface);
+<<<<<<< HEAD
     size_t bytes = frames * pa_frame_size(&This->ss);
     HRESULT hr = S_OK;
     UINT32 wri_offs_bytes;
+=======
+    struct get_render_buffer_params params;
+>>>>>>> github-desktop-wine-mirror/master
 
     TRACE("(%p)->(%u, %p)\n", This, frames, data);
 
     if (!data)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
     *data = NULL;
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     hr = pulse_stream_valid(This);
     if (FAILED(hr) || This->locked) {
@@ -2718,12 +2898,20 @@ static void pulse_wrap_buffer(ACImpl *This, BYTE *buffer, UINT32 written_bytes)
         memcpy(This->local_buffer, buffer + chunk_bytes,
                 written_bytes - chunk_bytes);
     }
+=======
+    params.stream = This->pulse_stream;
+    params.frames = frames;
+    params.data   = data;
+    pulse_call(get_render_buffer, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static HRESULT WINAPI AudioRenderClient_ReleaseBuffer(
         IAudioRenderClient *iface, UINT32 written_frames, DWORD flags)
 {
     ACImpl *This = impl_from_IAudioRenderClient(iface);
+<<<<<<< HEAD
     UINT32 written_bytes = written_frames * pa_frame_size(&This->ss);
     BYTE *buffer;
 
@@ -2767,6 +2955,20 @@ static HRESULT WINAPI AudioRenderClient_ReleaseBuffer(
     pthread_mutex_unlock(&pulse_lock);
 
     return S_OK;
+=======
+    struct release_render_buffer_params params;
+
+    TRACE("(%p)->(%u, %x)\n", This, written_frames, flags);
+
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+
+    params.stream         = This->pulse_stream;
+    params.written_frames = written_frames;
+    params.flags          = flags;
+    pulse_call(release_render_buffer, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static const IAudioRenderClientVtbl AudioRenderClient_Vtbl = {
@@ -2805,13 +3007,13 @@ static HRESULT WINAPI AudioCaptureClient_QueryInterface(
 static ULONG WINAPI AudioCaptureClient_AddRef(IAudioCaptureClient *iface)
 {
     ACImpl *This = impl_from_IAudioCaptureClient(iface);
-    return IAudioClient_AddRef(&This->IAudioClient_iface);
+    return IAudioClient3_AddRef(&This->IAudioClient3_iface);
 }
 
 static ULONG WINAPI AudioCaptureClient_Release(IAudioCaptureClient *iface)
 {
     ACImpl *This = impl_from_IAudioCaptureClient(iface);
-    return IAudioClient_Release(&This->IAudioClient_iface);
+    return IAudioClient3_Release(&This->IAudioClient3_iface);
 }
 
 static HRESULT WINAPI AudioCaptureClient_GetBuffer(IAudioCaptureClient *iface,
@@ -2819,20 +3021,20 @@ static HRESULT WINAPI AudioCaptureClient_GetBuffer(IAudioCaptureClient *iface,
         UINT64 *qpcpos)
 {
     ACImpl *This = impl_from_IAudioCaptureClient(iface);
-    HRESULT hr;
-    ACPacket *packet;
+    struct get_capture_buffer_params params;
 
     TRACE("(%p)->(%p, %p, %p, %p, %p)\n", This, data, frames, flags,
             devpos, qpcpos);
 
     if (!data)
        return E_POINTER;
-
     *data = NULL;
-
     if (!frames || !flags)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     hr = pulse_stream_valid(This);
     if (FAILED(hr) || This->locked) {
@@ -2861,15 +3063,27 @@ static HRESULT WINAPI AudioCaptureClient_GetBuffer(IAudioCaptureClient *iface,
     This->locked = *frames;
     pthread_mutex_unlock(&pulse_lock);
     return *frames ? S_OK : AUDCLNT_S_BUFFER_EMPTY;
+=======
+    params.stream = This->pulse_stream;
+    params.data   = data;
+    params.frames = frames;
+    params.flags  = flags;
+    params.devpos = devpos;
+    params.qpcpos = qpcpos;
+    pulse_call(get_capture_buffer, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static HRESULT WINAPI AudioCaptureClient_ReleaseBuffer(
         IAudioCaptureClient *iface, UINT32 done)
 {
     ACImpl *This = impl_from_IAudioCaptureClient(iface);
+    struct release_capture_buffer_params params;
 
     TRACE("(%p)->(%u)\n", This, done);
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     if (!This->locked && done) {
         pthread_mutex_unlock(&pulse_lock);
@@ -2892,17 +3106,31 @@ static HRESULT WINAPI AudioCaptureClient_ReleaseBuffer(
     This->locked = 0;
     pthread_mutex_unlock(&pulse_lock);
     return S_OK;
+=======
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+
+    params.stream = This->pulse_stream;
+    params.done   = done;
+    pulse_call(release_capture_buffer, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static HRESULT WINAPI AudioCaptureClient_GetNextPacketSize(
         IAudioCaptureClient *iface, UINT32 *frames)
 {
     ACImpl *This = impl_from_IAudioCaptureClient(iface);
+    struct get_next_packet_size_params params;
 
     TRACE("(%p)->(%p)\n", This, frames);
+
     if (!frames)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     ACImpl_GetCapturePad(This, NULL);
     if (This->locked_ptr)
@@ -2911,6 +3139,12 @@ static HRESULT WINAPI AudioCaptureClient_GetNextPacketSize(
         *frames = 0;
     pthread_mutex_unlock(&pulse_lock);
     return S_OK;
+=======
+    params.stream = This->pulse_stream;
+    params.frames = frames;
+    pulse_call(get_next_packet_size, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static const IAudioCaptureClientVtbl AudioCaptureClient_Vtbl =
@@ -2953,44 +3187,45 @@ static HRESULT WINAPI AudioClock_QueryInterface(IAudioClock *iface,
 static ULONG WINAPI AudioClock_AddRef(IAudioClock *iface)
 {
     ACImpl *This = impl_from_IAudioClock(iface);
-    return IAudioClient_AddRef(&This->IAudioClient_iface);
+    return IAudioClient3_AddRef(&This->IAudioClient3_iface);
 }
 
 static ULONG WINAPI AudioClock_Release(IAudioClock *iface)
 {
     ACImpl *This = impl_from_IAudioClock(iface);
-    return IAudioClient_Release(&This->IAudioClient_iface);
+    return IAudioClient3_Release(&This->IAudioClient3_iface);
 }
 
 static HRESULT WINAPI AudioClock_GetFrequency(IAudioClock *iface, UINT64 *freq)
 {
     ACImpl *This = impl_from_IAudioClock(iface);
-    HRESULT hr;
+    struct get_frequency_params params;
 
     TRACE("(%p)->(%p)\n", This, freq);
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (SUCCEEDED(hr)) {
-        *freq = This->ss.rate;
-        if (This->share == AUDCLNT_SHAREMODE_SHARED)
-            *freq *= pa_frame_size(&This->ss);
-    }
-    pthread_mutex_unlock(&pulse_lock);
-    return hr;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+
+    params.stream = This->pulse_stream;
+    params.freq   = freq;
+    pulse_call(get_frequency, &params);
+    return params.result;
 }
 
 static HRESULT WINAPI AudioClock_GetPosition(IAudioClock *iface, UINT64 *pos,
         UINT64 *qpctime)
 {
     ACImpl *This = impl_from_IAudioClock(iface);
-    HRESULT hr;
+    struct get_position_params params;
 
     TRACE("(%p)->(%p, %p)\n", This, pos, qpctime);
 
     if (!pos)
         return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
 
+<<<<<<< HEAD
     pthread_mutex_lock(&pulse_lock);
     hr = pulse_stream_valid(This);
     if (FAILED(hr)) {
@@ -3020,6 +3255,14 @@ static HRESULT WINAPI AudioClock_GetPosition(IAudioClock *iface, UINT64 *pos,
     }
 
     return S_OK;
+=======
+    params.stream  = This->pulse_stream;
+    params.device  = FALSE;
+    params.pos     = pos;
+    params.qpctime = qpctime;
+    pulse_call(get_position, &params);
+    return params.result;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static HRESULT WINAPI AudioClock_GetCharacteristics(IAudioClock *iface,
@@ -3057,23 +3300,34 @@ static HRESULT WINAPI AudioClock2_QueryInterface(IAudioClock2 *iface,
 static ULONG WINAPI AudioClock2_AddRef(IAudioClock2 *iface)
 {
     ACImpl *This = impl_from_IAudioClock2(iface);
-    return IAudioClient_AddRef(&This->IAudioClient_iface);
+    return IAudioClient3_AddRef(&This->IAudioClient3_iface);
 }
 
 static ULONG WINAPI AudioClock2_Release(IAudioClock2 *iface)
 {
     ACImpl *This = impl_from_IAudioClock2(iface);
-    return IAudioClient_Release(&This->IAudioClient_iface);
+    return IAudioClient3_Release(&This->IAudioClient3_iface);
 }
 
 static HRESULT WINAPI AudioClock2_GetDevicePosition(IAudioClock2 *iface,
         UINT64 *pos, UINT64 *qpctime)
 {
     ACImpl *This = impl_from_IAudioClock2(iface);
-    HRESULT hr = AudioClock_GetPosition(&This->IAudioClock_iface, pos, qpctime);
-    if (SUCCEEDED(hr) && This->share == AUDCLNT_SHAREMODE_SHARED)
-        *pos /= pa_frame_size(&This->ss);
-    return hr;
+    struct get_position_params params;
+
+    TRACE("(%p)->(%p, %p)\n", This, pos, qpctime);
+
+    if (!pos)
+        return E_POINTER;
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+
+    params.stream  = This->pulse_stream;
+    params.device  = TRUE;
+    params.pos     = pos;
+    params.qpctime = qpctime;
+    pulse_call(get_position, &params);
+    return params.result;
 }
 
 static const IAudioClock2Vtbl AudioClock2_Vtbl =
@@ -3113,13 +3367,13 @@ static HRESULT WINAPI AudioStreamVolume_QueryInterface(
 static ULONG WINAPI AudioStreamVolume_AddRef(IAudioStreamVolume *iface)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    return IAudioClient_AddRef(&This->IAudioClient_iface);
+    return IAudioClient3_AddRef(&This->IAudioClient3_iface);
 }
 
 static ULONG WINAPI AudioStreamVolume_Release(IAudioStreamVolume *iface)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    return IAudioClient_Release(&This->IAudioClient_iface);
+    return IAudioClient3_Release(&This->IAudioClient3_iface);
 }
 
 static HRESULT WINAPI AudioStreamVolume_GetChannelCount(
@@ -3132,7 +3386,7 @@ static HRESULT WINAPI AudioStreamVolume_GetChannelCount(
     if (!out)
         return E_POINTER;
 
-    *out = This->ss.channels;
+    *out = This->channel_count;
 
     return S_OK;
 }
@@ -3146,7 +3400,6 @@ static HRESULT WINAPI AudioStreamVolume_SetAllVolumes(
         IAudioStreamVolume *iface, UINT32 count, const float *levels)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    HRESULT hr;
     int i;
 
     TRACE("(%p)->(%d, %p)\n", This, count, levels);
@@ -3154,27 +3407,24 @@ static HRESULT WINAPI AudioStreamVolume_SetAllVolumes(
     if (!levels)
         return E_POINTER;
 
-    if (count != This->ss.channels)
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+    if (count != This->channel_count)
         return E_INVALIDARG;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr))
-        goto out;
-
+    EnterCriticalSection(&session_cs);
     for (i = 0; i < count; ++i)
         This->vol[i] = levels[i];
 
-out:
-    pthread_mutex_unlock(&pulse_lock);
-    return hr;
+    set_stream_volumes(This);
+    LeaveCriticalSection(&session_cs);
+    return S_OK;
 }
 
 static HRESULT WINAPI AudioStreamVolume_GetAllVolumes(
         IAudioStreamVolume *iface, UINT32 count, float *levels)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    HRESULT hr;
     int i;
 
     TRACE("(%p)->(%d, %p)\n", This, count, levels);
@@ -3182,63 +3432,59 @@ static HRESULT WINAPI AudioStreamVolume_GetAllVolumes(
     if (!levels)
         return E_POINTER;
 
-    if (count != This->ss.channels)
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+    if (count != This->channel_count)
         return E_INVALIDARG;
 
-    pthread_mutex_lock(&pulse_lock);
-    hr = pulse_stream_valid(This);
-    if (FAILED(hr))
-        goto out;
-
+    EnterCriticalSection(&session_cs);
     for (i = 0; i < count; ++i)
         levels[i] = This->vol[i];
-
-out:
-    pthread_mutex_unlock(&pulse_lock);
-    return hr;
+    LeaveCriticalSection(&session_cs);
+    return S_OK;
 }
 
 static HRESULT WINAPI AudioStreamVolume_SetChannelVolume(
         IAudioStreamVolume *iface, UINT32 index, float level)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    HRESULT hr;
-    float volumes[PA_CHANNELS_MAX];
 
     TRACE("(%p)->(%d, %f)\n", This, index, level);
 
     if (level < 0.f || level > 1.f)
         return E_INVALIDARG;
 
-    if (index >= This->ss.channels)
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+    if (index >= This->channel_count)
         return E_INVALIDARG;
 
-    hr = AudioStreamVolume_GetAllVolumes(iface, This->ss.channels, volumes);
-    volumes[index] = level;
-    if (SUCCEEDED(hr))
-        hr = AudioStreamVolume_SetAllVolumes(iface, This->ss.channels, volumes);
-    return hr;
+    EnterCriticalSection(&session_cs);
+    This->vol[index] = level;
+    set_stream_volumes(This);
+    LeaveCriticalSection(&session_cs);
+    return S_OK;
 }
 
 static HRESULT WINAPI AudioStreamVolume_GetChannelVolume(
         IAudioStreamVolume *iface, UINT32 index, float *level)
 {
     ACImpl *This = impl_from_IAudioStreamVolume(iface);
-    float volumes[PA_CHANNELS_MAX];
-    HRESULT hr;
 
     TRACE("(%p)->(%d, %p)\n", This, index, level);
 
     if (!level)
         return E_POINTER;
 
-    if (index >= This->ss.channels)
+    if (!This->pulse_stream)
+        return AUDCLNT_E_NOT_INITIALIZED;
+    if (index >= This->channel_count)
         return E_INVALIDARG;
 
-    hr = AudioStreamVolume_GetAllVolumes(iface, This->ss.channels, volumes);
-    if (SUCCEEDED(hr))
-        *level = volumes[index];
-    return hr;
+    EnterCriticalSection(&session_cs);
+    *level = This->vol[index];
+    LeaveCriticalSection(&session_cs);
+    return S_OK;
 }
 
 static const IAudioStreamVolumeVtbl AudioStreamVolume_Vtbl =
@@ -3271,7 +3517,7 @@ static AudioSessionWrapper *AudioSessionWrapper_Create(ACImpl *client)
     ret->client = client;
     if (client) {
         ret->session = client->session;
-        AudioClient_AddRef(&client->IAudioClient_iface);
+        AudioClient_AddRef(&client->IAudioClient3_iface);
     }
 
     return ret;
@@ -3317,7 +3563,7 @@ static ULONG WINAPI AudioSessionControl_Release(IAudioSessionControl2 *iface)
     if (!ref) {
         if (This->client) {
             This->client->session_wrapper = NULL;
-            AudioClient_Release(&This->client->IAudioClient_iface);
+            AudioClient_Release(&This->client->IAudioClient3_iface);
         }
         HeapFree(GetProcessHeap(), 0, This);
     }
@@ -3335,13 +3581,20 @@ static HRESULT WINAPI AudioSessionControl_GetState(IAudioSessionControl2 *iface,
     if (!state)
         return NULL_PTR_ERR;
 
-    pthread_mutex_lock(&pulse_lock);
+    EnterCriticalSection(&session_cs);
     if (list_empty(&This->session->clients)) {
         *state = AudioSessionStateExpired;
         goto out;
     }
     LIST_FOR_EACH_ENTRY(client, &This->session->clients, ACImpl, entry) {
-        if (client->started) {
+        struct is_started_params params;
+
+        if (!client->pulse_stream)
+            continue;
+
+        params.stream = client->pulse_stream;
+        pulse_call(is_started, &params);
+        if (params.started) {
             *state = AudioSessionStateActive;
             goto out;
         }
@@ -3349,7 +3602,7 @@ static HRESULT WINAPI AudioSessionControl_GetState(IAudioSessionControl2 *iface,
     *state = AudioSessionStateInactive;
 
 out:
-    pthread_mutex_unlock(&pulse_lock);
+    LeaveCriticalSection(&session_cs);
     return S_OK;
 }
 
@@ -3713,6 +3966,7 @@ static HRESULT WINAPI SimpleAudioVolume_SetMasterVolume(
 {
     AudioSessionWrapper *This = impl_from_ISimpleAudioVolume(iface);
     AudioSession *session = This->session;
+    ACImpl *client;
 
     TRACE("(%p)->(%f, %s)\n", session, level, wine_dbgstr_guid(context));
 
@@ -3724,9 +3978,11 @@ static HRESULT WINAPI SimpleAudioVolume_SetMasterVolume(
 
     TRACE("PulseAudio does not support session volume control\n");
 
-    pthread_mutex_lock(&pulse_lock);
+    EnterCriticalSection(&session_cs);
     session->master_vol = level;
-    pthread_mutex_unlock(&pulse_lock);
+    LIST_FOR_EACH_ENTRY(client, &This->session->clients, ACImpl, entry)
+        set_stream_volumes(client);
+    LeaveCriticalSection(&session_cs);
 
     return S_OK;
 }
@@ -3752,13 +4008,18 @@ static HRESULT WINAPI SimpleAudioVolume_SetMute(ISimpleAudioVolume *iface,
 {
     AudioSessionWrapper *This = impl_from_ISimpleAudioVolume(iface);
     AudioSession *session = This->session;
+    ACImpl *client;
 
     TRACE("(%p)->(%u, %s)\n", session, mute, debugstr_guid(context));
 
     if (context)
         FIXME("Notifications not supported yet\n");
 
+    EnterCriticalSection(&session_cs);
     session->mute = mute;
+    LIST_FOR_EACH_ENTRY(client, &This->session->clients, ACImpl, entry)
+        set_stream_volumes(client);
+    LeaveCriticalSection(&session_cs);
 
     return S_OK;
 }
@@ -3845,6 +4106,7 @@ static HRESULT WINAPI ChannelAudioVolume_SetChannelVolume(
 {
     AudioSessionWrapper *This = impl_from_IChannelAudioVolume(iface);
     AudioSession *session = This->session;
+    ACImpl *client;
 
     TRACE("(%p)->(%d, %f, %s)\n", session, index, level,
             wine_dbgstr_guid(context));
@@ -3860,9 +4122,11 @@ static HRESULT WINAPI ChannelAudioVolume_SetChannelVolume(
 
     TRACE("PulseAudio does not support session volume control\n");
 
-    pthread_mutex_lock(&pulse_lock);
+    EnterCriticalSection(&session_cs);
     session->channel_vols[index] = level;
-    pthread_mutex_unlock(&pulse_lock);
+    LIST_FOR_EACH_ENTRY(client, &This->session->clients, ACImpl, entry)
+        set_stream_volumes(client);
+    LeaveCriticalSection(&session_cs);
 
     return S_OK;
 }
@@ -3892,6 +4156,7 @@ static HRESULT WINAPI ChannelAudioVolume_SetAllVolumes(
 {
     AudioSessionWrapper *This = impl_from_IChannelAudioVolume(iface);
     AudioSession *session = This->session;
+    ACImpl *client;
     int i;
 
     TRACE("(%p)->(%d, %p, %s)\n", session, count, levels,
@@ -3908,10 +4173,12 @@ static HRESULT WINAPI ChannelAudioVolume_SetAllVolumes(
 
     TRACE("PulseAudio does not support session volume control\n");
 
-    pthread_mutex_lock(&pulse_lock);
+    EnterCriticalSection(&session_cs);
     for(i = 0; i < count; ++i)
         session->channel_vols[i] = levels[i];
-    pthread_mutex_unlock(&pulse_lock);
+    LIST_FOR_EACH_ENTRY(client, &This->session->clients, ACImpl, entry)
+        set_stream_volumes(client);
+    LeaveCriticalSection(&session_cs);
     return S_OK;
 }
 
@@ -3968,6 +4235,7 @@ static const PROPERTYKEY devicepath_key = { /* undocumented? - {b3f8fa53-0004-43
 
 static HRESULT pulse_device_get_prop_value(PhysDevice *dev, const PROPERTYKEY *prop, PROPVARIANT *out)
 {
+<<<<<<< HEAD
     if (IsEqualPropertyKey(*prop, devicepath_key)) {
         if (!dev->device[0])
             return E_FAIL;
@@ -3987,8 +4255,41 @@ static HRESULT pulse_device_get_prop_value(PhysDevice *dev, const PROPERTYKEY *p
         out->vt = VT_UI4;
         out->u.ulVal = dev->channel_mask;
         return out->u.ulVal ? S_OK : E_FAIL;
-    }
+=======
+    struct get_prop_value_params params;
+    char pulse_name[MAX_PULSE_NAME_LEN];
+    DWORD size;
 
+    TRACE("%s, (%s,%u), %p\n", wine_dbgstr_guid(guid), wine_dbgstr_guid(&prop->fmtid), prop->pid, out);
+
+    if (!get_pulse_name_by_guid(guid, pulse_name, &params.flow))
+        return E_FAIL;
+
+    params.pulse_name = pulse_name;
+    params.guid = guid;
+    params.prop = prop;
+    pulse_call(get_prop_value, &params);
+
+    if (params.result != S_OK)
+        return params.result;
+
+    switch (params.vt) {
+    case VT_LPWSTR:
+        size = (wcslen(params.wstr) + 1) * sizeof(WCHAR);
+        if (!(out->pwszVal = CoTaskMemAlloc(size)))
+            return E_OUTOFMEMORY;
+        memcpy(out->pwszVal, params.wstr, size);
+        break;
+    case VT_UI4:
+        out->ulVal = params.ulVal;
+        break;
+    default:
+        assert(0);
+>>>>>>> github-desktop-wine-mirror/master
+    }
+    out->vt = params.vt;
+
+<<<<<<< HEAD
     return E_NOTIMPL;
 }
 
@@ -6001,4 +6302,7 @@ static UINT8 mult_ulaw_sample(UINT8 sample, float vol)
     };
 
     return encode[(int)(vol * decode_to_14bits_float[sample]) + ARRAY_SIZE(encode) / 2];
+=======
+    return S_OK;
+>>>>>>> github-desktop-wine-mirror/master
 }

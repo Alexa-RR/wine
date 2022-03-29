@@ -46,9 +46,14 @@ static void thread_attach(void)
 {
     /* allocate the 16-bit stack (FIXME: should be done lazily) */
     HGLOBAL16 hstack = WOWGlobalAlloc16( GMEM_FIXED, 0x10000 );
+<<<<<<< HEAD
     kernel_get_thread_data()->stack_sel = GlobalHandleToSel16( hstack );
     NtCurrentTeb()->SystemReserved1[0] = (void *)MAKESEGPTR( kernel_get_thread_data()->stack_sel,
                                                              0x10000 - sizeof(STACK16FRAME) );
+=======
+    CURRENT_SS = kernel_get_thread_data()->stack_sel = GlobalHandleToSel16( hstack );
+    CURRENT_SP = 0x10000 - sizeof(STACK16FRAME);
+>>>>>>> github-desktop-wine-mirror/master
     memset( (char *)GlobalLock16(hstack) + 0x10000 - sizeof(STACK16FRAME), 0, sizeof(STACK16FRAME) );
 }
 
@@ -60,7 +65,11 @@ static void thread_detach(void)
 {
     /* free the 16-bit stack */
     WOWGlobalFree16( kernel_get_thread_data()->stack_sel );
+<<<<<<< HEAD
     NtCurrentTeb()->SystemReserved1[0] = 0;
+=======
+    CURRENT_SS = CURRENT_SP = 0;
+>>>>>>> github-desktop-wine-mirror/master
     if (NtCurrentTeb()->Tib.SubSystemTib) TASK_ExitTask();
 }
 
@@ -654,11 +663,11 @@ DWORD WINAPI MapProcessHandle( HANDLE hProcess )
  */
 void WINAPI SetProcessDword( DWORD dwProcessID, INT offset, DWORD value )
 {
-    TRACE("(%d, %d)\n", dwProcessID, offset );
+    TRACE("(%ld, %d)\n", dwProcessID, offset );
 
     if (dwProcessID && dwProcessID != GetCurrentProcessId())
     {
-        ERR("%d: process %x not accessible\n", offset, dwProcessID);
+        ERR("%d: process %lx not accessible\n", offset, dwProcessID);
         return;
     }
 
@@ -698,11 +707,11 @@ DWORD WINAPI GetProcessDword( DWORD dwProcessID, INT offset )
     DWORD               x, y;
     STARTUPINFOW        siw;
 
-    TRACE("(%d, %d)\n", dwProcessID, offset );
+    TRACE("(%ld, %d)\n", dwProcessID, offset );
 
     if (dwProcessID && dwProcessID != GetCurrentProcessId())
     {
-        ERR("%d: process %x not accessible\n", offset, dwProcessID);
+        ERR("%d: process %lx not accessible\n", offset, dwProcessID);
         return 0;
     }
 
@@ -809,7 +818,7 @@ DWORD WINAPI WaitForMultipleObjectsEx16( DWORD count, const HANDLE *handles,
  */
 VOID WINAPI VWin32_BoostThreadGroup( DWORD threadId, INT boost )
 {
-    FIXME("(0x%08x,%d): stub\n", threadId, boost);
+    FIXME("(0x%08lx,%d): stub\n", threadId, boost);
 }
 
 
@@ -818,7 +827,7 @@ VOID WINAPI VWin32_BoostThreadGroup( DWORD threadId, INT boost )
  */
 VOID WINAPI VWin32_BoostThreadStatic( DWORD threadId, INT boost )
 {
-    FIXME("(0x%08x,%d): stub\n", threadId, boost);
+    FIXME("(0x%08lx,%d): stub\n", threadId, boost);
 }
 
 /***********************************************************************

@@ -1,10 +1,15 @@
 EXTRADEFS = -D_WINMM_
 MODULE    = winmm.dll
 IMPORTLIB = winmm
+<<<<<<< HEAD
 IMPORTS   = uuid user32 advapi32
 DELAYIMPORTS = ole32 msacm32
 
 EXTRADLLFLAGS = -mno-cygwin
+=======
+IMPORTS   = uuid user32 advapi32 ole32 msacm32
+DELAYIMPORTS = dinput8
+>>>>>>> github-desktop-wine-mirror/master
 
 C_SRCS = \
 	driver.c \

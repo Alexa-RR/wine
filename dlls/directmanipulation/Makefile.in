@@ -1,7 +1,11 @@
 MODULE    = directmanipulation.dll
 IMPORTS   = uuid
 
+<<<<<<< HEAD
 EXTRADLLFLAGS = -mno-cygwin
+=======
+EXTRADLLFLAGS = -Wb,--prefer-native
+>>>>>>> github-desktop-wine-mirror/master
 
 IDL_SRCS = directmanip.idl
 

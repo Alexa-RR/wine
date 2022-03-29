@@ -69,7 +69,7 @@ static void create_source_fileW(LPWSTR filename, const BYTE *data, DWORD size)
 static UINT CALLBACK dummy_callbackA(PVOID Context, UINT Notification,
                                      UINT_PTR Param1, UINT_PTR Param2)
 {
-    ok(0, "Received unexpected notification (%p, %u, %lu, %lu)\n", Context,
+    ok(0, "Received unexpected notification (%p, %u, %Iu, %Iu)\n", Context,
        Notification, Param1, Param2);
     return 0;
 }
@@ -77,7 +77,7 @@ static UINT CALLBACK dummy_callbackA(PVOID Context, UINT Notification,
 static UINT CALLBACK dummy_callbackW(PVOID Context, UINT Notification,
                                      UINT_PTR Param1, UINT_PTR Param2)
 {
-    ok(0, "Received unexpected notification (%p, %u, %lu, %lu)\n", Context,
+    ok(0, "Received unexpected notification (%p, %u, %Iu, %Iu)\n", Context,
        Notification, Param1, Param2);
     return 0;
 }
@@ -117,7 +117,7 @@ static void test_invalid_parametersA(void)
         ok(!ret, "[%d] Expected SetupIterateCabinetA to return 0, got %d\n", i, ret);
         todo_wine_if (invalid_parameters[i].todo_lasterror)
             ok(GetLastError() == invalid_parameters[i].expected_lasterror,
-               "[%d] Expected GetLastError() to return %u, got %u\n",
+               "[%d] Expected GetLastError() to return %lu, got %lu\n",
                i, invalid_parameters[i].expected_lasterror, GetLastError());
     }
 
@@ -126,7 +126,7 @@ static void test_invalid_parametersA(void)
     ok(!ret, "Expected SetupIterateCabinetA to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
        GetLastError() == ERROR_FILE_NOT_FOUND, /* Win9x/NT4/Win2k */
-       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %u\n",
+       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
@@ -134,7 +134,7 @@ static void test_invalid_parametersA(void)
     ok(!ret, "Expected SetupIterateCabinetA to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
        GetLastError() == ERROR_FILE_NOT_FOUND, /* Win9x/NT4/Win2k */
-       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %u\n",
+       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %lu\n",
        GetLastError());
 
     DeleteFileA(source);
@@ -183,7 +183,7 @@ static void test_invalid_parametersW(void)
         ok(!ret, "[%d] Expected SetupIterateCabinetW to return 0, got %d\n", i, ret);
         todo_wine_if (invalid_parameters[i].todo_lasterror)
             ok(GetLastError() == invalid_parameters[i].expected_lasterror,
-               "[%d] Expected GetLastError() to return %u, got %u\n",
+               "[%d] Expected GetLastError() to return %lu, got %lu\n",
                i, invalid_parameters[i].expected_lasterror, GetLastError());
     }
 
@@ -192,7 +192,7 @@ static void test_invalid_parametersW(void)
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_PARAMETER ||
        GetLastError() == ERROR_NOT_ENOUGH_MEMORY, /* Vista/Win2k8 */
-       "Expected GetLastError() to return ERROR_INVALID_PARAMETER, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_PARAMETER, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
@@ -200,7 +200,7 @@ static void test_invalid_parametersW(void)
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_PARAMETER ||
        GetLastError() == ERROR_NOT_ENOUGH_MEMORY, /* Vista/Win2k8 */
-       "Expected GetLastError() to return ERROR_INVALID_PARAMETER, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_PARAMETER, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
@@ -208,7 +208,7 @@ static void test_invalid_parametersW(void)
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
        GetLastError() == ERROR_FILE_NOT_FOUND, /* NT4/Win2k */
-       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %u\n",
+       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
@@ -216,7 +216,7 @@ static void test_invalid_parametersW(void)
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_NOT_ENOUGH_MEMORY ||
        GetLastError() == ERROR_FILE_NOT_FOUND, /* NT4/Win2k */
-       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %u\n",
+       "Expected GetLastError() to return ERROR_NOT_ENOUGH_MEMORY, got %lu\n",
        GetLastError());
 
     DeleteFileW(source);
@@ -250,14 +250,14 @@ static void test_invalid_callbackA(void)
     ret = SetupIterateCabinetA(source, 0, NULL, NULL);
     ok(!ret, "Expected SetupIterateCabinetA to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_DATA,
-       "Expected GetLastError() to return ERROR_INVALID_DATA, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_DATA, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = SetupIterateCabinetA(source, 0, crash_callbackA, NULL);
     ok(!ret, "Expected SetupIterateCabinetA to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_DATA,
-       "Expected GetLastError() to return ERROR_INVALID_DATA, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_DATA, got %lu\n",
        GetLastError());
 
     DeleteFileA(source);
@@ -284,21 +284,33 @@ static void test_invalid_callbackW(void)
     ret = SetupIterateCabinetW(source, 0, NULL, NULL);
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_DATA,
-       "Expected GetLastError() to return ERROR_INVALID_DATA, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_DATA, got %lu\n",
        GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = SetupIterateCabinetW(source, 0, crash_callbackW, NULL);
     ok(!ret, "Expected SetupIterateCabinetW to return 0, got %d\n", ret);
     ok(GetLastError() == ERROR_INVALID_DATA,
-       "Expected GetLastError() to return ERROR_INVALID_DATA, got %u\n",
+       "Expected GetLastError() to return ERROR_INVALID_DATA, got %lu\n",
        GetLastError());
 
     DeleteFileW(source);
 }
 
-static const char *expected_files[] = {"tristram", "wine", "shandy"};
+static const struct
+{
+    const char *nameA;
+    const WCHAR *nameW;
+    DWORD size;
+}
+expected_files[] =
+{
+    {"tristram", L"tristram", 10},
+    {"wine", L"wine", 14},
+    {"shandy", L"shandy", 8},
+};
 
+<<<<<<< HEAD
 struct contextA
 {
     int count;
@@ -311,11 +323,18 @@ static UINT CALLBACK simple_callbackA(PVOID Context, UINT Notification,
 {
     static int index;
     struct contextA *ctx = Context;
+=======
+static UINT CALLBACK simple_callbackA(void *context, UINT message, UINT_PTR param1, UINT_PTR param2)
+{
+    static int index;
+    int *file_count = context;
+>>>>>>> github-desktop-wine-mirror/master
 
-    switch (Notification)
+    switch (message)
     {
     case SPFILENOTIFY_CABINETINFO:
     {
+<<<<<<< HEAD
         CABINET_INFO_A *info = (CABINET_INFO_A *)Param1;
 
         ok(!strcmp(info->CabinetFile, ""),
@@ -328,9 +347,29 @@ static UINT CALLBACK simple_callbackA(PVOID Context, UINT Notification,
     {
         FILE_IN_CABINET_INFO_A *info = (FILE_IN_CABINET_INFO_A *)Param1;
         const char *cabinet_file = (const char *)Param2;
+=======
+        const CABINET_INFO_A *info = (const CABINET_INFO_A *)param1;
+        char temp[MAX_PATH];
+
+        GetTempPathA(ARRAY_SIZE(temp), temp);
+        ok(!strcmp(info->CabinetPath, temp), "Got path %s.\n", debugstr_a(info->CabinetPath));
+        ok(!info->CabinetFile[0], "Got file %s.\n", debugstr_a(info->CabinetFile));
+        ok(!info->DiskName[0], "Got disk name %s.\n", debugstr_a(info->DiskName));
+        ok(!info->SetId, "Got set ID %#x.\n", info->SetId);
+        ok(!info->CabinetNumber, "Got cabinet number %u.\n", info->CabinetNumber);
+        ok(!param2, "Got param2 %#Ix.\n", param2);
+        return ERROR_SUCCESS;
+    }
+
+    case SPFILENOTIFY_FILEINCABINET:
+    {
+        FILE_IN_CABINET_INFO_A *info = (FILE_IN_CABINET_INFO_A *)param1;
+        char temp[MAX_PATH], path[MAX_PATH];
+>>>>>>> github-desktop-wine-mirror/master
 
         ctx->count++;
 
+<<<<<<< HEAD
         if (index < ARRAY_SIZE(expected_files))
         {
             ok(!strcmp(expected_files[index], info->NameInCabinet),
@@ -366,14 +405,57 @@ static UINT CALLBACK simple_callbackA(PVOID Context, UINT Notification,
         index++;
         return NO_ERROR;
     }
+=======
+        ok(index < ARRAY_SIZE(expected_files), "%u: Got unexpected file.\n", index);
+        ok(!strcmp(info->NameInCabinet, expected_files[index].nameA),
+                "%u: Got file name %s.\n", index, debugstr_a(info->NameInCabinet));
+        ok(info->FileSize == expected_files[index].size, "%u: Got file size %lu.\n", index, info->FileSize);
+        ok(!info->Win32Error, "%u: Got error %lu.\n", index, info->Win32Error);
+        ok(info->DosDate == 14545, "%u: Got date %u.\n", index, info->DosDate);
+        ok(info->DosTime == 18672, "%u: Got time %u.\n", index, info->DosTime);
+        ok(info->DosAttribs == FILE_ATTRIBUTE_ARCHIVE, "%u: Got attributes %#x.\n", index, info->DosAttribs);
+
+        GetTempPathA(ARRAY_SIZE(temp), temp);
+        snprintf(path, ARRAY_SIZE(path), "%s/./testcab.cab", temp);
+        ok(!strcmp((const char *)param2, path), "%u: Got file name %s.\n",
+                index, debugstr_a((const char *)param2));
+
+        snprintf(info->FullTargetName, ARRAY_SIZE(info->FullTargetName),
+                "%s\\%s", temp, expected_files[index].nameA);
+
+        return FILEOP_DOIT;
+    }
+
+    case SPFILENOTIFY_FILEEXTRACTED:
+    {
+        const FILEPATHS_A *info = (const FILEPATHS_A *)param1;
+        char temp[MAX_PATH], path[MAX_PATH];
+
+        GetTempPathA(ARRAY_SIZE(temp), temp);
+        ok(index < ARRAY_SIZE(expected_files), "%u: Got unexpected file.\n", index);
+        snprintf(path, ARRAY_SIZE(path), "%s/./testcab.cab", temp);
+        ok(!strcmp(info->Source, path), "%u: Got source %s.\n", index, debugstr_a(info->Source));
+        snprintf(path, ARRAY_SIZE(path), "%s\\%s", temp, expected_files[index].nameA);
+        ok(!strcmp(info->Target, path), "%u: Got target %s.\n", index, debugstr_a(info->Target));
+        ok(!info->Win32Error, "%u: Got error %u.\n", index, info->Win32Error);
+        /* info->Flags seems to contain garbage. */
+
+        ok(!param2, "Got param2 %#Ix.\n", param2);
+        ++index;
+        return ERROR_SUCCESS;
+    }
+
+>>>>>>> github-desktop-wine-mirror/master
     default:
-        return NO_ERROR;
+        ok(0, "Unexpected message %#x.\n", message);
+        return ERROR_CALL_NOT_IMPLEMENTED;
     }
 }
 
 static void test_simple_enumerationA(void)
 {
     BOOL ret;
+<<<<<<< HEAD
     char source[MAX_PATH], temp[MAX_PATH];
     char target[MAX_PATH];
     struct contextA ctx;
@@ -381,9 +463,22 @@ static void test_simple_enumerationA(void)
     GetTempPathA(sizeof(temp), temp);
     GetTempFileNameA(temp, "doc", 0, source);
     GetTempFileNameA(temp, "doc", 0, target);
+=======
+    char temp[MAX_PATH], path[MAX_PATH];
+    unsigned int enum_count = 0, i;
 
-    create_source_fileA(source, comp_cab_zip_multi, sizeof(comp_cab_zip_multi));
+    ret = SetupIterateCabinetA(NULL, 0, NULL, NULL);
+    if (!ret && GetLastError() == ERROR_CALL_NOT_IMPLEMENTED)
+    {
+        win_skip("SetupIterateCabinetW is not available\n");
+        return;
+    }
+>>>>>>> github-desktop-wine-mirror/master
 
+    GetTempPathA(ARRAY_SIZE(temp), temp);
+    snprintf(path, ARRAY_SIZE(path), "%s/./testcab.cab", temp);
+
+<<<<<<< HEAD
     ctx.count = 0;
     ctx.cabinet = source;
     ctx.target = target;
@@ -409,15 +504,41 @@ struct contextW
 
 static UINT CALLBACK simple_callbackW(PVOID Context, UINT Notification,
                                       UINT_PTR Param1, UINT_PTR Param2)
+=======
+    create_source_fileA(path, comp_cab_zip_multi, sizeof(comp_cab_zip_multi));
+
+    ret = SetupIterateCabinetA(path, 0, simple_callbackA, &enum_count);
+    ok(ret == 1, "Expected SetupIterateCabinetW to return 1, got %d\n", ret);
+    ok(enum_count == ARRAY_SIZE(expected_files), "Unexpectedly enumerated %d files\n", enum_count);
+
+    for (i = 0; i < ARRAY_SIZE(expected_files); ++i)
+    {
+        snprintf(path, ARRAY_SIZE(path), "%s\\%s", temp, expected_files[i].nameA);
+        ret = DeleteFileA(path);
+        ok(ret, "Failed to delete %s, error %lu.\n", debugstr_a(path), GetLastError());
+    }
+
+    snprintf(path, ARRAY_SIZE(path), "%s\\testcab.cab", temp);
+    ret = DeleteFileA(path);
+    ok(ret, "Failed to delete %s, error %lu.\n", debugstr_a(path), GetLastError());
+}
+
+static UINT CALLBACK simple_callbackW(void *context, UINT message, UINT_PTR param1, UINT_PTR param2)
+>>>>>>> github-desktop-wine-mirror/master
 {
     static const WCHAR emptyW[] = {0};
     static int index;
+<<<<<<< HEAD
     struct contextW *ctx = Context;
+=======
+    int *file_count = context;
+>>>>>>> github-desktop-wine-mirror/master
 
-    switch (Notification)
+    switch (message)
     {
     case SPFILENOTIFY_CABINETINFO:
     {
+<<<<<<< HEAD
         CABINET_INFO_W *info = (CABINET_INFO_W *)Param1;
 
         ok(!lstrcmpW(info->CabinetFile, emptyW),
@@ -430,9 +551,29 @@ static UINT CALLBACK simple_callbackW(PVOID Context, UINT Notification,
     {
         FILE_IN_CABINET_INFO_W *info = (FILE_IN_CABINET_INFO_W *)Param1;
         const WCHAR *cabinet_file = (const WCHAR *)Param2;
+=======
+        const CABINET_INFO_W *info = (const CABINET_INFO_W *)param1;
+        WCHAR temp[MAX_PATH];
+
+        GetTempPathW(ARRAY_SIZE(temp), temp);
+        ok(!wcscmp(info->CabinetPath, temp), "Got path %s.\n", debugstr_w(info->CabinetPath));
+        ok(!info->CabinetFile[0], "Got file %s.\n", debugstr_w(info->CabinetFile));
+        ok(!info->DiskName[0], "Got disk name %s.\n", debugstr_w(info->DiskName));
+        ok(!info->SetId, "Got set ID %#x.\n", info->SetId);
+        ok(!info->CabinetNumber, "Got cabinet number %u.\n", info->CabinetNumber);
+        ok(!param2, "Got param2 %#Ix.\n", param2);
+        return ERROR_SUCCESS;
+    }
+
+    case SPFILENOTIFY_FILEINCABINET:
+    {
+        FILE_IN_CABINET_INFO_W *info = (FILE_IN_CABINET_INFO_W *)param1;
+        WCHAR temp[MAX_PATH], path[MAX_PATH];
+>>>>>>> github-desktop-wine-mirror/master
 
         ctx->count++;
 
+<<<<<<< HEAD
         if (index < ARRAY_SIZE(expected_filesW))
         {
             ok(!lstrcmpW(expected_filesW[index], info->NameInCabinet),
@@ -468,17 +609,64 @@ static UINT CALLBACK simple_callbackW(PVOID Context, UINT Notification,
         index++;
         return NO_ERROR;
     }
+=======
+        ok(index < ARRAY_SIZE(expected_files), "%u: Got unexpected file.\n", index);
+        ok(!wcscmp(info->NameInCabinet, expected_files[index].nameW),
+                "%u: Got file name %s.\n", index, debugstr_w(info->NameInCabinet));
+        ok(info->FileSize == expected_files[index].size, "%u: Got file size %lu.\n", index, info->FileSize);
+        ok(!info->Win32Error, "%u: Got error %lu.\n", index, info->Win32Error);
+        ok(info->DosDate == 14545, "%u: Got date %u.\n", index, info->DosDate);
+        ok(info->DosTime == 18672, "%u: Got time %u.\n", index, info->DosTime);
+        ok(info->DosAttribs == FILE_ATTRIBUTE_ARCHIVE, "%u: Got attributes %#x.\n", index, info->DosAttribs);
+
+        GetTempPathW(ARRAY_SIZE(temp), temp);
+        swprintf(path, ARRAY_SIZE(path), L"%s/./testcab.cab", temp);
+        ok(!wcscmp((const WCHAR *)param2, path), "%u: Got file name %s.\n",
+                index, debugstr_w((const WCHAR *)param2));
+
+        swprintf(info->FullTargetName, ARRAY_SIZE(info->FullTargetName),
+                L"%s\\%s", temp, expected_files[index].nameW);
+
+        return FILEOP_DOIT;
+    }
+
+    case SPFILENOTIFY_FILEEXTRACTED:
+    {
+        const FILEPATHS_W *info = (const FILEPATHS_W *)param1;
+        WCHAR temp[MAX_PATH], path[MAX_PATH];
+
+        GetTempPathW(ARRAY_SIZE(temp), temp);
+        ok(index < ARRAY_SIZE(expected_files), "%u: Got unexpected file.\n", index);
+        swprintf(path, ARRAY_SIZE(path), L"%s/./testcab.cab", temp);
+        ok(!wcscmp(info->Source, path), "%u: Got source %s.\n", index, debugstr_w(info->Source));
+        swprintf(path, ARRAY_SIZE(path), L"%s\\%s", temp, expected_files[index].nameW);
+        ok(!wcscmp(info->Target, path), "%u: Got target %s.\n", index, debugstr_w(info->Target));
+        ok(!info->Win32Error, "%u: Got error %u.\n", index, info->Win32Error);
+        /* info->Flags seems to contain garbage. */
+
+        ok(!param2, "Got param2 %#Ix.\n", param2);
+        ++index;
+        return ERROR_SUCCESS;
+    }
+
+>>>>>>> github-desktop-wine-mirror/master
     default:
-        return NO_ERROR;
+        ok(0, "Unexpected message %#x.\n", message);
+        return ERROR_CALL_NOT_IMPLEMENTED;
     }
 }
 
 static void test_simple_enumerationW(void)
 {
     BOOL ret;
+<<<<<<< HEAD
     WCHAR source[MAX_PATH], temp[MAX_PATH];
     WCHAR target[MAX_PATH];
     struct contextW ctx;
+=======
+    WCHAR temp[MAX_PATH], path[MAX_PATH];
+    unsigned int enum_count = 0, i;
+>>>>>>> github-desktop-wine-mirror/master
 
     ret = SetupIterateCabinetW(NULL, 0, NULL, NULL);
     if (!ret && GetLastError() == ERROR_CALL_NOT_IMPLEMENTED)
@@ -488,20 +676,41 @@ static void test_simple_enumerationW(void)
     }
 
     GetTempPathW(ARRAY_SIZE(temp), temp);
+<<<<<<< HEAD
     GetTempFileNameW(temp, docW, 0, source);
     GetTempFileNameW(temp, docW, 0, target);
+=======
+    swprintf(path, ARRAY_SIZE(path), L"%s/./testcab.cab", temp);
+>>>>>>> github-desktop-wine-mirror/master
 
-    create_source_fileW(source, comp_cab_zip_multi, sizeof(comp_cab_zip_multi));
+    create_source_fileW(path, comp_cab_zip_multi, sizeof(comp_cab_zip_multi));
 
+<<<<<<< HEAD
     ctx.count = 0;
     ctx.cabinet = source;
     ctx.target = target;
     ret = SetupIterateCabinetW(source, 0, simple_callbackW, &ctx);
+=======
+    ret = SetupIterateCabinetW(path, 0, simple_callbackW, &enum_count);
+>>>>>>> github-desktop-wine-mirror/master
     ok(ret == 1, "Expected SetupIterateCabinetW to return 1, got %d\n", ret);
     ok(ctx.count == ARRAY_SIZE(expected_files), "Unexpectedly enumerated %d files\n", ctx.count);
 
+<<<<<<< HEAD
     DeleteFileW(source);
     DeleteFileW(target);
+=======
+    for (i = 0; i < ARRAY_SIZE(expected_files); ++i)
+    {
+        swprintf(path, ARRAY_SIZE(path), L"%s\\%s", temp, expected_files[i].nameW);
+        ret = DeleteFileW(path);
+        ok(ret, "Failed to delete %s, error %lu.\n", debugstr_w(path), GetLastError());
+    }
+
+    swprintf(path, ARRAY_SIZE(path), L"%s\\testcab.cab", temp);
+    ret = DeleteFileW(path);
+    ok(ret, "Failed to delete %s, error %lu.\n", debugstr_w(path), GetLastError());
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 START_TEST(setupcab)

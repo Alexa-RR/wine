@@ -43,17 +43,25 @@ my %formats =
     "mem_size_t"    => [  8,   8,  "&dump_uint64" ],
     "affinity_t"    => [  8,   8,  "&dump_uint64" ],
     "timeout_t"     => [  8,   8,  "&dump_timeout" ],
+    "abstime_t"     => [  8,   8,  "&dump_abstime" ],
     "rectangle_t"   => [  16,  4,  "&dump_rectangle" ],
-    "char_info_t"   => [  4,   2,  "&dump_char_info" ],
-    "apc_call_t"    => [  40,  8,  "&dump_apc_call" ],
+    "apc_call_t"    => [  48,  8,  "&dump_apc_call" ],
     "apc_result_t"  => [  40,  8,  "&dump_apc_result" ],
     "async_data_t"  => [  40,  8,  "&dump_async_data" ],
+<<<<<<< HEAD
     "irp_params_t"  => [  40,  8,  "&dump_irp_params" ],
     "luid_t"        => [  8,   4,  "&dump_luid" ],
     "ioctl_code_t"  => [  4,   4,  "&dump_ioctl_code" ],
     "client_cpu_t"  => [  4,   4,  "&dump_client_cpu" ],
     "hw_input_t"    => [  32,  8,  "&dump_hw_input" ],
     "krnl_cbdata_t" => [  32,  8,  "&dump_krnl_cbdata" ],
+=======
+    "irp_params_t"  => [  32,  8,  "&dump_irp_params" ],
+    "struct luid"   => [  8,   4,  "&dump_luid" ],
+    "generic_map_t" => [  16,  4,  "&dump_generic_map" ],
+    "ioctl_code_t"  => [  4,   4,  "&dump_ioctl_code" ],
+    "hw_input_t"    => [  40,  8,  "&dump_hw_input" ],
+>>>>>>> github-desktop-wine-mirror/master
 );
 
 my @requests = ();

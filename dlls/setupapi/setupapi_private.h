@@ -43,6 +43,8 @@
 #define REGPART_RENAME "\\Rename"
 #define REG_VERSIONCONFLICT "Software\\Microsoft\\VersionConflictManager"
 
+#define PNF_HEADER L"Wine PNF header\n"
+
 extern HINSTANCE SETUPAPI_hInstance DECLSPEC_HIDDEN;
 
 static inline void * __WINE_ALLOC_SIZE(2) heap_realloc_zero(void *mem, size_t len)
@@ -92,9 +94,13 @@ extern const WCHAR *DIRID_get_string( int dirid ) DECLSPEC_HIDDEN;
 extern const WCHAR *PARSER_get_inf_filename( HINF hinf ) DECLSPEC_HIDDEN;
 extern WCHAR *PARSER_get_dest_dir( INFCONTEXT *context ) DECLSPEC_HIDDEN;
 
+<<<<<<< HEAD
 extern WCHAR *get_destination_dir( HINF hinf, const WCHAR *section );
 
 /* support for Ascii queue callback functions */
+=======
+/* support for ANSI queue callback functions */
+>>>>>>> github-desktop-wine-mirror/master
 
 struct callback_WtoA_context
 {

@@ -33,17 +33,6 @@ enum startup_state { STARTUP_IN_PROGRESS, STARTUP_DONE, STARTUP_ABORTED };
 
 /* process structures */
 
-struct process_dll
-{
-    struct list          entry;           /* entry in per-process dll list */
-    mod_handle_t         base;            /* dll base address (in process addr space) */
-    client_ptr_t         name;            /* ptr to ptr to name (in process addr space) */
-    int                  dbg_offset;      /* debug info offset */
-    int                  dbg_size;        /* debug info size */
-    data_size_t          namelen;         /* length of dll file name */
-    WCHAR               *filename;        /* dll file name */
-};
-
 struct rawinput_device_entry
 {
     struct list            entry;
@@ -56,14 +45,16 @@ struct process
     struct list          entry;           /* entry in system-wide process list */
     process_id_t         parent_id;       /* parent process id (at the time of creation) */
     struct list          thread_list;     /* thread list */
-    struct thread       *debugger;        /* thread debugging this process */
+    struct debug_obj    *debug_obj;       /* debug object debugging this process */
     struct debug_event  *debug_event;     /* debug event being sent to debugger */
     struct handle_table *handles;         /* handle entries */
     struct fd           *msg_fd;          /* fd for sendmsg/recvmsg */
     process_id_t         id;              /* id of the process */
     process_id_t         group_id;        /* group id of the process */
+    unsigned int         session_id;      /* session id */
     struct timeout_user *sigkill_timeout; /* timeout for final SIGKILL */
-    enum cpu_type        cpu;             /* client CPU type */
+    timeout_t            sigkill_delay;   /* delay before final SIGKILL */
+    unsigned short       machine;         /* client machine type */
     int                  unix_pid;        /* Unix pid for final SIGKILL */
     int                  exit_code;       /* process exit code */
     int                  running_threads; /* number of threads running in this process */
@@ -75,22 +66,26 @@ struct process
     unsigned int         is_system:1;     /* is it a system process? */
     unsigned int         debug_children:1;/* also debug all child processes */
     unsigned int         is_terminating:1;/* is process terminating? */
+<<<<<<< HEAD
     unsigned int         is_kernel:1;     /* winedevice process */
     struct job          *job;             /* job object ascoicated with this process */
+=======
+    data_size_t          imagelen;        /* length of image path in bytes */
+    WCHAR               *image;           /* main exe image full path */
+    struct job          *job;             /* job object associated with this process */
+>>>>>>> github-desktop-wine-mirror/master
     struct list          job_entry;       /* list entry for job object */
     struct list          asyncs;          /* list of async object owned by the process */
     struct list          locks;           /* list of file locks owned by the process */
     struct list          classes;         /* window classes owned by the process */
-    struct console_input*console;         /* console input */
+    struct console      *console;         /* console input */
     enum startup_state   startup_state;   /* startup state */
     struct startup_info *startup_info;    /* startup info while init is in progress */
     struct event        *idle_event;      /* event for input idle */
-    struct file         *exe_file;        /* file handle for main exe (during startup only) */
     obj_handle_t         winstation;      /* main handle to process window station */
     obj_handle_t         desktop;         /* handle to desktop to use for new threads */
     struct token        *token;           /* security token associated with this process */
     struct list          views;           /* list of memory views */
-    struct list          dlls;            /* list of loaded dlls */
     client_ptr_t         peb;             /* PEB address in client address space */
     client_ptr_t         ldt_copy;        /* pointer to LDT copy in client addr space */
     struct dir_cache    *dir_cache;       /* map of client-side directory cache */
@@ -99,36 +94,36 @@ struct process
     const struct rawinput_device *rawinput_mouse; /* rawinput mouse device, if any */
     const struct rawinput_device *rawinput_kbd;   /* rawinput keyboard device, if any */
     struct list          kernel_object;   /* list of kernel object pointers */
+<<<<<<< HEAD
     struct object        *callback_init_event;
     struct device_manager *dev_mgr;
     int                  esync_fd;        /* esync file descriptor (signaled on exit) */
+=======
+    pe_image_info_t      image_info;      /* main exe image info */
+>>>>>>> github-desktop-wine-mirror/master
 };
-
-struct process_snapshot
-{
-    struct process *process;  /* process ptr */
-    int             count;    /* process refcount */
-    int             threads;  /* number of threads */
-    int             priority; /* priority class */
-    int             handles;  /* number of handles */
-};
-
-#define CPU_FLAG(cpu) (1 << (cpu))
-#define CPU_64BIT_MASK (CPU_FLAG(CPU_x86_64) | CPU_FLAG(CPU_ARM64))
 
 /* process functions */
 
 extern unsigned int alloc_ptid( void *ptr );
 extern void free_ptid( unsigned int id );
 extern void *get_ptid_entry( unsigned int id );
+<<<<<<< HEAD
 extern struct process *create_process( int fd, struct process *parent, int inherit_all,
                                        const struct security_descriptor *sd, struct token *token );
 extern data_size_t init_process( struct thread *thread );
+=======
+extern struct process *create_process( int fd, struct process *parent, unsigned int flags, const startup_info_t *info,
+                                       const struct security_descriptor *sd, const obj_handle_t *handles,
+                                       unsigned int handle_count, struct token *token );
+extern data_size_t get_process_startup_info_size( struct process *process );
+>>>>>>> github-desktop-wine-mirror/master
 extern struct thread *get_process_first_thread( struct process *process );
 extern struct process *get_process_from_id( process_id_t id );
 extern struct process *get_process_from_handle( obj_handle_t handle, unsigned int access );
+extern struct debug_obj *get_debug_obj( struct process *process, obj_handle_t handle, unsigned int access );
 extern int process_set_debugger( struct process *process, struct thread *thread );
-extern int debugger_detach( struct process* process, struct thread* debugger );
+extern void debugger_detach( struct process *process, struct debug_obj *debug_obj );
 extern int set_process_debug_flag( struct process *process, int flag );
 
 extern void add_process_thread( struct process *process,
@@ -139,18 +134,13 @@ extern void suspend_process( struct process *process );
 extern void resume_process( struct process *process );
 extern void kill_process( struct process *process, int violent_death );
 extern void kill_console_processes( struct thread *renderer, int exit_code );
-extern void kill_debugged_processes( struct thread *debugger, int exit_code );
-extern void detach_debugged_processes( struct thread *debugger );
-extern struct process_snapshot *process_snap( int *count );
+extern void detach_debugged_processes( struct debug_obj *debug_obj, int exit_code );
 extern void enum_processes( int (*cb)(struct process*, void*), void *user);
 extern void replace_process_token( struct process *process, struct token *token );
 extern int is_process( struct object *obj );
 
 /* console functions */
-extern void inherit_console( struct thread *parent_thread, struct process *parent,
-                             struct process *process, obj_handle_t hconin );
-extern int free_console( struct process *process );
-extern struct thread *console_get_renderer( struct console_input *console );
+extern struct thread *console_get_renderer( struct console *console );
 
 /* process tracing mechanism to use */
 #ifdef __APPLE__
@@ -174,10 +164,6 @@ static inline int is_process_init_done( struct process *process )
     return process->startup_state == STARTUP_DONE;
 }
 
-static inline struct process_dll *get_process_exe_module( struct process *process )
-{
-    struct list *ptr = list_head( &process->dlls );
-    return ptr ? LIST_ENTRY( ptr, struct process_dll, entry ) : NULL;
-}
+static const unsigned int default_session_id = 1;
 
 #endif  /* __WINE_SERVER_PROCESS_H */

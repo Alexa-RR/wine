@@ -51,9 +51,11 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "wingdi.h"
 #include "winuser.h"
 #include "wingdi.h"
 #include "winnls.h"
+#include "winreg.h"
 #include "ddk/hidsdi.h"
 
 #include "wine/test.h"
@@ -61,6 +63,8 @@
 /* globals */
 static HWND hWndTest;
 static LONG timetag = 0x10000000;
+
+#define DESKTOP_ALL_ACCESS 0x01ff
 
 static struct {
     LONG last_key_down;
@@ -84,7 +88,11 @@ static int (WINAPI *pGetMouseMovePointsEx) (UINT, LPMOUSEMOVEPOINT, LPMOUSEMOVEP
 static UINT (WINAPI *pGetRawInputDeviceList) (PRAWINPUTDEVICELIST, PUINT, UINT);
 static UINT (WINAPI *pGetRawInputDeviceInfoW) (HANDLE, UINT, void *, UINT *);
 static UINT (WINAPI *pGetRawInputDeviceInfoA) (HANDLE, UINT, void *, UINT *);
+<<<<<<< HEAD
 static int  (WINAPI *pGetWindowRgnBox)(HWND, LPRECT);
+=======
+static BOOL (WINAPI *pIsWow64Process)(HANDLE, PBOOL);
+>>>>>>> github-desktop-wine-mirror/master
 
 #define MAXKEYEVENTS 12
 #define MAXKEYMESSAGES MAXKEYEVENTS /* assuming a key event generates one
@@ -147,6 +155,7 @@ static BYTE InputKeyStateTable[256];
 static BYTE AsyncKeyStateTable[256];
 static BYTE TrackSysKey = 0; /* determine whether ALT key up will cause a WM_SYSKEYUP
                          or a WM_KEYUP message */
+static BOOL is_wow64;
 
 static void init_function_pointers(void)
 {
@@ -162,8 +171,17 @@ static void init_function_pointers(void)
     GET_PROC(GetRawInputDeviceList);
     GET_PROC(GetRawInputDeviceInfoW);
     GET_PROC(GetRawInputDeviceInfoA);
+<<<<<<< HEAD
     GET_PROC(GetWindowRgnBox);
+=======
+
+    hdll = GetModuleHandleA("kernel32");
+    GET_PROC(IsWow64Process);
+>>>>>>> github-desktop-wine-mirror/master
 #undef GET_PROC
+
+    if (!pIsWow64Process || !pIsWow64Process( GetCurrentProcess(), &is_wow64 ))
+        is_wow64 = FALSE;
 }
 
 static int KbdMessage( KEV kev, WPARAM *pwParam, LPARAM *plParam )
@@ -258,13 +276,13 @@ static BOOL do_test( HWND hwnd, int seqnr, const KEV td[] )
             seqnr + 1, buf);
     while( PeekMessageA(&msg,hwnd,WM_KEYFIRST,WM_KEYLAST,PM_REMOVE) ) {
         if (winetest_debug > 1)
-            trace("message[%d] %-15s wParam %04lx lParam %08lx time %x\n", i,
+            trace("message[%d] %-15s wParam %04Ix lParam %08Ix time %lx\n", i,
                   MSGNAME[msg.message - WM_KEYFIRST], msg.wParam, msg.lParam, msg.time);
         if( i < kmctr ) {
             ok( msg.message == expmsg[i].message &&
                 msg.wParam == expmsg[i].wParam &&
                 msg.lParam == expmsg[i].lParam,
-                "%u/%u: wrong message %x/%08lx/%08lx expected %s/%08lx/%08lx\n",
+                "%u/%u: wrong message %x/%08Ix/%08Ix expected %s/%08Ix/%08Ix\n",
                 seqnr, i, msg.message, msg.wParam, msg.lParam,
                 MSGNAME[(expmsg[i]).message - WM_KEYFIRST], expmsg[i].wParam, expmsg[i].lParam );
         }
@@ -290,7 +308,7 @@ static BOOL TestASet( HWND hWnd, int nrkev, const KEV kevdwn[], const KEV kevup[
     BOOL us_kbd = (GetKeyboardLayout(0) == (HKL)(ULONG_PTR)0x04090409);
     if (!us_kbd)
     {
-        win_skip( "skipping test with inconsistent results on non-us keyboard\n" );
+        skip( "skipping test with inconsistent results on non-us keyboard\n" );
         return TRUE;
     }
 
@@ -723,13 +741,13 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
         {
             failcount++;
             todo_wine {
-                ok(matched, "%2d (%x/%x): %02x from %02x -> %02x "
+                ok(matched, "%2d (%x/%lx): %02x from %02x -> %02x "
                    "instead of %02x -> %02x\n", id, test->wVk, test->dwFlags,
                    t->wVk, ks1[t->wVk]&0x80, ks2[t->wVk]&0x80, t->before_state,
                    ~t->before_state&0x80);
             }
         } else {
-            ok(matched || t->optional, "%2d (%x/%x): %02x from %02x -> %02x "
+            ok(matched || t->optional, "%2d (%x/%lx): %02x from %02x -> %02x "
                "instead of %02x -> %02x\n", id, test->wVk, test->dwFlags,
                t->wVk, ks1[t->wVk]&0x80, ks2[t->wVk]&0x80, t->before_state,
                ~t->before_state&0x80);
@@ -742,11 +760,11 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
         {
             failcount++;
             todo_wine
-                ok(FALSE, "%2d (%x/%x): %02x from %02x -> %02x unexpected\n",
+                ok(FALSE, "%2d (%x/%lx): %02x from %02x -> %02x unexpected\n",
                    id, test->wVk, test->dwFlags, i, ks1[i], ks2[i]);
         }
         else
-            ok(ks2[i] == ks1[i], "%2d (%x/%x): %02x from %02x -> %02x unexpected\n",
+            ok(ks2[i] == ks1[i], "%2d (%x/%lx): %02x from %02x -> %02x unexpected\n",
                id, test->wVk, test->dwFlags, i, ks1[i], ks2[i]);
 
     while (expected->message && actual_cnt < sent_messages_cnt)
@@ -766,12 +784,12 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
                 {
                     failcount++;
                     todo_wine
-                        ok(FALSE, "%2d (%x/%x): in msg 0x%04x expecting wParam 0x%lx got 0x%lx\n",
+                        ok(FALSE, "%2d (%x/%lx): in msg 0x%04x expecting wParam 0x%Ix got 0x%Ix\n",
                            id, test->wVk, test->dwFlags, expected->message, expected->wParam, actual->wParam);
                 }
                 else
                     ok(expected->wParam == actual->wParam,
-                       "%2d (%x/%x): in msg 0x%04x expecting wParam 0x%lx got 0x%lx\n",
+                       "%2d (%x/%lx): in msg 0x%04x expecting wParam 0x%Ix got 0x%Ix\n",
                        id, test->wVk, test->dwFlags, expected->message, expected->wParam, actual->wParam);
             }
             if (expected->flags & lparam)
@@ -780,16 +798,16 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
                 {
                     failcount++;
                     todo_wine
-                        ok(FALSE, "%2d (%x/%x): in msg 0x%04x expecting lParam 0x%lx got 0x%lx\n",
+                        ok(FALSE, "%2d (%x/%lx): in msg 0x%04x expecting lParam 0x%Ix got 0x%Ix\n",
                            id, test->wVk, test->dwFlags, expected->message, expected->lParam, actual->lParam);
                 }
                 else
                     ok(expected->lParam == actual->lParam,
-                       "%2d (%x/%x): in msg 0x%04x expecting lParam 0x%lx got 0x%lx\n",
+                       "%2d (%x/%lx): in msg 0x%04x expecting lParam 0x%Ix got 0x%Ix\n",
                        id, test->wVk, test->dwFlags, expected->message, expected->lParam, actual->lParam);
             }
             ok((expected->flags & hook) == (actual->flags & hook),
-               "%2d (%x/%x): the msg 0x%04x should have been sent by a hook\n",
+               "%2d (%x/%lx): the msg 0x%04x should have been sent by a hook\n",
                id, test->wVk, test->dwFlags, expected->message);
 
         }
@@ -811,7 +829,7 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
                  (actual->message == expected->message - 4))
         {
             ok((expected->flags & hook) == (actual->flags & hook),
-               "%2d (%x/%x): the msg 0x%04x should have been sent by a hook\n",
+               "%2d (%x/%lx): the msg 0x%04x should have been sent by a hook\n",
                id, test->wVk, test->dwFlags, expected->message);
         }
         /* For VK_RMENU, at least localized Win2k/XP sends KEYDOWN/UP
@@ -821,7 +839,7 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
                  (actual->message == expected->message - 4))
         {
             ok(expected->wParam == actual->wParam && expected->lParam == actual->lParam,
-               "%2d (%x/%x): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
+               "%2d (%x/%lx): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
                id, test->wVk, test->dwFlags, expected->message, actual->message);
         }
         else if (test->_todo_wine)
@@ -829,12 +847,12 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
             failcount++;
             todo_wine
             ok(FALSE,
-               "%2d (%x/%x): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
+               "%2d (%x/%lx): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
                id, test->wVk, test->dwFlags, expected->message, actual->message);
         }
         else
             ok(FALSE,
-               "%2d (%x/%x): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
+               "%2d (%x/%lx): the msg 0x%04x was expected, but got msg 0x%04x instead\n",
                id, test->wVk, test->dwFlags, expected->message, actual->message);
 
         actual_cnt++;
@@ -851,17 +869,17 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
         {
             failcount++;
             todo_wine
-                ok(FALSE, "%2d (%x/%x): the msg sequence is not complete: expected %04x - actual %04x\n",
+                ok(FALSE, "%2d (%x/%lx): the msg sequence is not complete: expected %04x - actual %04x\n",
                    id, test->wVk, test->dwFlags, expected->message, sent_messages[actual_cnt].message);
         }
         else
-            ok(FALSE, "%2d (%x/%x): the msg sequence is not complete: expected %04x - actual %04x\n",
+            ok(FALSE, "%2d (%x/%lx): the msg sequence is not complete: expected %04x - actual %04x\n",
                id, test->wVk, test->dwFlags, expected->message, sent_messages[actual_cnt].message);
     }
 
     if( test->_todo_wine && !failcount) /* succeeded yet marked todo */
         todo_wine
-            ok(TRUE, "%2d (%x/%x): marked \"todo_wine\" but succeeds\n", id, test->wVk, test->dwFlags);
+            ok(TRUE, "%2d (%x/%lx): marked \"todo_wine\" but succeeds\n", id, test->wVk, test->dwFlags);
 
     sent_messages_cnt = 0;
 }
@@ -870,7 +888,7 @@ static void compare_and_check(int id, BYTE *ks1, BYTE *ks2,
 static LRESULT CALLBACK WndProc2(HWND hWnd, UINT Msg, WPARAM wParam,
                                    LPARAM lParam)
 {
-    if (winetest_debug > 1) trace("MSG:  %8x W:%8lx L:%8lx\n", Msg, wParam, lParam);
+    if (winetest_debug > 1) trace("MSG:  %8x W:%8Ix L:%8Ix\n", Msg, wParam, lParam);
 
     if ((Msg >= WM_KEYFIRST && Msg <= WM_KEYLAST) || Msg == WM_SYSCOMMAND)
     {
@@ -904,13 +922,13 @@ static LRESULT CALLBACK hook_proc(int code, WPARAM wparam, LPARAM lparam)
 if(0) /* For some reason not stable on Wine */
 {
         if (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN)
-            ok(!(GetAsyncKeyState(hook_info->vkCode) & 0x8000), "key %x should be up\n", hook_info->vkCode);
+            ok(!(GetAsyncKeyState(hook_info->vkCode) & 0x8000), "key %lx should be up\n", hook_info->vkCode);
         else if (wparam == WM_KEYUP || wparam == WM_SYSKEYUP)
-            ok(GetAsyncKeyState(hook_info->vkCode) & 0x8000, "key %x should be down\n", hook_info->vkCode);
+            ok(GetAsyncKeyState(hook_info->vkCode) & 0x8000, "key %lx should be down\n", hook_info->vkCode);
 }
 
         if (winetest_debug > 1)
-            trace("Hook:   w=%lx vk:%8x sc:%8x fl:%8x %lx\n", wparam,
+            trace("Hook:   w=%Ix vk:%8lx sc:%8lx fl:%8lx %Ix\n", wparam,
                   hook_info->vkCode, hook_info->scanCode, hook_info->flags, hook_info->dwExtraInfo);
     }
     return CallNextHookEx( 0, code, wparam, lparam );
@@ -1015,12 +1033,12 @@ static void test_unicode_keys(HWND hwnd, HHOOK hook)
     }
     if(!key_status.sendinput_broken){
         ok(key_status.last_key_down == VK_PACKET,
-            "Last keydown msg should have been VK_PACKET[0x%04x] (was: 0x%x)\n", VK_PACKET, key_status.last_key_down);
+            "Last keydown msg should have been VK_PACKET[0x%04x] (was: 0x%lx)\n", VK_PACKET, key_status.last_key_down);
         ok(key_status.last_char == 0x3c0,
-            "Last char msg wparam should have been 0x3c0 (was: 0x%x)\n", key_status.last_char);
+            "Last char msg wparam should have been 0x3c0 (was: 0x%lx)\n", key_status.last_char);
         if(hook)
             ok(key_status.last_hook_down == 0x3c0,
-                "Last hookdown msg should have been 0x3c0, was: 0x%x\n", key_status.last_hook_down);
+                "Last hookdown msg should have been 0x3c0, was: 0x%lx\n", key_status.last_hook_down);
     }
 
     inputs[1].u.ki.wVk = 0;
@@ -1037,10 +1055,10 @@ static void test_unicode_keys(HWND hwnd, HHOOK hook)
     }
     if(!key_status.sendinput_broken){
         ok(key_status.last_key_up == VK_PACKET,
-            "Last keyup msg should have been VK_PACKET[0x%04x] (was: 0x%x)\n", VK_PACKET, key_status.last_key_up);
+            "Last keyup msg should have been VK_PACKET[0x%04x] (was: 0x%lx)\n", VK_PACKET, key_status.last_key_up);
         if(hook)
             ok(key_status.last_hook_up == 0x3c0,
-                "Last hookup msg should have been 0x3c0, was: 0x%x\n", key_status.last_hook_up);
+                "Last hookup msg should have been 0x3c0, was: 0x%lx\n", key_status.last_hook_up);
     }
 
     /* holding alt, pressing & releasing a unicode character, releasing alt */
@@ -1063,12 +1081,12 @@ static void test_unicode_keys(HWND hwnd, HHOOK hook)
     }
     if(!key_status.sendinput_broken){
         ok(key_status.last_syskey_down == VK_PACKET,
-            "Last syskeydown msg should have been VK_PACKET[0x%04x] (was: 0x%x)\n", VK_PACKET, key_status.last_syskey_down);
+            "Last syskeydown msg should have been VK_PACKET[0x%04x] (was: 0x%lx)\n", VK_PACKET, key_status.last_syskey_down);
         ok(key_status.last_syschar == 0x3041,
-            "Last syschar msg should have been 0x3041 (was: 0x%x)\n", key_status.last_syschar);
+            "Last syschar msg should have been 0x3041 (was: 0x%lx)\n", key_status.last_syschar);
         if(hook)
             ok(key_status.last_hook_syskey_down == 0x3041,
-                "Last hooksysdown msg should have been 0x3041, was: 0x%x\n", key_status.last_hook_syskey_down);
+                "Last hooksysdown msg should have been 0x3041, was: 0x%lx\n", key_status.last_hook_syskey_down);
     }
 
     inputs[1].u.ki.wVk = 0;
@@ -1090,10 +1108,10 @@ static void test_unicode_keys(HWND hwnd, HHOOK hook)
     }
     if(!key_status.sendinput_broken){
         ok(key_status.last_key_up == VK_PACKET,
-            "Last keyup msg should have been VK_PACKET[0x%04x] (was: 0x%x)\n", VK_PACKET, key_status.last_key_up);
+            "Last keyup msg should have been VK_PACKET[0x%04x] (was: 0x%lx)\n", VK_PACKET, key_status.last_key_up);
         if(hook)
             ok(key_status.last_hook_up == 0x3041,
-                "Last hook up msg should have been 0x3041, was: 0x%x\n", key_status.last_hook_up);
+                "Last hook up msg should have been 0x3041, was: 0x%lx\n", key_status.last_hook_up);
     }
 
     /* Press and release, non-zero key code. */
@@ -1115,11 +1133,11 @@ static void test_unicode_keys(HWND hwnd, HHOOK hook)
 
     if (!key_status.sendinput_broken)
     {
-        ok(key_status.last_key_down == 0x51, "Unexpected key down %#x.\n", key_status.last_key_down);
-        ok(key_status.last_key_up == 0x51, "Unexpected key up %#x.\n", key_status.last_key_up);
+        ok(key_status.last_key_down == 0x51, "Unexpected key down %#lx.\n", key_status.last_key_down);
+        ok(key_status.last_key_up == 0x51, "Unexpected key up %#lx.\n", key_status.last_key_up);
         if (hook)
             todo_wine
-            ok(key_status.last_hook_up == 0x23, "Unexpected hook message %#x.\n", key_status.last_hook_up);
+            ok(key_status.last_hook_up == 0x23, "Unexpected hook message %#lx.\n", key_status.last_hook_up);
     }
 }
 
@@ -1158,11 +1176,11 @@ static LRESULT CALLBACK llkbd_unicode_hook(int nCode, WPARAM wParam, LPARAM lPar
             win_skip("SendInput doesn't support unicode on this platform\n");
         }else{
             if(key_status.expect_alt){
-                ok(info->vkCode == VK_LMENU, "vkCode should have been VK_LMENU[0x%04x], was: 0x%x\n", VK_LMENU, info->vkCode);
+                ok(info->vkCode == VK_LMENU, "vkCode should have been VK_LMENU[0x%04x], was: 0x%lx\n", VK_LMENU, info->vkCode);
                 key_status.expect_alt = FALSE;
             }else
             todo_wine_if(key_status.vk != VK_PACKET)
-                ok(info->vkCode == key_status.vk, "Unexpected vkCode %#x, expected %#x.\n", info->vkCode, key_status.vk);
+                ok(info->vkCode == key_status.vk, "Unexpected vkCode %#lx, expected %#x.\n", info->vkCode, key_status.vk);
         }
         switch(wParam){
         case WM_KEYDOWN:
@@ -1197,7 +1215,7 @@ static void test_Input_unicode(void)
     BOOL us_kbd = (GetKeyboardLayout(0) == (HKL)(ULONG_PTR)0x04090409);
     if (!us_kbd)
     {
-        win_skip( "skipping test with inconsistent results on non-us keyboard\n" );
+        skip( "skipping test with inconsistent results on non-us keyboard\n" );
         return;
     }
 
@@ -1282,7 +1300,7 @@ static LRESULT CALLBACK hook_proc1( int code, WPARAM wparam, LPARAM lparam )
         pt_new = hook->pt;
         /* Should return previous position */
         GetCursorPos(&pt);
-        ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%d,%d)\n", pt.x, pt.y);
+        ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%ld,%ld)\n", pt.x, pt.y);
 
         /* Should set new position until hook chain is finished. */
         pt.x = pt_old.x + STEP;
@@ -1290,9 +1308,9 @@ static LRESULT CALLBACK hook_proc1( int code, WPARAM wparam, LPARAM lparam )
         SetCursorPos(pt.x, pt.y);
         GetCursorPos(&pt1);
         if (clipped)
-            ok(pt1.x == pt_old.x && pt1.y == pt_old.y, "Wrong set pos: (%d,%d)\n", pt1.x, pt1.y);
+            ok(pt1.x == pt_old.x && pt1.y == pt_old.y, "Wrong set pos: (%ld,%ld)\n", pt1.x, pt1.y);
         else
-            ok(pt1.x == pt.x && pt1.y == pt.y, "Wrong set pos: (%d,%d)\n", pt1.x, pt1.y);
+            ok(pt1.x == pt.x && pt1.y == pt.y, "Wrong set pos: (%ld,%ld)\n", pt1.x, pt1.y);
     }
     return CallNextHookEx( 0, code, wparam, lparam );
 }
@@ -1305,14 +1323,14 @@ static LRESULT CALLBACK hook_proc2( int code, WPARAM wparam, LPARAM lparam )
     if (code == HC_ACTION)
     {
         ok(hook->pt.x == pt_new.x && hook->pt.y == pt_new.y,
-           "Wrong hook coords: (%d %d) != (%d,%d)\n", hook->pt.x, hook->pt.y, pt_new.x, pt_new.y);
+           "Wrong hook coords: (%ld %ld) != (%ld,%ld)\n", hook->pt.x, hook->pt.y, pt_new.x, pt_new.y);
 
         /* Should match position set above */
         GetCursorPos(&pt);
         if (clipped)
-            ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%d,%d)\n", pt.x, pt.y);
+            ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%ld,%ld)\n", pt.x, pt.y);
         else
-            ok(pt.x == pt_old.x +STEP && pt.y == pt_old.y +STEP, "GetCursorPos: (%d,%d)\n", pt.x, pt.y);
+            ok(pt.x == pt_old.x +STEP && pt.y == pt_old.y +STEP, "GetCursorPos: (%ld,%ld)\n", pt.x, pt.y);
     }
     return CallNextHookEx( 0, code, wparam, lparam );
 }
@@ -1325,7 +1343,7 @@ static LRESULT CALLBACK hook_proc3( int code, WPARAM wparam, LPARAM lparam )
     {
         /* MSLLHOOKSTRUCT does not seem to be reliable and contains different data on each run. */
         GetCursorPos(&pt);
-        ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%d,%d)\n", pt.x, pt.y);
+        ok(pt.x == pt_old.x && pt.y == pt_old.y, "GetCursorPos: (%ld,%ld)\n", pt.x, pt.y);
     }
     return CallNextHookEx( 0, code, wparam, lparam );
 }
@@ -1352,16 +1370,16 @@ static void test_mouse_ll_hook(void)
     GetCursorPos(&pt_old);
     mouse_event(MOUSEEVENTF_MOVE, -STEP,  0, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE, +STEP,  0, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE,  0, -STEP, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE,  0, +STEP, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == pt_new.x && pt_old.y == pt_new.y, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
 
     SetRect(&rc, 50, 50, 151, 151);
     ClipCursor(&rc);
@@ -1369,13 +1387,13 @@ static void test_mouse_ll_hook(void)
 
     SetCursorPos(40, 40);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 50 && pt_old.y == 50, "Wrong new pos: (%d,%d)\n", pt_new.x, pt_new.y);
+    ok(pt_old.x == 50 && pt_old.y == 50, "Wrong new pos: (%ld,%ld)\n", pt_new.x, pt_new.y);
     SetCursorPos(160, 160);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%d,%d)\n", pt_new.x, pt_new.y);
+    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%ld,%ld)\n", pt_new.x, pt_new.y);
     mouse_event(MOUSEEVENTF_MOVE, +STEP, +STEP, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%d,%d)\n", pt_new.x, pt_new.y);
+    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%ld,%ld)\n", pt_new.x, pt_new.y);
 
     clipped = FALSE;
     pt_new.x = pt_new.y = 150;
@@ -1390,17 +1408,17 @@ static void test_mouse_ll_hook(void)
     pt_old.y = pt_new.y - STEP;
     mouse_event(MOUSEEVENTF_LEFTUP, 123, 456, 0, 0);
     GetCursorPos(&pt);
-    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%d,%d)\n", pt.x, pt.y);
+    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%ld,%ld)\n", pt.x, pt.y);
     mouse_event(MOUSEEVENTF_RIGHTUP, 456, 123, 0, 0);
     GetCursorPos(&pt);
-    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%d,%d)\n", pt.x, pt.y);
+    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%ld,%ld)\n", pt.x, pt.y);
 
     mouse_event(MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE, 123, 456, 0, 0);
     GetCursorPos(&pt);
-    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%d,%d)\n", pt.x, pt.y);
+    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%ld,%ld)\n", pt.x, pt.y);
     mouse_event(MOUSEEVENTF_RIGHTUP | MOUSEEVENTF_ABSOLUTE, 456, 123, 0, 0);
     GetCursorPos(&pt);
-    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%d,%d)\n", pt.x, pt.y);
+    ok(pt.x == pt_new.x && pt.y == pt_new.y, "Position changed: (%ld,%ld)\n", pt.x, pt.y);
 
     UnhookWindowsHookEx(hook2);
     hook1 = SetWindowsHookExA(WH_MOUSE_LL, hook_proc3, GetModuleHandleA(0), 0);
@@ -1411,27 +1429,27 @@ static void test_mouse_ll_hook(void)
 
     SetCursorPos(140, 140);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     SetCursorPos(160, 160);
     GetCursorPos(&pt_old);
     todo_wine
-    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE, -STEP, -STEP, 0, 0);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE, +STEP, +STEP, 0, 0);
     GetCursorPos(&pt_old);
     todo_wine
-    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0);
     GetCursorPos(&pt_old);
     ok((pt_old.x == 150 && pt_old.y == 150) ||
        broken(pt_old.x == 149 && pt_old.y == 149) /* w1064v1809 */,
-       "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+       "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     mouse_event(MOUSEEVENTF_MOVE, 0, 0, 0, 0);
     GetCursorPos(&pt_old);
     todo_wine
-    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
 
     clipped = FALSE;
     ClipCursor(NULL);
@@ -1440,7 +1458,7 @@ static void test_mouse_ll_hook(void)
     SetRect(&rc, 150, 150, 150, 150);
     ClipCursor(&rc);
     GetCursorPos(&pt_old);
-    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 150 && pt_old.y == 150, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     ClipCursor(NULL);
 
     SetCursorPos(160, 160);
@@ -1448,7 +1466,7 @@ static void test_mouse_ll_hook(void)
     ClipCursor(&rc);
     GetCursorPos(&pt_old);
     todo_wine
-    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     ClipCursor(NULL);
 
     SetCursorPos(150, 150);
@@ -1456,7 +1474,7 @@ static void test_mouse_ll_hook(void)
     ClipCursor(&rc);
     GetCursorPos(&pt_old);
     todo_wine
-    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%d,%d)\n", pt_old.x, pt_old.y);
+    ok(pt_old.x == 149 && pt_old.y == 149, "Wrong new pos: (%ld,%ld)\n", pt_old.x, pt_old.y);
     ClipCursor(NULL);
 
     UnhookWindowsHookEx(hook1);
@@ -1466,18 +1484,22 @@ done:
     SetCursorPos(pt_org.x, pt_org.y);
 }
 
-static void test_GetMouseMovePointsEx(void)
+static void test_GetMouseMovePointsEx(const char *argv0)
 {
 #define BUFLIM  64
 #define MYERROR 0xdeadbeef
-    int count, retval;
+    PROCESS_INFORMATION process_info;
+    STARTUPINFOA startup_info;
+    char path[MAX_PATH];
+    int i, count, retval;
     MOUSEMOVEPOINT in;
     MOUSEMOVEPOINT out[200];
     POINT point;
+    TEST_INPUT input;
 
     /* Get a valid content for the input struct */
     if(!GetCursorPos(&point)) {
-        win_skip("GetCursorPos() failed with error %u\n", GetLastError());
+        win_skip("GetCursorPos() failed with error %lu\n", GetLastError());
         return;
     }
     memset(&in, 0, sizeof(MOUSEMOVEPOINT));
@@ -1497,19 +1519,19 @@ static void test_GetMouseMovePointsEx(void)
     }
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT)-1, &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT)+1, &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     /* test second and third parameter
      */
@@ -1517,25 +1539,25 @@ static void test_GetMouseMovePointsEx(void)
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), NULL, out, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_NOACCESS || GetLastError() == MYERROR,
-       "expected error ERROR_NOACCESS, got %u\n", GetLastError());
+       "expected error ERROR_NOACCESS, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, NULL, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(ERROR_NOACCESS == GetLastError(),
-       "expected error ERROR_NOACCESS, got %u\n", GetLastError());
+       "expected error ERROR_NOACCESS, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), NULL, NULL, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(ERROR_NOACCESS == GetLastError(),
-       "expected error ERROR_NOACCESS, got %u\n", GetLastError());
+       "expected error ERROR_NOACCESS, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     count = 0;
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, NULL, count, GMMP_USE_DISPLAY_POINTS);
     if (retval == -1)
-        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %u\n", GetLastError());
+        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %lu\n", GetLastError());
     else
         ok(retval == count, "expected GetMouseMovePointsEx to succeed, got %d\n", retval);
 
@@ -1547,13 +1569,13 @@ static void test_GetMouseMovePointsEx(void)
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, out, count, GMMP_USE_DISPLAY_POINTS);
     ok(retval == count, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     count = 0;
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, out, count, GMMP_USE_DISPLAY_POINTS);
     if (retval == -1)
-        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %u\n", GetLastError());
+        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %lu\n", GetLastError());
     else
         ok(retval == count, "expected GetMouseMovePointsEx to succeed, got %d\n", retval);
 
@@ -1561,7 +1583,7 @@ static void test_GetMouseMovePointsEx(void)
     count = BUFLIM;
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, out, count, GMMP_USE_DISPLAY_POINTS);
     if (retval == -1)
-        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %u\n", GetLastError());
+        ok(GetLastError() == ERROR_POINT_NOT_FOUND, "unexpected error %lu\n", GetLastError());
     else
         ok((0 <= retval) && (retval <= count), "expected GetMouseMovePointsEx to succeed, got %d\n", retval);
 
@@ -1569,7 +1591,7 @@ static void test_GetMouseMovePointsEx(void)
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM+1, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     /* it was not possible to force an error with the fifth parameter on win2k */
 
@@ -1578,28 +1600,212 @@ static void test_GetMouseMovePointsEx(void)
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT)-1, NULL, out, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT)-1, &in, NULL, BUFLIM, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), NULL, out, BUFLIM+1, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
     SetLastError(MYERROR);
     retval = pGetMouseMovePointsEx(sizeof(MOUSEMOVEPOINT), &in, NULL, BUFLIM+1, GMMP_USE_DISPLAY_POINTS);
     ok(retval == -1, "expected GetMouseMovePointsEx to fail, got %d\n", retval);
     ok(GetLastError() == ERROR_INVALID_PARAMETER || GetLastError() == MYERROR,
-       "expected error ERROR_INVALID_PARAMETER, got %u\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu\n", GetLastError());
 
+    /* more than 64 to be sure we wrap around */
+    for (i = 0; i < 67; i++)
+    {
+        in.x = i;
+        in.y = i*2;
+        SetCursorPos( in.x, in.y );
+    }
+
+    SetLastError( MYERROR );
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( GetLastError() == MYERROR, "expected error to stay %x, got %lx\n", MYERROR, GetLastError() );
+
+    for (i = 0; i < retval; i++)
+    {
+        ok( out[i].x == in.x && out[i].y == in.y, "wrong position %d, expected %dx%d got %dx%d\n", i, in.x, in.y, out[i].x, out[i].y );
+        in.x--;
+        in.y -= 2;
+    }
+
+    in.x = 1500;
+    in.y = 1500;
+    SetLastError( MYERROR );
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == -1, "expected to get -1 but got %d\n", retval );
+    ok( GetLastError() == ERROR_POINT_NOT_FOUND, "expected error to be set to %x, got %lx\n", ERROR_POINT_NOT_FOUND, GetLastError() );
+
+    /* make sure there's no deduplication */
+    in.x = 6;
+    in.y = 6;
+    SetCursorPos( in.x, in.y );
+    SetCursorPos( in.x, in.y );
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( out[0].x == 6 && out[0].y == 6, "expected cursor position to be 6x6 but got %d %d\n", out[0].x, out[0].y );
+    ok( out[1].x == 6 && out[1].y == 6, "expected cursor position to be 6x6 but got %d %d\n", out[1].x, out[1].y );
+
+    /* make sure 2 events are distinguishable by their timestamps */
+    in.x = 150;
+    in.y = 75;
+    SetCursorPos( 30, 30 );
+    SetCursorPos( in.x, in.y );
+    SetCursorPos( 150, 150 );
+    Sleep( 3 );
+    SetCursorPos( in.x, in.y );
+
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( out[0].x == 150 && out[0].y == 75, "expected cursor position to be 150x75 but got %d %d\n", out[0].x, out[0].y );
+    ok( out[1].x == 150 && out[1].y == 150, "expected cursor position to be 150x150 but got %d %d\n", out[1].x, out[1].y );
+    ok( out[2].x == 150 && out[2].y == 75, "expected cursor position to be 150x75 but got %d %d\n", out[2].x, out[2].y );
+
+    in.time = out[2].time;
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 62, "expected to get 62 mouse move points but got %d\n", retval );
+    ok( out[0].x == 150 && out[0].y == 75, "expected cursor position to be 150x75 but got %d %d\n", out[0].x, out[0].y );
+    ok( out[1].x == 30 && out[1].y == 30, "expected cursor position to be 30x30 but got %d %d\n", out[1].x, out[1].y );
+
+    /* events created through other means should also be on the list with correct extra info */
+    mouse_event( MOUSEEVENTF_MOVE, -13, 17, 0, 0xcafecafe );
+    ok( GetCursorPos( &point ), "failed to get cursor position\n" );
+    ok( in.x != point.x && in.y != point.y, "cursor didn't change position after mouse_event()\n" );
+    in.time = 0;
+    in.x = point.x;
+    in.y = point.y;
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( out[0].dwExtraInfo == 0xcafecafe, "wrong extra info, got 0x%Ix expected 0xcafecafe\n", out[0].dwExtraInfo );
+
+    input.type = INPUT_MOUSE;
+    memset( &input, 0, sizeof(input) );
+    input.u.mi.dwFlags = MOUSEEVENTF_MOVE;
+    input.u.mi.dwExtraInfo = 0xdeadbeef;
+    input.u.mi.dx = -17;
+    input.u.mi.dy = 13;
+    SendInput( 1, (INPUT *)&input, sizeof(INPUT) );
+    ok( GetCursorPos( &point ), "failed to get cursor position\n" );
+    ok( in.x != point.x && in.y != point.y, "cursor didn't change position after mouse_event()\n" );
+    in.time = 0;
+    in.x = point.x;
+    in.y = point.y;
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( out[0].dwExtraInfo == 0xdeadbeef, "wrong extra info, got 0x%Ix expected 0xdeadbeef\n", out[0].dwExtraInfo );
+
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, BUFLIM, GMMP_USE_HIGH_RESOLUTION_POINTS );
+    todo_wine ok( retval == 64, "expected to get 64 high resolution mouse move points but got %d\n", retval );
+
+    sprintf(path, "%s input get_mouse_move_points_test", argv0);
+    memset(&startup_info, 0, sizeof(startup_info));
+    startup_info.cb = sizeof(startup_info);
+    startup_info.dwFlags = STARTF_USESHOWWINDOW;
+    startup_info.wShowWindow = SW_SHOWNORMAL;
+    retval = CreateProcessA(NULL, path, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info, &process_info );
+    ok(retval, "CreateProcess \"%s\" failed err %lu.\n", path, GetLastError());
+    winetest_wait_child_process(process_info.hProcess);
+    CloseHandle(process_info.hProcess);
+    CloseHandle(process_info.hThread);
 #undef BUFLIM
 #undef MYERROR
+}
+
+static void test_GetMouseMovePointsEx_process(void)
+{
+    int retval;
+    MOUSEMOVEPOINT in;
+    MOUSEMOVEPOINT out[64], out2[64];
+    POINT point;
+    HDESK desk0, desk1;
+    HWINSTA winstation0, winstation1;
+
+    memset( out, 0, sizeof(out) );
+    memset( out2, 0, sizeof(out2) );
+
+    /* move point history is shared between desktops within the same windowstation */
+    ok( GetCursorPos( &point ), "failed to get cursor position\n" );
+    in.time = 0;
+    in.x = point.x;
+    in.y = point.y;
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, ARRAY_SIZE(out), GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+
+    desk0 = OpenInputDesktop( 0, FALSE, DESKTOP_ALL_ACCESS );
+    ok( desk0 != NULL, "OpenInputDesktop has failed with %ld\n", GetLastError() );
+    desk1 = CreateDesktopA( "getmousemovepointsex_test_desktop", NULL, NULL, 0, DESKTOP_ALL_ACCESS, NULL );
+    ok( desk1 != NULL, "CreateDesktopA failed with %ld\n", GetLastError() );
+
+    ok( SetThreadDesktop( desk1 ), "SetThreadDesktop failed!\n" );
+    ok( SwitchDesktop( desk1 ), "SwitchDesktop failed\n" );
+
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out2, ARRAY_SIZE(out2), GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+
+    ok( memcmp( out, out2, sizeof(out2) ) == 0, "expected to get exact same history on the new desktop\n" );
+
+    in.time = 0;
+    in.x = 38;
+    in.y = 27;
+    SetCursorPos( in.x, in.y );
+
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out2, ARRAY_SIZE(out2), GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+
+    ok( SetThreadDesktop( desk0 ), "SetThreadDesktop failed!\n" );
+    ok( SwitchDesktop( desk0 ), "SwitchDesktop failed\n" );
+
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, ARRAY_SIZE(out), GMMP_USE_DISPLAY_POINTS );
+    ok( retval == 64, "expected to get 64 mouse move points but got %d\n", retval );
+    ok( memcmp( out, out2, sizeof( out2 ) ) == 0, "expected to get exact same history on the old desktop\n" );
+
+    CloseDesktop( desk1 );
+    CloseDesktop( desk0 );
+
+    /* non-default windowstations are non-interactive */
+    winstation0 = GetProcessWindowStation();
+    ok( winstation0 != NULL, "GetProcessWindowStation has failed with %ld\n", GetLastError() );
+    desk0 = OpenInputDesktop( 0, FALSE, DESKTOP_ALL_ACCESS );
+    ok( desk0 != NULL, "OpenInputDesktop has failed with %ld\n", GetLastError() );
+    winstation1 = CreateWindowStationA( "test_winstation", 0, WINSTA_ALL_ACCESS, NULL );
+
+    if (winstation1 == NULL && GetLastError() == ERROR_ACCESS_DENIED)
+    {
+        win_skip("not enough privileges for CreateWindowStation\n");
+        CloseDesktop( desk0 );
+        CloseWindowStation( winstation0 );
+        return;
+    }
+
+    ok( winstation1 != NULL, "CreateWindowStationA has failed with %ld\n", GetLastError() );
+    ok( SetProcessWindowStation( winstation1 ), "SetProcessWindowStation has failed\n" );
+
+    desk1 = CreateDesktopA( "getmousemovepointsex_test_desktop", NULL, NULL, 0, DESKTOP_ALL_ACCESS, NULL );
+    ok( desk1 != NULL, "CreateDesktopA failed with %ld\n", GetLastError() );
+    ok( SetThreadDesktop( desk1 ), "SetThreadDesktop failed!\n" );
+
+    SetLastError( 0xDEADBEEF );
+    retval = pGetMouseMovePointsEx( sizeof(MOUSEMOVEPOINT), &in, out, ARRAY_SIZE(out), GMMP_USE_DISPLAY_POINTS );
+    todo_wine ok( retval == -1, "expected to get -1 mouse move points but got %d\n", retval );
+    todo_wine ok( GetLastError() == ERROR_ACCESS_DENIED, "expected ERROR_ACCESS_DENIED got %ld\n", GetLastError() );
+
+    ok( SetProcessWindowStation( winstation0 ), "SetProcessWindowStation has failed\n" );
+    ok( SetThreadDesktop( desk0 ), "SetThreadDesktop failed!\n" );
+    CloseDesktop( desk1 );
+    CloseWindowStation( winstation1 );
+    CloseDesktop( desk0 );
+    CloseWindowStation( winstation0 );
 }
 
 static void test_GetRawInputDeviceList(void)
@@ -1613,13 +1819,13 @@ static void test_GetRawInputDeviceList(void)
     ret = pGetRawInputDeviceList(NULL, NULL, 0);
     err = GetLastError();
     ok(ret == -1, "expected -1, got %d\n", ret);
-    ok(err == ERROR_INVALID_PARAMETER, "expected 87, got %d\n", err);
+    ok(err == ERROR_INVALID_PARAMETER, "expected 87, got %ld\n", err);
 
     SetLastError(0xdeadbeef);
     ret = pGetRawInputDeviceList(NULL, NULL, sizeof(devices[0]));
     err = GetLastError();
     ok(ret == -1, "expected -1, got %d\n", ret);
-    ok(err == ERROR_NOACCESS, "expected 998, got %d\n", err);
+    ok(err == ERROR_NOACCESS, "expected 998, got %ld\n", err);
 
     devcount = 0;
     ret = pGetRawInputDeviceList(NULL, &devcount, sizeof(devices[0]));
@@ -1631,12 +1837,49 @@ static void test_GetRawInputDeviceList(void)
     ret = pGetRawInputDeviceList(devices, &devcount, sizeof(devices[0]));
     err = GetLastError();
     ok(ret == -1, "expected -1, got %d\n", ret);
-    ok(err == ERROR_INSUFFICIENT_BUFFER, "expected 122, got %d\n", err);
+    ok(err == ERROR_INSUFFICIENT_BUFFER, "expected 122, got %ld\n", err);
     ok(devcount > 0, "expected non-zero\n");
 
     /* devcount contains now the correct number of devices */
     ret = pGetRawInputDeviceList(devices, &devcount, sizeof(devices[0]));
     ok(ret > 0, "expected non-zero\n");
+
+    if (devcount)
+    {
+        RID_DEVICE_INFO info;
+        UINT size;
+
+        SetLastError( 0xdeadbeef );
+        ret = pGetRawInputDeviceInfoW( UlongToHandle( 0xdeadbeef ), RIDI_DEVICEINFO, NULL, NULL );
+        ok( ret == ~0U, "GetRawInputDeviceInfoW returned %#x, expected ~0.\n", ret );
+        ok( GetLastError() == ERROR_NOACCESS, "GetRawInputDeviceInfoW last error %#lx, expected 0xdeadbeef.\n", GetLastError() );
+
+        SetLastError( 0xdeadbeef );
+        size = 0xdeadbeef;
+        ret = pGetRawInputDeviceInfoW( UlongToHandle( 0xdeadbeef ), RIDI_DEVICEINFO, NULL, &size );
+        ok( ret == ~0U, "GetRawInputDeviceInfoW returned %#x, expected ~0.\n", ret );
+        ok( size == 0xdeadbeef, "GetRawInputDeviceInfoW returned size %#x, expected 0.\n", size );
+        ok( GetLastError() == ERROR_INVALID_HANDLE, "GetRawInputDeviceInfoW last error %#lx, expected 0xdeadbeef.\n", GetLastError() );
+
+        SetLastError( 0xdeadbeef );
+        size = 0xdeadbeef;
+        ret = pGetRawInputDeviceInfoW( devices[0].hDevice, 0xdeadbeef, NULL, &size );
+        ok( ret == ~0U, "GetRawInputDeviceInfoW returned %#x, expected ~0.\n", ret );
+        ok( size == 0xdeadbeef, "GetRawInputDeviceInfoW returned size %#x, expected 0.\n", size );
+        ok( GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputDeviceInfoW last error %#lx, expected 0xdeadbeef.\n", GetLastError() );
+
+        SetLastError( 0xdeadbeef );
+        ret = pGetRawInputDeviceInfoW( devices[0].hDevice, RIDI_DEVICEINFO, &info, NULL );
+        ok( ret == ~0U, "GetRawInputDeviceInfoW returned %#x, expected ~0.\n", ret );
+        ok( GetLastError() == ERROR_NOACCESS, "GetRawInputDeviceInfoW last error %#lx, expected 0xdeadbeef.\n", GetLastError() );
+
+        SetLastError( 0xdeadbeef );
+        size = 0;
+        ret = pGetRawInputDeviceInfoW( devices[0].hDevice, RIDI_DEVICEINFO, &info, &size );
+        ok( ret == ~0U, "GetRawInputDeviceInfoW returned %#x, expected ~0.\n", ret );
+        ok( size == sizeof(info), "GetRawInputDeviceInfoW returned size %#x, expected %#Ix.\n", size, sizeof(info) );
+        ok( GetLastError() == ERROR_INSUFFICIENT_BUFFER, "GetRawInputDeviceInfoW last error %#lx, expected 0xdeadbeef.\n", GetLastError() );
+    }
 
     for(i = 0; i < devcount; ++i)
     {
@@ -1651,18 +1894,18 @@ static void test_GetRawInputDeviceList(void)
         name[0] = '\0';
         sz = 5;
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_DEVICENAME, name, &sz);
-        ok(ret == -1, "GetRawInputDeviceInfo gave wrong failure: %d\n", err);
+        ok(ret == -1, "GetRawInputDeviceInfo gave wrong failure: %ld\n", err);
         ok(sz > 5 && sz < ARRAY_SIZE(name), "Size should have been set and not too large (got: %u)\n", sz);
 
         /* buffer size for RIDI_DEVICENAME is in CHARs, not BYTEs */
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_DEVICENAME, name, &sz);
-        ok(ret == sz, "GetRawInputDeviceInfo gave wrong return: %d\n", err);
+        ok(ret == sz, "GetRawInputDeviceInfo gave wrong return: %ld\n", err);
         len = lstrlenW(name);
         ok(len + 1 == ret, "GetRawInputDeviceInfo returned wrong length (name: %u, ret: %u)\n", len + 1, ret);
 
         /* test A variant with same size */
         ret = pGetRawInputDeviceInfoA(devices[i].hDevice, RIDI_DEVICENAME, nameA, &sz);
-        ok(ret == sz, "GetRawInputDeviceInfoA gave wrong return: %d\n", err);
+        ok(ret == sz, "GetRawInputDeviceInfoA gave wrong return: %ld\n", err);
         len = strlen(nameA);
         ok(len + 1 == ret, "GetRawInputDeviceInfoA returned wrong length (name: %u, ret: %u)\n", len + 1, ret);
 
@@ -1671,34 +1914,33 @@ static void test_GetRawInputDeviceList(void)
         info.cbSize = sizeof(info);
         sz = sizeof(info) - 1;
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_DEVICEINFO, &info, &sz);
-        ok(ret == -1, "GetRawInputDeviceInfo gave wrong failure: %d\n", err);
+        ok(ret == -1, "GetRawInputDeviceInfo gave wrong failure: %ld\n", err);
         ok(sz == sizeof(info), "GetRawInputDeviceInfo set wrong size\n");
 
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_DEVICEINFO, &info, &sz);
-        ok(ret == sizeof(info), "GetRawInputDeviceInfo gave wrong return: %d\n", err);
+        ok(ret == sizeof(info), "GetRawInputDeviceInfo gave wrong return: %ld\n", err);
         ok(sz == sizeof(info), "GetRawInputDeviceInfo set wrong size\n");
-        ok(info.dwType == devices[i].dwType, "GetRawInputDeviceInfo set wrong type: 0x%x\n", info.dwType);
+        ok(info.dwType == devices[i].dwType, "GetRawInputDeviceInfo set wrong type: 0x%lx\n", info.dwType);
 
         memset(&info, 0, sizeof(info));
         info.cbSize = sizeof(info);
         ret = pGetRawInputDeviceInfoA(devices[i].hDevice, RIDI_DEVICEINFO, &info, &sz);
-        ok(ret == sizeof(info), "GetRawInputDeviceInfo gave wrong return: %d\n", err);
+        ok(ret == sizeof(info), "GetRawInputDeviceInfo gave wrong return: %ld\n", err);
         ok(sz == sizeof(info), "GetRawInputDeviceInfo set wrong size\n");
-        ok(info.dwType == devices[i].dwType, "GetRawInputDeviceInfo set wrong type: 0x%x\n", info.dwType);
+        ok(info.dwType == devices[i].dwType, "GetRawInputDeviceInfo set wrong type: 0x%lx\n", info.dwType);
 
         /* setupapi returns an NT device path, but CreateFile() < Vista can't
          * understand that; so use the \\?\ prefix instead */
         name[1] = '\\';
         file = CreateFileW(name, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-        todo_wine_if(info.dwType != RIM_TYPEHID)
-            ok(file != INVALID_HANDLE_VALUE, "Failed to open %s, error %u\n", wine_dbgstr_w(name), GetLastError());
+        ok(file != INVALID_HANDLE_VALUE, "Failed to open %s, error %lu\n", wine_dbgstr_w(name), GetLastError());
 
         sz = 0;
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_PREPARSEDDATA, NULL, &sz);
         ok(ret == 0, "GetRawInputDeviceInfo gave wrong return: %u\n", ret);
         ok((info.dwType == RIM_TYPEHID && sz != 0) ||
                 (info.dwType != RIM_TYPEHID && sz == 0),
-                "Got wrong PPD size for type 0x%x: %u\n", info.dwType, sz);
+                "Got wrong PPD size for type 0x%lx: %u\n", info.dwType, sz);
 
         ppd = HeapAlloc(GetProcessHeap(), 0, sz);
         ret = pGetRawInputDeviceInfoW(devices[i].hDevice, RIDI_PREPARSEDDATA, ppd, &sz);
@@ -1720,8 +1962,7 @@ static void test_GetRawInputDeviceList(void)
             {
                 /* succeeds on hardware, fails in some VMs */
                 br = HidD_GetPreparsedData(file, &preparsed);
-                todo_wine
-                    ok(br == TRUE || broken(br == FALSE), "HidD_GetPreparsedData failed\n");
+                ok(br == TRUE || broken(br == FALSE), "HidD_GetPreparsedData failed\n");
             }
 
             if (br)
@@ -1751,18 +1992,24 @@ static void test_GetRawInputData(void)
     UINT ret;
 
     /* Null raw input handle */
+    SetLastError(0xdeadbeef);
     ret = GetRawInputData(NULL, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
     ok(ret == ~0U, "Expect ret %u, got %u\n", ~0U, ret);
+    ok(GetLastError() == ERROR_INVALID_HANDLE, "GetRawInputData returned %08lx\n", GetLastError());
 }
 
 static void test_RegisterRawInputDevices(void)
 {
     HWND hwnd;
-    RAWINPUTDEVICE raw_devices[1];
+    RAWINPUTDEVICE raw_devices[2];
+    UINT count, raw_devices_count;
     BOOL res;
 
+    memset(raw_devices, 0, sizeof(raw_devices));
     raw_devices[0].usUsagePage = 0x01;
     raw_devices[0].usUsage = 0x05;
+    raw_devices[1].usUsagePage = 0x01;
+    raw_devices[1].usUsage = 0x04;
 
     hwnd = CreateWindowExA(WS_EX_TOPMOST, "static", "dinput", WS_POPUP | WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
     ok(hwnd != NULL, "CreateWindowExA failed\n");
@@ -1772,63 +2019,359 @@ static void test_RegisterRawInputDevices(void)
     ok(res == FALSE, "RegisterRawInputDevices succeeded\n");
 
 
-    raw_devices[0].dwFlags = 0;
-    raw_devices[0].hwndTarget = 0;
-
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), 0);
     ok(res == FALSE, "RegisterRawInputDevices succeeded\n");
-    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
     ok(res == TRUE, "RegisterRawInputDevices failed\n");
-    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
+    SetLastError(0xdeadbeef);
+    count = GetRegisteredRawInputDevices(NULL, NULL, 0);
+    ok(count == ~0U, "GetRegisteredRawInputDevices returned %u\n", count);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    raw_devices_count = 0;
+    count = GetRegisteredRawInputDevices(NULL, &raw_devices_count, 0);
+    ok(count == ~0U, "GetRegisteredRawInputDevices returned %u\n", count);
+    ok(raw_devices_count == 0, "Unexpected registered devices count: %u\n", raw_devices_count);
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    raw_devices_count = 0;
+    count = GetRegisteredRawInputDevices(NULL, &raw_devices_count, sizeof(RAWINPUTDEVICE));
+    ok(count == 0, "GetRegisteredRawInputDevices returned %u\n", count);
+    ok(raw_devices_count == 2, "Unexpected registered devices count: %u\n", raw_devices_count);
+    ok(GetLastError() == 0xdeadbeef, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    raw_devices_count = 0;
+    count = GetRegisteredRawInputDevices(raw_devices, &raw_devices_count, sizeof(RAWINPUTDEVICE));
+    if (broken(count == 0) /* depends on windows versions */)
+        win_skip("Ignoring GetRegisteredRawInputDevices success\n");
+    else
+    {
+        ok(count == ~0U, "GetRegisteredRawInputDevices returned %u\n", count);
+        ok(raw_devices_count == 0, "Unexpected registered devices count: %u\n", raw_devices_count);
+        ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+    }
+
+    SetLastError(0xdeadbeef);
+    raw_devices_count = 1;
+    count = GetRegisteredRawInputDevices(raw_devices, &raw_devices_count, sizeof(RAWINPUTDEVICE));
+    ok(count == ~0U, "GetRegisteredRawInputDevices returned %u\n", count);
+    ok(raw_devices_count == 2, "Unexpected registered devices count: %u\n", raw_devices_count);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    memset(raw_devices, 0, sizeof(raw_devices));
+    raw_devices_count = ARRAY_SIZE(raw_devices);
+    count = GetRegisteredRawInputDevices(raw_devices, &raw_devices_count, sizeof(RAWINPUTDEVICE));
+    ok(count == 2, "GetRegisteredRawInputDevices returned %u\n", count);
+    ok(raw_devices_count == 2, "Unexpected registered devices count: %u\n", raw_devices_count);
+    ok(GetLastError() == 0xdeadbeef, "GetRegisteredRawInputDevices unexpected error %08lx\n", GetLastError());
+    ok(raw_devices[0].usUsagePage == 0x01, "Unexpected usage page: %x\n", raw_devices[0].usUsagePage);
+    ok(raw_devices[0].usUsage == 0x04, "Unexpected usage: %x\n", raw_devices[0].usUsage);
+    ok(raw_devices[1].usUsagePage == 0x01, "Unexpected usage page: %x\n", raw_devices[1].usUsagePage);
+    ok(raw_devices[1].usUsage == 0x05, "Unexpected usage: %x\n", raw_devices[1].usUsage);
 
     /* RIDEV_REMOVE requires hwndTarget == NULL */
     raw_devices[0].dwFlags = RIDEV_REMOVE;
     raw_devices[0].hwndTarget = hwnd;
+    raw_devices[1].dwFlags = RIDEV_REMOVE;
+    raw_devices[1].hwndTarget = hwnd;
 
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
     ok(res == FALSE, "RegisterRawInputDevices succeeded\n");
-    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
     raw_devices[0].hwndTarget = 0;
+    raw_devices[1].hwndTarget = 0;
 
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
     ok(res == TRUE, "RegisterRawInputDevices failed\n");
-    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
 
     /* RIDEV_INPUTSINK requires hwndTarget != NULL */
     raw_devices[0].dwFlags = RIDEV_INPUTSINK;
     raw_devices[0].hwndTarget = 0;
+    raw_devices[1].dwFlags = RIDEV_INPUTSINK;
+    raw_devices[1].hwndTarget = 0;
 
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
-    todo_wine
     ok(res == FALSE, "RegisterRawInputDevices failed\n");
-    todo_wine
-    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
     raw_devices[0].hwndTarget = hwnd;
+    raw_devices[1].hwndTarget = hwnd;
 
     SetLastError(0xdeadbeef);
     res = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
     ok(res == TRUE, "RegisterRawInputDevices succeeded\n");
-    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08x\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08lx\n", GetLastError());
 
     DestroyWindow(hwnd);
 }
 
+<<<<<<< HEAD
 static int rawinput_received;
 static int rawinput_received_foreground;
 static int rawinput_motion_x;
 static int rawinput_motion_y;
 static HANDLE rawinput_wndproc_done;
+=======
+static int rawinputbuffer_wndproc_count;
+
+#ifdef _WIN64
+typedef RAWINPUT RAWINPUT64;
+#else
+typedef struct
+{
+    RAWINPUTHEADER header;
+    char pad[8];
+    union {
+        RAWMOUSE    mouse;
+        RAWKEYBOARD keyboard;
+        RAWHID      hid;
+    } data;
+} RAWINPUT64;
+#endif
+
+static int rawinput_buffer_mouse_x(void *buffer, size_t index)
+{
+    if (is_wow64) return ((RAWINPUT64 *)buffer)[index].data.mouse.lLastX;
+    return ((RAWINPUT *)buffer)[index].data.mouse.lLastX;
+}
+
+static LRESULT CALLBACK rawinputbuffer_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    RAWINPUT ri;
+    char buffer[16 * sizeof(RAWINPUT64)];
+    UINT size, count, rawinput_size, iteration = rawinputbuffer_wndproc_count++;
+    MSG message;
+
+    if (is_wow64) rawinput_size = sizeof(RAWINPUT64);
+    else rawinput_size = sizeof(RAWINPUT);
+
+    if (msg == WM_INPUT)
+    {
+        count = GetRawInputBuffer(NULL, NULL, sizeof(RAWINPUTHEADER));
+        ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+
+        size = sizeof(buffer);
+        count = GetRawInputBuffer(NULL, &size, sizeof(RAWINPUTHEADER));
+        ok(count == 0, "GetRawInputBuffer returned %u\n", count);
+        ok(size == rawinput_size, "GetRawInputBuffer returned unexpected size: %u\n", size);
+
+        size = sizeof(buffer);
+        memset(buffer, 0, sizeof(buffer));
+        count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+        ok(count == 3, "GetRawInputBuffer returned %u\n", count);
+        ok(size == sizeof(buffer), "GetRawInputBuffer returned unexpected size: %u\n", size);
+        ok(rawinput_buffer_mouse_x(buffer, 0) == 2, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 0));
+        ok(rawinput_buffer_mouse_x(buffer, 1) == 3, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 1));
+        ok(rawinput_buffer_mouse_x(buffer, 2) == 4, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 2));
+
+        /* the first event should be removed by the next GetRawInputBuffer call
+         * and the others should do another round through the message loop but not more */
+        if (iteration == 0)
+        {
+            mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+            mouse_event(MOUSEEVENTF_MOVE, 6, 0, 0, 0);
+            mouse_event(MOUSEEVENTF_MOVE, 2, 0, 0, 0);
+            mouse_event(MOUSEEVENTF_MOVE, 3, 0, 0, 0);
+            mouse_event(MOUSEEVENTF_MOVE, 4, 0, 0, 0);
+
+            /* even though rawinput_size is the minimum required size,
+             * it needs one more byte to return success */
+            size = rawinput_size + 1;
+            memset(buffer, 0, sizeof(buffer));
+            count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+            ok(count == 1, "GetRawInputBuffer returned %u\n", count);
+            ok(rawinput_buffer_mouse_x(buffer, 0) == 5, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 0));
+
+            /* peek the messages now, they should still arrive in the correct order */
+            while (PeekMessageA(&message, 0, WM_INPUT, WM_INPUT, PM_REMOVE)) DispatchMessageA(&message);
+        }
+
+        /* reading the message data now should fail on the second iteration, the data
+         * from the first message has been overwritten. */
+        size = sizeof(ri);
+        memset(&ri, 0, sizeof(ri));
+        SetLastError(0xdeadbeef);
+        count = GetRawInputData((HRAWINPUT)lparam, RID_HEADER, &ri, &size, sizeof(RAWINPUTHEADER));
+        if (iteration == 1)
+        {
+            SetLastError(0xdeadbeef);
+            count = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &ri, &size, 0);
+            ok(count == ~0U, "GetRawInputData succeeded\n");
+            ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputData returned %08lx\n", GetLastError());
+
+            SetLastError(0xdeadbeef);
+            size = 0;
+            count = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &ri, &size, sizeof(RAWINPUTHEADER));
+            ok(count == ~0U, "GetRawInputData succeeded\n");
+            ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "GetRawInputData returned %08lx\n", GetLastError());
+
+            SetLastError(0xdeadbeef);
+            size = sizeof(ri);
+            count = GetRawInputData((HRAWINPUT)lparam, 0, &ri, &size, sizeof(RAWINPUTHEADER));
+            ok(count == ~0U, "GetRawInputData succeeded\n");
+            ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputData returned %08lx\n", GetLastError());
+
+            SetLastError(0xdeadbeef);
+            size = sizeof(ri);
+            count = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &ri, &size, sizeof(RAWINPUTHEADER));
+            ok(count == sizeof(ri), "GetRawInputData failed\n");
+            ok(ri.data.mouse.lLastX == 6, "Unexpected rawinput data: %ld\n", ri.data.mouse.lLastX);
+            ok(GetLastError() == 0xdeadbeef, "GetRawInputData returned %08lx\n", GetLastError());
+        }
+        else
+        {
+            ok(count == ~0U, "GetRawInputData succeeded\n");
+            ok(GetLastError() == ERROR_INVALID_HANDLE, "GetRawInputData returned %08lx\n", GetLastError());
+        }
+
+        return 0;
+    }
+
+    return DefWindowProcA(hwnd, msg, wparam, lparam);
+}
+
+static void test_GetRawInputBuffer(void)
+{
+    RAWINPUTDEVICE raw_devices[1];
+    char buffer[16 * sizeof(RAWINPUT64)];
+    UINT size, count, rawinput_size;
+    HWND hwnd;
+    BOOL ret;
+    POINT pt;
+
+    if (is_wow64) rawinput_size = sizeof(RAWINPUT64);
+    else rawinput_size = sizeof(RAWINPUT);
+
+    SetCursorPos(300, 300);
+    GetCursorPos(&pt);
+    ok(pt.x == 300 && pt.y == 300, "Unexpected cursor position pos %ldx%ld\n", pt.x, pt.y);
+
+    hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                         100, 100, 100, 100, 0, NULL, NULL, NULL);
+    SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)rawinputbuffer_wndproc);
+    ok(hwnd != 0, "CreateWindow failed\n");
+    empty_message_queue();
+
+    raw_devices[0].usUsagePage = 0x01;
+    raw_devices[0].usUsage = 0x02;
+    raw_devices[0].dwFlags = RIDEV_INPUTSINK;
+    raw_devices[0].hwndTarget = hwnd;
+
+    SetLastError(0xdeadbeef);
+    ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+    ok(ret, "RegisterRawInputDevices failed\n");
+    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08lx\n", GetLastError());
+
+    SetLastError(0xdeadbeef);
+    count = GetRawInputBuffer(NULL, NULL, sizeof(RAWINPUTHEADER));
+    ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputBuffer returned %08lx\n", GetLastError());
+
+    size = sizeof(buffer);
+    count = GetRawInputBuffer(NULL, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 0U, "GetRawInputBuffer returned %u\n", count);
+    ok(size == 0U, "GetRawInputBuffer returned unexpected size: %u\n", size);
+
+    size = 0;
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 0U, "GetRawInputBuffer returned %u\n", count);
+    ok(size == 0U, "GetRawInputBuffer returned unexpected size: %u\n", size);
+
+    SetLastError(0xdeadbeef);
+    size = sizeof(buffer);
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, 0);
+    ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputBuffer returned %08lx\n", GetLastError());
+
+    size = sizeof(buffer);
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 0U, "GetRawInputBuffer returned %u\n", count);
+    ok(size == 0U, "GetRawInputBuffer returned unexpected size: %u\n", size);
+
+    mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+
+    SetLastError(0xdeadbeef);
+    size = 0;
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+    ok(size == rawinput_size, "GetRawInputBuffer returned unexpected size: %u\n", size);
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "GetRawInputBuffer returned %08lx\n", GetLastError());
+
+    size = 0;
+    count = GetRawInputBuffer(NULL, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 0, "GetRawInputBuffer returned %u\n", count);
+    ok(size == rawinput_size, "GetRawInputBuffer returned unexpected size: %u\n", size);
+
+    SetLastError(0xdeadbeef);
+    size = sizeof(buffer);
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, 0);
+    ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+    ok(GetLastError() == ERROR_INVALID_PARAMETER, "GetRawInputBuffer returned %08lx\n", GetLastError());
+
+    size = sizeof(buffer);
+    memset(buffer, 0, sizeof(buffer));
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 1U, "GetRawInputBuffer returned %u\n", count);
+    ok(size == sizeof(buffer), "GetRawInputBuffer returned unexpected size: %u\n", size);
+    ok(rawinput_buffer_mouse_x(buffer, 0) == 5, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 0));
+
+
+    /* NOTE: calling with size == rawinput_size returns an error, */
+    /* BUT it fills the buffer nonetheless and empties the internal buffer (!!) */
+    mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+
+    SetLastError(0xdeadbeef);
+    size = rawinput_size;
+    memset(buffer, 0, sizeof(buffer));
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == ~0U, "GetRawInputBuffer succeeded\n");
+    ok(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "GetRawInputBuffer returned %08lx\n", GetLastError());
+    ok(rawinput_buffer_mouse_x(buffer, 0) == 5, "Unexpected rawinput data: %d\n", rawinput_buffer_mouse_x(buffer, 0));
+
+    size = sizeof(buffer);
+    count = GetRawInputBuffer((RAWINPUT*)buffer, &size, sizeof(RAWINPUTHEADER));
+    ok(count == 0U, "GetRawInputBuffer returned %u\n", count);
+
+
+    rawinputbuffer_wndproc_count = 0;
+    mouse_event(MOUSEEVENTF_MOVE, 1, 0, 0, 0);
+    mouse_event(MOUSEEVENTF_MOVE, 2, 0, 0, 0);
+    mouse_event(MOUSEEVENTF_MOVE, 3, 0, 0, 0);
+    mouse_event(MOUSEEVENTF_MOVE, 4, 0, 0, 0);
+    empty_message_queue();
+    ok(rawinputbuffer_wndproc_count == 2, "Spurious WM_INPUT messages\n");
+
+    raw_devices[0].dwFlags = RIDEV_REMOVE;
+    raw_devices[0].hwndTarget = 0;
+
+    SetLastError(0xdeadbeef);
+    ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+    ok(ret, "RegisterRawInputDevices failed\n");
+    ok(GetLastError() == 0xdeadbeef, "RegisterRawInputDevices returned %08lx\n", GetLastError());
+
+    DestroyWindow(hwnd);
+}
+
+static BOOL rawinput_test_received_legacy;
+static BOOL rawinput_test_received_raw;
+static BOOL rawinput_test_received_rawfg;
+>>>>>>> github-desktop-wine-mirror/master
 
 static LRESULT CALLBACK rawinput_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -1837,16 +2380,26 @@ static LRESULT CALLBACK rawinput_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPA
 
     if (msg == WM_INPUT)
     {
+<<<<<<< HEAD
         rawinput_received++;
 
         ok(wparam == RIM_INPUT || wparam == RIM_INPUTSINK, "Unexpected wparam: %lu\n", wparam);
         if (wparam == RIM_INPUT)
             rawinput_received_foreground++;
+=======
+        todo_wine_if(rawinput_test_received_raw)
+        ok(!rawinput_test_received_raw, "Unexpected spurious WM_INPUT message.\n");
+        ok(wparam == RIM_INPUT || wparam == RIM_INPUTSINK, "Unexpected wparam: %Iu\n", wparam);
+
+        rawinput_test_received_raw = TRUE;
+        if (wparam == RIM_INPUT) rawinput_test_received_rawfg = TRUE;
+>>>>>>> github-desktop-wine-mirror/master
 
         ret = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, NULL, &raw_size, sizeof(RAWINPUTHEADER));
         ok(ret == 0, "GetRawInputData failed\n");
         ok(raw_size <= sizeof(raw), "Unexpected rawinput data size: %u", raw_size);
 
+<<<<<<< HEAD
         if (raw_size <= sizeof(raw))
         {
             ret = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw, &raw_size, sizeof(RAWINPUTHEADER));
@@ -1865,10 +2418,23 @@ static LRESULT CALLBACK rawinput_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPA
 
     if (msg == WM_USER)
         SetEvent(rawinput_wndproc_done);
+=======
+        raw_size = sizeof(raw);
+        ret = GetRawInputData((HRAWINPUT)lparam, RID_INPUT, &raw, &raw_size, sizeof(RAWINPUTHEADER));
+        ok(ret > 0 && ret != (UINT)-1, "GetRawInputData failed\n");
+        ok(raw.header.dwType == RIM_TYPEMOUSE, "Unexpected rawinput type: %lu\n", raw.header.dwType);
+
+        ok(!(raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE), "Unexpected absolute rawinput motion\n");
+        ok(!(raw.data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP), "Unexpected virtual desktop rawinput motion\n");
+    }
+
+    if (msg == WM_MOUSEMOVE) rawinput_test_received_legacy = TRUE;
+>>>>>>> github-desktop-wine-mirror/master
 
     return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
+<<<<<<< HEAD
 struct rawinput_mouse_thread_params
 {
     int step;
@@ -2014,11 +2580,233 @@ static DWORD WINAPI rawinput_mouse_thread(void *arg)
         }
 
         PostMessageA(params->window, WM_USER, 0, 0);
+=======
+struct rawinput_test
+{
+    BOOL register_device;
+    BOOL register_window;
+    DWORD register_flags;
+    BOOL expect_legacy;
+    BOOL expect_raw;
+    BOOL expect_rawfg;
+    BOOL todo_legacy;
+    BOOL todo_raw;
+    BOOL todo_rawfg;
+};
+
+struct rawinput_test rawinput_tests[] =
+{
+    { FALSE, FALSE, 0,                TRUE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  FALSE, 0,                TRUE,  TRUE,  TRUE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  0,                TRUE,  TRUE,  TRUE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_NOLEGACY,  FALSE,  TRUE,  TRUE, /* todos: */ FALSE, FALSE, FALSE },
+
+    /* same-process foreground tests */
+    { TRUE,  FALSE, 0,               FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  0,               FALSE,  TRUE,  TRUE, /* todos: */ FALSE, FALSE, FALSE },
+
+    /* cross-process foreground tests */
+    { TRUE,  TRUE,  0,               FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_INPUTSINK, FALSE,  TRUE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  0,               FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+
+    /* multi-process rawinput tests */
+    { TRUE,  TRUE,  0,               FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_INPUTSINK, FALSE,  TRUE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_INPUTSINK, FALSE,  TRUE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+
+    { TRUE,  TRUE,  RIDEV_EXINPUTSINK, FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_EXINPUTSINK, FALSE,  TRUE, FALSE, /* todos: */ FALSE,  TRUE, FALSE },
+
+    /* cross-desktop foreground tests */
+    { TRUE,  FALSE, 0,               FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  0,               FALSE,  TRUE,  TRUE, /* todos: */ FALSE, FALSE, FALSE },
+    { TRUE,  TRUE,  RIDEV_INPUTSINK, FALSE, FALSE, FALSE, /* todos: */ FALSE, FALSE, FALSE },
+};
+
+static void rawinput_test_process(void)
+{
+    RAWINPUTDEVICE raw_devices[1];
+    HANDLE ready, start, done;
+    DWORD ret;
+    POINT pt;
+    HWND hwnd = NULL;
+    MSG msg;
+    int i;
+
+    ready = OpenEventA(EVENT_ALL_ACCESS, FALSE, "rawinput_test_process_ready");
+    ok(ready != 0, "OpenEventA failed, error: %lu\n", GetLastError());
+
+    start = OpenEventA(EVENT_ALL_ACCESS, FALSE, "rawinput_test_process_start");
+    ok(start != 0, "OpenEventA failed, error: %lu\n", GetLastError());
+
+    done = OpenEventA(EVENT_ALL_ACCESS, FALSE, "rawinput_test_process_done");
+    ok(done != 0, "OpenEventA failed, error: %lu\n", GetLastError());
+
+    for (i = 0; i < ARRAY_SIZE(rawinput_tests); ++i)
+    {
+        WaitForSingleObject(ready, INFINITE);
+        ResetEvent(ready);
+
+        switch (i)
+        {
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 16:
+            GetCursorPos(&pt);
+
+            hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                                 pt.x - 50, pt.y - 50, 100, 100, 0, NULL, NULL, NULL);
+            SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)rawinput_wndproc);
+            ok(hwnd != 0, "CreateWindow failed\n");
+            empty_message_queue();
+
+            /* FIXME: Try to workaround X11/Win32 focus inconsistencies and
+             * make the window visible and foreground as hard as possible. */
+            ShowWindow(hwnd, SW_SHOW);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+            SetForegroundWindow(hwnd);
+            UpdateWindow(hwnd);
+            empty_message_queue();
+
+            if (i == 9 || i == 10 || i == 11 || i == 12)
+            {
+                raw_devices[0].usUsagePage = 0x01;
+                raw_devices[0].usUsage = 0x02;
+                raw_devices[0].dwFlags = i == 11 ? RIDEV_INPUTSINK : 0;
+                raw_devices[0].hwndTarget = i == 11 ? hwnd : 0;
+
+                SetLastError(0xdeadbeef);
+                ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+                ok(ret, "%d: RegisterRawInputDevices failed\n", i);
+                ok(GetLastError() == 0xdeadbeef, "%d: RegisterRawInputDevices returned %08lx\n", i, GetLastError());
+            }
+
+            rawinput_test_received_legacy = FALSE;
+            rawinput_test_received_raw = FALSE;
+            rawinput_test_received_rawfg = FALSE;
+
+            /* fallthrough */
+        case 14:
+        case 15:
+            if (i != 8) mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+            empty_message_queue();
+            break;
+        }
+
+        SetEvent(start);
+
+        while (MsgWaitForMultipleObjects(1, &done, FALSE, INFINITE, QS_ALLINPUT) != WAIT_OBJECT_0)
+            while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) DispatchMessageA(&msg);
+
+        ResetEvent(done);
+
+        if (i == 9 || i == 10 || i == 11 || i == 12)
+        {
+            raw_devices[0].dwFlags = RIDEV_REMOVE;
+            raw_devices[0].hwndTarget = 0;
+
+            ok(rawinput_test_received_legacy, "%d: foreground process expected WM_MOUSEMOVE message\n", i);
+            ok(rawinput_test_received_raw, "%d: foreground process expected WM_INPUT message\n", i);
+            ok(rawinput_test_received_rawfg, "%d: foreground process expected RIM_INPUT message\n", i);
+
+            SetLastError(0xdeadbeef);
+            ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+            ok(ret, "%d: RegisterRawInputDevices failed\n", i);
+            ok(GetLastError() == 0xdeadbeef, "%d: RegisterRawInputDevices returned %08lx\n", i, GetLastError());
+        }
+
+        if (hwnd) DestroyWindow(hwnd);
+    }
+
+    WaitForSingleObject(ready, INFINITE);
+    CloseHandle(done);
+    CloseHandle(start);
+    CloseHandle(ready);
+}
+
+struct rawinput_test_thread_params
+{
+    HDESK desk;
+    HANDLE ready;
+    HANDLE start;
+    HANDLE done;
+};
+
+static DWORD WINAPI rawinput_test_desk_thread(void *arg)
+{
+    struct rawinput_test_thread_params *params = arg;
+    RAWINPUTDEVICE raw_devices[1];
+    DWORD ret;
+    POINT pt;
+    HWND hwnd = NULL;
+    MSG msg;
+    int i;
+
+    ok( SetThreadDesktop( params->desk ), "SetThreadDesktop failed\n" );
+
+    for (i = 14; i < ARRAY_SIZE(rawinput_tests); ++i)
+    {
+        WaitForSingleObject(params->ready, INFINITE);
+        ResetEvent(params->ready);
+
+        switch (i)
+        {
+        case 14:
+        case 15:
+        case 16:
+            GetCursorPos(&pt);
+
+            hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                                 pt.x - 50, pt.y - 50, 100, 100, 0, NULL, NULL, NULL);
+            ok(hwnd != 0, "CreateWindow failed\n");
+            SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)rawinput_wndproc);
+            empty_message_queue();
+
+            /* FIXME: Try to workaround X11/Win32 focus inconsistencies and
+             * make the window visible and foreground as hard as possible. */
+            ShowWindow(hwnd, SW_SHOW);
+            SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+            SetForegroundWindow(hwnd);
+            UpdateWindow(hwnd);
+            empty_message_queue();
+
+            raw_devices[0].usUsagePage = 0x01;
+            raw_devices[0].usUsage = 0x02;
+            raw_devices[0].dwFlags = rawinput_tests[i].register_flags;
+            raw_devices[0].hwndTarget = rawinput_tests[i].register_window ? hwnd : 0;
+
+            rawinput_test_received_legacy = FALSE;
+            rawinput_test_received_raw = FALSE;
+            rawinput_test_received_rawfg = FALSE;
+
+            SetLastError(0xdeadbeef);
+            ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+            ok(ret, "%d: RegisterRawInputDevices failed\n", i);
+            ok(GetLastError() == 0xdeadbeef, "%d: RegisterRawInputDevices returned %08lx\n", i, GetLastError());
+            break;
+        }
+
+        SetEvent(params->start);
+
+        while (MsgWaitForMultipleObjects(1, &params->done, FALSE, INFINITE, QS_ALLINPUT) != WAIT_OBJECT_0)
+            while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) DispatchMessageA(&msg);
+
+        ResetEvent(params->done);
+        if (hwnd) DestroyWindow(hwnd);
+>>>>>>> github-desktop-wine-mirror/master
     }
 
     return 0;
 }
 
+<<<<<<< HEAD
 struct rawinput_mouse_test
 {
     BOOL register_device;
@@ -2078,12 +2866,84 @@ static void test_rawinput_mouse(const char *argv0)
     SetWindowLongPtrA(params.window, GWLP_WNDPROC, (LONG_PTR)rawinput_wndproc);
 
     params.step = 0;
+=======
+static DWORD WINAPI rawinput_test_thread(void *arg)
+{
+    struct rawinput_test_thread_params *params = arg;
+    HANDLE thread;
+    POINT pt;
+    HWND hwnd = NULL;
+    int i;
+
+    for (i = 0; i < 14; ++i)
+    {
+        WaitForSingleObject(params->ready, INFINITE);
+        ResetEvent(params->ready);
+
+        switch (i)
+        {
+        case 4:
+        case 5:
+            GetCursorPos(&pt);
+
+            hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                                 pt.x - 50, pt.y - 50, 100, 100, 0, NULL, NULL, NULL);
+            ok(hwnd != 0, "CreateWindow failed\n");
+            empty_message_queue();
+
+            /* FIXME: Try to workaround X11/Win32 focus inconsistencies and
+             * make the window visible and foreground as hard as possible. */
+            ShowWindow(hwnd, SW_SHOW);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+            SetForegroundWindow(hwnd);
+            UpdateWindow(hwnd);
+            empty_message_queue();
+
+            mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+            empty_message_queue();
+            break;
+        }
+
+        SetEvent(params->start);
+
+        WaitForSingleObject(params->done, INFINITE);
+        ResetEvent(params->done);
+        if (hwnd) DestroyWindow(hwnd);
+    }
+
+    thread = CreateThread(NULL, 0, rawinput_test_desk_thread, params, 0, NULL);
+    ok(thread != NULL, "CreateThread failed\n");
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+
+    return 0;
+}
+
+static void test_rawinput(const char* argv0)
+{
+    struct rawinput_test_thread_params params;
+    PROCESS_INFORMATION process_info;
+    RAWINPUTDEVICE raw_devices[1];
+    STARTUPINFOA startup_info;
+    HANDLE thread, process_ready, process_start, process_done;
+    DWORD ret;
+    POINT pt, newpt;
+    HWND hwnd;
+    BOOL skipped;
+    char path[MAX_PATH];
+    int i;
+
+    params.desk = CreateDesktopA( "rawinput_test_desktop", NULL, NULL, 0, DESKTOP_ALL_ACCESS, NULL );
+    ok( params.desk != NULL, "CreateDesktopA failed, last error: %lu\n", GetLastError() );
+
+>>>>>>> github-desktop-wine-mirror/master
     params.ready = CreateEventA(NULL, FALSE, FALSE, NULL);
     ok(params.ready != NULL, "CreateEvent failed\n");
 
     params.start = CreateEventA(NULL, FALSE, FALSE, NULL);
     ok(params.start != NULL, "CreateEvent failed\n");
 
+<<<<<<< HEAD
     thread = CreateThread(NULL, 0, rawinput_mouse_thread, &params, 0, NULL);
     ok(thread != NULL, "CreateThread failed\n");
 
@@ -2128,12 +2988,133 @@ static void test_rawinput_mouse(const char *argv0)
            i, rawinput_received, rawinput_received_foreground, rawinput_motion_x, rawinput_motion_y);
 
         if (tests[i].register_device)
+=======
+    params.done = CreateEventA(NULL, FALSE, FALSE, NULL);
+    ok(params.done != NULL, "CreateEvent failed\n");
+
+    thread = CreateThread(NULL, 0, rawinput_test_thread, &params, 0, NULL);
+    ok(thread != NULL, "CreateThread failed\n");
+
+    process_ready = CreateEventA(NULL, FALSE, FALSE, "rawinput_test_process_ready");
+    ok(process_ready != NULL, "CreateEventA failed\n");
+
+    process_start = CreateEventA(NULL, FALSE, FALSE, "rawinput_test_process_start");
+    ok(process_start != NULL, "CreateEventA failed\n");
+
+    process_done = CreateEventA(NULL, FALSE, FALSE, "rawinput_test_process_done");
+    ok(process_done != NULL, "CreateEventA failed\n");
+
+    memset(&startup_info, 0, sizeof(startup_info));
+    startup_info.cb = sizeof(startup_info);
+    startup_info.dwFlags = STARTF_USESHOWWINDOW;
+    startup_info.wShowWindow = SW_SHOWNORMAL;
+
+    sprintf(path, "%s input rawinput_test", argv0);
+    ret = CreateProcessA(NULL, path, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info, &process_info );
+    ok(ret, "CreateProcess \"%s\" failed err %lu.\n", path, GetLastError());
+
+    SetCursorPos(100, 100);
+    empty_message_queue();
+
+    for (i = 0; i < ARRAY_SIZE(rawinput_tests); ++i)
+    {
+        GetCursorPos(&pt);
+
+        hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                             pt.x - 50, pt.y - 50, 100, 100, 0, NULL, NULL, NULL);
+        ok(hwnd != 0, "CreateWindow failed\n");
+        if (i != 14 && i != 15 && i != 16)
+            SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)rawinput_wndproc);
+        empty_message_queue();
+
+        /* FIXME: Try to workaround X11/Win32 focus inconsistencies and
+         * make the window visible and foreground as hard as possible. */
+        ShowWindow(hwnd, SW_SHOW);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+        SetForegroundWindow(hwnd);
+        UpdateWindow(hwnd);
+        empty_message_queue();
+
+        rawinput_test_received_legacy = FALSE;
+        rawinput_test_received_raw = FALSE;
+        rawinput_test_received_rawfg = FALSE;
+
+        raw_devices[0].usUsagePage = 0x01;
+        raw_devices[0].usUsage = 0x02;
+        raw_devices[0].dwFlags = rawinput_tests[i].register_flags;
+        raw_devices[0].hwndTarget = rawinput_tests[i].register_window ? hwnd : 0;
+
+        if (!rawinput_tests[i].register_device)
+            skipped = FALSE;
+        else
+        {
+            SetLastError(0xdeadbeef);
+            skipped = !RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+            if (rawinput_tests[i].register_flags == RIDEV_EXINPUTSINK && skipped)
+                win_skip("RIDEV_EXINPUTSINK not supported\n");
+            else
+                ok(!skipped, "%d: RegisterRawInputDevices failed: %lu\n", i, GetLastError());
+        }
+
+        SetEvent(params.ready);
+        WaitForSingleObject(params.start, INFINITE);
+        ResetEvent(params.start);
+
+        /* we need the main window to be over the other thread window, as although
+         * it is in another desktop, it will receive the messages directly otherwise */
+        switch (i)
+        {
+        case 14:
+        case 15:
+            DestroyWindow(hwnd);
+            hwnd = CreateWindowA("static", "static", WS_VISIBLE | WS_POPUP,
+                                 pt.x - 50, pt.y - 50, 100, 100, 0, NULL, NULL, NULL);
+            ok(hwnd != 0, "CreateWindow failed\n");
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
+            SetForegroundWindow(hwnd);
+            empty_message_queue();
+
+            rawinput_test_received_legacy = FALSE;
+            rawinput_test_received_raw = FALSE;
+            rawinput_test_received_rawfg = FALSE;
+            break;
+        }
+
+        SetEvent(process_ready);
+        WaitForSingleObject(process_start, INFINITE);
+        ResetEvent(process_start);
+
+        if (i <= 3 || i == 8) mouse_event(MOUSEEVENTF_MOVE, 5, 0, 0, 0);
+        empty_message_queue();
+
+        SetEvent(process_done);
+        SetEvent(params.done);
+
+        if (!skipped)
+        {
+            todo_wine_if(rawinput_tests[i].todo_legacy)
+            ok(rawinput_test_received_legacy == rawinput_tests[i].expect_legacy,
+               "%d: %sexpected WM_MOUSEMOVE message\n", i, rawinput_tests[i].expect_legacy ? "" : "un");
+            todo_wine_if(rawinput_tests[i].todo_raw)
+            ok(rawinput_test_received_raw == rawinput_tests[i].expect_raw,
+               "%d: %sexpected WM_INPUT message\n", i, rawinput_tests[i].expect_raw ? "" : "un");
+            todo_wine_if(rawinput_tests[i].todo_rawfg)
+            ok(rawinput_test_received_rawfg == rawinput_tests[i].expect_rawfg,
+               "%d: %sexpected RIM_INPUT message\n", i, rawinput_tests[i].expect_rawfg ? "" : "un");
+        }
+
+        GetCursorPos(&newpt);
+        ok((newpt.x - pt.x) == 5 || (newpt.x - pt.x) == 4, "%d: Unexpected cursor movement\n", i);
+
+        if (rawinput_tests[i].register_device)
+>>>>>>> github-desktop-wine-mirror/master
         {
             raw_devices[0].dwFlags = RIDEV_REMOVE;
             raw_devices[0].hwndTarget = 0;
 
             SetLastError(0xdeadbeef);
             ret = RegisterRawInputDevices(raw_devices, ARRAY_SIZE(raw_devices), sizeof(RAWINPUTDEVICE));
+<<<<<<< HEAD
             ok(ret, "%d: RegisterRawInputDevices failed\n", i);
             ok(GetLastError() == 0xdeadbeef, "%d: RegisterRawInputDevices returned %08x\n", i, GetLastError());
         }
@@ -2146,6 +3127,30 @@ static void test_rawinput_mouse(const char *argv0)
     CloseHandle(params.start);
     CloseHandle(params.ready);
     CloseHandle(thread);
+=======
+            ok(ret, "%d: RegisterRawInputDevices failed: %lu\n", i, GetLastError());
+        }
+
+        DestroyWindow(hwnd);
+    }
+
+    SetEvent(process_ready);
+    winetest_wait_child_process(process_info.hProcess);
+    CloseHandle(process_info.hProcess);
+    CloseHandle(process_info.hThread);
+    CloseHandle(process_done);
+    CloseHandle(process_start);
+    CloseHandle(process_ready);
+
+    WaitForSingleObject(thread, INFINITE);
+
+    CloseHandle(params.done);
+    CloseHandle(params.start);
+    CloseHandle(params.ready);
+    CloseHandle(thread);
+
+    CloseDesktop(params.desk);
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static void test_key_map(void)
@@ -2394,8 +3399,12 @@ static void test_get_async_key_state(void)
 
 static void test_keyboard_layout_name(void)
 {
+    WCHAR klid[KL_NAMELENGTH], tmpklid[KL_NAMELENGTH], layout_path[MAX_PATH], value[5];
+    HKL layout, tmplayout, *layouts, *layouts_preload;
+    DWORD status, value_size, klid_size, type, id;
+    int i, j, len;
+    HKEY hkey;
     BOOL ret;
-    char klid[KL_NAMELENGTH];
 
     if (0) /* crashes on native system */
         ret = GetKeyboardLayoutNameA(NULL);
@@ -2403,14 +3412,116 @@ static void test_keyboard_layout_name(void)
     SetLastError(0xdeadbeef);
     ret = GetKeyboardLayoutNameW(NULL);
     ok(!ret, "got %d\n", ret);
-    ok(GetLastError() == ERROR_NOACCESS, "got %d\n", GetLastError());
+    ok(GetLastError() == ERROR_NOACCESS, "got %ld\n", GetLastError());
 
-    if (GetKeyboardLayout(0) != (HKL)(ULONG_PTR)0x04090409) return;
+    layout = GetKeyboardLayout(0);
 
-    klid[0] = 0;
-    ret = GetKeyboardLayoutNameA(klid);
-    ok(ret, "GetKeyboardLayoutNameA failed %u\n", GetLastError());
-    ok(!strcmp(klid, "00000409"), "expected 00000409, got %s\n", klid);
+    len = GetKeyboardLayoutList(0, NULL);
+    ok(len > 0, "GetKeyboardLayoutList returned %d\n", len);
+
+    layouts = malloc(len * sizeof(HKL));
+    ok(layouts != NULL, "Could not allocate memory\n");
+
+    len = GetKeyboardLayoutList(len, layouts);
+    ok(len > 0, "GetKeyboardLayoutList returned %d\n", len);
+
+    layouts_preload = calloc(len, sizeof(HKL));
+    ok(layouts_preload != NULL, "Could not allocate memory\n");
+
+    if (!RegOpenKeyW( HKEY_CURRENT_USER, L"Keyboard Layout\\Preload", &hkey ))
+    {
+        i = 0;
+        type = REG_SZ;
+        klid_size = sizeof(klid);
+        value_size = ARRAY_SIZE(value);
+        while (i < len && !RegEnumValueW( hkey, i++, value, &value_size, NULL, &type, (void *)&klid, &klid_size ))
+        {
+            klid_size = sizeof(klid);
+            value_size = ARRAY_SIZE(value);
+            layouts_preload[i - 1] = UlongToHandle( wcstoul( klid, NULL, 16 ) );
+
+            id = (DWORD_PTR)layouts_preload[i - 1];
+            if (id & 0x80000000) todo_wine_if(HIWORD(id) == 0xe001) ok((id & 0xf0000000) == 0xd0000000, "Unexpected preloaded keyboard layout high bits %#lx\n", id);
+            else ok(!(id & 0xf0000000), "Unexpected preloaded keyboard layout high bits %#lx\n", id);
+        }
+
+        ok(i <= len, "Unexpected keyboard count %d in preload list\n", i);
+        RegCloseKey( hkey );
+    }
+
+    if (!RegOpenKeyW( HKEY_CURRENT_USER, L"Keyboard Layout\\Substitutes", &hkey ))
+    {
+        for (i = 0; i < len && layouts_preload[i]; ++i)
+        {
+            type = REG_SZ;
+            klid_size = sizeof(klid);
+            swprintf( tmpklid, KL_NAMELENGTH, L"%08x", HandleToUlong( layouts_preload[i] ) );
+            if (!RegQueryValueExW( hkey, tmpklid, NULL, &type, (void *)&klid, &klid_size ))
+            {
+                layouts_preload[i] = UlongToHandle( wcstoul( klid, NULL, 16 ) );
+
+                /* Substitute should contain the keyboard layout id, not the HKL high word */
+                id = (DWORD_PTR)layouts_preload[i];
+                ok(!(id & 0xf0000000), "Unexpected substitute keyboard layout high bits %#lx\n", id);
+            }
+            else
+            {
+                id = (DWORD_PTR)layouts_preload[i];
+                ok(!(id & 0xf0000000), "Unexpected preloaded keyboard layout high bits %#lx\n", id);
+            }
+        }
+
+        RegCloseKey( hkey );
+    }
+
+    for (i = len - 1; i >= 0; --i)
+    {
+        id = (DWORD_PTR)layouts[i];
+        ActivateKeyboardLayout(layouts[i], 0);
+        GetKeyboardLayoutNameW(klid);
+
+        for (j = 0; j < len; ++j)
+        {
+            swprintf( tmpklid, KL_NAMELENGTH, L"%08X", layouts_preload[j] );
+            if (!wcscmp( tmpklid, klid )) break;
+        }
+        ok(j < len, "Could not find keyboard layout %s in preload list\n", wine_dbgstr_w(klid));
+
+        if (id & 0x80000000)
+        {
+            todo_wine ok((id >> 28) == 0xf, "hkl high bits %#lx, expected 0xf\n", id >> 28);
+
+            value_size = sizeof(value);
+            wcscpy(layout_path, L"System\\CurrentControlSet\\Control\\Keyboard Layouts\\");
+            wcscat(layout_path, klid);
+            status = RegGetValueW(HKEY_LOCAL_MACHINE, layout_path, L"Layout Id", RRF_RT_REG_SZ, NULL, (void *)&value, &value_size);
+            todo_wine ok(!status, "RegGetValueW returned %lx\n", status);
+            ok(value_size == 5 * sizeof(WCHAR), "RegGetValueW returned size %ld\n", value_size);
+
+            swprintf(tmpklid, KL_NAMELENGTH, L"%04X", (id >> 16) & 0x0fff);
+            todo_wine ok(!wcsicmp(value, tmpklid), "RegGetValueW returned %s, expected %s\n", debugstr_w(value), debugstr_w(tmpklid));
+        }
+        else
+        {
+            swprintf(tmpklid, KL_NAMELENGTH, L"%08X", id >> 16);
+            ok(!wcsicmp(klid, tmpklid), "GetKeyboardLayoutNameW returned %s, expected %s\n", debugstr_w(klid), debugstr_w(tmpklid));
+        }
+
+        ActivateKeyboardLayout(layout, 0);
+        tmplayout = LoadKeyboardLayoutW(klid, KLF_ACTIVATE);
+
+        /* The low word of HKL is the selected user lang and may be different as LoadKeyboardLayoutW also selects the default lang from the layout */
+        ok(((UINT_PTR)tmplayout & ~0xffff) == ((UINT_PTR)layouts[i] & ~0xffff), "LoadKeyboardLayoutW returned %p, expected %p\n", tmplayout, layouts[i]);
+
+        /* The layout name only depends on the keyboard layout: the high word of HKL. */
+        GetKeyboardLayoutNameW(tmpklid);
+        ok(!wcsicmp(klid, tmpklid), "GetKeyboardLayoutNameW returned %s, expected %s\n", debugstr_w(tmpklid), debugstr_w(klid));
+    }
+
+    ActivateKeyboardLayout(layout, 0);
+
+    free(layouts);
+    free(layouts_preload);
 }
 
 static void test_key_names(void)
@@ -2546,6 +3657,7 @@ static DWORD WINAPI create_static_win(void *arg)
     return 0;
 }
 
+<<<<<<< HEAD
 static void get_dc_region(RECT *region, HWND hwnd, DWORD flags)
 {
     int region_type;
@@ -2561,6 +3673,24 @@ static void get_dc_region(RECT *region, HWND hwnd, DWORD flags)
     ok(region_type == SIMPLEREGION, "expected SIMPLEREGION, got %d\n", region_type);
     DeleteObject(hregion);
     ReleaseDC(hwnd, hdc);
+=======
+static LRESULT CALLBACK mouse_move_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    static DWORD last_x = 200, expect_x = 210;
+
+    if (msg == WM_MOUSEMOVE)
+    {
+        POINT pt = {LOWORD(lparam), HIWORD(lparam)};
+        MapWindowPoints(hwnd, NULL, &pt, 1);
+
+        if (pt.x != last_x) ok( pt.x == expect_x, "got unexpected WM_MOUSEMOVE x %ld, expected %ld\n", pt.x, expect_x );
+
+        expect_x = pt.x == 200 ? 210 : 200;
+        last_x = pt.x;
+    }
+
+    return DefWindowProcW(hwnd, msg, wparam, lparam);
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static void test_Input_mouse(void)
@@ -2581,12 +3711,12 @@ static void test_Input_mouse(void)
     SetLastError(0xdeadbeef);
     ret = GetCursorPos(NULL);
     ok(!ret, "GetCursorPos succeed\n");
-    ok(GetLastError() == 0xdeadbeef || GetLastError() == ERROR_NOACCESS, "error %u\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef || GetLastError() == ERROR_NOACCESS, "error %lu\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = GetCursorPos(&pt_org);
     ok(ret, "GetCursorPos failed\n");
-    ok(GetLastError() == 0xdeadbeef, "error %u\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "error %lu\n", GetLastError());
 
     button_win = CreateWindowA("button", "button", WS_VISIBLE | WS_POPUP,
             100, 100, 100, 100, 0, NULL, NULL, NULL);
@@ -3034,6 +4164,36 @@ static void test_Input_mouse(void)
     CloseHandle(thread_data.start_event);
     CloseHandle(thread_data.end_event);
     DestroyWindow(button_win);
+
+    SetCursorPos(200, 200);
+    hwnd = CreateWindowA("static", "Title", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                         100, 100, 200, 200, NULL, NULL, NULL, NULL);
+    ok(hwnd != NULL, "CreateWindowA failed %lu\n", GetLastError());
+
+    /* warm up test case by moving cursor and window a bit first */
+    SetCursorPos(210, 200);
+    SetWindowPos(hwnd, NULL, 110, 100, 0, 0, SWP_NOSIZE);
+    empty_message_queue();
+    SetCursorPos(200, 200);
+    SetWindowPos(hwnd, NULL, 100, 100, 0, 0, SWP_NOSIZE);
+    empty_message_queue();
+    SetWindowLongPtrA(hwnd, GWLP_WNDPROC, (LONG_PTR)mouse_move_wndproc);
+
+    SetCursorPos(210, 200);
+    SetWindowPos(hwnd, NULL, 110, 100, 0, 0, SWP_NOSIZE);
+    empty_message_queue();
+    GetCursorPos(&pt);
+    ok(pt.x == 210 && pt.y == 200, "GetCursorPos returned %ldx%ld, expected 210x200\n", pt.x, pt.y);
+
+    SetCursorPos(200, 200);
+    SetWindowPos(hwnd, NULL, 100, 100, 0, 0, SWP_NOSIZE);
+    empty_message_queue();
+    GetCursorPos(&pt);
+    ok(pt.x == 200 && pt.y == 200, "GetCursorPos returned %ldx%ld, expected 200x200\n", pt.x, pt.y);
+
+    SetCursorPos(pt_org.x, pt_org.y);
+    empty_message_queue();
+    DestroyWindow(hwnd);
 }
 
 
@@ -3074,13 +4234,13 @@ static DWORD WINAPI thread_proc(void *param)
     if (wnd_event->attach_from)
     {
         ret = AttachThreadInput(wnd_event->attach_from, GetCurrentThreadId(), TRUE);
-        ok(ret, "AttachThreadInput error %d\n", GetLastError());
+        ok(ret, "AttachThreadInput error %ld\n", GetLastError());
     }
 
     if (wnd_event->attach_to)
     {
         ret = AttachThreadInput(GetCurrentThreadId(), wnd_event->attach_to, TRUE);
-        ok(ret, "AttachThreadInput error %d\n", GetLastError());
+        ok(ret, "AttachThreadInput error %ld\n", GetLastError());
     }
 
     wnd_event->hwnd = CreateWindowExA(0, "TestWindowClass", "window caption text", WS_OVERLAPPEDWINDOW,
@@ -3136,7 +4296,7 @@ static void test_attach_input(void)
     }
 
     hThread = CreateThread(NULL, 0, thread_proc, &wnd_event, 0, &tid);
-    ok(hThread != NULL, "CreateThread failed, error %d\n", GetLastError());
+    ok(hThread != NULL, "CreateThread failed, error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(wnd_event.start_event, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(wnd_event.start_event);
@@ -3153,7 +4313,7 @@ static void test_attach_input(void)
     SetActiveWindow(ourWnd);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, TRUE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == ourWnd, "expected active %p, got %p\n", ourWnd, GetActiveWindow());
     ok(GetFocus() == ourWnd, "expected focus %p, got %p\n", ourWnd, GetFocus());
@@ -3161,14 +4321,14 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, (LPARAM)ourWnd);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, FALSE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
     ok(GetActiveWindow() == ourWnd, "expected active %p, got %p\n", ourWnd, GetActiveWindow());
     ok(GetFocus() == ourWnd, "expected focus %p, got %p\n", ourWnd, GetFocus());
 
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, 0);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, TRUE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == ourWnd, "expected active %p, got %p\n", ourWnd, GetActiveWindow());
     ok(GetFocus() == ourWnd, "expected focus %p, got %p\n", ourWnd, GetFocus());
@@ -3182,14 +4342,14 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, (LPARAM)Wnd2);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, FALSE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
     ok(GetActiveWindow() == Wnd2, "expected active %p, got %p\n", Wnd2, GetActiveWindow());
     ok(GetFocus() == Wnd2, "expected focus %p, got %p\n", Wnd2, GetFocus());
 
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, 0);
 
     ret = PostMessageA(wnd_event.hwnd, WM_QUIT, 0, 0);
-    ok(ret, "PostMessageA(WM_QUIT) error %d\n", GetLastError());
+    ok(ret, "PostMessageA(WM_QUIT) error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(hThread, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(hThread);
@@ -3201,7 +4361,7 @@ static void test_attach_input(void)
     wnd_event.setWindows = TRUE;
 
     hThread = CreateThread(NULL, 0, thread_proc, &wnd_event, 0, &tid);
-    ok(hThread != NULL, "CreateThread failed, error %d\n", GetLastError());
+    ok(hThread != NULL, "CreateThread failed, error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(wnd_event.start_event, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(wnd_event.start_event);
@@ -3210,7 +4370,7 @@ static void test_attach_input(void)
     SetActiveWindow(ourWnd);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, TRUE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == wnd_event.hwnd, "expected active %p, got %p\n", wnd_event.hwnd, GetActiveWindow());
     ok(GetFocus() == wnd_event.hwnd, "expected focus %p, got %p\n", wnd_event.hwnd, GetFocus());
@@ -3218,7 +4378,7 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, (LPARAM)wnd_event.hwnd);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, FALSE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == 0, "expected active 0, got %p\n", GetActiveWindow());
     ok(GetFocus() == 0, "expected focus 0, got %p\n", GetFocus());
@@ -3226,7 +4386,7 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, (LPARAM)wnd_event.hwnd);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, TRUE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == wnd_event.hwnd, "expected active %p, got %p\n", wnd_event.hwnd, GetActiveWindow());
     ok(GetFocus() == wnd_event.hwnd, "expected focus %p, got %p\n", wnd_event.hwnd, GetFocus());
@@ -3241,7 +4401,7 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, (LPARAM)Wnd2);
 
     ret = AttachThreadInput(GetCurrentThreadId(), tid, FALSE);
-    ok(ret, "AttachThreadInput error %d\n", GetLastError());
+    ok(ret, "AttachThreadInput error %ld\n", GetLastError());
 
     ok(GetActiveWindow() == Wnd2, "expected active %p, got %p\n", Wnd2, GetActiveWindow());
     ok(GetFocus() == Wnd2, "expected focus %p, got %p\n", Wnd2, GetFocus());
@@ -3249,7 +4409,7 @@ static void test_attach_input(void)
     SendMessageA(wnd_event.hwnd, WM_USER+1, 0, 0);
 
     ret = PostMessageA(wnd_event.hwnd, WM_QUIT, 0, 0);
-    ok(ret, "PostMessageA(WM_QUIT) error %d\n", GetLastError());
+    ok(ret, "PostMessageA(WM_QUIT) error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(hThread, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(hThread);
@@ -3261,19 +4421,19 @@ static void test_attach_input(void)
     wnd_event.setWindows = TRUE;
 
     hThread = CreateThread(NULL, 0, thread_proc, &wnd_event, 0, &tid);
-    ok(hThread != NULL, "CreateThread failed, error %d\n", GetLastError());
+    ok(hThread != NULL, "CreateThread failed, error %ld\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = AttachThreadInput(GetCurrentThreadId(), tid, TRUE);
     ok(!ret, "AttachThreadInput succeeded\n");
     ok(GetLastError() == ERROR_INVALID_PARAMETER || broken(GetLastError() == 0xdeadbeef) /* <= Win XP */,
-       "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
+       "expected ERROR_INVALID_PARAMETER, got %ld\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = AttachThreadInput(tid, GetCurrentThreadId(), TRUE);
     ok(!ret, "AttachThreadInput succeeded\n");
     ok(GetLastError() == ERROR_INVALID_PARAMETER || broken(GetLastError() == 0xdeadbeef) /* <= Win XP */,
-       "expected ERROR_INVALID_PARAMETER, got %d\n", GetLastError());
+       "expected ERROR_INVALID_PARAMETER, got %ld\n", GetLastError());
 
     SetEvent(wnd_event.wait_event);
 
@@ -3281,7 +4441,7 @@ static void test_attach_input(void)
     CloseHandle(wnd_event.start_event);
 
     ret = PostMessageA(wnd_event.hwnd, WM_QUIT, 0, 0);
-    ok(ret, "PostMessageA(WM_QUIT) error %d\n", GetLastError());
+    ok(ret, "PostMessageA(WM_QUIT) error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(hThread, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(hThread);
@@ -3296,7 +4456,7 @@ static void test_attach_input(void)
     SetActiveWindow(ourWnd);
 
     hThread = CreateThread(NULL, 0, thread_proc, &wnd_event, 0, &tid);
-    ok(hThread != NULL, "CreateThread failed, error %d\n", GetLastError());
+    ok(hThread != NULL, "CreateThread failed, error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(wnd_event.start_event, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(wnd_event.start_event);
@@ -3305,7 +4465,7 @@ static void test_attach_input(void)
     ok(GetFocus() == ourWnd, "expected focus %p, got %p\n", ourWnd, GetFocus());
 
     ret = PostMessageA(wnd_event.hwnd, WM_QUIT, 0, 0);
-    ok(ret, "PostMessageA(WM_QUIT) error %d\n", GetLastError());
+    ok(ret, "PostMessageA(WM_QUIT) error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(hThread, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(hThread);
@@ -3320,7 +4480,7 @@ static void test_attach_input(void)
     SetActiveWindow(ourWnd);
 
     hThread = CreateThread(NULL, 0, thread_proc, &wnd_event, 0, &tid);
-    ok(hThread != NULL, "CreateThread failed, error %d\n", GetLastError());
+    ok(hThread != NULL, "CreateThread failed, error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(wnd_event.start_event, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(wnd_event.start_event);
@@ -3329,7 +4489,7 @@ static void test_attach_input(void)
     ok(GetFocus() == ourWnd, "expected focus %p, got %p\n", ourWnd, GetFocus());
 
     ret = PostMessageA(wnd_event.hwnd, WM_QUIT, 0, 0);
-    ok(ret, "PostMessageA(WM_QUIT) error %d\n", GetLastError());
+    ok(ret, "PostMessageA(WM_QUIT) error %ld\n", GetLastError());
 
     ok(WaitForSingleObject(hThread, INFINITE) == WAIT_OBJECT_0, "WaitForSingleObject failed\n");
     CloseHandle(hThread);
@@ -3337,68 +4497,259 @@ static void test_attach_input(void)
     DestroyWindow(Wnd2);
 }
 
+struct get_key_state_test_desc
+{
+    BOOL peek_message;
+    BOOL peek_message_main;
+    BOOL set_keyboard_state_main;
+    BOOL set_keyboard_state;
+};
+
+struct get_key_state_test_desc get_key_state_tests[] =
+{
+    /* 0: not peeking in thread, no msg queue: GetKeyState / GetKeyboardState miss key press */
+    {FALSE,  TRUE, FALSE, FALSE},
+    /* 1: peeking on thread init, not in main: GetKeyState / GetKeyboardState catch key press */
+    /*    - GetKeyboardState misses key press if called before GetKeyState */
+    /*    - GetKeyboardState catches key press, if called after GetKeyState */
+    { TRUE, FALSE, FALSE, FALSE},
+    /* 2: peeking on thread init, and in main: GetKeyState / GetKeyboardState catch key press */
+    { TRUE,  TRUE, FALSE, FALSE},
+
+    /* same tests but with SetKeyboardState called in main thread */
+    /* 3: not peeking in thread, no msg queue: GetKeyState / GetKeyboardState miss key press */
+    {FALSE,  TRUE,  TRUE, FALSE},
+    /* 4: peeking on thread init, not in main: GetKeyState / GetKeyboardState catch key press */
+    /*    - GetKeyboardState misses key press if called before GetKeyState */
+    /*    - GetKeyboardState catches key press, if called after GetKeyState */
+    { TRUE, FALSE,  TRUE, FALSE},
+    /* 5: peeking on thread init, and in main: GetKeyState / GetKeyboardState catch key press */
+    { TRUE,  TRUE,  TRUE, FALSE},
+
+    /* same tests but with SetKeyboardState called in other thread */
+    /* 6: not peeking in thread, no msg queue: GetKeyState / GetKeyboardState miss key press */
+    {FALSE,  TRUE,  TRUE,  TRUE},
+    /* 7: peeking on thread init, not in main: GetKeyState / GetKeyboardState catch key press */
+    /*    - GetKeyboardState misses key press if called before GetKeyState */
+    /*    - GetKeyboardState catches key press, if called after GetKeyState */
+    { TRUE, FALSE,  TRUE,  TRUE},
+    /* 8: peeking on thread init, and in main: GetKeyState / GetKeyboardState catch key press */
+    { TRUE,  TRUE,  TRUE,  TRUE},
+};
+
+struct get_key_state_thread_params
+{
+    HANDLE semaphores[2];
+    int index;
+};
+
+#define check_get_keyboard_state(i, j, c, x, todo_c, todo_x) check_get_keyboard_state_(i, j, c, x, todo_c, todo_x, __LINE__)
+static void check_get_keyboard_state_(int i, int j, int c, int x, int todo_c, int todo_x, int line)
+{
+    unsigned char keystate[256];
+    BOOL ret;
+
+    memset(keystate, 0, sizeof(keystate));
+    ret = GetKeyboardState(keystate);
+    ok_(__FILE__, line)(ret, "GetKeyboardState failed, %lu\n", GetLastError());
+    todo_wine_if(todo_x) ok_(__FILE__, line)(!(keystate['X'] & 0x80) == !x, "%d:%d: expected that X keystate is %s\n", i, j, x ? "set" : "unset");
+    todo_wine_if(todo_c) ok_(__FILE__, line)(!(keystate['C'] & 0x80) == !c, "%d:%d: expected that C keystate is %s\n", i, j, c ? "set" : "unset");
+
+    /* calling it twice shouldn't change */
+    memset(keystate, 0, sizeof(keystate));
+    ret = GetKeyboardState(keystate);
+    ok_(__FILE__, line)(ret, "GetKeyboardState failed, %lu\n", GetLastError());
+    todo_wine_if(todo_x) ok_(__FILE__, line)(!(keystate['X'] & 0x80) == !x, "%d:%d: expected that X keystate is %s\n", i, j, x ? "set" : "unset");
+    todo_wine_if(todo_c) ok_(__FILE__, line)(!(keystate['C'] & 0x80) == !c, "%d:%d: expected that C keystate is %s\n", i, j, c ? "set" : "unset");
+}
+
+#define check_get_key_state(i, j, c, x, todo_c, todo_x) check_get_key_state_(i, j, c, x, todo_c, todo_x, __LINE__)
+static void check_get_key_state_(int i, int j, int c, int x, int todo_c, int todo_x, int line)
+{
+    SHORT state;
+
+    state = GetKeyState('X');
+    todo_wine_if(todo_x) ok_(__FILE__, line)(!(state & 0x8000) == !x, "%d:%d: expected that X highest bit is %s, got %#x\n", i, j, x ? "set" : "unset", state);
+    ok_(__FILE__, line)(!(state & 0x007e), "%d:%d: expected that X undefined bits are unset, got %#x\n", i, j, state);
+
+    state = GetKeyState('C');
+    todo_wine_if(todo_c) ok_(__FILE__, line)(!(state & 0x8000) == !c, "%d:%d: expected that C highest bit is %s, got %#x\n", i, j, c ? "set" : "unset", state);
+    ok_(__FILE__, line)(!(state & 0x007e), "%d:%d: expected that C undefined bits are unset, got %#x\n", i, j, state);
+}
+
 static DWORD WINAPI get_key_state_thread(void *arg)
 {
-    HANDLE *semaphores = arg;
+    struct get_key_state_thread_params *params = arg;
+    struct get_key_state_test_desc* test;
+    HANDLE *semaphores = params->semaphores;
     DWORD result;
+    BYTE keystate[256];
+    BOOL has_queue;
+    BOOL expect_x, expect_c;
+    MSG msg;
+    int i = params->index, j;
 
-    ReleaseSemaphore(semaphores[0], 1, NULL);
-    result = WaitForSingleObject(semaphores[1], 1000);
-    ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %u\n", result);
+    test = get_key_state_tests + i;
+    has_queue = test->peek_message;
 
-    result = GetKeyState('X');
-    ok((result & 0x8000) || broken(!(result & 0x8000)), /* > Win 2003 */
-       "expected that highest bit is set, got %x\n", result);
+    if (test->peek_message)
+    {
+        while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE))
+            ok(!is_keyboard_message(msg.message), "%d: PeekMessageA got keyboard message.\n", i);
+    }
 
-    ReleaseSemaphore(semaphores[0], 1, NULL);
-    result = WaitForSingleObject(semaphores[1], 1000);
-    ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %u\n", result);
+    for (j = 0; j < 4; ++j)
+    {
+        /* initialization */
+        ReleaseSemaphore(semaphores[0], 1, NULL);
+        result = WaitForSingleObject(semaphores[1], 1000);
+        ok(result == WAIT_OBJECT_0, "%d:%d: WaitForSingleObject returned %lu\n", i, j, result);
 
-    result = GetKeyState('X');
-    ok(!(result & 0x8000), "expected that highest bit is unset, got %x\n", result);
+        if (test->set_keyboard_state)
+        {
+            keystate['C'] = 0xff;
+            SetKeyboardState(keystate);
+        }
+
+        /* key pressed */
+        ReleaseSemaphore(semaphores[0], 1, NULL);
+        result = WaitForSingleObject(semaphores[1], 1000);
+        ok(result == WAIT_OBJECT_0, "%d:%d: WaitForSingleObject returned %lu\n", i, j, result);
+
+        if (test->set_keyboard_state) expect_x = TRUE;
+        else if (!has_queue && j == 0) expect_x = FALSE;
+        else expect_x = TRUE;
+
+        if (test->set_keyboard_state) expect_c = TRUE;
+        else expect_c = FALSE;
+
+        check_get_keyboard_state(i, j, expect_c, FALSE, /* todo */ i == 6, !has_queue);
+        check_get_key_state(i, j, expect_c, expect_x, /* todo */ i == 6, i != 6 && (has_queue || j == 0));
+        check_get_keyboard_state(i, j, expect_c, expect_x, /* todo */ i == 6, i != 6 && (has_queue || j == 0));
+
+        /* key released */
+        ReleaseSemaphore(semaphores[0], 1, NULL);
+        result = WaitForSingleObject(semaphores[1], 1000);
+        ok(result == WAIT_OBJECT_0, "%d: WaitForSingleObject returned %lu\n", i, result);
+
+        check_get_keyboard_state(i, j, expect_c, expect_x, /* todo */ i == 6, has_queue || i == 6 || j > 0);
+        check_get_key_state(i, j, expect_c, FALSE, /* todo */ i == 6, FALSE);
+        check_get_keyboard_state(i, j, expect_c, FALSE, /* todo */ i == 6, FALSE);
+    }
 
     return 0;
 }
 
 static void test_GetKeyState(void)
 {
-    HANDLE semaphores[2];
+    struct get_key_state_thread_params params;
     HANDLE thread;
     DWORD result;
+    BYTE keystate[256];
+    BOOL expect_x, expect_c;
     HWND hwnd;
+    MSG msg;
+    int i, j;
 
-    semaphores[0] = CreateSemaphoreA(NULL, 0, 1, NULL);
-    ok(semaphores[0] != NULL, "CreateSemaphoreA failed %u\n", GetLastError());
-    semaphores[1] = CreateSemaphoreA(NULL, 0, 1, NULL);
-    ok(semaphores[1] != NULL, "CreateSemaphoreA failed %u\n", GetLastError());
+    BOOL us_kbd = (GetKeyboardLayout(0) == (HKL)(ULONG_PTR)0x04090409);
+    if (!us_kbd)
+    {
+        skip("skipping test with inconsistent results on non-us keyboard\n");
+        return;
+    }
+
+    memset(keystate, 0, sizeof(keystate));
+    params.semaphores[0] = CreateSemaphoreA(NULL, 0, 1, NULL);
+    ok(params.semaphores[0] != NULL, "CreateSemaphoreA failed %lu\n", GetLastError());
+    params.semaphores[1] = CreateSemaphoreA(NULL, 0, 1, NULL);
+    ok(params.semaphores[1] != NULL, "CreateSemaphoreA failed %lu\n", GetLastError());
 
     hwnd = CreateWindowA("static", "Title", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                          10, 10, 200, 200, NULL, NULL, NULL, NULL);
-    ok(hwnd != NULL, "CreateWindowA failed %u\n", GetLastError());
+    ok(hwnd != NULL, "CreateWindowA failed %lu\n", GetLastError());
+    empty_message_queue();
 
-    thread = CreateThread(NULL, 0, get_key_state_thread, semaphores, 0, NULL);
-    ok(thread != NULL, "CreateThread failed %u\n", GetLastError());
-    result = WaitForSingleObject(semaphores[0], 1000);
-    ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %u\n", result);
+    for (i = 0; i < ARRAY_SIZE(get_key_state_tests); ++i)
+    {
+        struct get_key_state_test_desc* test = get_key_state_tests + i;
 
-    SetForegroundWindow(hwnd);
-    SetFocus(hwnd);
-    keybd_event('X', 0, 0, 0);
+        params.index = i;
+        thread = CreateThread(NULL, 0, get_key_state_thread, &params, 0, NULL);
+        ok(thread != NULL, "CreateThread failed %lu\n", GetLastError());
 
-    ReleaseSemaphore(semaphores[1], 1, NULL);
-    result = WaitForSingleObject(semaphores[0], 1000);
-    ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %u\n", result);
+        for (j = 0; j < 4; ++j)
+        {
+            /* initialization */
+            result = WaitForSingleObject(params.semaphores[0], 1000);
+            ok(result == WAIT_OBJECT_0, "%d:%d: WaitForSingleObject returned %lu\n", i, j, result);
 
-    keybd_event('X', 0, KEYEVENTF_KEYUP, 0);
+            SetForegroundWindow(hwnd);
+            SetFocus(hwnd);
+            empty_message_queue();
 
-    ReleaseSemaphore(semaphores[1], 1, NULL);
-    result = WaitForSingleObject(thread, 1000);
-    ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %u\n", result);
-    CloseHandle(thread);
+            ReleaseSemaphore(params.semaphores[1], 1, NULL);
+
+            /* key pressed */
+            result = WaitForSingleObject(params.semaphores[0], 1000);
+            ok(result == WAIT_OBJECT_0, "%d:%d: WaitForSingleObject returned %lu\n", i, j, result);
+
+            keybd_event('X', 0, 0, 0);
+            if (test->set_keyboard_state_main)
+            {
+                expect_c = TRUE;
+                keystate['C'] = 0xff;
+                SetKeyboardState(keystate);
+            }
+            else expect_c = FALSE;
+
+            check_get_keyboard_state(i, j, expect_c, FALSE, /* todo */ FALSE, FALSE);
+            check_get_key_state(i, j, expect_c, FALSE, /* todo */ FALSE, FALSE);
+            check_get_keyboard_state(i, j, expect_c, FALSE, /* todo */ FALSE, FALSE);
+
+            if (test->peek_message_main) while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) DispatchMessageA(&msg);
+
+            if (test->peek_message_main) expect_x = TRUE;
+            else expect_x = FALSE;
+
+            check_get_keyboard_state(i, j, expect_c, expect_x, /* todo */ FALSE, FALSE);
+            check_get_key_state(i, j, expect_c, expect_x, /* todo */ FALSE, FALSE);
+            check_get_keyboard_state(i, j, expect_c, expect_x, /* todo */ FALSE, FALSE);
+
+            ReleaseSemaphore(params.semaphores[1], 1, NULL);
+
+            /* key released */
+            result = WaitForSingleObject(params.semaphores[0], 1000);
+            ok(result == WAIT_OBJECT_0, "%d:%d: WaitForSingleObject returned %lu\n", i, j, result);
+
+            keybd_event('X', 0, KEYEVENTF_KEYUP, 0);
+            if (test->set_keyboard_state_main)
+            {
+                expect_x = FALSE;
+                keystate['C'] = 0x00;
+                SetKeyboardState(keystate);
+            }
+
+            check_get_keyboard_state(i, j, FALSE, expect_x, /* todo */ FALSE, FALSE);
+            check_get_key_state(i, j, FALSE, expect_x, /* todo */ FALSE, FALSE);
+            check_get_keyboard_state(i, j, FALSE, expect_x, /* todo */ FALSE, FALSE);
+
+            if (test->peek_message_main) while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) DispatchMessageA(&msg);
+
+            check_get_keyboard_state(i, j, FALSE, FALSE, /* todo */ FALSE, FALSE);
+            check_get_key_state(i, j, FALSE, FALSE, /* todo */ FALSE, FALSE);
+            check_get_keyboard_state(i, j, FALSE, FALSE, /* todo */ FALSE, FALSE);
+
+            ReleaseSemaphore(params.semaphores[1], 1, NULL);
+        }
+
+        result = WaitForSingleObject(thread, 1000);
+        ok(result == WAIT_OBJECT_0, "WaitForSingleObject returned %lu\n", result);
+        CloseHandle(thread);
+    }
 
     DestroyWindow(hwnd);
-    CloseHandle(semaphores[0]);
-    CloseHandle(semaphores[1]);
+    CloseHandle(params.semaphores[0]);
+    CloseHandle(params.semaphores[1]);
 }
 
 static void test_OemKeyScan(void)
@@ -3406,6 +4757,13 @@ static void test_OemKeyScan(void)
     DWORD ret, expect, vkey, scan;
     WCHAR oem, wchr;
     char oem_char;
+
+    BOOL us_kbd = (GetKeyboardLayout(0) == (HKL)(ULONG_PTR)0x04090409);
+    if (!us_kbd)
+    {
+        skip("skipping test with inconsistent results on non-us keyboard\n");
+        return;
+    }
 
     for (oem = 0; oem < 0x200; oem++)
     {
@@ -3431,7 +4789,7 @@ static void test_OemKeyScan(void)
                 expect = vkey | scan;
             }
         }
-        ok( ret == expect, "%04x: got %08x expected %08x\n", oem, ret, expect );
+        ok( ret == expect, "%04x: got %08lx expected %08lx\n", oem, ret, expect );
     }
 }
 
@@ -3574,19 +4932,135 @@ static void test_GetPointerType(void)
     ret = pGetPointerType(id, NULL);
     ok(!ret, "GetPointerType should have failed.\n");
     ok(GetLastError() == ERROR_INVALID_PARAMETER,
-       "expected error ERROR_INVALID_PARAMETER, got %u.\n", GetLastError());
+       "expected error ERROR_INVALID_PARAMETER, got %lu.\n", GetLastError());
 
     SetLastError(0xdeadbeef);
     ret = pGetPointerType(id, &type);
     ok(GetLastError() == ERROR_INVALID_PARAMETER,
-       "expected error ERROR_INVALID_PARAMETER, got %u.\n", GetLastError());
-    ok(!ret, "GetPointerType failed, got type %d for %u.\n", type, id );
-    ok(type == -1, " type %d\n", type );
+       "expected error ERROR_INVALID_PARAMETER, got %lu.\n", GetLastError());
+    ok(!ret, "GetPointerType failed, got type %ld for %u.\n", type, id );
+    ok(type == -1, " type %ld\n", type );
 
     id = 1;
     ret = pGetPointerType(id, &type);
-    ok(ret, "GetPointerType failed, got type %d for %u.\n", type, id );
-    ok(type == PT_MOUSE, " type %d\n", type );
+    ok(ret, "GetPointerType failed, got type %ld for %u.\n", type, id );
+    ok(type == PT_MOUSE, " type %ld\n", type );
+}
+
+static void test_UnregisterDeviceNotification(void)
+{
+    BOOL ret = UnregisterDeviceNotification(NULL);
+    ok(ret == FALSE, "Unregistering NULL Device Notification returned: %d\n", ret);
+}
+
+static void test_SendInput(void)
+{
+    INPUT input[16];
+    UINT res, i;
+    HWND hwnd;
+    MSG msg;
+
+    hwnd = CreateWindowW( L"static", L"test", WS_OVERLAPPED, 0, 0, 100, 100, 0, 0, 0, 0 );
+    ok( hwnd != 0, "CreateWindowW failed\n" );
+
+    ShowWindow( hwnd, SW_SHOWNORMAL );
+    UpdateWindow( hwnd );
+    SetForegroundWindow( hwnd );
+    SetFocus( hwnd );
+    empty_message_queue();
+
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 0, NULL, 0 );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, NULL, 0 );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, NULL, sizeof(*input) );
+    ok( res == 0 && (GetLastError() == ERROR_NOACCESS || GetLastError() == ERROR_INVALID_PARAMETER),
+        "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 0, input, sizeof(*input) );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 0, NULL, sizeof(*input) );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+
+    memset( input, 0, sizeof(input) );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, input, sizeof(*input) );
+    ok( res == 1 && GetLastError() == 0xdeadbeef, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, sizeof(*input) );
+    ok( res == 16 && GetLastError() == 0xdeadbeef, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, input, 0 );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, input, sizeof(*input) + 1 );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 1, input, sizeof(*input) - 1 );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+
+    for (i = 0; i < ARRAY_SIZE(input); ++i) input[i].type = INPUT_KEYBOARD;
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, offsetof( INPUT, ki ) + sizeof(KEYBDINPUT) );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, sizeof(*input) );
+    ok( res == 16 && GetLastError() == 0xdeadbeef, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    empty_message_queue();
+
+    for (i = 0; i < ARRAY_SIZE(input); ++i) input[i].type = INPUT_HARDWARE;
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, offsetof( INPUT, hi ) + sizeof(HARDWAREINPUT) );
+    ok( res == 0 && GetLastError() == ERROR_INVALID_PARAMETER, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+
+    input[0].hi.uMsg = WM_KEYDOWN;
+    input[0].hi.wParamL = 0;
+    input[0].hi.wParamH = 'A';
+    input[1].hi.uMsg = WM_KEYUP;
+    input[1].hi.wParamL = 0;
+    input[1].hi.wParamH = 'A' | 0xc000;
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, sizeof(*input) );
+    ok( (res == 0 && GetLastError() == ERROR_CALL_NOT_IMPLEMENTED) ||
+        broken(res == 16 && GetLastError() == 0xdeadbeef) /* 32bit */,
+        "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    while ((res = wait_for_message(&msg)) && msg.message == WM_TIMER) DispatchMessageA(&msg);
+    ok( !res, "SendInput triggered unexpected message %#x\n", msg.message );
+    empty_message_queue();
+
+    memset( input, 0, sizeof(input) );
+    input[0].type = INPUT_HARDWARE;
+    input[1].type = INPUT_KEYBOARD;
+    input[1].ki.wVk = 'A';
+    input[1].ki.dwFlags = 0;
+    input[2].type = INPUT_KEYBOARD;
+    input[2].ki.wVk = 'A';
+    input[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, sizeof(*input) );
+    ok( (res == 0 && GetLastError() == ERROR_CALL_NOT_IMPLEMENTED) ||
+        broken(res == 16 && GetLastError() == 0xdeadbeef),
+        "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    while ((res = wait_for_message(&msg)) && (msg.message == WM_TIMER || broken(msg.message == WM_KEYDOWN || msg.message == WM_KEYUP)))
+        DispatchMessageA(&msg);
+    ok( !res, "SendInput triggered unexpected message %#x\n", msg.message );
+    empty_message_queue();
+
+    for (i = 0; i < ARRAY_SIZE(input); ++i) input[i].type = INPUT_HARDWARE + 1;
+    SetLastError( 0xdeadbeef );
+    res = SendInput( 16, input, sizeof(*input) );
+    ok( res == 16 && GetLastError() == 0xdeadbeef, "SendInput returned %u, error %#lx\n", res, GetLastError() );
+    while ((res = wait_for_message(&msg)) && msg.message == WM_TIMER) DispatchMessageA(&msg);
+    ok( !res, "SendInput triggered unexpected message %#x\n", msg.message );
+    empty_message_queue();
+
+    trace( "done\n" );
+    DestroyWindow( hwnd );
 }
 
 static void test_GetKeyboardLayoutList(void)
@@ -3633,12 +5107,28 @@ START_TEST(input)
     GetCursorPos( &pos );
 
     argc = winetest_get_mainargs(&argv);
+<<<<<<< HEAD
     if (argc >= 3 && strcmp(argv[2], "test_rawinput_mouse") == 0)
     {
         rawinput_mouse_process();
         return;
     }
 
+=======
+    if (argc >= 3 && strcmp(argv[2], "rawinput_test") == 0)
+    {
+        rawinput_test_process();
+        return;
+    }
+
+    if (argc >= 3 && strcmp(argv[2], "get_mouse_move_points_test") == 0)
+    {
+        test_GetMouseMovePointsEx_process();
+        return;
+    }
+
+    test_SendInput();
+>>>>>>> github-desktop-wine-mirror/master
     test_Input_blackbox();
     test_Input_whitebox();
     test_Input_unicode();
@@ -3655,12 +5145,18 @@ START_TEST(input)
     test_GetKeyState();
     test_OemKeyScan();
     test_GetRawInputData();
+<<<<<<< HEAD
     test_GetKeyboardLayoutList();
     test_RegisterRawInputDevices();
     test_rawinput_mouse(argv[0]);
+=======
+    test_GetRawInputBuffer();
+    test_RegisterRawInputDevices();
+    test_rawinput(argv[0]);
+>>>>>>> github-desktop-wine-mirror/master
 
     if(pGetMouseMovePointsEx)
-        test_GetMouseMovePointsEx();
+        test_GetMouseMovePointsEx(argv[0]);
     else
         win_skip("GetMouseMovePointsEx is not available\n");
 
@@ -3680,4 +5176,6 @@ START_TEST(input)
         test_GetPointerType();
     else
         win_skip("GetPointerType is not available\n");
+
+    test_UnregisterDeviceNotification();
 }

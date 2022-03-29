@@ -32,16 +32,12 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(winedevice);
 
-static const WCHAR servicesW[] = {'\\','R','e','g','i','s','t','r','y',
-                                  '\\','M','a','c','h','i','n','e',
-                                  '\\','S','y','s','t','e','m',
-                                  '\\','C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t',
-                                  '\\','S','e','r','v','i','c','e','s',
-                                  '\\',0};
+static const WCHAR servicesW[] = L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\";
 
 extern NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event );
+extern void CDECL wine_enumerate_root_devices( const WCHAR *driver_name );
 
-static const WCHAR winedeviceW[] = {'w','i','n','e','d','e','v','i','c','e',0};
+static WCHAR winedeviceW[] = L"winedevice";
 static SERVICE_STATUS_HANDLE service_handle;
 static SC_HANDLE manager_handle;
 static HANDLE stop_event;
@@ -59,6 +55,8 @@ static void set_service_status( SERVICE_STATUS_HANDLE handle, DWORD state, DWORD
     status.dwWaitHint                = (state == SERVICE_START_PENDING) ? 10000 : 0;
     SetServiceStatus( handle, &status );
 }
+
+#define SERVICE_CONTROL_REENUMERATE_ROOT_DEVICES 128
 
 static DWORD device_handler( DWORD ctrl, const WCHAR *driver_name )
 {
@@ -83,8 +81,12 @@ static DWORD device_handler( DWORD ctrl, const WCHAR *driver_name )
         result = RtlNtStatusToDosError(ZwUnloadDriver( &service_name ));
         break;
 
+    case SERVICE_CONTROL_REENUMERATE_ROOT_DEVICES:
+        wine_enumerate_root_devices( driver_name );
+        break;
+
     default:
-        FIXME( "got driver ctrl %x for %s\n", ctrl, wine_dbgstr_w(driver_name) );
+        FIXME( "got driver ctrl %lx for %s\n", ctrl, wine_dbgstr_w(driver_name) );
         break;
     }
 
@@ -111,7 +113,7 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
         SetEvent( stop_event );
         return NO_ERROR;
     default:
-        FIXME( "got service ctrl %x for %s\n", ctrl, wine_dbgstr_w(service_group) );
+        FIXME( "got service ctrl %lx for %s\n", ctrl, wine_dbgstr_w(service_group) );
         set_service_status( service_handle, SERVICE_RUNNING,
                             SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN );
         return NO_ERROR;
@@ -120,11 +122,15 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
 
 static void WINAPI ServiceMain( DWORD argc, LPWSTR *argv )
 {
+<<<<<<< HEAD
     static const WCHAR ntoskrnlW[] = {'n','t','o','s','k','r','n','l','.','e','x','e',0};
     static const WCHAR win32kW[]   = {'w','i','n','3','2','k','.','s','y','s',0};
     static const WCHAR dxgkrnlW[]  = {'d','x','g','k','r','n','l','.','s','y','s',0};
     static const WCHAR dxgmms1W[]  = {'d','x','g','m','m','s','1','.','s','y','s',0};
     static const WCHAR *stubs[] = { win32kW, dxgkrnlW, dxgmms1W };
+=======
+    WCHAR driver_dir[MAX_PATH];
+>>>>>>> github-desktop-wine-mirror/master
     const WCHAR *service_group = (argc >= 2) ? argv[1] : argv[0];
     LDR_MODULE *ldr;
     ULONG_PTR magic;
@@ -155,6 +161,10 @@ static void WINAPI ServiceMain( DWORD argc, LPWSTR *argv )
     if (!(service_handle = RegisterServiceCtrlHandlerExW( winedeviceW, service_handler, (void *)service_group )))
         return;
 
+    GetSystemDirectoryW( driver_dir, MAX_PATH );
+    wcscat( driver_dir, L"\\drivers" );
+    AddDllDirectory( driver_dir );
+
     TRACE( "starting service group %s\n", wine_dbgstr_w(service_group) );
     set_service_status( service_handle, SERVICE_RUNNING,
                         SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN );
@@ -171,7 +181,7 @@ int __cdecl wmain( int argc, WCHAR *argv[] )
 {
     SERVICE_TABLE_ENTRYW service_table[2];
 
-    service_table[0].lpServiceName = (void *)winedeviceW;
+    service_table[0].lpServiceName = winedeviceW;
     service_table[0].lpServiceProc = ServiceMain;
     service_table[1].lpServiceName = NULL;
     service_table[1].lpServiceProc = NULL;

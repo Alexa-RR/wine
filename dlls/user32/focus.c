@@ -20,9 +20,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <stdarg.h>
 
 #include "windef.h"
@@ -30,8 +27,10 @@
 #include "wingdi.h"
 #include "winuser.h"
 #include "win.h"
+#include "imm.h"
 #include "user_private.h"
 #include "wine/server.h"
+<<<<<<< HEAD
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(win);
@@ -228,6 +227,8 @@ static BOOL set_foreground_window( HWND hwnd, BOOL mouse )
     }
     return ret;
 }
+=======
+>>>>>>> github-desktop-wine-mirror/master
 
 
 /*******************************************************************
@@ -237,97 +238,7 @@ static BOOL set_foreground_window( HWND hwnd, BOOL mouse )
  */
 BOOL FOCUS_MouseActivate( HWND hwnd )
 {
-    return set_foreground_window( hwnd, TRUE );
-}
-
-
-/*******************************************************************
- *		SetActiveWindow (USER32.@)
- */
-HWND WINAPI SetActiveWindow( HWND hwnd )
-{
-    HWND prev;
-
-    TRACE( "%p\n", hwnd );
-
-    if (hwnd)
-    {
-        LONG style;
-
-        hwnd = WIN_GetFullHandle( hwnd );
-        if (!IsWindow( hwnd ))
-        {
-            SetLastError( ERROR_INVALID_WINDOW_HANDLE );
-            return 0;
-        }
-
-        style = GetWindowLongW( hwnd, GWL_STYLE );
-        if ((style & (WS_POPUP|WS_CHILD)) == WS_CHILD)
-            return GetActiveWindow();  /* Windows doesn't seem to return an error here */
-    }
-
-    if (!set_active_window( hwnd, &prev, FALSE, TRUE )) return 0;
-    return prev;
-}
-
-
-/*****************************************************************
- *		SetFocus  (USER32.@)
- */
-HWND WINAPI SetFocus( HWND hwnd )
-{
-    HWND hwndTop = hwnd;
-    HWND previous = GetFocus();
-
-    TRACE( "%p prev %p\n", hwnd, previous );
-
-    if (hwnd)
-    {
-        /* Check if we can set the focus to this window */
-        hwnd = WIN_GetFullHandle( hwnd );
-        if (!IsWindow( hwnd ))
-        {
-            SetLastError( ERROR_INVALID_WINDOW_HANDLE );
-            return 0;
-        }
-        if (hwnd == previous) return previous;  /* nothing to do */
-        for (;;)
-        {
-            HWND parent;
-            LONG style = GetWindowLongW( hwndTop, GWL_STYLE );
-            if (style & (WS_MINIMIZE | WS_DISABLED)) return 0;
-            if (!(style & WS_CHILD)) break;
-            parent = GetAncestor( hwndTop, GA_PARENT );
-            if (!parent || parent == GetDesktopWindow())
-            {
-                if ((style & (WS_POPUP|WS_CHILD)) == WS_CHILD) return 0;
-                break;
-            }
-            if (parent == get_hwnd_message_parent()) return 0;
-            hwndTop = parent;
-        }
-
-        /* call hooks */
-        if (HOOK_CallHooks( WH_CBT, HCBT_SETFOCUS, (WPARAM)hwnd, (LPARAM)previous, TRUE )) return 0;
-
-        /* activate hwndTop if needed. */
-        if (hwndTop != GetActiveWindow())
-        {
-            if (!set_active_window( hwndTop, NULL, FALSE, FALSE )) return 0;
-            if (!IsWindow( hwnd )) return 0;  /* Abort if window destroyed */
-
-            /* Do not change focus if the window is no longer active */
-            if (hwndTop != GetActiveWindow()) return 0;
-        }
-    }
-    else /* NULL hwnd passed in */
-    {
-        if (!previous) return 0;  /* nothing to do */
-        if (HOOK_CallHooks( WH_CBT, HCBT_SETFOCUS, 0, (LPARAM)previous, TRUE )) return 0;
-    }
-
-    /* change focus and send messages */
-    return set_focus_window( hwnd );
+    return NtUserCallHwndParam( hwnd, TRUE, NtUserSetForegroundWindow );
 }
 
 
@@ -336,10 +247,7 @@ HWND WINAPI SetFocus( HWND hwnd )
  */
 BOOL WINAPI SetForegroundWindow( HWND hwnd )
 {
-    TRACE( "%p\n", hwnd );
-
-    hwnd = WIN_GetFullHandle( hwnd );
-    return set_foreground_window( hwnd, FALSE );
+    return NtUserCallHwndParam( hwnd, FALSE, NtUserSetForegroundWindow );
 }
 
 
@@ -348,6 +256,7 @@ BOOL WINAPI SetForegroundWindow( HWND hwnd )
  */
 HWND WINAPI GetActiveWindow(void)
 {
+<<<<<<< HEAD
     shmlocal_t *shm = wine_get_shmlocal();
     HWND ret = 0;
 
@@ -359,6 +268,11 @@ HWND WINAPI GetActiveWindow(void)
     }
     SERVER_END_REQ;
     return ret;
+=======
+    GUITHREADINFO info;
+    info.cbSize = sizeof(info);
+    return NtUserGetGUIThreadInfo( GetCurrentThreadId(), &info ) ? info.hwndActive : 0;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 
@@ -367,6 +281,7 @@ HWND WINAPI GetActiveWindow(void)
  */
 HWND WINAPI GetFocus(void)
 {
+<<<<<<< HEAD
     shmlocal_t *shm = wine_get_shmlocal();
     HWND ret = 0;
 
@@ -395,6 +310,11 @@ HWND WINAPI GetForegroundWindow(void)
     }
     SERVER_END_REQ;
     return ret;
+=======
+    GUITHREADINFO info;
+    info.cbSize = sizeof(info);
+    return NtUserGetGUIThreadInfo( GetCurrentThreadId(), &info ) ? info.hwndFocus : 0;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 
@@ -424,9 +344,9 @@ BOOL WINAPI SetShellWindowEx(HWND hwndShell, HWND hwndListView)
             return FALSE;
 
     if (hwndListView && hwndListView!=hwndShell)
-        SetWindowPos(hwndListView, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+        NtUserSetWindowPos( hwndListView, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE );
 
-    SetWindowPos(hwndShell, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    NtUserSetWindowPos( hwndShell, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE );
 
     SERVER_START_REQ(set_global_windows)
     {

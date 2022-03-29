@@ -48,6 +48,47 @@ WINE_DEFAULT_DEBUG_CHANNEL(mmio);
 
 static WINE_MMIO *MMIOList;
 
+/* From kernel32 */
+static HANDLE create_file_OF( LPCSTR path, INT mode )
+{
+    DWORD access, sharing, creation;
+    char full_path[MAX_PATH];
+
+    if (mode & OF_CREATE)
+    {
+        creation = CREATE_ALWAYS;
+        access = GENERIC_READ | GENERIC_WRITE;
+    }
+    else
+    {
+        creation = OPEN_EXISTING;
+        switch(mode & 0x03)
+        {
+        case OF_READ:      access = GENERIC_READ; break;
+        case OF_WRITE:     access = GENERIC_WRITE; break;
+        case OF_READWRITE: access = GENERIC_READ | GENERIC_WRITE; break;
+        default:           access = 0; break;
+        }
+    }
+
+    switch(mode & 0x70)
+    {
+    case OF_SHARE_EXCLUSIVE:  sharing = 0; break;
+    case OF_SHARE_DENY_WRITE: sharing = FILE_SHARE_READ; break;
+    case OF_SHARE_DENY_READ:  sharing = FILE_SHARE_WRITE; break;
+    case OF_SHARE_DENY_NONE:
+    case OF_SHARE_COMPAT:
+    default:                  sharing = FILE_SHARE_READ | FILE_SHARE_WRITE; break;
+    }
+
+    if (mode & OF_CREATE)
+        return CreateFileA( path, access, sharing, NULL, creation, FILE_ATTRIBUTE_NORMAL, 0 );
+
+    if (!SearchPathA( NULL, path, NULL, MAX_PATH, full_path, NULL ))
+        return INVALID_HANDLE_VALUE;
+    return CreateFileA( full_path, access, sharing, NULL, creation, FILE_ATTRIBUTE_NORMAL, 0 );
+}
+
 /**************************************************************************
  *               	mmioDosIOProc           		[internal]
  */
@@ -56,7 +97,7 @@ static LRESULT CALLBACK mmioDosIOProc(LPMMIOINFO lpmmioinfo, UINT uMessage,
 {
     LRESULT	ret = MMSYSERR_NOERROR;
 
-    TRACE("(%p, %X, 0x%lx, 0x%lx);\n", lpmmioinfo, uMessage, lParam1, lParam2);
+    TRACE("(%p, %X, 0x%Ix, 0x%Ix);\n", lpmmioinfo, uMessage, lParam1, lParam2);
 
     switch (uMessage) {
     case MMIOM_OPEN:
@@ -76,8 +117,19 @@ static LRESULT CALLBACK mmioDosIOProc(LPMMIOINFO lpmmioinfo, UINT uMessage,
 
 	    /* if filename NULL, assume open file handle in adwInfo[0] */
 	    if (szFileName) {
+<<<<<<< HEAD
                 lpmmioinfo->adwInfo[0] = _lopen(szFileName, lpmmioinfo->dwFlags);
             }
+=======
+		HANDLE file;
+
+		file = create_file_OF( szFileName, lpmmioinfo->dwFlags );
+		if (file != INVALID_HANDLE_VALUE)
+		    lpmmioinfo->adwInfo[0] = HandleToLong(file);
+		else
+		    lpmmioinfo->adwInfo[0] = HFILE_ERROR;
+	    }
+>>>>>>> github-desktop-wine-mirror/master
 	    if (lpmmioinfo->adwInfo[0] == HFILE_ERROR)
 		ret = MMIOERR_FILENOTFOUND;
 	}
@@ -159,7 +211,7 @@ static LRESULT CALLBACK mmioDosIOProc(LPMMIOINFO lpmmioinfo, UINT uMessage,
 static LRESULT CALLBACK mmioMemIOProc(LPMMIOINFO lpmmioinfo, UINT uMessage,
 				      LPARAM lParam1, LPARAM lParam2)
 {
-    TRACE("(%p,0x%04x,0x%08lx,0x%08lx)\n", lpmmioinfo, uMessage, lParam1, lParam2);
+    TRACE("(%p,0x%04x,0x%08Ix,0x%08Ix)\n", lpmmioinfo, uMessage, lParam1, lParam2);
 
     switch (uMessage) {
 
@@ -263,7 +315,7 @@ static LPMMIOPROC MMIO_InstallIOProc(FOURCC fccIOProc, LPMMIOPROC pIOProc,
     struct IOProcList*  pListNode;
     struct IOProcList** ppListNode;
 
-    TRACE("(%08x, %p, %08X, %s)\n", fccIOProc, pIOProc, dwFlags, is_unicode ? "unicode" : "ansi");
+    TRACE("(%08lx, %p, %08lX, %s)\n", fccIOProc, pIOProc, dwFlags, is_unicode ? "unicode" : "ansi");
 
     if (dwFlags & MMIO_GLOBALPROC)
 	FIXME("Global procedures not implemented\n");
@@ -516,7 +568,7 @@ static LONG	MMIO_GrabNextBuffer(LPWINE_MMIO wm, int for_read)
 {
     LONG	size = wm->info.cchBuffer;
 
-    TRACE("bo=%x do=%x\n",
+    TRACE("bo=%lx do=%lx\n",
 	  wm->info.lBufOffset, wm->info.lDiskOffset);
 
     wm->info.lBufOffset = wm->info.lDiskOffset;
@@ -543,10 +595,10 @@ static LONG	MMIO_GrabNextBuffer(LPWINE_MMIO wm, int for_read)
 static MMRESULT MMIO_SetBuffer(WINE_MMIO* wm, void* pchBuffer, LONG cchBuffer,
 			       UINT uFlags)
 {
-    TRACE("(%p %p %d %u)\n", wm, pchBuffer, cchBuffer, uFlags);
+    TRACE("(%p %p %ld %u)\n", wm, pchBuffer, cchBuffer, uFlags);
 
     if (cchBuffer > 0xFFFF)
-	WARN("Untested handling of huge mmio buffers (%d >= 64k)\n", cchBuffer);
+	WARN("Untested handling of huge mmio buffers (%ld >= 64k)\n", cchBuffer);
 
     if (MMIO_Flush(wm, 0) != MMSYSERR_NOERROR)
 	return MMIOERR_CANNOTWRITE;
@@ -587,7 +639,7 @@ static HMMIO MMIO_Open(LPSTR szFileName, MMIOINFO* refmminfo, DWORD dwOpenFlags,
     MMIOINFO    	mmioinfo;
     DWORD               pos;
 
-    TRACE("(%s, %p, %08X, %s);\n", debugstr_a(szFileName), refmminfo, dwOpenFlags, is_unicode ? "unicode" : "ansi");
+    TRACE("(%s, %p, %08lX, %s);\n", debugstr_a(szFileName), refmminfo, dwOpenFlags, is_unicode ? "unicode" : "ansi");
 
     if (!refmminfo) {
         refmminfo = &mmioinfo;
@@ -694,6 +746,7 @@ HMMIO WINAPI mmioOpenW(LPWSTR szFileName, MMIOINFO* lpmmioinfo,
     if (szFileName)
     {
         INT     len = WideCharToMultiByte( CP_ACP, 0, szFileName, -1, NULL, 0, NULL, NULL );
+        if (len < MAX_PATH) len = MAX_PATH;
         szFn = HeapAlloc( GetProcessHeap(), 0, len );
         if (!szFn) return NULL;
         WideCharToMultiByte( CP_ACP, 0, szFileName, -1, szFn, len, NULL, NULL );
@@ -753,7 +806,7 @@ LONG WINAPI mmioRead(HMMIO hmmio, HPSTR pch, LONG cch)
     LPWINE_MMIO	wm;
     LONG 	count;
 
-    TRACE("(%p, %p, %d);\n", hmmio, pch, cch);
+    TRACE("(%p, %p, %ld);\n", hmmio, pch, cch);
 
     if ((wm = MMIO_Get(hmmio)) == NULL)
 	return -1;
@@ -794,7 +847,7 @@ LONG WINAPI mmioRead(HMMIO hmmio, HPSTR pch, LONG cch)
 	mmioSeek(hmmio, 0, SEEK_CUR);
     }
 
-    TRACE("count=%d\n", count);
+    TRACE("count=%ld\n", count);
     return count;
 }
 
@@ -806,7 +859,7 @@ LONG WINAPI mmioWrite(HMMIO hmmio, HPCSTR pch, LONG cch)
     LPWINE_MMIO	wm;
     LONG	count;
 
-    TRACE("(%p, %p, %d);\n", hmmio, pch, cch);
+    TRACE("(%p, %p, %ld);\n", hmmio, pch, cch);
 
     if ((wm = MMIO_Get(hmmio)) == NULL)
 	return -1;
@@ -847,7 +900,7 @@ LONG WINAPI mmioWrite(HMMIO hmmio, HPCSTR pch, LONG cch)
 	wm->info.lBufOffset = wm->info.lDiskOffset;
     }
 
-    TRACE("bytes written=%d\n", count);
+    TRACE("bytes written=%ld\n", count);
     return count;
 }
 
@@ -859,7 +912,7 @@ LONG WINAPI mmioSeek(HMMIO hmmio, LONG lOffset, INT iOrigin)
     LPWINE_MMIO	wm;
     LONG 	offset;
 
-    TRACE("(%p, %08X, %d);\n", hmmio, lOffset, iOrigin);
+    TRACE("(%p, %08lX, %d);\n", hmmio, lOffset, iOrigin);
 
     if ((wm = MMIO_Get(hmmio)) == NULL)
 	return MMSYSERR_INVALHANDLE;
@@ -918,7 +971,7 @@ LONG WINAPI mmioSeek(HMMIO hmmio, LONG lOffset, INT iOrigin)
     else
 	wm->info.pchNext = wm->info.pchBuffer + (offset - wm->info.lBufOffset);
 
-    TRACE("=> %d\n", offset);
+    TRACE("=> %ld\n", offset);
     return offset;
 }
 
@@ -971,7 +1024,7 @@ MMRESULT WINAPI mmioSetBuffer(HMMIO hmmio, LPSTR pchBuffer, LONG cchBuffer, UINT
 {
     LPWINE_MMIO		wm;
 
-    TRACE("(hmmio=%p, pchBuf=%p, cchBuf=%d, uFlags=%#08x)\n",
+    TRACE("(hmmio=%p, pchBuf=%p, cchBuf=%ld, uFlags=%#08x)\n",
 	  hmmio, pchBuffer, cchBuffer, uFlags);
 
     if ((wm = MMIO_Get(hmmio)) == NULL)
@@ -1106,7 +1159,7 @@ static LRESULT  MMIO_SendMessage(HMMIO hmmio, UINT uMessage, LPARAM lParam1,
 {
     LPWINE_MMIO		wm;
 
-    TRACE("(%p, %u, %ld, %ld, %s)\n", hmmio, uMessage, lParam1, lParam2, is_unicode ? "unicode" : "ansi");
+    TRACE("(%p, %u, %Id, %Id, %s)\n", hmmio, uMessage, lParam1, lParam2, is_unicode ? "unicode" : "ansi");
 
     if (uMessage < MMIOM_USER)
 	return MMSYSERR_INVALPARAM;
@@ -1142,10 +1195,10 @@ MMRESULT WINAPI mmioDescend(HMMIO hmmio, LPMMCKINFO lpck,
 	return MMSYSERR_INVALPARAM;
 
     dwOldPos = mmioSeek(hmmio, 0, SEEK_CUR);
-    TRACE("dwOldPos=%d\n", dwOldPos);
+    TRACE("dwOldPos=%ld\n", dwOldPos);
 
     if (lpckParent != NULL) {
-	TRACE("seek inside parent at %d !\n", lpckParent->dwDataOffset);
+	TRACE("seek inside parent at %ld !\n", lpckParent->dwDataOffset);
 	/* EPP: was dwOldPos = mmioSeek(hmmio,lpckParent->dwDataOffset,SEEK_SET); */
 	if (dwOldPos < lpckParent->dwDataOffset ||
 	    dwOldPos >= lpckParent->dwDataOffset + lpckParent->cksize) {
@@ -1194,7 +1247,7 @@ MMRESULT WINAPI mmioDescend(HMMIO hmmio, LPMMCKINFO lpck,
         }
 
         lpck->dwDataOffset = dwOldPos + 2 * sizeof(DWORD);
-        TRACE("ckid=%s fcc=%s cksize=%08X !\n",
+        TRACE("ckid=%s fcc=%s cksize=%08lX !\n",
               debugstr_an((LPCSTR)&lpck->ckid, 4),
               srchType ? debugstr_an((LPCSTR)&lpck->fccType, 4) : "<na>",
               lpck->cksize);
@@ -1218,7 +1271,7 @@ MMRESULT WINAPI mmioDescend(HMMIO hmmio, LPMMCKINFO lpck,
 	mmioSeek(hmmio, lpck->dwDataOffset, SEEK_SET);
 	lpck->fccType = 0;
     }
-    TRACE("lpck: ckid=%s, cksize=%d, dwDataOffset=%d fccType=%08X (%s)!\n",
+    TRACE("lpck: ckid=%s, cksize=%ld, dwDataOffset=%ld fccType=%08lX (%s)!\n",
 	  debugstr_an((LPSTR)&lpck->ckid, 4), lpck->cksize, lpck->dwDataOffset,
 	  lpck->fccType, srchType ? debugstr_an((LPSTR)&lpck->fccType, 4):"");
     return MMSYSERR_NOERROR;
@@ -1236,10 +1289,10 @@ MMRESULT WINAPI mmioAscend(HMMIO hmmio, LPMMCKINFO lpck, UINT uFlags)
 
 	TRACE("Chunk is dirty, checking if chunk's size is correct\n");
 	dwOldPos = mmioSeek(hmmio, 0, SEEK_CUR);
-	TRACE("dwOldPos=%d lpck->dwDataOffset = %d\n", dwOldPos, lpck->dwDataOffset);
+	TRACE("dwOldPos=%ld lpck->dwDataOffset = %ld\n", dwOldPos, lpck->dwDataOffset);
 	dwNewSize = dwOldPos - lpck->dwDataOffset;
 	if (dwNewSize != lpck->cksize) {
-	    TRACE("Nope: lpck->cksize=%d dwNewSize=%d\n", lpck->cksize, dwNewSize);
+	    TRACE("Nope: lpck->cksize=%ld dwNewSize=%ld\n", lpck->cksize, dwNewSize);
 	    lpck->cksize = dwNewSize;
 
 	    /* pad odd size with 0 */
@@ -1270,7 +1323,7 @@ MMRESULT WINAPI mmioCreateChunk(HMMIO hmmio, MMCKINFO* lpck, UINT uFlags)
     TRACE("(%p, %p, %04X);\n", hmmio, lpck, uFlags);
 
     dwOldPos = mmioSeek(hmmio, 0, SEEK_CUR);
-    TRACE("dwOldPos=%d\n", dwOldPos);
+    TRACE("dwOldPos=%ld\n", dwOldPos);
 
     if (uFlags == MMIO_CREATELIST)
 	lpck->ckid = FOURCC_LIST;
@@ -1287,7 +1340,7 @@ MMRESULT WINAPI mmioCreateChunk(HMMIO hmmio, MMCKINFO* lpck, UINT uFlags)
     lpck->dwFlags = MMIO_DIRTY;
 
     ix = mmioWrite(hmmio, (LPSTR)lpck, size);
-    TRACE("after mmioWrite ix = %d req = %d, errno = %d\n", ix, size, errno);
+    TRACE("after mmioWrite ix = %ld req = %ld, errno = %d\n", ix, size, errno);
     if (ix < size) {
 	mmioSeek(hmmio, dwOldPos, SEEK_SET);
 	WARN("return CannotWrite\n");
@@ -1307,7 +1360,7 @@ MMRESULT WINAPI mmioRenameA(LPCSTR szFileName, LPCSTR szNewFileName,
     struct IOProcList   tmp;
     FOURCC              fcc;
 
-    TRACE("(%s, %s, %p, %08X);\n",
+    TRACE("(%s, %s, %p, %08lX);\n",
 	  debugstr_a(szFileName), debugstr_a(szNewFileName), lpmmioinfo, dwFlags);
 
     /* If both params are NULL, then parse the file name */

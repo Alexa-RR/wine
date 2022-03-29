@@ -89,7 +89,11 @@ HDSKSPC WINAPI SetupCreateDiskSpaceListW(PVOID reserved1, DWORD reserved2, UINT 
 {
     struct space_list *list;
 
+<<<<<<< HEAD
     TRACE("(%p, %u, 0x%08x)\n", reserved1, reserved2, flags);
+=======
+    TRACE("(%p, %lu, 0x%08x)\n", Reserved1, Reserved2, Flags);
+>>>>>>> github-desktop-wine-mirror/master
 
     if (reserved1 || reserved2 || flags & ~SPDSL_IGNORE_DISK)
     {

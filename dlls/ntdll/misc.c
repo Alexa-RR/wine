@@ -19,17 +19,10 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-
 #include <time.h>
-#include <math.h>
-#ifdef HAVE_SYS_UTSNAME_H
-#include <sys/utsname.h>
-#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
-#include "wine/library.h"
 #include "wine/debug.h"
 #include "ntdll_misc.h"
 #include "wmistr.h"
@@ -38,20 +31,13 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
 
-LPCSTR debugstr_ObjectAttributes(const OBJECT_ATTRIBUTES *oa)
-{
-    if (!oa) return "<null>";
-    return wine_dbg_sprintf( "{name=%s, attr=0x%08x, hRoot=%p, sd=%p}\n",
-                             debugstr_us(oa->ObjectName), oa->Attributes,
-                             oa->RootDirectory, oa->SecurityDescriptor );
-}
-
 LPCSTR debugstr_us( const UNICODE_STRING *us )
 {
     if (!us) return "<null>";
     return debugstr_wn(us->Buffer, us->Length / sizeof(WCHAR));
 }
 
+<<<<<<< HEAD
 /*********************************************************************
  *                  wine_get_version   (NTDLL.@)
  */
@@ -258,6 +244,8 @@ LONGLONG CDECL NTDLL__ftol(void)
 
 #endif /* defined(__GNUC__) && defined(__i386__) */
 
+=======
+>>>>>>> github-desktop-wine-mirror/master
 static void
 NTDLL_mergesort( void *arr, void *barr, size_t elemsize, int(__cdecl *compar)(const void *, const void *),
                  size_t left, size_t right )
@@ -291,8 +279,8 @@ NTDLL_mergesort( void *arr, void *barr, size_t elemsize, int(__cdecl *compar)(co
 /*********************************************************************
  *                  qsort   (NTDLL.@)
  */
-void __cdecl NTDLL_qsort( void *base, size_t nmemb, size_t size,
-                          int(__cdecl *compar)(const void *, const void *) )
+void __cdecl qsort( void *base, size_t nmemb, size_t size,
+                    int (__cdecl *compar)(const void *, const void *) )
 {
     void *secondarr;
     if (nmemb < 2 || size == 0) return;
@@ -304,9 +292,8 @@ void __cdecl NTDLL_qsort( void *base, size_t nmemb, size_t size,
 /*********************************************************************
  *                  bsearch   (NTDLL.@)
  */
-void * __cdecl
-NTDLL_bsearch( const void *key, const void *base, size_t nmemb,
-               size_t size, int (__cdecl *compar)(const void *, const void *) )
+void * __cdecl bsearch( const void *key, const void *base, size_t nmemb,
+                        size_t size, int (__cdecl *compar)(const void *, const void *) )
 {
     ssize_t min = 0;
     ssize_t max = nmemb - 1;
@@ -399,7 +386,7 @@ ULONG WINAPI EtwEventActivityIdControl(ULONG code, GUID *guid)
  */
 BOOLEAN WINAPI EtwEventProviderEnabled( REGHANDLE handle, UCHAR level, ULONGLONG keyword )
 {
-    FIXME("%s, %u, %s: stub\n", wine_dbgstr_longlong(handle), level, wine_dbgstr_longlong(keyword));
+    WARN("%s, %u, %s: stub\n", wine_dbgstr_longlong(handle), level, wine_dbgstr_longlong(keyword));
     return FALSE;
 }
 
@@ -409,7 +396,7 @@ BOOLEAN WINAPI EtwEventProviderEnabled( REGHANDLE handle, UCHAR level, ULONGLONG
 ULONG WINAPI EtwEventRegister( LPCGUID provider, PENABLECALLBACK callback, PVOID context,
                 PREGHANDLE handle )
 {
-    FIXME("(%s, %p, %p, %p) stub.\n", debugstr_guid(provider), callback, context, handle);
+    WARN("(%s, %p, %p, %p) stub.\n", debugstr_guid(provider), callback, context, handle);
 
     if (!handle) return ERROR_INVALID_PARAMETER;
 
@@ -422,7 +409,7 @@ ULONG WINAPI EtwEventRegister( LPCGUID provider, PENABLECALLBACK callback, PVOID
  */
 ULONG WINAPI EtwEventUnregister( REGHANDLE handle )
 {
-    FIXME("(%s) stub.\n", wine_dbgstr_longlong(handle));
+    WARN("(%s) stub.\n", wine_dbgstr_longlong(handle));
     return ERROR_SUCCESS;
 }
 
@@ -482,7 +469,7 @@ ULONG WINAPI EtwRegisterTraceGuidsW( WMIDPREQUEST RequestAddress,
                 TRACE_GUID_REGISTRATION *TraceGuidReg, const WCHAR *MofImagePath,
                 const WCHAR *MofResourceName, TRACEHANDLE *RegistrationHandle )
 {
-    FIXME("(%p, %p, %s, %u, %p, %s, %s, %p): stub\n", RequestAddress, RequestContext,
+    WARN("(%p, %p, %s, %u, %p, %s, %s, %p): stub\n", RequestAddress, RequestContext,
           debugstr_guid(ControlGuid), GuidCount, TraceGuidReg, debugstr_w(MofImagePath),
           debugstr_w(MofResourceName), RegistrationHandle);
 
@@ -507,7 +494,7 @@ ULONG WINAPI EtwRegisterTraceGuidsA( WMIDPREQUEST RequestAddress,
                 TRACE_GUID_REGISTRATION *TraceGuidReg, const char *MofImagePath,
                 const char *MofResourceName, TRACEHANDLE *RegistrationHandle )
 {
-    FIXME("(%p, %p, %s, %u, %p, %s, %s, %p): stub\n", RequestAddress, RequestContext,
+    WARN("(%p, %p, %s, %u, %p, %s, %s, %p): stub\n", RequestAddress, RequestContext,
           debugstr_guid(ControlGuid), GuidCount, TraceGuidReg, debugstr_a(MofImagePath),
           debugstr_a(MofResourceName), RegistrationHandle);
     return ERROR_SUCCESS;
@@ -521,7 +508,7 @@ ULONG WINAPI EtwUnregisterTraceGuids( TRACEHANDLE RegistrationHandle )
     if (!RegistrationHandle)
          return ERROR_INVALID_PARAMETER;
 
-    FIXME("%s: stub\n", wine_dbgstr_longlong(RegistrationHandle));
+    WARN("%s: stub\n", wine_dbgstr_longlong(RegistrationHandle));
     return ERROR_SUCCESS;
 }
 
@@ -530,7 +517,7 @@ ULONG WINAPI EtwUnregisterTraceGuids( TRACEHANDLE RegistrationHandle )
  */
 BOOLEAN WINAPI EtwEventEnabled( REGHANDLE handle, const EVENT_DESCRIPTOR *descriptor )
 {
-    FIXME("(%s, %p): stub\n", wine_dbgstr_longlong(handle), descriptor);
+    WARN("(%s, %p): stub\n", wine_dbgstr_longlong(handle), descriptor);
     return FALSE;
 }
 
@@ -584,7 +571,7 @@ ULONG WINAPI EtwLogTraceEvent( TRACEHANDLE SessionHandle, PEVENT_TRACE_HEADER Ev
  *                  EtwTraceMessageVa (NTDLL.@)
  */
 ULONG WINAPI EtwTraceMessageVa( TRACEHANDLE handle, ULONG flags, LPGUID guid, USHORT number,
-                                __ms_va_list args )
+                                va_list args )
 {
     FIXME("(%s %x %s %d) : stub\n", wine_dbgstr_longlong(handle), flags, debugstr_guid(guid), number);
     return ERROR_SUCCESS;
@@ -593,37 +580,13 @@ ULONG WINAPI EtwTraceMessageVa( TRACEHANDLE handle, ULONG flags, LPGUID guid, US
 /******************************************************************************
  *                  EtwTraceMessage (NTDLL.@)
  */
-ULONG WINAPIV EtwTraceMessage( TRACEHANDLE handle, ULONG flags, LPGUID guid, USHORT number, ... )
+ULONG WINAPIV EtwTraceMessage( TRACEHANDLE handle, ULONG flags, LPGUID guid, /*USHORT*/ ULONG number, ... )
 {
-    __ms_va_list valist;
+    va_list valist;
     ULONG ret;
 
-    __ms_va_start( valist, number );
+    va_start( valist, number );
     ret = EtwTraceMessageVa( handle, flags, guid, number, valist );
-    __ms_va_end( valist );
+    va_end( valist );
     return ret;
-}
-
-NTSTATUS WINAPI NtCreateLowBoxToken(HANDLE *token_handle, HANDLE existing_token_handle, ACCESS_MASK desired_access,
-                                    OBJECT_ATTRIBUTES *object_attributes, SID *package_sid, ULONG capability_count,
-                                    SID_AND_ATTRIBUTES *capabilities, ULONG handle_count, HANDLE *handle)
-{
-    FIXME("(%p, %p, %x, %p, %p, %u, %p, %u, %p): stub\n", token_handle, existing_token_handle, desired_access,
-            object_attributes, package_sid, capability_count, capabilities, handle_count, handle);
-
-    /* We need to return a NULL handle since later it will be passed to CloseHandle and that must not fail */
-    *token_handle = NULL;
-    return STATUS_SUCCESS;
-}
-
-/*********************************************************************
- *                  ApiSetQueryApiSetPresence   (NTDLL.@)
- */
-BOOL WINAPI ApiSetQueryApiSetPresence(const UNICODE_STRING *namespace, BOOLEAN *present)
-{
-    FIXME("(%s, %p) stub!\n", debugstr_us(namespace), present);
-
-    if(present)
-        *present = TRUE;
-    return TRUE;
 }

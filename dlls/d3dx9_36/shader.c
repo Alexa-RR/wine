@@ -717,11 +717,13 @@ HRESULT WINAPI D3DXPreprocessShaderFromResourceW(HMODULE module, const WCHAR *re
 
 }
 
-struct ID3DXConstantTableImpl {
+struct ID3DXConstantTableImpl
+{
     ID3DXConstantTable ID3DXConstantTable_iface;
     LONG ref;
     char *ctab;
     DWORD size;
+    DWORD flags;
     D3DXCONSTANTTABLE_DESC desc;
     struct ctab_constant *constants;
 };
@@ -895,6 +897,9 @@ static inline struct ctab_constant *get_valid_constant(struct ID3DXConstantTable
         c = is_valid_sub_constant(&table->constants[i], handle);
         if (c) return c;
     }
+
+    if (table->flags & D3DXCONSTTABLE_LARGEADDRESSAWARE)
+        return NULL;
 
     return get_constant_by_name(table, NULL, handle);
 }
@@ -1148,7 +1153,6 @@ static UINT set(struct ID3DXConstantTableImpl *table, IDirect3DDevice9 *device, 
             if (inclass == D3DXPC_MATRIX_ROWS && desc->RegisterSet == D3DXRS_BOOL)
             {
                 D3DXMATRIX mat, *m, min;
-                D3DXMatrixTranspose(&mat, &min);
 
                 if (is_pointer)
                     min = *(D3DXMATRIX *)(indata[index / 16]);
@@ -1996,9 +2000,10 @@ HRESULT WINAPI D3DXGetShaderConstantTableEx(const DWORD *byte_code, DWORD flags,
     const D3DXSHADER_CONSTANTINFO *constant_info;
     DWORD i;
 
-    TRACE("byte_code %p, flags %x, constant_table %p\n", byte_code, flags, constant_table);
+    TRACE("byte_code %p, flags %#x, constant_table %p.\n", byte_code, flags, constant_table);
 
-    if (constant_table) *constant_table = NULL;
+    if (constant_table)
+        *constant_table = NULL;
 
     if (!byte_code || !constant_table)
     {
@@ -2012,7 +2017,8 @@ HRESULT WINAPI D3DXGetShaderConstantTableEx(const DWORD *byte_code, DWORD flags,
         return D3D_OK;
     }
 
-    if (flags) FIXME("Flags (%#x) are not handled, yet!\n", flags);
+    if (flags & ~D3DXCONSTTABLE_LARGEADDRESSAWARE)
+        FIXME("Flags %#x not handled.\n", flags);
 
     hr = D3DXFindShaderComment(byte_code, MAKEFOURCC('C','T','A','B'), &data, &size);
     if (hr != D3D_OK)
@@ -2051,6 +2057,7 @@ HRESULT WINAPI D3DXGetShaderConstantTableEx(const DWORD *byte_code, DWORD flags,
     object->size = size;
     memcpy(object->ctab, data, object->size);
 
+    object->flags = flags;
     object->desc.Creator = ctab_header->Creator ? object->ctab + ctab_header->Creator : NULL;
     object->desc.Version = ctab_header->Version;
     object->desc.Constants = ctab_header->Constants;
@@ -2373,6 +2380,7 @@ HRESULT WINAPI D3DXGetShaderSamplers(const DWORD *byte_code, const char **sample
     return D3D_OK;
 }
 
+<<<<<<< HEAD
 
 static const char *decl_usage[] = { "position", "blendweight", "blendindices", "normal", "psize", "texcoord",
                                     "tangent", "binormal", "tessfactor", "positiont", "color" };
@@ -2701,12 +2709,23 @@ HRESULT WINAPI D3DXDisassembleShader(const DWORD *shader, BOOL colorcode, const 
     HeapFree(GetProcessHeap(), 0, buffer);
 
     return hr;
+=======
+HRESULT WINAPI D3DXDisassembleShader(const DWORD *shader, BOOL colorcode, const char *comments,
+        ID3DXBuffer **buffer)
+{
+    TRACE("shader %p, colorcode %d, comments %s, buffer %p.\n", shader, colorcode, debugstr_a(comments), buffer);
+
+    return D3DDisassemble(shader, D3DXGetShaderSize(shader), colorcode ? D3D_DISASM_ENABLE_COLOR_CODE : 0,
+            comments, (ID3DBlob **)buffer);
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 struct d3dx9_texture_shader
 {
     ID3DXTextureShader ID3DXTextureShader_iface;
     LONG ref;
+
+    ID3DXBuffer *byte_code;
 };
 
 static inline struct d3dx9_texture_shader *impl_from_ID3DXTextureShader(ID3DXTextureShader *iface)
@@ -2750,6 +2769,8 @@ static ULONG WINAPI d3dx9_texture_shader_Release(ID3DXTextureShader *iface)
 
     if (!refcount)
     {
+        if (texture_shader->byte_code)
+            ID3DXBuffer_Release(texture_shader->byte_code);
         HeapFree(GetProcessHeap(), 0, texture_shader);
     }
 
@@ -2758,9 +2779,14 @@ static ULONG WINAPI d3dx9_texture_shader_Release(ID3DXTextureShader *iface)
 
 static HRESULT WINAPI d3dx9_texture_shader_GetFunction(ID3DXTextureShader *iface, struct ID3DXBuffer **function)
 {
-    FIXME("iface %p, function %p stub.\n", iface, function);
+    struct d3dx9_texture_shader *texture_shader = impl_from_ID3DXTextureShader(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, function %p.\n", iface, function);
+
+    *function = texture_shader->byte_code;
+    ID3DXBuffer_AddRef(*function);
+
+    return S_OK;
 }
 
 static HRESULT WINAPI d3dx9_texture_shader_GetConstantBuffer(ID3DXTextureShader *iface, struct ID3DXBuffer **constant_buffer)
@@ -2952,18 +2978,29 @@ static const struct ID3DXTextureShaderVtbl d3dx9_texture_shader_vtbl =
 HRESULT WINAPI D3DXCreateTextureShader(const DWORD *function, ID3DXTextureShader **texture_shader)
 {
     struct d3dx9_texture_shader *object;
+    unsigned int size;
+    HRESULT hr;
 
     TRACE("function %p, texture_shader %p.\n", function, texture_shader);
 
     if (!function || !texture_shader)
         return D3DERR_INVALIDCALL;
 
-    object = HeapAlloc(GetProcessHeap(), 0, sizeof(*object));
-    if (!object)
+    if (!(size = D3DXGetShaderSize(function)))
+        return D3DXERR_INVALIDDATA;
+
+    if (!(object = heap_alloc_zero(sizeof(*object))))
         return E_OUTOFMEMORY;
 
     object->ID3DXTextureShader_iface.lpVtbl = &d3dx9_texture_shader_vtbl;
     object->ref = 1;
+
+    if (FAILED(hr = D3DXCreateBuffer(size, &object->byte_code)))
+    {
+        IUnknown_Release(&object->ID3DXTextureShader_iface);
+        return hr;
+    }
+    memcpy(ID3DXBuffer_GetBufferPointer(object->byte_code), function, size);
 
     *texture_shader = &object->ID3DXTextureShader_iface;
 

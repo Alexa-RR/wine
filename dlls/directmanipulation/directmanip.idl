@@ -44,5 +44,9 @@ coclass DirectManipulationSharedManager
 coclass DCompManipulationCompositor
 {
     [default] interface IDirectManipulationCompositor;
+<<<<<<< HEAD
+=======
+    interface IDirectManipulationCompositor2;
+>>>>>>> github-desktop-wine-mirror/master
     interface IDirectManipulationFrameInfoProvider;
 }

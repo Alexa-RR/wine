@@ -78,6 +78,12 @@ static LRESULT defdlg_proc_callback( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     return *result;
 }
 
+static LRESULT defwnd_proc_callback( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                     LRESULT *result, void *arg )
+{
+    return *result = DefWindowProcA( hwnd, msg, wp, lp );
+}
+
 static LRESULT call_window_proc_callback( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                           LRESULT *result, void *arg )
 {
@@ -155,6 +161,7 @@ static WNDPROC16 alloc_win16_thunk( WNDPROC handle )
         if (!(thunk_selector = GlobalAlloc16( GMEM_FIXED | GMEM_ZEROINIT,
                                               MAX_WINPROCS16 * sizeof(WINPROC_THUNK) )))
             return NULL;
+        FarSetOwner16( thunk_selector, 0 );
         PrestoChangoSelector16( thunk_selector, thunk_selector );
         thunk_array = GlobalLock16( thunk_selector );
         relay = GetProcAddress16( GetModuleHandle16("user"), "__wine_call_wndproc" );
@@ -240,11 +247,19 @@ static LRESULT call_window_proc16( HWND16 hwnd, UINT16 msg, WPARAM16 wParam, LPA
     /* Window procedures want ax = hInstance, ds = es = ss */
 
     memset(&context, 0, sizeof(context));
+<<<<<<< HEAD
     context.SegDs = context.SegEs = SELECTOROF(NtCurrentTeb()->SystemReserved1[0]);
     if (!(context.Eax = GetWindowWord( HWND_32(hwnd), GWLP_HINSTANCE ))) context.Eax = context.SegDs;
     context.SegCs = SELECTOROF(func);
     context.Eip   = OFFSETOF(func);
     context.Ebp   = OFFSETOF(NtCurrentTeb()->SystemReserved1[0]) + FIELD_OFFSET(STACK16FRAME, bp);
+=======
+    context.SegDs = context.SegEs = CURRENT_SS;
+    if (!(context.Eax = GetWindowWord( HWND_32(hwnd), GWLP_HINSTANCE ))) context.Eax = context.SegDs;
+    context.SegCs = SELECTOROF(func);
+    context.Eip   = OFFSETOF(func);
+    context.Ebp   = CURRENT_SP + FIELD_OFFSET(STACK16FRAME, bp);
+>>>>>>> github-desktop-wine-mirror/master
 
     if (lParam)
     {
@@ -267,7 +282,11 @@ static LRESULT call_window_proc16( HWND16 hwnd, UINT16 msg, WPARAM16 wParam, LPA
         if (size)
         {
             memcpy( &args.u, MapSL(lParam), size );
+<<<<<<< HEAD
             lParam = PtrToUlong(NtCurrentTeb()->SystemReserved1[0]) - size;
+=======
+            lParam = MAKESEGPTR( CURRENT_SS, CURRENT_SP - size );
+>>>>>>> github-desktop-wine-mirror/master
         }
     }
 
@@ -604,6 +623,7 @@ LRESULT WINPROC_CallProc16To32A( winproc_callback_t callback, HWND16 hwnd, UINT1
             CREATESTRUCT16 *cs16 = MapSL(lParam);
             CREATESTRUCTA cs;
             MDICREATESTRUCTA mdi_cs;
+            SEGPTR mdi_cs_segptr = 0;
 
             CREATESTRUCT16to32A( cs16, &cs );
             if (GetWindowLongW(hwnd32, GWL_EXSTYLE) & WS_EX_MDICHILD)
@@ -611,9 +631,15 @@ LRESULT WINPROC_CallProc16To32A( winproc_callback_t callback, HWND16 hwnd, UINT1
                 MDICREATESTRUCT16 *mdi_cs16 = MapSL(cs16->lpCreateParams);
                 MDICREATESTRUCT16to32A(mdi_cs16, &mdi_cs);
                 cs.lpCreateParams = &mdi_cs;
+                mdi_cs_segptr = cs16->lpCreateParams;
             }
             ret = callback( hwnd32, msg, wParam, (LPARAM)&cs, result, arg );
             CREATESTRUCT32Ato16( &cs, cs16 );
+            if (mdi_cs_segptr)
+            {
+                MDICREATESTRUCT32Ato16( &mdi_cs, MapSL( mdi_cs_segptr ) );
+                cs16->lpCreateParams = mdi_cs_segptr;
+            }
         }
         break;
     case WM_MDICREATE:
@@ -881,7 +907,7 @@ LRESULT WINPROC_CallProc16To32A( winproc_callback_t callback, HWND16 hwnd, UINT1
             case 1:
                 break; /* atom, nothing to do */
             case 3:
-                WARN("DDE_ACK: %lx both atom and handle... choosing handle\n", hi);
+                WARN("DDE_ACK: %Ix both atom and handle... choosing handle\n", hi);
                 /* fall through */
             case 2:
                 hi = convert_handle_16_to_32(hi, GMEM_DDESHARE);
@@ -898,6 +924,9 @@ LRESULT WINPROC_CallProc16To32A( winproc_callback_t callback, HWND16 hwnd, UINT1
     case WM_PAINTCLIPBOARD:
     case WM_SIZECLIPBOARD:
         FIXME_(msg)( "message %04x needs translation\n", msg );
+        break;
+    case WM_ERASEBKGND:
+        ret = callback( hwnd32, msg, (WPARAM)HDC_32(wParam), lParam, result, arg );
         break;
     default:
         ret = callback( hwnd32, msg, wParam, lParam, result, arg );
@@ -1261,7 +1290,7 @@ LRESULT WINPROC_CallProc32ATo16( winproc_callback16_t callback, HWND hwnd, UINT 
             case 1:
                 break; /* atom, nothing to do */
             case 3:
-                WARN("DDE_ACK: %lx both atom and handle... choosing handle\n", hi);
+                WARN("DDE_ACK: %Ix both atom and handle... choosing handle\n", hi);
                 /* fall through */
             case 2:
                 hi = convert_handle_32_to_16(hi, GMEM_DDESHARE);
@@ -1601,78 +1630,8 @@ BOOL16 WINAPI PeekMessage32_16( MSG32_16 *msg16, HWND16 hwnd16,
 LRESULT WINAPI DefWindowProc16( HWND16 hwnd16, UINT16 msg, WPARAM16 wParam, LPARAM lParam )
 {
     LRESULT result;
-    HWND hwnd = WIN_Handle32( hwnd16 );
-
-    switch(msg)
-    {
-    case WM_NCCREATE:
-        {
-            CREATESTRUCT16 *cs16 = MapSL(lParam);
-            CREATESTRUCTA cs32;
-
-            cs32.lpCreateParams = ULongToPtr(cs16->lpCreateParams);
-            cs32.hInstance      = HINSTANCE_32(cs16->hInstance);
-            cs32.hMenu          = HMENU_32(cs16->hMenu);
-            cs32.hwndParent     = WIN_Handle32(cs16->hwndParent);
-            cs32.cy             = cs16->cy;
-            cs32.cx             = cs16->cx;
-            cs32.y              = cs16->y;
-            cs32.x              = cs16->x;
-            cs32.style          = cs16->style;
-            cs32.dwExStyle      = cs16->dwExStyle;
-            cs32.lpszName       = MapSL(cs16->lpszName);
-            cs32.lpszClass      = MapSL(cs16->lpszClass);
-            return DefWindowProcA( hwnd, msg, wParam, (LPARAM)&cs32 );
-        }
-    case WM_NCCALCSIZE:
-        {
-            RECT16 *rect16 = MapSL(lParam);
-            RECT rect32;
-
-            rect32.left    = rect16->left;
-            rect32.top     = rect16->top;
-            rect32.right   = rect16->right;
-            rect32.bottom  = rect16->bottom;
-
-            result = DefWindowProcA( hwnd, msg, wParam, (LPARAM)&rect32 );
-
-            rect16->left   = rect32.left;
-            rect16->top    = rect32.top;
-            rect16->right  = rect32.right;
-            rect16->bottom = rect32.bottom;
-            return result;
-        }
-    case WM_WINDOWPOSCHANGING:
-    case WM_WINDOWPOSCHANGED:
-        {
-            WINDOWPOS16 *pos16 = MapSL(lParam);
-            WINDOWPOS pos32;
-
-            pos32.hwnd             = WIN_Handle32(pos16->hwnd);
-            pos32.hwndInsertAfter  = WIN_Handle32(pos16->hwndInsertAfter);
-            pos32.x                = pos16->x;
-            pos32.y                = pos16->y;
-            pos32.cx               = pos16->cx;
-            pos32.cy               = pos16->cy;
-            pos32.flags            = pos16->flags;
-
-            result = DefWindowProcA( hwnd, msg, wParam, (LPARAM)&pos32 );
-
-            pos16->hwnd            = HWND_16(pos32.hwnd);
-            pos16->hwndInsertAfter = HWND_16(pos32.hwndInsertAfter);
-            pos16->x               = pos32.x;
-            pos16->y               = pos32.y;
-            pos16->cx              = pos32.cx;
-            pos16->cy              = pos32.cy;
-            pos16->flags           = pos32.flags;
-            return result;
-        }
-    case WM_GETTEXT:
-    case WM_SETTEXT:
-        return DefWindowProcA( hwnd, msg, wParam, (LPARAM)MapSL(lParam) );
-    default:
-        return DefWindowProcA( hwnd, msg, wParam, lParam );
-    }
+    WINPROC_CallProc16To32A( defwnd_proc_callback, hwnd16, msg, wParam, lParam, &result, 0 );
+    return result;
 }
 
 
@@ -2092,7 +2051,10 @@ static LRESULT combo_proc16( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, 
 
 static void edit_lock_buffer( HWND hwnd )
 {
+<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL(PtrToUlong(NtCurrentTeb()->SystemReserved1[0]));
+=======
+>>>>>>> github-desktop-wine-mirror/master
     HLOCAL16 hloc16 = GetWindowWord( hwnd, GWW_HANDLE16 );
     HANDLE16 oldDS;
     HLOCAL hloc32;
@@ -2101,8 +2063,8 @@ static void edit_lock_buffer( HWND hwnd )
     if (!hloc16) return;
     if (!(hloc32 = (HLOCAL)wow_handlers32.edit_proc( hwnd, EM_GETHANDLE, 0, 0, FALSE ))) return;
 
-    oldDS = stack16->ds;
-    stack16->ds = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
+    oldDS = CURRENT_DS;
+    CURRENT_DS = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
     size = LocalSize16(hloc16);
     if (LocalReAlloc( hloc32, size, LMEM_MOVEABLE ))
     {
@@ -2112,13 +2074,15 @@ static void edit_lock_buffer( HWND hwnd )
         LocalUnlock( hloc32 );
         LocalUnlock16( hloc16 );
     }
-    stack16->ds = oldDS;
-
+    CURRENT_DS = oldDS;
 }
 
 static void edit_unlock_buffer( HWND hwnd )
 {
+<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL(PtrToUlong(NtCurrentTeb()->SystemReserved1[0]));
+=======
+>>>>>>> github-desktop-wine-mirror/master
     HLOCAL16 hloc16 = GetWindowWord( hwnd, GWW_HANDLE16 );
     HANDLE16 oldDS;
     HLOCAL hloc32;
@@ -2128,8 +2092,8 @@ static void edit_unlock_buffer( HWND hwnd )
     if (!(hloc32 = (HLOCAL)wow_handlers32.edit_proc( hwnd, EM_GETHANDLE, 0, 0, FALSE ))) return;
     size = LocalSize( hloc32 );
 
-    oldDS = stack16->ds;
-    stack16->ds = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
+    oldDS = CURRENT_DS;
+    CURRENT_DS = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
     if (LocalReAlloc16( hloc16, size, LMEM_MOVEABLE ))
     {
         char *text = LocalLock( hloc32 );
@@ -2138,7 +2102,7 @@ static void edit_unlock_buffer( HWND hwnd )
         LocalUnlock( hloc32 );
         LocalUnlock16( hloc16 );
     }
-    stack16->ds = oldDS;
+    CURRENT_DS = oldDS;
 }
 
 static HLOCAL16 edit_get_handle( HWND hwnd )
@@ -2146,7 +2110,6 @@ static HLOCAL16 edit_get_handle( HWND hwnd )
     CHAR *textA;
     UINT alloc_size;
     HLOCAL hloc;
-    STACK16FRAME* stack16;
     HANDLE16 oldDS;
     HLOCAL16 hloc16 = GetWindowWord( hwnd, GWW_HANDLE16 );
 
@@ -2155,13 +2118,18 @@ static HLOCAL16 edit_get_handle( HWND hwnd )
     if (!(hloc = (HLOCAL)wow_handlers32.edit_proc( hwnd, EM_GETHANDLE, 0, 0, FALSE ))) return 0;
     alloc_size = LocalSize( hloc );
 
+<<<<<<< HEAD
     stack16 = MapSL(PtrToUlong(NtCurrentTeb()->SystemReserved1[0]));
     oldDS = stack16->ds;
     stack16->ds = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
+=======
+    oldDS = CURRENT_DS;
+    CURRENT_DS = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
+>>>>>>> github-desktop-wine-mirror/master
 
     if (!LocalHeapSize16())
     {
-        if (!LocalInit16(stack16->ds, 0, GlobalSize16(stack16->ds)))
+        if (!LocalInit16(CURRENT_DS, 0, GlobalSize16(CURRENT_DS)))
         {
             ERR("could not initialize local heap\n");
             goto done;
@@ -2187,15 +2155,18 @@ static HLOCAL16 edit_get_handle( HWND hwnd )
     SetWindowWord( hwnd, GWW_HANDLE16, hloc16 );
 
 done:
-    stack16->ds = oldDS;
+    CURRENT_DS = oldDS;
     return hloc16;
 }
 
 static void edit_set_handle( HWND hwnd, HLOCAL16 hloc16 )
 {
+<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL(PtrToUlong(NtCurrentTeb()->SystemReserved1[0]));
+=======
+>>>>>>> github-desktop-wine-mirror/master
     HINSTANCE16 hInstance = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
-    HANDLE16 oldDS = stack16->ds;
+    HANDLE16 oldDS = CURRENT_DS;
     HLOCAL hloc32;
     INT count;
     CHAR *text;
@@ -2203,7 +2174,7 @@ static void edit_set_handle( HWND hwnd, HLOCAL16 hloc16 )
     if (!(GetWindowLongW( hwnd, GWL_STYLE ) & ES_MULTILINE)) return;
     if (!hloc16) return;
 
-    stack16->ds = hInstance;
+    CURRENT_DS = hInstance;
     count = LocalSize16(hloc16);
     text = MapSL(LocalLock16(hloc16));
     if ((hloc32 = LocalAlloc(LMEM_MOVEABLE, count)))
@@ -2213,8 +2184,7 @@ static void edit_set_handle( HWND hwnd, HLOCAL16 hloc16 )
         LocalUnlock16(hloc16);
         SetWindowWord( hwnd, GWW_HANDLE16, hloc16 );
     }
-    stack16->ds = oldDS;
-
+    CURRENT_DS = oldDS;
     if (hloc32) wow_handlers32.edit_proc( hwnd, EM_SETHANDLE, (WPARAM)hloc32, 0, FALSE );
 }
 
@@ -2223,13 +2193,17 @@ static void edit_destroy_handle( HWND hwnd )
     HLOCAL16 hloc16 = GetWindowWord( hwnd, GWW_HANDLE16 );
     if (hloc16)
     {
+<<<<<<< HEAD
         STACK16FRAME* stack16 = MapSL(PtrToUlong(NtCurrentTeb()->SystemReserved1[0]));
         HANDLE16 oldDS = stack16->ds;
+=======
+        HANDLE16 oldDS = CURRENT_DS;
+>>>>>>> github-desktop-wine-mirror/master
 
-        stack16->ds = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
+        CURRENT_DS = GetWindowLongPtrW( hwnd, GWLP_HINSTANCE );
         while (LocalUnlock16(hloc16)) ;
         LocalFree16(hloc16);
-        stack16->ds = oldDS;
+        CURRENT_DS = oldDS;
         SetWindowWord( hwnd, GWW_HANDLE16, 0 );
     }
 }
@@ -2651,17 +2625,15 @@ HWND create_window16( CREATESTRUCTW *cs, LPCWSTR className, HINSTANCE instance, 
 }
 
 
-/***********************************************************************
- *           free_icon_param
- */
-static void free_icon_param( ULONG_PTR param )
+static void WINAPI User16CallFreeIcon( ULONG *param, ULONG size )
 {
-    GlobalFree16( LOWORD(param) );
+    GlobalFree16( LOWORD(*param) );
 }
 
 
 void register_wow_handlers(void)
 {
+    void **callback_table = NtCurrentTeb()->Peb->KernelCallbackTable;
     static const struct wow_handlers16 handlers16 =
     {
         button_proc16,
@@ -2675,8 +2647,9 @@ void register_wow_handlers(void)
         create_window16,
         call_window_proc_Ato16,
         call_dialog_proc_Ato16,
-        free_icon_param
     };
+
+    callback_table[NtUserCallFreeIcon] = User16CallFreeIcon;
 
     UserRegisterWowHandlers( &handlers16, &wow_handlers32 );
 }

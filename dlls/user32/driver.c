@@ -20,90 +20,26 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include "windef.h"
-#include "winbase.h"
-#include "wingdi.h"
-#include "winuser.h"
-#include "wine/debug.h"
-#include "wine/gdi_driver.h"
-#include "wine/unicode.h"
+#include <wchar.h>
 
 #include "user_private.h"
+#include "winnls.h"
+#include "wine/debug.h"
 #include "controls.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(user);
-WINE_DECLARE_DEBUG_CHANNEL(winediag);
 
-static USER_DRIVER null_driver, lazy_load_driver;
+static struct user_driver_funcs null_driver, lazy_load_driver;
 
-const USER_DRIVER *USER_Driver = &lazy_load_driver;
-static char driver_load_error[80];
-
-static BOOL CDECL nodrv_CreateWindow( HWND hwnd );
-
-static BOOL load_desktop_driver( HWND hwnd, HMODULE *module )
-{
-    static const WCHAR display_device_guid_propW[] = {
-        '_','_','w','i','n','e','_','d','i','s','p','l','a','y','_',
-        'd','e','v','i','c','e','_','g','u','i','d',0 };
-    static const WCHAR key_pathW[] = {
-        'S','y','s','t','e','m','\\',
-        'C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t','\\',
-        'C','o','n','t','r','o','l','\\',
-        'V','i','d','e','o','\\','{',0};
-    static const WCHAR displayW[] = {'}','\\','0','0','0','0',0};
-    static const WCHAR driverW[] = {'G','r','a','p','h','i','c','s','D','r','i','v','e','r',0};
-    static const WCHAR nullW[] = {'n','u','l','l',0};
-    BOOL ret = FALSE;
-    HKEY hkey;
-    DWORD size;
-    WCHAR path[MAX_PATH];
-    WCHAR key[ARRAY_SIZE(key_pathW) + ARRAY_SIZE(displayW) + 40];
-    UINT guid_atom = HandleToULong( GetPropW( hwnd, display_device_guid_propW ));
-
-    USER_CheckNotLock();
-
-    strcpy( driver_load_error, "The explorer process failed to start." );  /* default error */
-
-    if (!guid_atom)
-    {
-        SendMessageW( hwnd, WM_NULL, 0, 0 );  /* wait for the desktop process to be ready */
-        guid_atom = HandleToULong( GetPropW( hwnd, display_device_guid_propW ));
-    }
-    memcpy( key, key_pathW, sizeof(key_pathW) );
-    if (!GlobalGetAtomNameW( guid_atom, key + strlenW(key), 40 )) return 0;
-    strcatW( key, displayW );
-    if (RegOpenKeyW( HKEY_LOCAL_MACHINE, key, &hkey )) return 0;
-    size = sizeof(path);
-    if (!RegQueryValueExW( hkey, driverW, NULL, NULL, (BYTE *)path, &size ))
-    {
-        if ((ret = !strcmpW( path, nullW ))) *module = NULL;
-        else ret = (*module = LoadLibraryW( path )) != NULL;
-        if (!ret) ERR( "failed to load %s\n", debugstr_w(path) );
-        TRACE( "%s %p\n", debugstr_w(path), *module );
-    }
-    else
-    {
-        size = sizeof(driver_load_error);
-        *module = NULL;
-        RegQueryValueExA( hkey, "DriverError", NULL, NULL, (BYTE *)driver_load_error, &size );
-    }
-    RegCloseKey( hkey );
-    return ret;
-}
+const struct user_driver_funcs *USER_Driver = &lazy_load_driver;
 
 /* load the graphics driver */
-static const USER_DRIVER *load_driver(void)
+static const struct user_driver_funcs *load_driver(void)
 {
-    void *ptr;
-    HMODULE graphics_driver;
-    USER_DRIVER *driver, *prev;
-
-    driver = HeapAlloc( GetProcessHeap(), 0, sizeof(*driver) );
-    *driver = null_driver;
-
-    if (!load_desktop_driver( GetDesktopWindow(), &graphics_driver ))
+    wait_graphics_driver_ready();
+    if (USER_Driver == &lazy_load_driver)
     {
+<<<<<<< HEAD
         USEROBJECTFLAGS flags;
         HWINSTA winstation;
 
@@ -167,27 +103,21 @@ static const USER_DRIVER *load_driver(void)
         GET_USER_FUNC(UpdateCandidatePos);
         GET_USER_FUNC(ThreadDetach);
 #undef GET_USER_FUNC
+=======
+        static struct user_driver_funcs empty_funcs;
+        WARN( "failed to load the display driver, falling back to null driver\n" );
+        __wine_set_user_driver( &empty_funcs, WINE_GDI_DRIVER_VERSION );
+>>>>>>> github-desktop-wine-mirror/master
     }
 
-    prev = InterlockedCompareExchangePointer( (void **)&USER_Driver, driver, &lazy_load_driver );
-    if (prev != &lazy_load_driver)
-    {
-        /* another thread beat us to it */
-        HeapFree( GetProcessHeap(), 0, driver );
-        driver = prev;
-    }
-    else LdrAddRefDll( 0, graphics_driver );
-
-    __wine_set_display_driver( graphics_driver );
-    register_builtin_classes();
-
-    return driver;
+    return USER_Driver;
 }
 
 /* unload the graphics driver on process exit */
 void USER_unload_driver(void)
 {
-    USER_DRIVER *prev;
+    struct user_driver_funcs *prev;
+    __wine_set_display_driver( &null_driver, WINE_GDI_DRIVER_VERSION );
     /* make sure we don't try to call the driver after it has been detached */
     prev = InterlockedExchangePointer( (void **)&USER_Driver, &null_driver );
     if (prev != &lazy_load_driver && prev != &null_driver)
@@ -201,6 +131,7 @@ void USER_unload_driver(void)
  * These are fallbacks for entry points that are not implemented in the real driver.
  */
 
+<<<<<<< HEAD
 static HKL CDECL nulldrv_ActivateKeyboardLayout( HKL layout, UINT flags )
 {
     return 0;
@@ -304,75 +235,26 @@ static BOOL CDECL nulldrv_GetCursorPos( LPPOINT pt )
     return FALSE;
 }
 
+=======
+>>>>>>> github-desktop-wine-mirror/master
 static BOOL CDECL nulldrv_SetCursorPos( INT x, INT y )
 {
-    return FALSE;
-}
-
-static BOOL CDECL nulldrv_ClipCursor( LPCRECT clip )
-{
-    return FALSE;
+    return TRUE;
 }
 
 static void CDECL nulldrv_UpdateClipboard(void)
 {
 }
 
-static LONG CDECL nulldrv_ChangeDisplaySettingsEx( LPCWSTR name, LPDEVMODEW mode, HWND hwnd,
-                                             DWORD flags, LPVOID lparam )
-{
-    return DISP_CHANGE_FAILED;
-}
-
-static BOOL CDECL nulldrv_EnumDisplaySettingsEx( LPCWSTR name, DWORD num, LPDEVMODEW mode, DWORD flags )
-{
-    return FALSE;
-}
-
-static BOOL CDECL nulldrv_CreateDesktopWindow( HWND hwnd )
-{
-    return TRUE;
-}
-
-static BOOL CDECL nodrv_CreateWindow( HWND hwnd )
-{
-    static int warned;
-    HWND parent = GetAncestor( hwnd, GA_PARENT );
-
-    /* HWND_MESSAGE windows don't need a graphics driver */
-    if (!parent || parent == get_user_thread_info()->msg_window) return TRUE;
-    if (warned++) return FALSE;
-
-    ERR_(winediag)( "Application tried to create a window, but no driver could be loaded.\n" );
-    if (driver_load_error[0]) ERR_(winediag)( "%s\n", driver_load_error );
-    return FALSE;
-}
-
-static BOOL CDECL nulldrv_CreateWindow( HWND hwnd )
-{
-    return TRUE;
-}
-
-static void CDECL nulldrv_DestroyWindow( HWND hwnd )
-{
-}
-
-static void CDECL nulldrv_FlashWindowEx( FLASHWINFO *info )
-{
-}
-
-static void CDECL nulldrv_GetDC( HDC hdc, HWND hwnd, HWND top_win, const RECT *win_rect,
-                                 const RECT *top_rect, DWORD flags )
-{
-}
-
 static DWORD CDECL nulldrv_MsgWaitForMultipleObjectsEx( DWORD count, const HANDLE *handles, DWORD timeout,
                                                         DWORD mask, DWORD flags )
 {
+    if (!count && !timeout) return WAIT_TIMEOUT;
     return WaitForMultipleObjectsEx( count, handles, flags & MWMO_WAITALL,
                                      timeout, flags & MWMO_ALERTABLE );
 }
 
+<<<<<<< HEAD
 static void CDECL nulldrv_ReleaseDC( HWND hwnd, HDC hdc )
 {
 }
@@ -410,11 +292,9 @@ static void CDECL nulldrv_SetWindowRgn( HWND hwnd, HRGN hrgn, BOOL redraw )
 {
 }
 
+=======
+>>>>>>> github-desktop-wine-mirror/master
 static void CDECL nulldrv_SetWindowIcon( HWND hwnd, UINT type, HICON icon )
-{
-}
-
-static void CDECL nulldrv_SetWindowStyle( HWND hwnd, INT offset, STYLESTRUCT *style )
 {
 }
 
@@ -422,16 +302,12 @@ static void CDECL nulldrv_SetWindowText( HWND hwnd, LPCWSTR text )
 {
 }
 
-static UINT CDECL nulldrv_ShowWindow( HWND hwnd, INT cmd, RECT *rect, UINT swp )
-{
-    return swp;
-}
-
 static LRESULT CDECL nulldrv_SysCommand( HWND hwnd, WPARAM wparam, LPARAM lparam )
 {
     return -1;
 }
 
+<<<<<<< HEAD
 static BOOL CDECL nulldrv_UpdateLayeredWindow( HWND hwnd, const UPDATELAYEREDWINDOWINFO *info,
                                                const RECT *window_rect )
 {
@@ -530,6 +406,8 @@ static USER_DRIVER null_driver =
     nulldrv_ThreadDetach
 };
 
+=======
+>>>>>>> github-desktop-wine-mirror/master
 
 /**********************************************************************
  * Lazy loading user driver
@@ -538,90 +416,9 @@ static USER_DRIVER null_driver =
  * Each entry point simply loads the real driver and chains to it.
  */
 
-static HKL CDECL loaderdrv_ActivateKeyboardLayout( HKL layout, UINT flags )
-{
-    return load_driver()->pActivateKeyboardLayout( layout, flags );
-}
-
-static void CDECL loaderdrv_Beep(void)
-{
-    load_driver()->pBeep();
-}
-
-static INT CDECL loaderdrv_GetKeyNameText( LONG lparam, LPWSTR buffer, INT size )
-{
-    return load_driver()->pGetKeyNameText( lparam, buffer, size );
-}
-
-static HKL CDECL loaderdrv_GetKeyboardLayout( DWORD thread_id )
-{
-    return load_driver()->pGetKeyboardLayout( thread_id );
-}
-
-static UINT CDECL loaderdrv_GetKeyboardLayoutList( INT size, HKL *layouts )
-{
-    return load_driver()->pGetKeyboardLayoutList( size, layouts );
-}
-
-static BOOL CDECL loaderdrv_GetKeyboardLayoutName( LPWSTR name )
-{
-    return load_driver()->pGetKeyboardLayoutName( name );
-}
-
-static HKL CDECL loaderdrv_LoadKeyboardLayout( LPCWSTR name, UINT flags )
-{
-    return load_driver()->pLoadKeyboardLayout( name, flags );
-}
-
-static UINT CDECL loaderdrv_MapVirtualKeyEx( UINT code, UINT type, HKL layout )
-{
-    return load_driver()->pMapVirtualKeyEx( code, type, layout );
-}
-
-static BOOL CDECL loaderdrv_RegisterHotKey( HWND hwnd, UINT modifiers, UINT vk )
-{
-    return load_driver()->pRegisterHotKey( hwnd, modifiers, vk );
-}
-
-static INT CDECL loaderdrv_ToUnicodeEx( UINT virt, UINT scan, const BYTE *state, LPWSTR str,
-                                  int size, UINT flags, HKL layout )
-{
-    return load_driver()->pToUnicodeEx( virt, scan, state, str, size, flags, layout );
-}
-
-static BOOL CDECL loaderdrv_UnloadKeyboardLayout( HKL layout )
-{
-    return load_driver()->pUnloadKeyboardLayout( layout );
-}
-
-static void CDECL loaderdrv_UnregisterHotKey( HWND hwnd, UINT modifiers, UINT vk )
-{
-    load_driver()->pUnregisterHotKey( hwnd, modifiers, vk );
-}
-
-static SHORT CDECL loaderdrv_VkKeyScanEx( WCHAR ch, HKL layout )
-{
-    return load_driver()->pVkKeyScanEx( ch, layout );
-}
-
-static void CDECL loaderdrv_SetCursor( HCURSOR cursor )
-{
-    load_driver()->pSetCursor( cursor );
-}
-
-static BOOL CDECL loaderdrv_GetCursorPos( LPPOINT pt )
-{
-    return load_driver()->pGetCursorPos( pt );
-}
-
 static BOOL CDECL loaderdrv_SetCursorPos( INT x, INT y )
 {
     return load_driver()->pSetCursorPos( x, y );
-}
-
-static BOOL CDECL loaderdrv_ClipCursor( LPCRECT clip )
-{
-    return load_driver()->pClipCursor( clip );
 }
 
 static void CDECL loaderdrv_UpdateClipboard(void)
@@ -629,6 +426,7 @@ static void CDECL loaderdrv_UpdateClipboard(void)
     load_driver()->pUpdateClipboard();
 }
 
+<<<<<<< HEAD
 static LONG CDECL loaderdrv_ChangeDisplaySettingsEx( LPCWSTR name, LPDEVMODEW mode, HWND hwnd,
                                                      DWORD flags, LPVOID lparam )
 {
@@ -693,41 +491,41 @@ static void CDECL loaderdrv_UpdateCandidatePos( HWND hwnd, const RECT *caret_rec
 }
 
 static USER_DRIVER lazy_load_driver =
+=======
+static struct user_driver_funcs lazy_load_driver =
+>>>>>>> github-desktop-wine-mirror/master
 {
+    { NULL },
     /* keyboard functions */
-    loaderdrv_ActivateKeyboardLayout,
-    loaderdrv_Beep,
-    loaderdrv_GetKeyNameText,
-    loaderdrv_GetKeyboardLayout,
-    loaderdrv_GetKeyboardLayoutList,
-    loaderdrv_GetKeyboardLayoutName,
-    loaderdrv_LoadKeyboardLayout,
-    loaderdrv_MapVirtualKeyEx,
-    loaderdrv_RegisterHotKey,
-    loaderdrv_ToUnicodeEx,
-    loaderdrv_UnloadKeyboardLayout,
-    loaderdrv_UnregisterHotKey,
-    loaderdrv_VkKeyScanEx,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
     /* cursor/icon functions */
-    nulldrv_DestroyCursorIcon,
-    loaderdrv_SetCursor,
-    loaderdrv_GetCursorPos,
+    NULL,
+    NULL,
+    NULL,
     loaderdrv_SetCursorPos,
-    loaderdrv_ClipCursor,
+    NULL,
     /* clipboard functions */
     loaderdrv_UpdateClipboard,
     /* display modes */
-    loaderdrv_ChangeDisplaySettingsEx,
-    loaderdrv_EnumDisplayMonitors,
-    loaderdrv_EnumDisplaySettingsEx,
-    loaderdrv_GetMonitorInfo,
+    NULL,
+    NULL,
+    NULL,
     /* windowing functions */
-    loaderdrv_CreateDesktopWindow,
-    loaderdrv_CreateWindow,
-    nulldrv_DestroyWindow,
-    loaderdrv_FlashWindowEx,
-    loaderdrv_GetDC,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
     nulldrv_MsgWaitForMultipleObjectsEx,
+<<<<<<< HEAD
     nulldrv_ReleaseDC,
     nulldrv_ScrollDC,
     nulldrv_SetActiveWindow,
@@ -736,19 +534,71 @@ static USER_DRIVER lazy_load_driver =
     loaderdrv_SetLayeredWindowAttributes,
     nulldrv_SetParent,
     loaderdrv_SetWindowRgn,
+=======
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+>>>>>>> github-desktop-wine-mirror/master
     nulldrv_SetWindowIcon,
-    nulldrv_SetWindowStyle,
+    NULL,
     nulldrv_SetWindowText,
-    nulldrv_ShowWindow,
+    NULL,
     nulldrv_SysCommand,
-    loaderdrv_UpdateLayeredWindow,
-    nulldrv_WindowMessage,
-    nulldrv_WindowPosChanging,
-    nulldrv_WindowPosChanged,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
     /* system parameters */
+<<<<<<< HEAD
     nulldrv_SystemParametersInfo,
     /* candidate pos functions */
     loaderdrv_UpdateCandidatePos,
+=======
+    NULL,
+    /* vulkan support */
+    NULL,
+    /* opengl support */
+    NULL,
+>>>>>>> github-desktop-wine-mirror/master
     /* thread management */
-    nulldrv_ThreadDetach
+    NULL,
 };
+
+void CDECL __wine_set_user_driver( const struct user_driver_funcs *funcs, UINT version )
+{
+    struct user_driver_funcs *driver, *prev;
+
+    if (version != WINE_GDI_DRIVER_VERSION)
+    {
+        ERR( "version mismatch, driver wants %u but user32 has %u\n", version, WINE_GDI_DRIVER_VERSION );
+        return;
+    }
+
+    driver = HeapAlloc( GetProcessHeap(), 0, sizeof(*driver) );
+    *driver = *funcs;
+
+#define SET_USER_FUNC(name) \
+    do { if (!driver->p##name) driver->p##name = nulldrv_##name; } while(0)
+
+    SET_USER_FUNC(SetCursorPos);
+    SET_USER_FUNC(UpdateClipboard);
+    SET_USER_FUNC(MsgWaitForMultipleObjectsEx);
+    SET_USER_FUNC(SetWindowIcon);
+    SET_USER_FUNC(SetWindowText);
+    SET_USER_FUNC(SysCommand);
+#undef SET_USER_FUNC
+
+    prev = InterlockedCompareExchangePointer( (void **)&USER_Driver, driver, &lazy_load_driver );
+    if (prev != &lazy_load_driver)
+    {
+        /* another thread beat us to it */
+        HeapFree( GetProcessHeap(), 0, driver );
+        driver = prev;
+    }
+
+    __wine_set_display_driver( driver, version );
+}

@@ -22,8 +22,8 @@
 
 #include "config.h"
 
-#include "macdrv.h"
 #define OEMRESOURCE
+#include "macdrv.h"
 #include "winuser.h"
 #include "winreg.h"
 #include "wine/server.h"
@@ -165,7 +165,11 @@ static void send_mouse_input(HWND hwnd, macdrv_window cocoa_window, UINT flags, 
     input.mi.time           = time;
     input.mi.dwExtraInfo    = 0;
 
+<<<<<<< HEAD
     __wine_send_input(top_level_hwnd, &input, SEND_HWMSG_RAWINPUT|SEND_HWMSG_WINDOW);
+=======
+    __wine_send_input(top_level_hwnd, &input, NULL);
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 

@@ -364,15 +364,20 @@ BOOL NE_LoadSegment( NE_MODULE *pModule, WORD segnum )
     {
  	/* Implement self-loading segments */
  	SELFLOADHEADER *selfloadheader;
-        void *oldstack;
+        WORD old_ss = CURRENT_SS, old_sp = CURRENT_SP;
         HFILE16 hFile16;
         WORD args[3];
         DWORD ret;
 
  	selfloadheader = MapSL( MAKESEGPTR(SEL(pSegTable->hSeg),0) );
+<<<<<<< HEAD
         oldstack = NtCurrentTeb()->SystemReserved1[0];
         NtCurrentTeb()->SystemReserved1[0] = (void *)MAKESEGPTR(pModule->self_loading_sel,
                                                                 0xff00 - sizeof(STACK16FRAME));
+=======
+        CURRENT_SS = pModule->self_loading_sel;
+        CURRENT_SP = 0xff00 - sizeof(STACK16FRAME);
+>>>>>>> github-desktop-wine-mirror/master
 
         hFile16 = NE_OpenFile( pModule );
         TRACE_(dll)("Call LoadAppSegProc(hmodule=0x%04x,hf=%x,segnum=%d)\n",
@@ -384,7 +389,12 @@ BOOL NE_LoadSegment( NE_MODULE *pModule, WORD segnum )
         pSeg->hSeg = LOWORD(ret);
         TRACE_(dll)("Ret LoadAppSegProc: hSeg=0x%04x\n", pSeg->hSeg);
         _lclose16( hFile16 );
+<<<<<<< HEAD
         NtCurrentTeb()->SystemReserved1[0] = oldstack;
+=======
+        CURRENT_SS = old_ss;
+        CURRENT_SP = old_sp;
+>>>>>>> github-desktop-wine-mirror/master
 
         pSeg->flags |= NE_SEGFLAGS_LOADED;
         return TRUE;
@@ -462,7 +472,7 @@ BOOL NE_LoadAllSegments( NE_MODULE *pModule )
         /* Handle self-loading modules */
         SELFLOADHEADER *selfloadheader;
         HMODULE16 mod = GetModuleHandle16("KERNEL");
-        void *oldstack;
+        WORD old_ss = CURRENT_SS, old_sp = CURRENT_SP;
         WORD args[2];
 
         TRACE_(module)("%.*s is a self-loading module!\n",
@@ -476,9 +486,14 @@ BOOL NE_LoadAllSegments( NE_MODULE *pModule )
         sel = GlobalAlloc16( GMEM_ZEROINIT, 0xFF00 );
         pModule->self_loading_sel = SEL(sel);
         FarSetOwner16( sel, pModule->self );
+<<<<<<< HEAD
         oldstack = NtCurrentTeb()->SystemReserved1[0];
         NtCurrentTeb()->SystemReserved1[0] = (void *)MAKESEGPTR(pModule->self_loading_sel,
                                                                 0xff00 - sizeof(STACK16FRAME) );
+=======
+        CURRENT_SS = pModule->self_loading_sel;
+        CURRENT_SP = 0xff00 - sizeof(STACK16FRAME);
+>>>>>>> github-desktop-wine-mirror/master
 
         hFile16 = NE_OpenFile(pModule);
         TRACE_(dll)("CallBootAppProc(hModule=0x%04x,hf=0x%04x)\n",
@@ -488,7 +503,12 @@ BOOL NE_LoadAllSegments( NE_MODULE *pModule )
         WOWCallback16Ex( (DWORD)selfloadheader->BootApp, WCB16_PASCAL, sizeof(args), args, NULL );
 	TRACE_(dll)("Return from CallBootAppProc\n");
         _lclose16(hFile16);
+<<<<<<< HEAD
         NtCurrentTeb()->SystemReserved1[0] = oldstack;
+=======
+        CURRENT_SS = old_ss;
+        CURRENT_SP = old_sp;
+>>>>>>> github-desktop-wine-mirror/master
 
         for (i = 2; i <= pModule->ne_cseg; i++)
             if (!NE_LoadSegment( pModule, i )) return FALSE;
@@ -543,7 +563,7 @@ static void NE_FixupSegmentPrologs(NE_MODULE *pModule, WORD segnum)
             if (entry->segnum == segnum)
             {
                 pFunc = pSeg+entry->offs;
-                TRACE("pFunc: %p, *(DWORD *)pFunc: %08x, num_entries: %d\n", pFunc, *(DWORD *)pFunc, num_entries);
+                TRACE("pFunc: %p, *(DWORD *)pFunc: %08lx, num_entries: %d\n", pFunc, *(DWORD *)pFunc, num_entries);
                 if (*(pFunc+2) == 0x90)
                 {
                     if (*(WORD *)pFunc == 0x581e) /* push ds, pop ax */
@@ -680,10 +700,14 @@ static BOOL NE_InitDLL( NE_MODULE *pModule )
     context.SegEs = ds;   /* who knows ... */
     context.SegCs = SEL(pSegTable[SELECTOROF(pModule->ne_csip)-1].hSeg);
     context.Eip   = OFFSETOF(pModule->ne_csip);
+<<<<<<< HEAD
     context.Ebp   = OFFSETOF(NtCurrentTeb()->SystemReserved1[0]) + FIELD_OFFSET(STACK16FRAME,bp);
+=======
+    context.Ebp   = CURRENT_SP + FIELD_OFFSET(STACK16FRAME,bp);
+>>>>>>> github-desktop-wine-mirror/master
 
     pModule->ne_csip = 0;  /* Don't initialize it twice */
-    TRACE_(dll)("Calling LibMain for %.*s, cs:ip=%04x:%04x ds=%04x di=%04x cx=%04x\n",
+    TRACE_(dll)("Calling LibMain for %.*s, cs:ip=%04lx:%04lx ds=%04lx di=%04x cx=%04x\n",
                 *((BYTE*)pModule + pModule->ne_restab),
                 (char *)pModule + pModule->ne_restab + 1,
                 context.SegCs, context.Eip, context.SegDs,
@@ -782,7 +806,11 @@ static void NE_CallDllEntryPoint( NE_MODULE *pModule, DWORD dwReason )
         context.SegEs = ds;   /* who knows ... */
         context.SegCs = HIWORD(entryPoint);
         context.Eip   = LOWORD(entryPoint);
+<<<<<<< HEAD
         context.Ebp   = OFFSETOF(NtCurrentTeb()->SystemReserved1[0]) + FIELD_OFFSET(STACK16FRAME,bp);
+=======
+        context.Ebp   = CURRENT_SP + FIELD_OFFSET(STACK16FRAME,bp);
+>>>>>>> github-desktop-wine-mirror/master
 
         args[7] = HIWORD(dwReason);
         args[6] = LOWORD(dwReason);

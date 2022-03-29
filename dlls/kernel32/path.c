@@ -21,9 +21,6 @@
  *
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <errno.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -33,28 +30,19 @@
 #define WIN32_NO_STATUS
 #include "windef.h"
 #include "winbase.h"
+#include "winnls.h"
 #include "winternl.h"
 #include "winioctl.h"
 #include "ntifs.h"
 
 #include "kernel_private.h"
-#include "wine/unicode.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(file);
 
 #define MAX_PATHNAME_LEN        1024
 
-/* check if a file name is for an executable file (.exe or .com) */
-static inline BOOL is_executable( const WCHAR *name )
-{
-    static const WCHAR exeW[] = {'.','e','x','e',0};
-    static const WCHAR comW[] = {'.','c','o','m',0};
-    int len = strlenW(name);
-
-    if (len < 4) return FALSE;
-    return (!strcmpiW( name + len - 4, exeW ) || !strcmpiW( name + len - 4, comW ));
-}
+static const WCHAR system_dir[] = L"C:\\windows\\system32";
 
 /***********************************************************************
  *           copy_filename_WtoA
@@ -86,153 +74,6 @@ static DWORD copy_filename_WtoA( LPCWSTR nameW, LPSTR buffer, DWORD len )
 }
 
 /***********************************************************************
- *           add_boot_rename_entry
- *
- * Adds an entry to the registry that is loaded when windows boots and
- * checks if there are some files to be removed or renamed/moved.
- * <fn1> has to be valid and <fn2> may be NULL. If both pointers are
- * non-NULL then the file is moved, otherwise it is deleted.  The
- * entry of the registry key is always appended with two zero
- * terminated strings. If <fn2> is NULL then the second entry is
- * simply a single 0-byte. Otherwise the second filename goes
- * there. The entries are prepended with \??\ before the path and the
- * second filename gets also a '!' as the first character if
- * MOVEFILE_REPLACE_EXISTING is set. After the final string another
- * 0-byte follows to indicate the end of the strings.
- * i.e.:
- * \??\D:\test\file1[0]
- * !\??\D:\test\file1_renamed[0]
- * \??\D:\Test|delete[0]
- * [0]                        <- file is to be deleted, second string empty
- * \??\D:\test\file2[0]
- * !\??\D:\test\file2_renamed[0]
- * [0]                        <- indicates end of strings
- *
- * or:
- * \??\D:\test\file1[0]
- * !\??\D:\test\file1_renamed[0]
- * \??\D:\Test|delete[0]
- * [0]                        <- file is to be deleted, second string empty
- * [0]                        <- indicates end of strings
- *
- */
-static BOOL add_boot_rename_entry( LPCWSTR source, LPCWSTR dest, DWORD flags )
-{
-    static const WCHAR ValueName[] = {'P','e','n','d','i','n','g',
-                                      'F','i','l','e','R','e','n','a','m','e',
-                                      'O','p','e','r','a','t','i','o','n','s',0};
-    static const WCHAR SessionW[] = {'\\','R','e','g','i','s','t','r','y','\\',
-                                     'M','a','c','h','i','n','e','\\',
-                                     'S','y','s','t','e','m','\\',
-                                     'C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t','\\',
-                                     'C','o','n','t','r','o','l','\\',
-                                     'S','e','s','s','i','o','n',' ','M','a','n','a','g','e','r',0};
-    static const int info_size = FIELD_OFFSET( KEY_VALUE_PARTIAL_INFORMATION, Data );
-
-    OBJECT_ATTRIBUTES attr;
-    UNICODE_STRING nameW, source_name, dest_name;
-    KEY_VALUE_PARTIAL_INFORMATION *info;
-    BOOL rc = FALSE;
-    HANDLE Reboot = 0;
-    DWORD len1, len2;
-    DWORD DataSize = 0;
-    BYTE *Buffer = NULL;
-    WCHAR *p;
-
-    if (!RtlDosPathNameToNtPathName_U( source, &source_name, NULL, NULL ))
-    {
-        SetLastError( ERROR_PATH_NOT_FOUND );
-        return FALSE;
-    }
-    dest_name.Buffer = NULL;
-    if (dest && !RtlDosPathNameToNtPathName_U( dest, &dest_name, NULL, NULL ))
-    {
-        RtlFreeUnicodeString( &source_name );
-        SetLastError( ERROR_PATH_NOT_FOUND );
-        return FALSE;
-    }
-
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.ObjectName = &nameW;
-    attr.Attributes = 0;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-    RtlInitUnicodeString( &nameW, SessionW );
-
-    if (NtCreateKey( &Reboot, KEY_ALL_ACCESS, &attr, 0, NULL, 0, NULL ) != STATUS_SUCCESS)
-    {
-        WARN("Error creating key for reboot management [%s]\n",
-             "SYSTEM\\CurrentControlSet\\Control\\Session Manager");
-        RtlFreeUnicodeString( &source_name );
-        RtlFreeUnicodeString( &dest_name );
-        return FALSE;
-    }
-
-    len1 = source_name.Length + sizeof(WCHAR);
-    if (dest)
-    {
-        len2 = dest_name.Length + sizeof(WCHAR);
-        if (flags & MOVEFILE_REPLACE_EXISTING)
-            len2 += sizeof(WCHAR); /* Plus 1 because of the leading '!' */
-    }
-    else len2 = sizeof(WCHAR); /* minimum is the 0 characters for the empty second string */
-
-    RtlInitUnicodeString( &nameW, ValueName );
-
-    /* First we check if the key exists and if so how many bytes it already contains. */
-    if (NtQueryValueKey( Reboot, &nameW, KeyValuePartialInformation,
-                         NULL, 0, &DataSize ) == STATUS_BUFFER_TOO_SMALL)
-    {
-        if (!(Buffer = HeapAlloc( GetProcessHeap(), 0, DataSize + len1 + len2 + sizeof(WCHAR) )))
-            goto Quit;
-        if (NtQueryValueKey( Reboot, &nameW, KeyValuePartialInformation,
-                             Buffer, DataSize, &DataSize )) goto Quit;
-        info = (KEY_VALUE_PARTIAL_INFORMATION *)Buffer;
-        if (info->Type != REG_MULTI_SZ) goto Quit;
-        if (DataSize > sizeof(info)) DataSize -= sizeof(WCHAR);  /* remove terminating null (will be added back later) */
-    }
-    else
-    {
-        DataSize = info_size;
-        if (!(Buffer = HeapAlloc( GetProcessHeap(), 0, DataSize + len1 + len2 + sizeof(WCHAR) )))
-            goto Quit;
-    }
-
-    memcpy( Buffer + DataSize, source_name.Buffer, len1 );
-    DataSize += len1;
-    p = (WCHAR *)(Buffer + DataSize);
-    if (dest)
-    {
-        if (flags & MOVEFILE_REPLACE_EXISTING)
-            *p++ = '!';
-        memcpy( p, dest_name.Buffer, len2 );
-        DataSize += len2;
-    }
-    else
-    {
-        *p = 0;
-        DataSize += sizeof(WCHAR);
-    }
-
-    /* add final null */
-    p = (WCHAR *)(Buffer + DataSize);
-    *p = 0;
-    DataSize += sizeof(WCHAR);
-
-    rc = !NtSetValueKey(Reboot, &nameW, 0, REG_MULTI_SZ, Buffer + info_size, DataSize - info_size);
-
- Quit:
-    RtlFreeUnicodeString( &source_name );
-    RtlFreeUnicodeString( &dest_name );
-    if (Reboot) NtClose(Reboot);
-    HeapFree( GetProcessHeap(), 0, Buffer );
-    return(rc);
-}
-
-
-
-/***********************************************************************
  *           GetShortPathNameA   (KERNEL32.@)
  */
 DWORD WINAPI GetShortPathNameA( LPCSTR longpath, LPSTR shortpath, DWORD shortlen )
@@ -257,35 +98,6 @@ DWORD WINAPI GetShortPathNameA( LPCSTR longpath, LPSTR shortpath, DWORD shortlen
 }
 
 
-static BOOL is_same_file(HANDLE h1, HANDLE h2)
-{
-    int fd1;
-    BOOL ret = FALSE;
-    if (wine_server_handle_to_fd(h1, 0, &fd1, NULL) == STATUS_SUCCESS)
-    {
-        int fd2;
-        if (wine_server_handle_to_fd(h2, 0, &fd2, NULL) == STATUS_SUCCESS)
-        {
-            struct stat stat1, stat2;
-            if (fstat(fd1, &stat1) == 0 && fstat(fd2, &stat2) == 0)
-                ret = (stat1.st_dev == stat2.st_dev && stat1.st_ino == stat2.st_ino);
-            wine_server_release_fd(h2, fd2);
-        }
-        wine_server_release_fd(h1, fd1);
-    }
-    return ret;
-}
-
-/**************************************************************************
- *           CopyFileW   (KERNEL32.@)
- */
-BOOL WINAPI CopyFileW( LPCWSTR source, LPCWSTR dest, BOOL fail_if_exists )
-{
-    return CopyFileExW( source, dest, NULL, NULL, NULL,
-                        fail_if_exists ? COPY_FILE_FAIL_IF_EXISTS : 0 );
-}
-
-
 /**************************************************************************
  *           CopyFileA   (KERNEL32.@)
  */
@@ -305,6 +117,7 @@ BOOL WINAPI CopyFileA( LPCSTR source, LPCSTR dest, BOOL fail_if_exists)
 
 
 /**************************************************************************
+<<<<<<< HEAD
  *           CopyFileExW   (KERNEL32.@)
  */
 BOOL WINAPI CopyFileExW(LPCWSTR source, LPCWSTR dest,
@@ -458,6 +271,8 @@ done:
 
 
 /**************************************************************************
+=======
+>>>>>>> github-desktop-wine-mirror/master
  *           CopyFileExA   (KERNEL32.@)
  */
 BOOL WINAPI CopyFileExA(LPCSTR sourceFilename, LPCSTR destFilename,
@@ -486,7 +301,7 @@ BOOL WINAPI CopyFileExA(LPCSTR sourceFilename, LPCSTR destFilename,
  */
 BOOL WINAPI MoveFileTransactedA(const char *source, const char *dest, LPPROGRESS_ROUTINE progress, void *data, DWORD flags, HANDLE handle)
 {
-    FIXME("(%s, %s, %p, %p, %d, %p)\n", debugstr_a(source), debugstr_a(dest), progress, data, flags, handle);
+    FIXME("(%s, %s, %p, %p, %ld, %p)\n", debugstr_a(source), debugstr_a(dest), progress, data, flags, handle);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }
@@ -496,96 +311,8 @@ BOOL WINAPI MoveFileTransactedA(const char *source, const char *dest, LPPROGRESS
  */
 BOOL WINAPI MoveFileTransactedW(const WCHAR *source, const WCHAR *dest, LPPROGRESS_ROUTINE progress, void *data, DWORD flags, HANDLE handle)
 {
-    FIXME("(%s, %s, %p, %p, %d, %p)\n", debugstr_w(source), debugstr_w(dest), progress, data, flags, handle);
+    FIXME("(%s, %s, %p, %p, %ld, %p)\n", debugstr_w(source), debugstr_w(dest), progress, data, flags, handle);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return FALSE;
-}
-
-/**************************************************************************
- *           MoveFileWithProgressW   (KERNEL32.@)
- */
-BOOL WINAPI MoveFileWithProgressW( LPCWSTR source, LPCWSTR dest,
-                                   LPPROGRESS_ROUTINE fnProgress,
-                                   LPVOID param, DWORD flag )
-{
-    FILE_RENAME_INFORMATION *rename_info;
-    FILE_BASIC_INFORMATION info;
-    UNICODE_STRING nt_name;
-    OBJECT_ATTRIBUTES attr;
-    IO_STATUS_BLOCK io;
-    NTSTATUS status;
-    HANDLE source_handle = 0;
-    ULONG size;
-
-    TRACE("(%s,%s,%p,%p,%04x)\n",
-          debugstr_w(source), debugstr_w(dest), fnProgress, param, flag );
-
-    if (flag & MOVEFILE_DELAY_UNTIL_REBOOT)
-        return add_boot_rename_entry( source, dest, flag );
-
-    if (!dest)
-        return DeleteFileW( source );
-
-    /* check if we are allowed to rename the source */
-
-    if (!RtlDosPathNameToNtPathName_U( source, &nt_name, NULL, NULL ))
-    {
-        SetLastError( ERROR_PATH_NOT_FOUND );
-        return FALSE;
-    }
-    attr.Length = sizeof(attr);
-    attr.RootDirectory = 0;
-    attr.Attributes = OBJ_CASE_INSENSITIVE;
-    attr.ObjectName = &nt_name;
-    attr.SecurityDescriptor = NULL;
-    attr.SecurityQualityOfService = NULL;
-
-    status = NtOpenFile( &source_handle, DELETE | SYNCHRONIZE, &attr, &io,
-                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT );
-    RtlFreeUnicodeString( &nt_name );
-    if (status != STATUS_SUCCESS)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        goto error;
-    }
-    status = NtQueryInformationFile( source_handle, &io, &info, sizeof(info), FileBasicInformation );
-    if (status != STATUS_SUCCESS)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        goto error;
-    }
-
-    if (!RtlDosPathNameToNtPathName_U( dest, &nt_name, NULL, NULL ))
-    {
-        SetLastError( ERROR_PATH_NOT_FOUND );
-        goto error;
-    }
-
-    size = offsetof( FILE_RENAME_INFORMATION, FileName ) + nt_name.Length;
-    if (!(rename_info = HeapAlloc( GetProcessHeap(), 0, size )))
-        goto error;
-
-    rename_info->ReplaceIfExists = !!(flag & MOVEFILE_REPLACE_EXISTING);
-    rename_info->RootDirectory = NULL;
-    rename_info->FileNameLength = nt_name.Length;
-    memcpy( rename_info->FileName, nt_name.Buffer, nt_name.Length );
-    RtlFreeUnicodeString( &nt_name );
-    status = NtSetInformationFile( source_handle, &io, rename_info, size, FileRenameInformation );
-    if (status == STATUS_NOT_SAME_DEVICE && (flag & MOVEFILE_COPY_ALLOWED))
-    {
-        NtClose( source_handle );
-        if (!CopyFileExW( source, dest, fnProgress, param, NULL,
-                          flag & MOVEFILE_REPLACE_EXISTING ?
-                          0 : COPY_FILE_FAIL_IF_EXISTS ))
-            return FALSE;
-        return DeleteFileW( source );
-    }
-
-    NtClose( source_handle );
-    return set_ntstatus( status );
-
-error:
-    if (source_handle) NtClose( source_handle );
     return FALSE;
 }
 
@@ -610,14 +337,6 @@ BOOL WINAPI MoveFileWithProgressA( LPCSTR source, LPCSTR dest,
     ret = MoveFileWithProgressW( sourceW, destW, fnProgress, param, flag );
     HeapFree( GetProcessHeap(), 0, destW );
     return ret;
-}
-
-/**************************************************************************
- *           MoveFileExW   (KERNEL32.@)
- */
-BOOL WINAPI MoveFileExW( LPCWSTR source, LPCWSTR dest, DWORD flag )
-{
-    return MoveFileWithProgressW( source, dest, NULL, NULL, flag );
 }
 
 /**************************************************************************
@@ -649,87 +368,6 @@ BOOL WINAPI MoveFileA( LPCSTR source, LPCSTR dest )
 }
 
 
-/*************************************************************************
- *           CreateHardLinkW   (KERNEL32.@)
- */
-BOOL WINAPI CreateHardLinkW(LPCWSTR lpFileName, LPCWSTR lpExistingFileName,
-    LPSECURITY_ATTRIBUTES lpSecurityAttributes)
-{
-    UNICODE_STRING ntDest, ntSource;
-    FILE_LINK_INFORMATION *info = NULL;
-    OBJECT_ATTRIBUTES attr;
-    IO_STATUS_BLOCK io;
-    BOOL ret = FALSE;
-    HANDLE file;
-    ULONG size;
-
-    TRACE("(%s, %s, %p)\n", debugstr_w(lpFileName),
-        debugstr_w(lpExistingFileName), lpSecurityAttributes);
-
-    ntDest.Buffer = ntSource.Buffer = NULL;
-    if (!RtlDosPathNameToNtPathName_U( lpFileName, &ntDest, NULL, NULL ) ||
-        !RtlDosPathNameToNtPathName_U( lpExistingFileName, &ntSource, NULL, NULL ))
-    {
-        SetLastError( ERROR_PATH_NOT_FOUND );
-        goto err;
-    }
-
-    size = offsetof( FILE_LINK_INFORMATION, FileName ) + ntDest.Length;
-    if (!(info = HeapAlloc( GetProcessHeap(), 0, size )))
-    {
-        SetLastError( ERROR_OUTOFMEMORY );
-        goto err;
-    }
-
-    InitializeObjectAttributes( &attr, &ntSource, OBJ_CASE_INSENSITIVE, 0, NULL );
-    if (!(ret = set_ntstatus( NtOpenFile( &file, SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            FILE_SYNCHRONOUS_IO_NONALERT ) )))
-        goto err;
-
-    info->ReplaceIfExists = FALSE;
-    info->RootDirectory = NULL;
-    info->FileNameLength = ntDest.Length;
-    memcpy( info->FileName, ntDest.Buffer, ntDest.Length );
-    ret = set_ntstatus( NtSetInformationFile( file, &io, info, size, FileLinkInformation ) );
-
-    NtClose( file );
-
-err:
-    RtlFreeUnicodeString( &ntSource );
-    RtlFreeUnicodeString( &ntDest );
-    HeapFree( GetProcessHeap(), 0, info );
-    return ret;
-}
-
-
-/*************************************************************************
- *           CreateHardLinkA   (KERNEL32.@)
- */
-BOOL WINAPI CreateHardLinkA(LPCSTR lpFileName, LPCSTR lpExistingFileName,
-    LPSECURITY_ATTRIBUTES lpSecurityAttributes)
-{
-    WCHAR *sourceW, *destW;
-    BOOL res;
-
-    if (!(sourceW = FILE_name_AtoW( lpExistingFileName, TRUE )))
-    {
-        return FALSE;
-    }
-    if (!(destW = FILE_name_AtoW( lpFileName, TRUE )))
-    {
-        HeapFree( GetProcessHeap(), 0, sourceW );
-        return FALSE;
-    }
-
-    res = CreateHardLinkW( destW, sourceW, lpSecurityAttributes );
-
-    HeapFree( GetProcessHeap(), 0, sourceW );
-    HeapFree( GetProcessHeap(), 0, destW );
-
-    return res;
-}
-
-
 /***********************************************************************
  *           CreateDirectoryExA   (KERNEL32.@)
  */
@@ -748,6 +386,7 @@ BOOL WINAPI CreateDirectoryExA( LPCSTR template, LPCSTR path, LPSECURITY_ATTRIBU
 
 
 /***********************************************************************
+<<<<<<< HEAD
  *           RemoveDirectoryW   (KERNEL32.@)
  */
 BOOL WINAPI RemoveDirectoryW( LPCWSTR path )
@@ -820,16 +459,18 @@ BOOL WINAPI RemoveDirectoryA( LPCSTR path )
 
 
 /***********************************************************************
+=======
+>>>>>>> github-desktop-wine-mirror/master
  *           GetSystemDirectoryW   (KERNEL32.@)
  *
  * See comment for GetWindowsDirectoryA.
  */
 UINT WINAPI GetSystemDirectoryW( LPWSTR path, UINT count )
 {
-    UINT len = strlenW( DIR_System ) + 1;
+    UINT len = ARRAY_SIZE(system_dir);
     if (path && count >= len)
     {
-        strcpyW( path, DIR_System );
+        lstrcpyW( path, system_dir );
         len--;
     }
     return len;
@@ -843,7 +484,7 @@ UINT WINAPI GetSystemDirectoryW( LPWSTR path, UINT count )
  */
 UINT WINAPI GetSystemDirectoryA( LPSTR path, UINT count )
 {
-    return copy_filename_WtoA( DIR_System, path, count );
+    return copy_filename_WtoA( system_dir, path, count );
 }
 
 
@@ -867,18 +508,32 @@ DWORD /*BOOLEAN*/ WINAPI KERNEL32_Wow64EnableWow64FsRedirection( BOOLEAN enable 
 char * CDECL wine_get_unix_file_name( LPCWSTR dosW )
 {
     UNICODE_STRING nt_name;
-    ANSI_STRING unix_name;
+    OBJECT_ATTRIBUTES attr;
     NTSTATUS status;
+    ULONG size = 256;
+    char *buffer;
 
     if (!RtlDosPathNameToNtPathName_U( dosW, &nt_name, NULL, NULL )) return NULL;
-    status = wine_nt_to_unix_file_name( &nt_name, &unix_name, FILE_OPEN_IF, FALSE );
+    InitializeObjectAttributes( &attr, &nt_name, 0, 0, NULL );
+    for (;;)
+    {
+        if (!(buffer = HeapAlloc( GetProcessHeap(), 0, size )))
+        {
+            RtlFreeUnicodeString( &nt_name );
+            return NULL;
+        }
+        status = wine_nt_to_unix_file_name( &attr, buffer, &size, FILE_OPEN_IF );
+        if (status != STATUS_BUFFER_TOO_SMALL) break;
+        HeapFree( GetProcessHeap(), 0, buffer );
+    }
     RtlFreeUnicodeString( &nt_name );
     if (status && status != STATUS_NO_SUCH_FILE)
     {
+        HeapFree( GetProcessHeap(), 0, buffer );
         SetLastError( RtlNtStatusToDosError( status ) );
         return NULL;
     }
-    return unix_name.Buffer;
+    return buffer;
 }
 
 
@@ -891,19 +546,37 @@ char * CDECL wine_get_unix_file_name( LPCWSTR dosW )
 WCHAR * CDECL wine_get_dos_file_name( LPCSTR str )
 {
     UNICODE_STRING nt_name;
-    ANSI_STRING unix_name;
-    DWORD len;
+    NTSTATUS status;
+    WCHAR *buffer;
+    ULONG len = strlen(str) + 1;
 
-    RtlInitAnsiString( &unix_name, str );
-    if (!set_ntstatus( wine_unix_to_nt_file_name( &unix_name, &nt_name ))) return NULL;
-    if (nt_name.Buffer[5] == ':')
+    if (str[0] != '/')  /* relative path name */
+    {
+        if (!(buffer = RtlAllocateHeap( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return NULL;
+        MultiByteToWideChar( CP_UNIXCP, 0, str, len, buffer, len );
+        status = RtlDosPathNameToNtPathName_U_WithStatus( buffer, &nt_name, NULL, NULL );
+        RtlFreeHeap( GetProcessHeap(), 0, buffer );
+        if (!set_ntstatus( status )) return NULL;
+        buffer = nt_name.Buffer;
+        len = nt_name.Length / sizeof(WCHAR) + 1;
+    }
+    else
+    {
+        len += 8;  /* \??\unix prefix */
+        if (!(buffer = HeapAlloc( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return NULL;
+        if (!set_ntstatus( wine_unix_to_nt_file_name( str, buffer, &len )))
+        {
+            HeapFree( GetProcessHeap(), 0, buffer );
+            return NULL;
+        }
+    }
+    if (buffer[5] == ':')
     {
         /* get rid of the \??\ prefix */
         /* FIXME: should implement RtlNtPathNameToDosPathName and use that instead */
-        len = nt_name.Length - 4 * sizeof(WCHAR);
-        memmove( nt_name.Buffer, nt_name.Buffer + 4, len );
-        nt_name.Buffer[len / sizeof(WCHAR)] = 0;
+        memmove( buffer, buffer + 4, (len - 4) * sizeof(WCHAR) );
     }
+<<<<<<< HEAD
     else
         nt_name.Buffer[1] = '\\';
     return nt_name.Buffer;
@@ -1014,6 +687,10 @@ cleanup:
     }
     if (is_relative) HeapFree( GetProcessHeap(), 0, target_path );
     return bret;
+=======
+    else buffer[1] = '\\';
+    return buffer;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 /*************************************************************************
@@ -1021,6 +698,7 @@ cleanup:
  */
 BOOLEAN WINAPI CreateSymbolicLinkA(LPCSTR link, LPCSTR target, DWORD flags)
 {
+<<<<<<< HEAD
     WCHAR *targetW, *linkW;
     BOOL ret;
 
@@ -1039,6 +717,10 @@ BOOLEAN WINAPI CreateSymbolicLinkA(LPCSTR link, LPCSTR target, DWORD flags)
     HeapFree( GetProcessHeap(), 0, linkW );
     HeapFree( GetProcessHeap(), 0, targetW );
     return ret;
+=======
+    FIXME("(%s %s %ld): stub\n", debugstr_a(link), debugstr_a(target), flags);
+    return TRUE;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 /*************************************************************************
@@ -1069,7 +751,7 @@ BOOL WINAPI CheckNameLegalDOS8Dot3A(const char *name, char *oemname, DWORD oemna
 {
     WCHAR *nameW;
 
-    TRACE("(%s %p %u %p %p)\n", name, oemname,
+    TRACE("(%s %p %lu %p %p)\n", name, oemname,
             oemname_len, contains_spaces, is_legal);
 
     if (!name || !is_legal)
@@ -1090,7 +772,7 @@ BOOL WINAPI CheckNameLegalDOS8Dot3W(const WCHAR *name, char *oemname, DWORD oemn
     UNICODE_STRING nameW;
     BOOLEAN contains_spaces;
 
-    TRACE("(%s %p %u %p %p)\n", wine_dbgstr_w(name), oemname,
+    TRACE("(%s %p %lu %p %p)\n", wine_dbgstr_w(name), oemname,
           oemname_len, contains_spaces_ret, is_legal);
 
     if (!name || !is_legal)

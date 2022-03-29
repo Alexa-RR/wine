@@ -23,31 +23,24 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
-#include <stdlib.h>
 #include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#ifdef HAVE_NETINET_IN_H
-#include <netinet/in.h>
-#endif
+
 #include "ntstatus.h"
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
 #define WIN32_NO_STATUS
-#define USE_WS_PREFIX
+#include "winsock2.h"
 #include "windef.h"
 #include "winternl.h"
 #include "wine/debug.h"
 #include "wine/exception.h"
 #include "ntdll_misc.h"
-#include "inaddr.h"
 #include "in6addr.h"
 #include "ddk/ntddk.h"
+#include "ddk/ntifs.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
+WINE_DECLARE_DEBUG_CHANNEL(debugstr);
 
 /* CRC polynomial 0xedb88320 */
 static const DWORD CRC_table[256] =
@@ -306,21 +299,24 @@ void WINAPI RtlDumpResource(LPRTL_RWLOCK rwl)
  *	misc functions
  */
 
+static LONG WINAPI debug_exception_handler( EXCEPTION_POINTERS *eptr )
+{
+    EXCEPTION_RECORD *rec = eptr->ExceptionRecord;
+    return (rec->ExceptionCode == DBG_PRINTEXCEPTION_C) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
+}
+
 /******************************************************************************
  *	DbgPrint	[NTDLL.@]
  */
 NTSTATUS WINAPIV DbgPrint(LPCSTR fmt, ...)
 {
-  char buf[512];
-  __ms_va_list args;
+    NTSTATUS ret;
+    va_list args;
 
-  __ms_va_start(args, fmt);
-  NTDLL__vsnprintf(buf, sizeof(buf), fmt, args);
-  __ms_va_end(args);
-
-  MESSAGE("DbgPrint says: %s",buf);
-  /* hmm, raise exception? */
-  return STATUS_SUCCESS;
+    va_start(args, fmt);
+    ret = vDbgPrintEx(0, DPFLTR_ERROR_LEVEL, fmt, args);
+    va_end(args);
+    return ret;
 }
 
 
@@ -330,18 +326,18 @@ NTSTATUS WINAPIV DbgPrint(LPCSTR fmt, ...)
 NTSTATUS WINAPIV DbgPrintEx(ULONG iComponentId, ULONG Level, LPCSTR fmt, ...)
 {
     NTSTATUS ret;
-    __ms_va_list args;
+    va_list args;
 
-    __ms_va_start(args, fmt);
+    va_start(args, fmt);
     ret = vDbgPrintEx(iComponentId, Level, fmt, args);
-    __ms_va_end(args);
+    va_end(args);
     return ret;
 }
 
 /******************************************************************************
  *	vDbgPrintEx	[NTDLL.@]
  */
-NTSTATUS WINAPI vDbgPrintEx( ULONG id, ULONG level, LPCSTR fmt, __ms_va_list args )
+NTSTATUS WINAPI vDbgPrintEx( ULONG id, ULONG level, LPCSTR fmt, va_list args )
 {
     return vDbgPrintExWithPrefix( "", id, level, fmt, args );
 }
@@ -349,20 +345,38 @@ NTSTATUS WINAPI vDbgPrintEx( ULONG id, ULONG level, LPCSTR fmt, __ms_va_list arg
 /******************************************************************************
  *	vDbgPrintExWithPrefix  [NTDLL.@]
  */
-NTSTATUS WINAPI vDbgPrintExWithPrefix( LPCSTR prefix, ULONG id, ULONG level, LPCSTR fmt, __ms_va_list args )
+NTSTATUS WINAPI vDbgPrintExWithPrefix( LPCSTR prefix, ULONG id, ULONG level, LPCSTR fmt, va_list args )
 {
-    char buf[1024];
+    ULONG level_mask = level <= 31 ? (1 << level) : level;
+    SIZE_T len = strlen( prefix );
+    char buf[1024], *end;
 
-    NTDLL__vsnprintf(buf, sizeof(buf), fmt, args);
+    strcpy( buf, prefix );
+    len += _vsnprintf( buf + len, sizeof(buf) - len, fmt, args );
+    end = buf + len - 1;
 
-    switch (level & DPFLTR_MASK)
+    WARN_(debugstr)(*end == '\n' ? "%08x:%08x: %s" : "%08x:%08x: %s\n", id, level_mask, buf);
+
+    if (level_mask & (1 << DPFLTR_ERROR_LEVEL) && NtCurrentTeb()->Peb->BeingDebugged)
     {
-    case DPFLTR_ERROR_LEVEL:   ERR("%s%x: %s", prefix, id, buf); break;
-    case DPFLTR_WARNING_LEVEL: WARN("%s%x: %s", prefix, id, buf); break;
-    case DPFLTR_TRACE_LEVEL:
-    case DPFLTR_INFO_LEVEL:
-    default:                   TRACE("%s%x: %s", prefix, id, buf); break;
+        __TRY
+        {
+            EXCEPTION_RECORD record;
+            record.ExceptionCode    = DBG_PRINTEXCEPTION_C;
+            record.ExceptionFlags   = 0;
+            record.ExceptionRecord  = NULL;
+            record.ExceptionAddress = RtlRaiseException;
+            record.NumberParameters = 2;
+            record.ExceptionInformation[1] = (ULONG_PTR)buf;
+            record.ExceptionInformation[0] = strlen( buf ) + 1;
+            RtlRaiseException( &record );
+        }
+        __EXCEPT(debug_exception_handler)
+        {
+        }
+        __ENDTRY
     }
+
     return STATUS_SUCCESS;
 }
 
@@ -411,31 +425,61 @@ RtlDeleteSecurityObject( PSECURITY_DESCRIPTOR *ObjectDescriptor )
 /******************************************************************************
  *  RtlInitializeGenericTable           [NTDLL.@]
  */
-PVOID WINAPI RtlInitializeGenericTable(PVOID pTable, PVOID arg2, PVOID arg3, PVOID arg4, PVOID arg5)
+void WINAPI RtlInitializeGenericTable(RTL_GENERIC_TABLE *table, PRTL_GENERIC_COMPARE_ROUTINE compare,
+                                      PRTL_GENERIC_ALLOCATE_ROUTINE allocate, PRTL_GENERIC_FREE_ROUTINE free,
+                                      void *context)
 {
-  FIXME("(%p,%p,%p,%p,%p) stub!\n", pTable, arg2, arg3, arg4, arg5);
-  return NULL;
+    TRACE("(%p, %p, %p, %p, %p)\n", table, compare, allocate, free, context);
+
+    table->TableRoot = NULL;
+    table->InsertOrderList.Flink = &table->InsertOrderList;
+    table->InsertOrderList.Blink = &table->InsertOrderList;
+    table->OrderedPointer = &table->InsertOrderList;
+    table->NumberGenericTableElements = 0;
+    table->WhichOrderedElement = 0;
+    table->CompareRoutine = compare;
+    table->AllocateRoutine = allocate;
+    table->FreeRoutine = free;
+    table->TableContext = context;
 }
 
 /******************************************************************************
  *  RtlEnumerateGenericTableWithoutSplaying           [NTDLL.@]
  */
-PVOID RtlEnumerateGenericTableWithoutSplaying(PVOID pTable, PVOID *RestartKey)
+void * WINAPI RtlEnumerateGenericTableWithoutSplaying(RTL_GENERIC_TABLE *table, void *previous)
 {
     static int warn_once;
 
     if (!warn_once++)
-        FIXME("(%p,%p) stub!\n", pTable, RestartKey);
+        FIXME("(%p, %p) stub!\n", table, previous);
     return NULL;
 }
 
 /******************************************************************************
  *  RtlNumberGenericTableElements           [NTDLL.@]
  */
-ULONG RtlNumberGenericTableElements(PVOID pTable)
+ULONG WINAPI RtlNumberGenericTableElements(RTL_GENERIC_TABLE *table)
 {
-    FIXME("(%p) stub!\n", pTable);
-    return 0;
+    TRACE("(%p)\n", table);
+    return table->NumberGenericTableElements;
+}
+
+/******************************************************************************
+ *  RtlGetElementGenericTable           [NTDLL.@]
+ */
+void * WINAPI RtlGetElementGenericTable(RTL_GENERIC_TABLE *table, ULONG index)
+{
+    FIXME("(%p, %u) stub!\n", table, index);
+    return NULL;
+}
+
+/******************************************************************************
+ *  RtlLookupElementGenericTable           [NTDLL.@]
+ */
+void * WINAPI RtlLookupElementGenericTable(RTL_GENERIC_TABLE *table, void *buffer)
+{
+    FIXME("(%p, %p) stub!\n", table, buffer);
+    return NULL;
 }
 
 /******************************************************************************
@@ -528,10 +572,10 @@ SIZE_T WINAPI RtlCompareMemory( const VOID *Source1, const VOID *Source2, SIZE_T
  * RETURNS
  *  The byte position of the first byte at which Source1 is not dwVal.
  */
-SIZE_T WINAPI RtlCompareMemoryUlong(const ULONG *Source1, SIZE_T Length, ULONG dwVal)
+SIZE_T WINAPI RtlCompareMemoryUlong(VOID *Source1, SIZE_T Length, ULONG dwVal)
 {
     SIZE_T i;
-    for(i = 0; i < Length/sizeof(ULONG) && Source1[i] == dwVal; i++);
+    for(i = 0; i < Length/sizeof(ULONG) && ((ULONG *)Source1)[i] == dwVal; i++);
     return i * sizeof(ULONG);
 }
 
@@ -1079,7 +1123,12 @@ static BOOL parse_ipv6_component(const WCHAR **str, int base, ULONG *value)
     WCHAR *terminator;
     if (**str >= ARRAY_SIZE(hex_table) || hex_table[**str] == -1) return FALSE;
     *value = min(wcstoul(*str, &terminator, base), 0x7FFFFFFF);
+<<<<<<< HEAD
     if (terminator == *str) return FALSE;
+=======
+    if (*terminator == '0') terminator++; /* "0x" but nothing valid after */
+    else if (terminator == *str) return FALSE;
+>>>>>>> github-desktop-wine-mirror/master
     *str = terminator;
     return TRUE;
 }
@@ -1232,6 +1281,10 @@ error:
 NTSTATUS NTAPI RtlIpv6StringToAddressExW(const WCHAR *str, IN6_ADDR *address, ULONG *scope, USHORT *port)
 {
     TRACE("(%s, %p, %p, %p)\n", debugstr_w(str), address, scope, port);
+<<<<<<< HEAD
+=======
+    if (!str || !address || !scope || !port) return STATUS_INVALID_PARAMETER;
+>>>>>>> github-desktop-wine-mirror/master
     return ipv6_string_to_address(str, TRUE, NULL, address, scope, port);
 }
 
@@ -1249,7 +1302,11 @@ NTSTATUS WINAPI RtlIpv6StringToAddressW(const WCHAR *str, const WCHAR **terminat
  */
 NTSTATUS WINAPI RtlIpv6StringToAddressExA(const char *str, IN6_ADDR *address, ULONG *scope, USHORT *port)
 {
+<<<<<<< HEAD
     WCHAR wstr[64];
+=======
+    WCHAR wstr[128];
+>>>>>>> github-desktop-wine-mirror/master
 
     TRACE("(%s, %p, %p, %p)\n", debugstr_a(str), address, scope, port);
 
@@ -1266,7 +1323,11 @@ NTSTATUS WINAPI RtlIpv6StringToAddressExA(const char *str, IN6_ADDR *address, UL
  */
 NTSTATUS WINAPI RtlIpv6StringToAddressA(const char *str, const char **terminator, IN6_ADDR *address)
 {
+<<<<<<< HEAD
     WCHAR wstr[64];
+=======
+    WCHAR wstr[128];
+>>>>>>> github-desktop-wine-mirror/master
     const WCHAR *wterminator = NULL;
     NTSTATUS ret;
 
@@ -1298,8 +1359,6 @@ NTSTATUS WINAPI RtlIpv6StringToAddressA(const char *str, const char **terminator
 NTSTATUS WINAPI RtlIpv4AddressToStringExW(const IN_ADDR *pin, USHORT port, LPWSTR buffer, PULONG psize)
 {
     WCHAR tmp_ip[32];
-    static const WCHAR fmt_ip[] = {'%','u','.','%','u','.','%','u','.','%','u',0};
-    static const WCHAR fmt_port[] = {':','%','u',0};
     ULONG needed;
 
     if (!pin || !buffer || !psize)
@@ -1307,11 +1366,11 @@ NTSTATUS WINAPI RtlIpv4AddressToStringExW(const IN_ADDR *pin, USHORT port, LPWST
 
     TRACE("(%p:0x%x, %d, %p, %p:%d)\n", pin, pin->S_un.S_addr, port, buffer, psize, *psize);
 
-    needed = NTDLL_swprintf(tmp_ip, fmt_ip,
+    needed = swprintf(tmp_ip, ARRAY_SIZE(tmp_ip), L"%u.%u.%u.%u",
                       pin->S_un.S_un_b.s_b1, pin->S_un.S_un_b.s_b2,
                       pin->S_un.S_un_b.s_b3, pin->S_un.S_un_b.s_b4);
 
-    if (port) needed += NTDLL_swprintf(tmp_ip + needed, fmt_port, ntohs(port));
+    if (port) needed += swprintf(tmp_ip + needed, ARRAY_SIZE(tmp_ip) - needed, L":%u", ntohs(port));
 
     if (*psize > needed) {
         *psize = needed + 1;
@@ -1390,6 +1449,135 @@ CHAR * WINAPI RtlIpv4AddressToStringA(const IN_ADDR *pin, LPSTR buffer)
 
     if (RtlIpv4AddressToStringExA(pin, 0, buffer, &size)) size = 0;
     return buffer + size - 1;
+}
+
+static BOOL is_ipv4_in_ipv6(const IN6_ADDR *address)
+{
+    if (address->s6_words[5] == htons(0x5efe) && (address->s6_words[4] & ~htons(0x200)) == 0)
+        return TRUE;
+    if (*(UINT64 *)address != 0)
+        return FALSE;
+    if (address->s6_words[4] != 0 && address->s6_words[4] != 0xffff)
+        return FALSE;
+    if (address->s6_words[4] == 0 && address->s6_words[5] != 0 && address->s6_words[5] != 0xffff)
+        return FALSE;
+    if (address->s6_words[4] == 0xffff && address->s6_words[5] != 0)
+        return FALSE;
+    if (address->s6_words[6] == 0)
+        return FALSE;
+    return TRUE;
+}
+
+/***********************************************************************
+ * RtlIpv6AddressToStringExA [NTDLL.@]
+ */
+NTSTATUS WINAPI RtlIpv6AddressToStringExA(const IN6_ADDR *address, ULONG scope, USHORT port, char *str, ULONG *size)
+{
+    char buffer[64], *p = buffer;
+    int i, len, gap = -1, gap_len = 1, ipv6_end = 8;
+    ULONG needed;
+    NTSTATUS ret;
+
+    TRACE("(%p %u %u %p %p)\n", address, scope, port, str, size);
+
+    if (!address || !str || !size)
+        return STATUS_INVALID_PARAMETER;
+
+    if (is_ipv4_in_ipv6(address))
+        ipv6_end = 6;
+
+    for (i = 0; i < ipv6_end; i++)
+    {
+        len = 0;
+        while (!address->s6_words[i] && i < ipv6_end)
+        {
+            i++;
+            len++;
+        }
+        if (len > gap_len)
+        {
+            gap = i - len;
+            gap_len = len;
+        }
+    }
+
+    if (port) p += sprintf(p, "[");
+
+    i = 0;
+    while (i < ipv6_end)
+    {
+        if (i == gap)
+        {
+            p += sprintf(p, ":");
+            i += gap_len;
+            if (i == ipv6_end) p += sprintf(p, ":");
+            continue;
+        }
+        if (i > 0) p += sprintf(p, ":");
+        p += sprintf(p, "%x", ntohs(address->s6_words[i]));
+        i++;
+    }
+
+    if (ipv6_end == 6)
+    {
+        if (p[-1] != ':') p += sprintf(p, ":");
+        p = RtlIpv4AddressToStringA((IN_ADDR *)(address->s6_words + 6), p);
+    }
+
+    if (scope) p += sprintf(p, "%%%u", scope);
+
+    if (port) p += sprintf(p, "]:%u", ntohs(port));
+
+    needed = p - buffer + 1;
+
+    if (*size >= needed)
+    {
+        strcpy(str, buffer);
+        ret = STATUS_SUCCESS;
+    }
+    else
+    {
+        ret = STATUS_INVALID_PARAMETER;
+    }
+
+    *size = needed;
+    return ret;
+}
+
+/***********************************************************************
+ * RtlIpv6AddressToStringA [NTDLL.@]
+ */
+char * WINAPI RtlIpv6AddressToStringA(const IN6_ADDR *address, char *str)
+{
+    ULONG size = 46;
+    if (!address || !str) return str - 1;
+    str[45] = 0; /* this byte is set even though the string is always shorter */
+    RtlIpv6AddressToStringExA(address, 0, 0, str, &size);
+    return str + size - 1;
+}
+
+/***********************************************************************
+ * RtlIpv6AddressToStringExW [NTDLL.@]
+ */
+NTSTATUS WINAPI RtlIpv6AddressToStringExW(const IN6_ADDR *address, ULONG scope, USHORT port, WCHAR *str, ULONG *size)
+{
+    char cstr[64];
+    NTSTATUS ret = RtlIpv6AddressToStringExA(address, scope, port, cstr, size);
+    if (ret == STATUS_SUCCESS) RtlMultiByteToUnicodeN(str, *size * sizeof(WCHAR), NULL, cstr, *size);
+    return ret;
+}
+
+/***********************************************************************
+ * RtlIpv6AddressToStringW [NTDLL.@]
+ */
+WCHAR * WINAPI RtlIpv6AddressToStringW(const IN6_ADDR *address, WCHAR *str)
+{
+    ULONG size = 46;
+    if (!address || !str) return str;
+    str[45] = 0; /* this word is set even though the string is always shorter */
+    if (RtlIpv6AddressToStringExW(address, 0, 0, str, &size) != STATUS_SUCCESS)
+        return str;
+    return str + size - 1;
 }
 
 /***********************************************************************
@@ -1516,7 +1704,7 @@ static DWORD_PTR get_pointer_obfuscator( void )
         /* set the high bits so dereferencing obfuscated pointers will (usually) crash */
         rand |= (ULONG_PTR)0xc0000000 << ((sizeof (DWORD_PTR) - sizeof (ULONG))*8);
 
-        interlocked_cmpxchg_ptr( (void**) &pointer_obfuscator, (void*) rand, NULL );
+        InterlockedCompareExchangePointer( (void**) &pointer_obfuscator, (void*) rand, NULL );
     }
 
     return pointer_obfuscator;
@@ -1589,7 +1777,7 @@ PSLIST_ENTRY WINAPI RtlInterlockedFlushSList(PSLIST_HEADER list)
     {
         old = *list;
         new.Header16.Sequence = old.Header16.Sequence + 1;
-    } while (!interlocked_cmpxchg128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
+    } while (!InterlockedCompareExchange128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
     return (SLIST_ENTRY *)((ULONG_PTR)old.Header16.NextEntry << 4);
 #else
     if (!list->s.Next.Next) return NULL;
@@ -1598,8 +1786,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedFlushSList(PSLIST_HEADER list)
     {
         old = *list;
         new.s.Sequence = old.s.Sequence + 1;
-    } while (interlocked_cmpxchg64((__int64 *)&list->Alignment, new.Alignment,
-                                   old.Alignment) != old.Alignment);
+    } while (InterlockedCompareExchange64((__int64 *)&list->Alignment, new.Alignment,
+                                          old.Alignment) != old.Alignment);
     return old.s.Next.Next;
 #endif
 }
@@ -1619,7 +1807,7 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushEntrySList(PSLIST_HEADER list, PSLIST_ENTR
         entry->Next = (SLIST_ENTRY *)((ULONG_PTR)old.Header16.NextEntry << 4);
         new.Header16.Depth = old.Header16.Depth + 1;
         new.Header16.Sequence = old.Header16.Sequence + 1;
-    } while (!interlocked_cmpxchg128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
+    } while (!InterlockedCompareExchange128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
     return (SLIST_ENTRY *)((ULONG_PTR)old.Header16.NextEntry << 4);
 #else
     new.s.Next.Next = entry;
@@ -1629,8 +1817,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushEntrySList(PSLIST_HEADER list, PSLIST_ENTR
         entry->Next = old.s.Next.Next;
         new.s.Depth = old.s.Depth + 1;
         new.s.Sequence = old.s.Sequence + 1;
-    } while (interlocked_cmpxchg64((__int64 *)&list->Alignment, new.Alignment,
-                                   old.Alignment) != old.Alignment);
+    } while (InterlockedCompareExchange64((__int64 *)&list->Alignment, new.Alignment,
+                                          old.Alignment) != old.Alignment);
     return old.s.Next.Next;
 #endif
 }
@@ -1659,7 +1847,7 @@ PSLIST_ENTRY WINAPI RtlInterlockedPopEntrySList(PSLIST_HEADER list)
         {
         }
         __ENDTRY
-    } while (!interlocked_cmpxchg128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
+    } while (!InterlockedCompareExchange128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
 #else
     do
     {
@@ -1676,8 +1864,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedPopEntrySList(PSLIST_HEADER list)
         {
         }
         __ENDTRY
-    } while (interlocked_cmpxchg64((__int64 *)&list->Alignment, new.Alignment,
-                                   old.Alignment) != old.Alignment);
+    } while (InterlockedCompareExchange64((__int64 *)&list->Alignment, new.Alignment,
+                                          old.Alignment) != old.Alignment);
 #endif
     return entry;
 }
@@ -1698,7 +1886,7 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushListSListEx(PSLIST_HEADER list, PSLIST_ENT
         new.Header16.Depth = old.Header16.Depth + count;
         new.Header16.Sequence = old.Header16.Sequence + 1;
         last->Next = (SLIST_ENTRY *)((ULONG_PTR)old.Header16.NextEntry << 4);
-    } while (!interlocked_cmpxchg128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
+    } while (!InterlockedCompareExchange128((__int64 *)list, new.s.Region, new.s.Alignment, (__int64 *)&old));
     return (SLIST_ENTRY *)((ULONG_PTR)old.Header16.NextEntry << 4);
 #else
     new.s.Next.Next = first;
@@ -1708,8 +1896,8 @@ PSLIST_ENTRY WINAPI RtlInterlockedPushListSListEx(PSLIST_HEADER list, PSLIST_ENT
         new.s.Depth = old.s.Depth + count;
         new.s.Sequence = old.s.Sequence + 1;
         last->Next = old.s.Next.Next;
-    } while (interlocked_cmpxchg64((__int64 *)&list->Alignment, new.Alignment,
-                                   old.Alignment) != old.Alignment);
+    } while (InterlockedCompareExchange64((__int64 *)&list->Alignment, new.Alignment,
+                                          old.Alignment) != old.Alignment);
     return old.s.Next.Next;
 #endif
 }
@@ -2100,6 +2288,14 @@ void WINAPI RtlGetCurrentProcessorNumberEx(PROCESSOR_NUMBER *processor)
 }
 
 /***********************************************************************
+ *           RtlIsProcessorFeaturePresent [NTDLL.@]
+ */
+BOOLEAN WINAPI RtlIsProcessorFeaturePresent( UINT feature )
+{
+    return feature < PROCESSOR_FEATURE_MAX && user_shared_data->ProcessorFeatures[feature];
+}
+
+/***********************************************************************
  *           RtlInitializeGenericTableAvl  (NTDLL.@)
  */
 void WINAPI RtlInitializeGenericTableAvl(PRTL_AVL_TABLE table, PRTL_AVL_COMPARE_ROUTINE compare,
@@ -2124,4 +2320,13 @@ NTSTATUS WINAPI RtlQueryPackageIdentity(HANDLE token, WCHAR *fullname, SIZE_T *f
 {
     FIXME("(%p, %p, %p, %p, %p, %p): stub\n", token, fullname, fullname_size, appid, appid_size, packaged);
     return STATUS_NOT_FOUND;
+}
+
+/*********************************************************************
+ *           RtlQueryProcessPlaceholderCompatibilityMode [NTDLL.@]
+ */
+char WINAPI RtlQueryProcessPlaceholderCompatibilityMode(void)
+{
+    FIXME("stub\n");
+    return PHCM_APPLICATION_DEFAULT;
 }

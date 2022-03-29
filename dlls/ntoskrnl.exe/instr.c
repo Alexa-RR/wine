@@ -32,10 +32,29 @@
 #include "ddk/wdm.h"
 #include "excpt.h"
 #include "wine/debug.h"
+<<<<<<< HEAD
 #include "wine/exception.h"
 #include "wine/rbtree.h"
 
 #include "ntoskrnl_private.h"
+=======
+
+#define KSHARED_USER_DATA_PAGE_SIZE 0x1000
+
+#define CR0_PE 0x00000001 /* Protected Mode */
+#define CR0_ET 0x00000010 /* Extension Type */
+#define CR0_NE 0x00000020 /* Numeric Error */
+#define CR0_WP 0x00010000 /* Write Protect */
+#define CR0_AM 0x00040000 /* Alignment Mask */
+#define CR0_PG 0x80000000 /* Paging */
+
+enum instr_op
+{
+    INSTR_OP_MOV,
+    INSTR_OP_OR,
+    INSTR_OP_XOR,
+};
+>>>>>>> github-desktop-wine-mirror/master
 
 #ifdef __i386__
 
@@ -342,10 +361,10 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             {
                 int reg = (instr[2] >> 3) & 7;
                 DWORD *data = get_reg_address( context, instr[2] );
-                TRACE( "mov cr%u,%s at 0x%08x\n", reg, reg_names[instr[2] & 7], context->Eip );
+                TRACE( "mov cr%u,%s at 0x%08lx\n", reg, reg_names[instr[2] & 7], context->Eip );
                 switch (reg)
                 {
-                case 0: *data = 0x10; break; /* FIXME: set more bits ? */
+                case 0: *data = CR0_PE|CR0_ET|CR0_NE|CR0_WP|CR0_AM|CR0_PG; break;
                 case 2: *data = 0; break;
                 case 3: *data = 0; break;
                 case 4: *data = 0; break;
@@ -358,7 +377,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             {
                 int reg = (instr[2] >> 3) & 7;
                 DWORD *data = get_reg_address( context, instr[2] );
-                TRACE( "mov dr%u,%s at 0x%08x\n", reg, reg_names[instr[2] & 7], context->Eip );
+                TRACE( "mov dr%u,%s at 0x%08lx\n", reg, reg_names[instr[2] & 7], context->Eip );
                 switch (reg)
                 {
                 case 0: *data = context->Dr0; break;
@@ -376,7 +395,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             {
                 int reg = (instr[2] >> 3) & 7;
                 DWORD *data = get_reg_address( context, instr[2] );
-                TRACE( "mov %s,cr%u at 0x%08x, %s=%08x\n", reg_names[instr[2] & 7],
+                TRACE( "mov %s,cr%u at 0x%08lx, %s=%08lx\n", reg_names[instr[2] & 7],
                        reg, context->Eip, reg_names[instr[2] & 7], *data );
                 switch (reg)
                 {
@@ -393,7 +412,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             {
                 int reg = (instr[2] >> 3) & 7;
                 DWORD *data = get_reg_address( context, instr[2] );
-                TRACE( "mov %s,dr%u at 0x%08x %s=%08x\n", reg_names[instr[2] & 7],
+                TRACE( "mov %s,dr%u at 0x%08lx %s=%08lx\n", reg_names[instr[2] & 7],
                        reg, context->Eip, reg_names[instr[2] & 7], *data );
                 switch (reg)
                 {
@@ -952,10 +971,16 @@ static inline int get_op_size( int long_op, struct ex_prefix pfx )
 }
 
 /* store an operand into a register */
+<<<<<<< HEAD
 static void store_reg_word( CONTEXT *context, BYTE regmodrm, const BYTE *addr, int long_op, struct ex_prefix pfx )
+=======
+static void store_reg_word( CONTEXT *context, BYTE regmodrm, const BYTE *addr, int long_op, int rex,
+        enum instr_op op )
+>>>>>>> github-desktop-wine-mirror/master
 {
     int index = REGMODRM_REG( regmodrm, pfx );
     BYTE *reg = (BYTE *)get_int_reg( context, index );
+<<<<<<< HEAD
     if (get_op_size( long_op, pfx) == 4)
         memset( reg, 0, 8);
     memcpy( reg, addr, get_op_size( long_op, pfx ) );
@@ -963,11 +988,51 @@ static void store_reg_word( CONTEXT *context, BYTE regmodrm, const BYTE *addr, i
 
 /* store an operand into a byte register */
 static void store_reg_byte( CONTEXT *context, BYTE regmodrm, const BYTE *addr, struct ex_prefix pfx )
+=======
+    int op_size = get_op_size( long_op, rex );
+    int i;
+
+    switch (op)
+    {
+        case INSTR_OP_MOV:
+            memcpy( reg, addr, op_size );
+            break;
+        case INSTR_OP_OR:
+            for (i = 0; i < op_size; ++i)
+                reg[i] |= addr[i];
+            break;
+        case INSTR_OP_XOR:
+            for (i = 0; i < op_size; ++i)
+                reg[i] ^= addr[i];
+            break;
+    }
+}
+
+/* store an operand into a byte register */
+static void store_reg_byte( CONTEXT *context, BYTE regmodrm, const BYTE *addr, int rex, enum instr_op op )
+>>>>>>> github-desktop-wine-mirror/master
 {
     int index = REGMODRM_REG( regmodrm, pfx );
     BYTE *reg = (BYTE *)get_int_reg( context, index );
+<<<<<<< HEAD
     if (!pfx.present && index >= 4 && index < 8) reg -= (4 * sizeof(DWORD64) - 1); /* special case: ah, ch, dh, bh */
     *reg = *addr;
+=======
+    if (!rex && index >= 4 && index < 8) reg -= (4 * sizeof(DWORD64) - 1); /* special case: ah, ch, dh, bh */
+
+    switch (op)
+    {
+        case INSTR_OP_MOV:
+            *reg = *addr;
+            break;
+        case INSTR_OP_OR:
+            *reg |= *addr;
+            break;
+        case INSTR_OP_XOR:
+            *reg ^= *addr;
+            break;
+    }
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 /***********************************************************************
@@ -1417,7 +1482,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             int reg = REGMODRM_REG( instr[1], ex_pfx );
             int rm = REGMODRM_RM( instr[1], ex_pfx );
             DWORD64 *data = get_int_reg( context, rm );
-            TRACE( "mov cr%u,%s at %lx\n", reg, reg_names[rm], context->Rip );
+            TRACE( "mov cr%u,%s at %Ix\n", reg, reg_names[rm], context->Rip );
             switch (reg)
             {
             case 0: *data = 0x10; break; /* FIXME: set more bits ? */
@@ -1435,7 +1500,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             int reg = REGMODRM_REG( instr[1], ex_pfx );
             int rm = REGMODRM_RM( instr[1], ex_pfx );
             DWORD64 *data = get_int_reg( context, rm );
-            TRACE( "mov dr%u,%s at %lx\n", reg, reg_names[rm], context->Rip );
+            TRACE( "mov dr%u,%s at %Ix\n", reg, reg_names[rm], context->Rip );
             switch (reg)
             {
             case 0: *data = context->Dr0; break;
@@ -1456,7 +1521,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             int reg = REGMODRM_REG( instr[1], ex_pfx );
             int rm = REGMODRM_RM( instr[1], ex_pfx );
             DWORD64 *data = get_int_reg( context, rm );
-            TRACE( "mov %s,cr%u at %lx, %s=%lx\n", reg_names[rm], reg, context->Rip, reg_names[rm], *data );
+            TRACE( "mov %s,cr%u at %Ix, %s=%Ix\n", reg_names[rm], reg, context->Rip, reg_names[rm], *data );
             switch (reg)
             {
             case 0: break;
@@ -1474,7 +1539,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             int reg = REGMODRM_REG( instr[1], ex_pfx );
             int rm = REGMODRM_RM( instr[1], ex_pfx );
             DWORD64 *data = get_int_reg( context, rm );
-            TRACE( "mov %s,dr%u at %lx, %s=%lx\n", reg_names[rm], reg, context->Rip, reg_names[rm], *data );
+            TRACE( "mov %s,dr%u at %Ix, %s=%Ix\n", reg_names[rm], reg, context->Rip, reg_names[rm], *data );
             switch (reg)
             {
             case 0: context->Dr0 = *data; break;
@@ -1493,7 +1558,7 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
         case 0x32: /* rdmsr */
         {
             ULONG reg = context->Rcx;
-            TRACE("rdmsr CR 0x%08x\n", reg);
+            TRACE("rdmsr CR 0x%08lx\n", reg);
             switch (reg)
             {
             case MSR_LSTAR:
@@ -1503,7 +1568,11 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
                 context->Rax = (ULONG)syscall_address;
                 break;
             }
-            default: return ExceptionContinueSearch;
+            default:
+                FIXME("reg %#lx, returning 0.\n", reg);
+                context->Rdx = 0;
+                context->Rax = 0;
+                break;
             }
             context->Rip += prefixlen + 1;
             return ExceptionContinueExecution;
@@ -1624,10 +1693,21 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             unsigned int data_size = (*instr == 0xb7) ? 2 : 1;
             BYTE temp[8] = {0};
 
+<<<<<<< HEAD
             if (read_emulated_memory(temp, data, data_size))
             {
                 store_reg_word( context, instr[1], temp, long_op, ex_pfx );
                 context->Rip += prefixlen + len + 1;
+=======
+            if (offset <= KSHARED_USER_DATA_PAGE_SIZE - data_size)
+            {
+                ULONGLONG temp = 0;
+
+                TRACE("USD offset %#x at %p.\n", (unsigned int)offset, (void *)context->Rip);
+                memcpy( &temp, wine_user_shared_data + offset, data_size );
+                store_reg_word( context, instr[2], (BYTE *)&temp, long_op, rex, INSTR_OP_MOV );
+                context->Rip += prefixlen + len + 2;
+>>>>>>> github-desktop-wine-mirror/master
                 return ExceptionContinueExecution;
             }
             break;  /* Unable to emulate it */
@@ -1990,8 +2070,11 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
     }
     case 0x8a: /* mov Eb, Gb */
     case 0x8b: /* mov Ev, Gv */
+    case 0x0b: /* or  Ev, Gv */
+    case 0x33: /* xor Ev, Gv */
     {
         BYTE *data = INSTR_GetOperandAddr( context, instr + 1, prefixlen + 1, long_addr,
+<<<<<<< HEAD
                                            ex_pfx, segprefix, &len );
         unsigned int data_size = (*instr == 0x8b) ? get_op_size( long_op, ex_pfx ) : 1;
         BYTE temp[8];
@@ -2001,6 +2084,33 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
             {
             case 0x8a: store_reg_byte( context, instr[1], temp, ex_pfx ); break;
             case 0x8b: store_reg_word( context, instr[1], temp, long_op, ex_pfx ); break;
+=======
+                                           rex, segprefix, &len );
+        unsigned int data_size = (*instr == 0x8b) ? get_op_size( long_op, rex ) : 1;
+        SIZE_T offset = data - user_shared_data;
+
+        if (offset <= KSHARED_USER_DATA_PAGE_SIZE - data_size)
+        {
+            TRACE("USD offset %#x at %p.\n", (unsigned int)offset, (void *)context->Rip);
+            switch (*instr)
+            {
+                case 0x8a:
+                    store_reg_byte( context, instr[1], wine_user_shared_data + offset,
+                            rex, INSTR_OP_MOV );
+                    break;
+                case 0x8b:
+                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
+                            long_op, rex, INSTR_OP_MOV );
+                    break;
+                case 0x0b:
+                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
+                            long_op, rex, INSTR_OP_OR );
+                    break;
+                case 0x33:
+                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
+                            long_op, rex, INSTR_OP_XOR );
+                    break;
+>>>>>>> github-desktop-wine-mirror/master
             }
             context->Rip += prefixlen + len + 1;
             return ExceptionContinueExecution;
@@ -2016,9 +2126,16 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
         BYTE temp[8];
         len = long_addr ? sizeof(DWORD64) : sizeof(DWORD);
 
+<<<<<<< HEAD
         if (read_emulated_memory(temp, data, data_size))
         {
             memcpy( &context->Rax, temp, data_size );
+=======
+        if (offset <= KSHARED_USER_DATA_PAGE_SIZE - data_size)
+        {
+            TRACE("USD offset %#x at %p.\n", (unsigned int)offset, (void *)context->Rip);
+            memcpy( &context->Rax, wine_user_shared_data + offset, data_size );
+>>>>>>> github-desktop-wine-mirror/master
             context->Rip += prefixlen + len + 1;
             return ExceptionContinueExecution;
         }
@@ -2178,6 +2295,7 @@ LONG CALLBACK vectored_handler( EXCEPTION_POINTERS *ptrs )
         EnterCriticalSection(&emulate_cs);
         if (emulate_instruction( record, context ) == ExceptionContinueExecution)
         {
+<<<<<<< HEAD
             TRACE( "next instruction rip=%016llx\n", context->Rip );
             TRACE( "  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n",
                    context->Rax, context->Rbx, context->Rcx, context->Rdx );
@@ -2186,6 +2304,16 @@ LONG CALLBACK vectored_handler( EXCEPTION_POINTERS *ptrs )
             TRACE( "   r8=%016llx  r9=%016llx r10=%016llx r11=%016llx\n",
                    context->R8, context->R9, context->R10, context->R11 );
             TRACE( "  r12=%016llx r13=%016llx r14=%016llx r15=%016llx\n",
+=======
+            TRACE( "next instruction rip=%Ix\n", context->Rip );
+            TRACE( "  rax=%016Ix rbx=%016Ix rcx=%016Ix rdx=%016Ix\n",
+                   context->Rax, context->Rbx, context->Rcx, context->Rdx );
+            TRACE( "  rsi=%016Ix rdi=%016Ix rbp=%016Ix rsp=%016Ix\n",
+                   context->Rsi, context->Rdi, context->Rbp, context->Rsp );
+            TRACE( "   r8=%016Ix  r9=%016Ix r10=%016Ix r11=%016Ix\n",
+                   context->R8, context->R9, context->R10, context->R11 );
+            TRACE( "  r12=%016Ix r13=%016Ix r14=%016Ix r15=%016Ix\n",
+>>>>>>> github-desktop-wine-mirror/master
                    context->R12, context->R13, context->R14, context->R15 );
             LeaveCriticalSection(&emulate_cs);
 

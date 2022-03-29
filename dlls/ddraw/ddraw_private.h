@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
+#include <stdbool.h>
 #define COBJMACROS
 #define NONAMELESSSTRUCT
 #define NONAMELESSUNION
@@ -97,6 +98,7 @@ struct ddraw
     struct wined3d_adapter *wined3d_adapter;
     struct wined3d_output *wined3d_output;
     struct wined3d_device *wined3d_device;
+    struct wined3d_device_context *immediate_context;
     DWORD flags;
     LONG device_state;
 
@@ -105,6 +107,7 @@ struct ddraw
     struct wined3d_texture *wined3d_frontbuffer;
     struct wined3d_texture *gdi_surface;
     struct wined3d_swapchain *wined3d_swapchain;
+    struct wined3d_swapchain_state_parent state_parent;
     HWND swapchain_window;
 
     /* DirectDraw things, which are not handled by WineD3D */
@@ -154,6 +157,9 @@ void DDRAW_Convert_DDSCAPS_1_To_2(const DDSCAPS *pIn, DDSCAPS2 *pOut) DECLSPEC_H
 void DDRAW_Convert_DDDEVICEIDENTIFIER_2_To_1(const DDDEVICEIDENTIFIER2 *pIn, DDDEVICEIDENTIFIER *pOut) DECLSPEC_HIDDEN;
 struct wined3d_vertex_declaration *ddraw_find_decl(struct ddraw *ddraw, DWORD fvf) DECLSPEC_HIDDEN;
 
+#define DDRAW_SURFACE_LOCATION_DEFAULT 0x00000001
+#define DDRAW_SURFACE_LOCATION_DRAW    0x00000002
+
 struct ddraw_surface
 {
     /* IUnknown fields */
@@ -174,7 +180,9 @@ struct ddraw_surface
 
     /* Connections to other Objects */
     struct ddraw *ddraw;
+    unsigned int texture_location;
     struct wined3d_texture *wined3d_texture;
+    struct wined3d_texture *draw_texture;
     unsigned int sub_resource_idx;
     struct wined3d_rendertarget_view *wined3d_rtv;
     struct wined3d_private_store private_store;
@@ -195,8 +203,9 @@ struct ddraw_surface
     /* You can't traverse the tree upwards. Only a flag for Surface::Release because it's needed there,
      * but no pointer to prevent temptations to traverse it in the wrong direction.
      */
-    BOOL                    is_complex_root;
-    BOOL is_lost;
+    unsigned int is_complex_root : 1;
+    unsigned int is_lost : 1;
+    unsigned int sysmem_fallback : 1;
 
     /* Surface description, for GetAttachedSurface */
     DDSURFACEDESC2          surface_desc;
@@ -315,10 +324,15 @@ struct d3d_device
     IUnknown IUnknown_inner;
     LONG ref;
     UINT version;
+<<<<<<< HEAD
     BOOL hw;
+=======
+    BOOL hardware_device;
+>>>>>>> github-desktop-wine-mirror/master
 
     IUnknown *outer_unknown;
     struct wined3d_device *wined3d_device;
+    struct wined3d_device_context *immediate_context;
     struct ddraw *ddraw;
     IUnknown *rt_iface;
 
@@ -589,6 +603,7 @@ struct d3d_vertex_buffer
     DWORD                fvf;
     DWORD                size;
     BOOL                 dynamic;
+    bool discarded;
 };
 
 HRESULT d3d_vertex_buffer_create(struct d3d_vertex_buffer **buffer, struct ddraw *ddraw,
@@ -637,6 +652,71 @@ static inline BOOL format_is_paletteindexed(const DDPIXELFORMAT *fmt)
             | DDPF_PALETTEINDEXED8 | DDPF_PALETTEINDEXEDTO8;
     return !!(fmt->dwFlags & flags);
 }
+
+static inline BOOL ddraw_surface_can_be_lost(const struct ddraw_surface *surface)
+{
+    DWORD caps = surface->surface_desc.ddsCaps.dwCaps;
+
+    /* Testing with DDCREATE_EMULATIONONLY showed that primary surfaces and Z buffers can
+     * be lost even if created with explicit DDCAPS_SYSTEMMEMORY. Textures can or cannot be lost
+     * depending on whether _SYSTEMMEMORY was given explicitly by the application. */
+    if (!(caps & DDSCAPS_SYSTEMMEMORY) || caps & (DDSCAPS_PRIMARYSURFACE | DDSCAPS_ZBUFFER))
+        return TRUE;
+
+    return surface->sysmem_fallback;
+}
+
+#define DDRAW_SURFACE_READ   0x00000001
+#define DDRAW_SURFACE_WRITE  0x00000002
+#define DDRAW_SURFACE_RW (DDRAW_SURFACE_READ | DDRAW_SURFACE_WRITE)
+
+static inline struct wined3d_texture *ddraw_surface_get_default_texture(struct ddraw_surface *surface, unsigned int flags)
+{
+    if (surface->draw_texture)
+    {
+        if (flags & DDRAW_SURFACE_READ && !(surface->texture_location & DDRAW_SURFACE_LOCATION_DEFAULT))
+        {
+            wined3d_device_context_copy_sub_resource_region(surface->ddraw->immediate_context,
+                    wined3d_texture_get_resource(surface->wined3d_texture), surface->sub_resource_idx, 0, 0, 0,
+                    wined3d_texture_get_resource(surface->draw_texture), surface->sub_resource_idx, NULL, 0);
+            surface->texture_location |= DDRAW_SURFACE_LOCATION_DEFAULT;
+        }
+
+        if (flags & DDRAW_SURFACE_WRITE)
+            surface->texture_location = DDRAW_SURFACE_LOCATION_DEFAULT;
+    }
+    return surface->wined3d_texture;
+}
+
+static inline struct wined3d_texture *ddraw_surface_get_draw_texture(struct ddraw_surface *surface, unsigned int flags)
+{
+    if (!surface->draw_texture)
+        return surface->wined3d_texture;
+
+    if (flags & DDRAW_SURFACE_READ && !(surface->texture_location & DDRAW_SURFACE_LOCATION_DRAW))
+    {
+        wined3d_device_context_copy_sub_resource_region(surface->ddraw->immediate_context,
+                wined3d_texture_get_resource(surface->draw_texture), surface->sub_resource_idx, 0, 0, 0,
+                wined3d_texture_get_resource(surface->wined3d_texture), surface->sub_resource_idx, NULL, 0);
+        surface->texture_location |= DDRAW_SURFACE_LOCATION_DRAW;
+    }
+
+    if (flags & DDRAW_SURFACE_WRITE)
+        surface->texture_location = DDRAW_SURFACE_LOCATION_DRAW;
+
+    return surface->draw_texture;
+}
+
+static inline struct wined3d_texture *ddraw_surface_get_any_texture(struct ddraw_surface *surface, unsigned int flags)
+{
+    if (surface->texture_location & DDRAW_SURFACE_LOCATION_DEFAULT)
+        return ddraw_surface_get_default_texture(surface, flags);
+
+    assert(surface->texture_location & DDRAW_SURFACE_LOCATION_DRAW);
+    return ddraw_surface_get_draw_texture(surface, flags);
+}
+
+void d3d_device_sync_surfaces(struct d3d_device *device) DECLSPEC_HIDDEN;
 
 /* Used for generic dumping */
 struct flag_info

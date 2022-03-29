@@ -20,10 +20,12 @@
 #include "wine/list.h"
 
 #define NONAMELESSUNION
+#define WINE_NO_NAMELESS_EXTENSION
 #include "d3d11_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d11);
 
+<<<<<<< HEAD
 enum deferred_cmd
 {
     DEFERRED_IASETVERTEXBUFFERS,        /* vbuffer_info */
@@ -1394,6 +1396,32 @@ static inline struct d3d11_command_list *unsafe_impl_from_ID3D11CommandList(ID3D
         return NULL;
     assert(iface->lpVtbl == &d3d11_command_list_vtbl);
     return CONTAINING_RECORD(iface, struct d3d11_command_list, ID3D11CommandList_iface);
+=======
+static BOOL d3d_array_reserve(void **elements, SIZE_T *capacity, SIZE_T count, SIZE_T size)
+{
+    SIZE_T max_capacity, new_capacity;
+    void *new_elements;
+
+    if (count <= *capacity)
+        return TRUE;
+
+    max_capacity = ~(SIZE_T)0 / size;
+    if (count > max_capacity)
+        return FALSE;
+
+    new_capacity = max(1, *capacity);
+    while (new_capacity < count && new_capacity <= max_capacity / 2)
+        new_capacity *= 2;
+    if (new_capacity < count)
+        new_capacity = count;
+
+    if (!(new_elements = heap_realloc(*elements, new_capacity * size)))
+        return FALSE;
+
+    *elements = new_elements;
+    *capacity = new_capacity;
+    return TRUE;
+>>>>>>> github-desktop-wine-mirror/master
 }
 
 static void STDMETHODCALLTYPE d3d_null_wined3d_object_destroyed(void *parent) {}
@@ -1403,24 +1431,425 @@ static const struct wined3d_parent_ops d3d_null_wined3d_parent_ops =
     d3d_null_wined3d_object_destroyed,
 };
 
-/* ID3D11DeviceContext - immediate context methods */
-
-static inline struct d3d11_immediate_context *impl_from_ID3D11DeviceContext1(ID3D11DeviceContext1 *iface)
+static inline BOOL d3d_device_is_d3d10_active(struct d3d_device *device)
 {
-    return CONTAINING_RECORD(iface, struct d3d11_immediate_context, ID3D11DeviceContext1_iface);
+    return !device->state
+                || IsEqualGUID(&device->state->emulated_interface, &IID_ID3D10Device)
+                || IsEqualGUID(&device->state->emulated_interface, &IID_ID3D10Device1);
 }
 
-static inline struct d3d_device *device_from_immediate_ID3D11DeviceContext1(ID3D11DeviceContext1 *iface)
+static D3D_FEATURE_LEVEL d3d_feature_level_from_wined3d(enum wined3d_feature_level level)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
-    return CONTAINING_RECORD(context, struct d3d_device, immediate_context);
+    return (D3D_FEATURE_LEVEL)level;
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_QueryInterface(ID3D11DeviceContext1 *iface,
+/* ID3DDeviceContextState methods */
+
+static inline struct d3d_device_context_state *impl_from_ID3DDeviceContextState(ID3DDeviceContextState *iface)
+{
+    return CONTAINING_RECORD(iface, struct d3d_device_context_state, ID3DDeviceContextState_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d_device_context_state_QueryInterface(ID3DDeviceContextState *iface,
         REFIID iid, void **out)
 {
+<<<<<<< HEAD
     struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1( (ID3D11DeviceContext1*)iface);
+=======
+    TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
+
+    if (IsEqualGUID(iid, &IID_ID3DDeviceContextState)
+            || IsEqualGUID(iid, &IID_ID3D11DeviceChild)
+            || IsEqualGUID(iid, &IID_IUnknown))
+    {
+        ID3DDeviceContextState_AddRef(iface);
+        *out = iface;
+        return S_OK;
+    }
+
+    WARN("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
+    *out = NULL;
+
+    return E_NOINTERFACE;
+}
+
+static ULONG d3d_device_context_state_private_addref(struct d3d_device_context_state *state)
+{
+    ULONG refcount = InterlockedIncrement(&state->private_refcount);
+
+    TRACE("%p increasing private refcount to %u.\n", state, refcount);
+
+    return refcount;
+}
+
+static ULONG STDMETHODCALLTYPE d3d_device_context_state_AddRef(ID3DDeviceContextState *iface)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+    ULONG refcount = InterlockedIncrement(&state->refcount);
+
+    TRACE("%p increasing refcount to %u.\n", state, refcount);
+
+    if (refcount == 1)
+    {
+        d3d_device_context_state_private_addref(state);
+        ID3D11Device2_AddRef(state->device);
+    }
+
+    return refcount;
+}
+
+static void d3d_device_remove_context_state(struct d3d_device *device, struct d3d_device_context_state *state)
+{
+    unsigned int i;
+
+    for (i = 0; i < device->context_state_count; ++i)
+    {
+        if (device->context_states[i] != state)
+            continue;
+
+        if (i != device->context_state_count - 1)
+            device->context_states[i] = device->context_states[device->context_state_count - 1];
+        --device->context_state_count;
+        break;
+    }
+}
+
+static void d3d_device_context_state_private_release(struct d3d_device_context_state *state)
+{
+    ULONG refcount = InterlockedDecrement(&state->private_refcount);
+    struct d3d_device_context_state_entry *entry;
+    struct d3d_device *device;
+    unsigned int i;
+
+    TRACE("%p decreasing private refcount to %u.\n", state, refcount);
+
+    if (!refcount)
+    {
+        wined3d_private_store_cleanup(&state->private_store);
+        for (i = 0; i < state->entry_count; ++i)
+        {
+            entry = &state->entries[i];
+            device = entry->device;
+
+            if (entry->wined3d_state != wined3d_device_get_state(device->wined3d_device))
+                wined3d_state_destroy(entry->wined3d_state);
+
+            d3d_device_remove_context_state(device, state);
+        }
+        heap_free(state->entries);
+        wined3d_device_decref(state->wined3d_device);
+        heap_free(state);
+    }
+}
+
+static ULONG STDMETHODCALLTYPE d3d_device_context_state_Release(ID3DDeviceContextState *iface)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+    ULONG refcount = InterlockedDecrement(&state->refcount);
+
+    TRACE("%p decreasing refcount to %u.\n", state, refcount);
+
+    if (!refcount)
+    {
+        ID3D11Device2_Release(state->device);
+        d3d_device_context_state_private_release(state);
+    }
+
+    return refcount;
+}
+
+static void STDMETHODCALLTYPE d3d_device_context_state_GetDevice(ID3DDeviceContextState *iface, ID3D11Device **device)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+
+    TRACE("iface %p, device %p.\n", iface, device);
+
+    *device = (ID3D11Device *)state->device;
+    ID3D11Device_AddRef(*device);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d_device_context_state_GetPrivateData(ID3DDeviceContextState *iface, REFGUID guid,
+        UINT *data_size, void *data)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+
+    TRACE("iface %p, guid %s, data_size %p, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return d3d_get_private_data(&state->private_store, guid, data_size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d_device_context_state_SetPrivateData(ID3DDeviceContextState *iface, REFGUID guid,
+        UINT data_size, const void *data)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+
+    TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return d3d_set_private_data(&state->private_store, guid, data_size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d_device_context_state_SetPrivateDataInterface(ID3DDeviceContextState *iface,
+        REFGUID guid, const IUnknown *data)
+{
+    struct d3d_device_context_state *state = impl_from_ID3DDeviceContextState(iface);
+
+    TRACE("iface %p, guid %s, data %p.\n", iface, debugstr_guid(guid), data);
+
+    return d3d_set_private_data_interface(&state->private_store, guid, data);
+}
+
+static const struct ID3DDeviceContextStateVtbl d3d_device_context_state_vtbl =
+{
+    /* IUnknown methods */
+    d3d_device_context_state_QueryInterface,
+    d3d_device_context_state_AddRef,
+    d3d_device_context_state_Release,
+    /* ID3D11DeviceChild methods */
+    d3d_device_context_state_GetDevice,
+    d3d_device_context_state_GetPrivateData,
+    d3d_device_context_state_SetPrivateData,
+    d3d_device_context_state_SetPrivateDataInterface,
+    /* ID3DDeviceContextState methods */
+};
+
+static struct d3d_device_context_state_entry *d3d_device_context_state_get_entry(
+        struct d3d_device_context_state *state, struct d3d_device *device)
+{
+    unsigned int i;
+
+    for (i = 0; i < state->entry_count; ++i)
+    {
+        if (state->entries[i].device == device)
+            return &state->entries[i];
+    }
+
+    return NULL;
+}
+
+static BOOL d3d_device_context_state_add_entry(struct d3d_device_context_state *state,
+        struct d3d_device *device, struct wined3d_state *wined3d_state)
+{
+    struct d3d_device_context_state_entry *entry;
+
+    if (!d3d_array_reserve((void **)&state->entries, &state->entries_size,
+            state->entry_count + 1, sizeof(*state->entries)))
+        return FALSE;
+
+    if (!d3d_array_reserve((void **)&device->context_states, &device->context_states_size,
+            device->context_state_count + 1, sizeof(*device->context_states)))
+        return FALSE;
+
+    entry = &state->entries[state->entry_count++];
+    entry->device = device;
+    entry->wined3d_state = wined3d_state;
+
+    device->context_states[device->context_state_count++] = state;
+
+    return TRUE;
+}
+
+static void d3d_device_context_state_remove_entry(struct d3d_device_context_state *state, struct d3d_device *device)
+{
+    struct d3d_device_context_state_entry *entry;
+    unsigned int i;
+
+    for (i = 0; i < state->entry_count; ++i)
+    {
+        entry = &state->entries[i];
+        if (entry->device != device)
+            continue;
+
+        if (entry->wined3d_state != wined3d_device_get_state(device->wined3d_device))
+            wined3d_state_destroy(entry->wined3d_state);
+
+        if (i != state->entry_count)
+            state->entries[i] = state->entries[state->entry_count - 1];
+        --state->entry_count;
+
+        break;
+    }
+}
+
+static struct wined3d_state *d3d_device_context_state_get_wined3d_state(struct d3d_device_context_state *state,
+        struct d3d_device *device)
+{
+    struct d3d_device_context_state_entry *entry;
+    struct wined3d_state *wined3d_state;
+
+    if ((entry = d3d_device_context_state_get_entry(state, device)))
+        return entry->wined3d_state;
+
+    if (FAILED(wined3d_state_create(device->wined3d_device,
+            (enum wined3d_feature_level *)&state->feature_level, 1, &wined3d_state)))
+        return NULL;
+
+    if (!d3d_device_context_state_add_entry(state, device, wined3d_state))
+    {
+        wined3d_state_destroy(wined3d_state);
+        return NULL;
+    }
+
+    return wined3d_state;
+}
+
+static void d3d_device_context_state_init(struct d3d_device_context_state *state,
+        struct d3d_device *device, D3D_FEATURE_LEVEL feature_level, REFIID emulated_interface)
+{
+    state->ID3DDeviceContextState_iface.lpVtbl = &d3d_device_context_state_vtbl;
+    state->refcount = state->private_refcount = 0;
+
+    wined3d_private_store_init(&state->private_store);
+
+    state->feature_level = feature_level;
+    state->emulated_interface = *emulated_interface;
+    wined3d_device_incref(state->wined3d_device = device->wined3d_device);
+    state->device = &device->ID3D11Device2_iface;
+
+    d3d_device_context_state_AddRef(&state->ID3DDeviceContextState_iface);
+}
+
+/* ID3D11CommandList methods */
+
+static inline struct d3d11_command_list *impl_from_ID3D11CommandList(ID3D11CommandList *iface)
+{
+    return CONTAINING_RECORD(iface, struct d3d11_command_list, ID3D11CommandList_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_command_list_QueryInterface(ID3D11CommandList *iface, REFIID iid, void **out)
+{
+    TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
+
+    if (IsEqualGUID(iid, &IID_ID3D11CommandList)
+            || IsEqualGUID(iid, &IID_ID3D11DeviceChild)
+            || IsEqualGUID(iid, &IID_IUnknown))
+    {
+        ID3D11CommandList_AddRef(iface);
+        *out = iface;
+        return S_OK;
+    }
+
+    WARN("%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid(iid));
+    *out = NULL;
+
+    return E_NOINTERFACE;
+}
+
+static ULONG STDMETHODCALLTYPE d3d11_command_list_AddRef(ID3D11CommandList *iface)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+    ULONG refcount = InterlockedIncrement(&list->refcount);
+
+    TRACE("%p increasing refcount to %u.\n", list, refcount);
+
+    return refcount;
+}
+
+static ULONG STDMETHODCALLTYPE d3d11_command_list_Release(ID3D11CommandList *iface)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+    ULONG refcount = InterlockedDecrement(&list->refcount);
+
+    TRACE("%p decreasing refcount to %u.\n", list, refcount);
+
+    if (!refcount)
+    {
+        wined3d_command_list_decref(list->wined3d_list);
+        wined3d_private_store_cleanup(&list->private_store);
+        ID3D11Device2_Release(list->device);
+        heap_free(list);
+    }
+
+    return refcount;
+}
+
+static void STDMETHODCALLTYPE d3d11_command_list_GetDevice(ID3D11CommandList *iface, ID3D11Device **device)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+
+    TRACE("iface %p, device %p.\n", iface, device);
+
+    *device = (ID3D11Device *)list->device;
+    ID3D11Device2_AddRef(list->device);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_command_list_GetPrivateData(ID3D11CommandList *iface, REFGUID guid,
+        UINT *data_size, void *data)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+
+    TRACE("iface %p, guid %s, data_size %p, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return d3d_get_private_data(&list->private_store, guid, data_size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_command_list_SetPrivateData(ID3D11CommandList *iface, REFGUID guid,
+        UINT data_size, const void *data)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+
+    TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+
+    return d3d_set_private_data(&list->private_store, guid, data_size, data);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_command_list_SetPrivateDataInterface(ID3D11CommandList *iface,
+        REFGUID guid, const IUnknown *data)
+{
+    struct d3d11_command_list *list = impl_from_ID3D11CommandList(iface);
+
+    TRACE("iface %p, guid %s, data %p.\n", iface, debugstr_guid(guid), data);
+
+    return d3d_set_private_data_interface(&list->private_store, guid, data);
+}
+
+static UINT STDMETHODCALLTYPE d3d11_command_list_GetContextFlags(ID3D11CommandList *iface)
+{
+    TRACE("iface %p.\n", iface);
+
+    return 0;
+}
+
+static const struct ID3D11CommandListVtbl d3d11_command_list_vtbl =
+{
+    /* IUnknown methods */
+    d3d11_command_list_QueryInterface,
+    d3d11_command_list_AddRef,
+    d3d11_command_list_Release,
+    /* ID3D11DeviceChild methods */
+    d3d11_command_list_GetDevice,
+    d3d11_command_list_GetPrivateData,
+    d3d11_command_list_SetPrivateData,
+    d3d11_command_list_SetPrivateDataInterface,
+    /* ID3D11CommandList methods */
+    d3d11_command_list_GetContextFlags,
+};
+
+static struct d3d11_command_list *unsafe_impl_from_ID3D11CommandList(ID3D11CommandList *iface)
+{
+    if (!iface)
+        return NULL;
+    assert(iface->lpVtbl == &d3d11_command_list_vtbl);
+    return impl_from_ID3D11CommandList(iface);
+}
+
+static void d3d11_device_context_cleanup(struct d3d11_device_context *context)
+{
+    wined3d_private_store_cleanup(&context->private_store);
+}
+
+/* ID3D11DeviceContext - immediate context methods */
+
+static inline struct d3d11_device_context *impl_from_ID3D11DeviceContext1(ID3D11DeviceContext1 *iface)
+{
+    return CONTAINING_RECORD(iface, struct d3d11_device_context, ID3D11DeviceContext1_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_QueryInterface(ID3D11DeviceContext1 *iface,
+        REFIID iid, void **out)
+{
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+>>>>>>> github-desktop-wine-mirror/master
 
     TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
 
@@ -1431,14 +1860,20 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_QueryInterface(ID3D11De
     {
         *out = &context->ID3D11DeviceContext1_iface;
     }
-    else if (IsEqualGUID(iid, &IID_ID3D11Multithread))
+    else if (context->type == D3D11_DEVICE_CONTEXT_IMMEDIATE && IsEqualGUID(iid, &IID_ID3D11Multithread))
     {
         *out = &context->ID3D11Multithread_iface;
     }
+<<<<<<< HEAD
     else if (IsEqualGUID(iid, &IID_IWineD3DDevice))
     {
         *out = device->wined3d_device;
         return S_OK;
+=======
+    else if (IsEqualGUID(iid, &IID_ID3DUserDefinedAnnotation))
+    {
+        *out = &context->ID3DUserDefinedAnnotation_iface;
+>>>>>>> github-desktop-wine-mirror/master
     }
     else
     {
@@ -1451,235 +1886,296 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_QueryInterface(ID3D11De
     return S_OK;
 }
 
-static ULONG STDMETHODCALLTYPE d3d11_immediate_context_AddRef(ID3D11DeviceContext1 *iface)
+static ULONG STDMETHODCALLTYPE d3d11_device_context_AddRef(ID3D11DeviceContext1 *iface)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     ULONG refcount = InterlockedIncrement(&context->refcount);
 
     TRACE("%p increasing refcount to %u.\n", context, refcount);
 
     if (refcount == 1)
     {
-        ID3D11Device2_AddRef(&device->ID3D11Device2_iface);
+        ID3D11Device2_AddRef(&context->device->ID3D11Device2_iface);
     }
 
     return refcount;
 }
 
-static ULONG STDMETHODCALLTYPE d3d11_immediate_context_Release(ID3D11DeviceContext1 *iface)
+static ULONG STDMETHODCALLTYPE d3d11_device_context_Release(ID3D11DeviceContext1 *iface)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     ULONG refcount = InterlockedDecrement(&context->refcount);
 
     TRACE("%p decreasing refcount to %u.\n", context, refcount);
 
     if (!refcount)
     {
-        ID3D11Device2_Release(&device->ID3D11Device2_iface);
+        ID3D11Device2 *device = &context->device->ID3D11Device2_iface;
+        if (context->type != D3D11_DEVICE_CONTEXT_IMMEDIATE)
+        {
+            wined3d_deferred_context_destroy(context->wined3d_context);
+            d3d11_device_context_cleanup(context);
+            heap_free(context);
+        }
+        ID3D11Device2_Release(device);
     }
 
     return refcount;
 }
 
-static void d3d11_immediate_context_get_constant_buffers(ID3D11DeviceContext1 *iface,
-        enum wined3d_shader_type type, UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
+static void d3d11_device_context_get_constant_buffers(ID3D11DeviceContext1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int buffer_count, ID3D11Buffer **buffers,
+        unsigned int *offsets, unsigned int *counts)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     wined3d_mutex_lock();
     for (i = 0; i < buffer_count; ++i)
     {
-        struct wined3d_buffer *wined3d_buffer;
+        struct wined3d_constant_buffer_state state;
         struct d3d_buffer *buffer_impl;
 
-        if (!(wined3d_buffer = wined3d_device_get_constant_buffer(device->wined3d_device,
-                type, start_slot + i)))
+        wined3d_device_context_get_constant_buffer(context->wined3d_context, type, start_slot + i, &state);
+
+        if (offsets)
+            offsets[i] = state.offset / sizeof(struct wined3d_vec4);
+        if (counts)
+            counts[i] = state.size / sizeof(struct wined3d_vec4);
+
+        if (!state.buffer)
         {
             buffers[i] = NULL;
             continue;
         }
 
-        buffer_impl = wined3d_buffer_get_parent(wined3d_buffer);
+        buffer_impl = wined3d_buffer_get_parent(state.buffer);
         buffers[i] = &buffer_impl->ID3D11Buffer_iface;
         ID3D11Buffer_AddRef(buffers[i]);
     }
     wined3d_mutex_unlock();
 }
 
-static void d3d11_immediate_context_set_constant_buffers(ID3D11DeviceContext1 *iface,
-        enum wined3d_shader_type type, UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
+static void d3d11_device_context_set_constant_buffers(ID3D11DeviceContext1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int buffer_count, ID3D11Buffer *const *buffers,
+        const unsigned int *offsets, const unsigned int *counts)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    static const unsigned int alignment = D3D11_COMMONSHADER_CONSTANT_BUFFER_PARTIAL_UPDATE_EXTENTS_BYTE_ALIGNMENT;
+    struct wined3d_constant_buffer_state wined3d_buffers[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
-    wined3d_mutex_lock();
+    if (buffer_count > ARRAY_SIZE(wined3d_buffers))
+    {
+        WARN("Buffer count %u exceeds limit; ignoring call.\n", buffer_count);
+        return;
+    }
+
+    if (!offsets != !counts)
+    {
+        WARN("Got offsets pointer %p but counts pointer %p; ignoring call.\n", offsets, counts);
+        return;
+    }
+
     for (i = 0; i < buffer_count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D11Buffer(buffers[i]);
 
-        wined3d_device_set_constant_buffer(device->wined3d_device, type, start_slot + i,
-                buffer ? buffer->wined3d_buffer : NULL);
+        if (offsets && (offsets[i] & (alignment - 1)))
+        {
+            WARN("Offset %u is not aligned.\n", offsets[i]);
+            return;
+        }
+
+        if (counts && (counts[i] & (alignment - 1)))
+        {
+            WARN("Count %u is not aligned.\n", counts[i]);
+            return;
+        }
+
+        wined3d_buffers[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        wined3d_buffers[i].offset = (offsets ? offsets[i] : 0) * sizeof(struct wined3d_vec4);
+        wined3d_buffers[i].size = (counts ? counts[i] : WINED3D_MAX_CONSTANT_BUFFER_SIZE) * sizeof(struct wined3d_vec4);
     }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_constant_buffers(context->wined3d_context,
+            type, start_slot, buffer_count, wined3d_buffers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GetDevice(ID3D11DeviceContext1 *iface, ID3D11Device **device)
+static void d3d11_device_context_set_shader_resource_views(ID3D11DeviceContext1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device_object = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct wined3d_shader_resource_view *wined3d_views[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    unsigned int i;
+
+    if (count > ARRAY_SIZE(wined3d_views))
+    {
+        WARN("View count %u exceeds limit; ignoring call.\n", count);
+        return;
+    }
+
+    for (i = 0; i < count; ++i)
+    {
+        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
+
+        wined3d_views[i] = view ? view->wined3d_view : NULL;
+    }
+
+    wined3d_device_context_set_shader_resource_views(context->wined3d_context,
+            type, start_slot, count, wined3d_views);
+}
+
+static void d3d11_device_context_set_samplers(ID3D11DeviceContext1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int count, ID3D11SamplerState *const *samplers)
+{
+    struct wined3d_sampler *wined3d_samplers[D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT];
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    unsigned int i;
+
+    if (count > ARRAY_SIZE(wined3d_samplers))
+    {
+        WARN("Sampler count %u exceeds limit; ignoring call.\n", count);
+        return;
+    }
+
+    for (i = 0; i < count; ++i)
+    {
+        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
+
+        wined3d_samplers[i] = sampler ? sampler->wined3d_sampler : NULL;
+    }
+
+    wined3d_device_context_set_samplers(context->wined3d_context, type, start_slot, count, wined3d_samplers);
+}
+
+static void STDMETHODCALLTYPE d3d11_device_context_GetDevice(ID3D11DeviceContext1 *iface, ID3D11Device **device)
+{
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, device %p.\n", iface, device);
 
-    *device = (ID3D11Device *)&device_object->ID3D11Device2_iface;
+    *device = (ID3D11Device *)&context->device->ID3D11Device2_iface;
     ID3D11Device_AddRef(*device);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_GetPrivateData(ID3D11DeviceContext1 *iface, REFGUID guid,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_GetPrivateData(ID3D11DeviceContext1 *iface, REFGUID guid,
         UINT *data_size, void *data)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, guid %s, data_size %p, data %p.\n", iface, debugstr_guid(guid), data_size, data);
 
     return d3d_get_private_data(&context->private_store, guid, data_size, data);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_SetPrivateData(ID3D11DeviceContext1 *iface, REFGUID guid,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_SetPrivateData(ID3D11DeviceContext1 *iface, REFGUID guid,
         UINT data_size, const void *data)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
 
     return d3d_set_private_data(&context->private_store, guid, data_size, data);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_SetPrivateDataInterface(ID3D11DeviceContext1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_SetPrivateDataInterface(ID3D11DeviceContext1 *iface,
         REFGUID guid, const IUnknown *data)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, guid %s, data %p.\n", iface, debugstr_guid(guid), data);
 
     return d3d_set_private_data_interface(&context->private_store, guid, data);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_ps_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11PixelShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_pixel_shader *ps = unsafe_impl_from_ID3D11PixelShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_pixel_shader(device->wined3d_device, ps ? ps->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_PIXEL,
+            ps ? ps->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_ps_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11VertexShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_vertex_shader *vs = unsafe_impl_from_ID3D11VertexShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_vertex_shader(device->wined3d_device, vs ? vs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_VERTEX,
+            vs ? vs->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawIndexed(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DrawIndexed(ID3D11DeviceContext1 *iface,
         UINT index_count, UINT start_index_location, INT base_vertex_location)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, index_count %u, start_index_location %u, base_vertex_location %d.\n",
             iface, index_count, start_index_location, base_vertex_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_base_vertex_index(device->wined3d_device, base_vertex_location);
-    wined3d_device_draw_indexed_primitive(device->wined3d_device, start_index_location, index_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indexed(context->wined3d_context,
+            base_vertex_location, start_index_location, index_count, 0, 0);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_Draw(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_Draw(ID3D11DeviceContext1 *iface,
         UINT vertex_count, UINT start_vertex_location)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, vertex_count %u, start_vertex_location %u.\n",
             iface, vertex_count, start_vertex_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_primitive(device->wined3d_device, start_vertex_location, vertex_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw(context->wined3d_context, start_vertex_location, vertex_count, 0, 0);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_Map(ID3D11DeviceContext1 *iface, ID3D11Resource *resource,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_Map(ID3D11DeviceContext1 *iface, ID3D11Resource *resource,
         UINT subresource_idx, D3D11_MAP map_type, UINT map_flags, D3D11_MAPPED_SUBRESOURCE *mapped_subresource)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_resource;
     struct wined3d_map_desc map_desc;
     HRESULT hr;
@@ -1690,12 +2186,14 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_Map(ID3D11DeviceContext
     if (map_flags)
         FIXME("Ignoring map_flags %#x.\n", map_flags);
 
+    if (context->type != D3D11_DEVICE_CONTEXT_IMMEDIATE
+            && map_type != D3D11_MAP_WRITE_DISCARD && map_type != D3D11_MAP_WRITE_NO_OVERWRITE)
+        return E_INVALIDARG;
+
     wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
 
-    wined3d_mutex_lock();
-    hr = wined3d_resource_map(wined3d_resource, subresource_idx,
+    hr = wined3d_device_context_map(context->wined3d_context, wined3d_resource, subresource_idx,
             &map_desc, NULL, wined3d_map_flags_from_d3d11_map_type(map_type));
-    wined3d_mutex_unlock();
 
     mapped_subresource->pData = map_desc.data;
     mapped_subresource->RowPitch = map_desc.row_pitch;
@@ -1704,144 +2202,143 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_Map(ID3D11DeviceContext
     return hr;
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_Unmap(ID3D11DeviceContext1 *iface, ID3D11Resource *resource,
+static void STDMETHODCALLTYPE d3d11_device_context_Unmap(ID3D11DeviceContext1 *iface, ID3D11Resource *resource,
         UINT subresource_idx)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_resource;
 
     TRACE("iface %p, resource %p, subresource_idx %u.\n", iface, resource, subresource_idx);
 
     wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
 
-    wined3d_mutex_lock();
-    wined3d_resource_unmap(wined3d_resource, subresource_idx);
-    wined3d_mutex_unlock();
+    wined3d_device_context_unmap(context->wined3d_context, wined3d_resource, subresource_idx);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IASetInputLayout(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IASetInputLayout(ID3D11DeviceContext1 *iface,
         ID3D11InputLayout *input_layout)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_input_layout *layout = unsafe_impl_from_ID3D11InputLayout(input_layout);
 
     TRACE("iface %p, input_layout %p.\n", iface, input_layout);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_vertex_declaration(device->wined3d_device, layout ? layout->wined3d_decl : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_vertex_declaration(context->wined3d_context, layout ? layout->wined3d_decl : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IASetVertexBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IASetVertexBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers, const UINT *strides, const UINT *offsets)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct wined3d_stream_state streams[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, strides %p, offsets %p.\n",
             iface, start_slot, buffer_count, buffers, strides, offsets);
 
-    wined3d_mutex_lock();
+    if (buffer_count > ARRAY_SIZE(streams))
+    {
+        WARN("Buffer count %u exceeds limit.\n", buffer_count);
+        buffer_count = ARRAY_SIZE(streams);
+    }
+
     for (i = 0; i < buffer_count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D11Buffer(buffers[i]);
 
-        wined3d_device_set_stream_source(device->wined3d_device, start_slot + i,
-                buffer ? buffer->wined3d_buffer : NULL, offsets[i], strides[i]);
+        streams[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        streams[i].offset = offsets[i];
+        streams[i].stride = strides[i];
+        streams[i].frequency = 1;
+        streams[i].flags = 0;
     }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_stream_sources(context->wined3d_context, start_slot, buffer_count, streams);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IASetIndexBuffer(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IASetIndexBuffer(ID3D11DeviceContext1 *iface,
         ID3D11Buffer *buffer, DXGI_FORMAT format, UINT offset)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_buffer *buffer_impl = unsafe_impl_from_ID3D11Buffer(buffer);
 
     TRACE("iface %p, buffer %p, format %s, offset %u.\n",
             iface, buffer, debug_dxgi_format(format), offset);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_index_buffer(device->wined3d_device,
+    wined3d_device_context_set_index_buffer(context->wined3d_context,
             buffer_impl ? buffer_impl->wined3d_buffer : NULL,
             wined3dformat_from_dxgi_format(format), offset);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawIndexedInstanced(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DrawIndexedInstanced(ID3D11DeviceContext1 *iface,
         UINT instance_index_count, UINT instance_count, UINT start_index_location, INT base_vertex_location,
         UINT start_instance_location)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, instance_index_count %u, instance_count %u, start_index_location %u, "
             "base_vertex_location %d, start_instance_location %u.\n",
             iface, instance_index_count, instance_count, start_index_location,
             base_vertex_location, start_instance_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_base_vertex_index(device->wined3d_device, base_vertex_location);
-    wined3d_device_draw_indexed_primitive_instanced(device->wined3d_device, start_index_location,
-            instance_index_count, start_instance_location, instance_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indexed(context->wined3d_context, base_vertex_location,
+            start_index_location, instance_index_count, start_instance_location, instance_count);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawInstanced(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DrawInstanced(ID3D11DeviceContext1 *iface,
         UINT instance_vertex_count, UINT instance_count, UINT start_vertex_location, UINT start_instance_location)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, instance_vertex_count %u, instance_count %u, start_vertex_location %u, "
             "start_instance_location %u.\n",
             iface, instance_vertex_count, instance_count, start_vertex_location,
             start_instance_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_primitive_instanced(device->wined3d_device, start_vertex_location,
+    wined3d_device_context_draw(context->wined3d_context, start_vertex_location,
             instance_vertex_count, start_instance_location, instance_count);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11GeometryShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_geometry_shader *gs = unsafe_impl_from_ID3D11GeometryShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_geometry_shader(device->wined3d_device, gs ? gs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY,
+            gs ? gs->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IASetPrimitiveTopology(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IASetPrimitiveTopology(ID3D11DeviceContext1 *iface,
         D3D11_PRIMITIVE_TOPOLOGY topology)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     enum wined3d_primitive_type primitive_type;
     unsigned int patch_vertex_count;
 
@@ -1849,87 +2346,61 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IASetPrimitiveTopology(ID3
 
     wined3d_primitive_type_from_d3d11_primitive_topology(topology, &primitive_type, &patch_vertex_count);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_primitive_type(device->wined3d_device, primitive_type, patch_vertex_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_primitive_type(context->wined3d_context, primitive_type, patch_vertex_count);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_vs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_vs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_Begin(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_Begin(ID3D11DeviceContext1 *iface,
         ID3D11Asynchronous *asynchronous)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
-    HRESULT hr;
 
     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_query_issue(query->wined3d_query, WINED3DISSUE_BEGIN)))
-        ERR("Failed to issue query, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
+    wined3d_device_context_issue_query(context->wined3d_context, query->wined3d_query, WINED3DISSUE_BEGIN);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_End(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_End(ID3D11DeviceContext1 *iface,
         ID3D11Asynchronous *asynchronous)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
-    HRESULT hr;
 
     TRACE("iface %p, asynchronous %p.\n", iface, asynchronous);
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_query_issue(query->wined3d_query, WINED3DISSUE_END)))
-        ERR("Failed to issue query, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
+    wined3d_device_context_issue_query(context->wined3d_context, query->wined3d_query, WINED3DISSUE_END);
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_GetData(ID3D11DeviceContext1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_GetData(ID3D11DeviceContext1 *iface,
         ID3D11Asynchronous *asynchronous, void *data, UINT data_size, UINT data_flags)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_query *query = unsafe_impl_from_ID3D11Asynchronous(asynchronous);
     unsigned int wined3d_flags;
     HRESULT hr;
 
     TRACE("iface %p, asynchronous %p, data %p, data_size %u, data_flags %#x.\n",
             iface, asynchronous, data, data_size, data_flags);
+
+    if (context->type != D3D11_DEVICE_CONTEXT_IMMEDIATE)
+        return DXGI_ERROR_INVALID_CALL;
 
     if (!data && data_size)
         return E_INVALIDARG;
@@ -1953,138 +2424,131 @@ static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_GetData(ID3D11DeviceCon
     return hr;
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_SetPredication(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_SetPredication(ID3D11DeviceContext1 *iface,
         ID3D11Predicate *predicate, BOOL value)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_query *query;
 
     TRACE("iface %p, predicate %p, value %#x.\n", iface, predicate, value);
 
     query = unsafe_impl_from_ID3D11Query((ID3D11Query *)predicate);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_predication(device->wined3d_device, query ? query->wined3d_query : NULL, value);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_predication(context->wined3d_context, query ? query->wined3d_query : NULL, value);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_gs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_gs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetRenderTargets(ID3D11DeviceContext1 *iface,
-        UINT render_target_view_count, ID3D11RenderTargetView *const *render_target_views,
-        ID3D11DepthStencilView *depth_stencil_view)
+static void STDMETHODCALLTYPE d3d11_device_context_OMSetRenderTargets(ID3D11DeviceContext1 *iface,
+        UINT rtv_count, ID3D11RenderTargetView *const *rtvs, ID3D11DepthStencilView *depth_stencil_view)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct wined3d_rendertarget_view *wined3d_rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {0};
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_depthstencil_view *dsv;
     unsigned int i;
 
-    TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p.\n",
-            iface, render_target_view_count, render_target_views, depth_stencil_view);
+    TRACE("iface %p, rtv_count %u, rtvs %p, depth_stencil_view %p.\n", iface, rtv_count, rtvs, depth_stencil_view);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < render_target_view_count; ++i)
+    if (rtv_count > ARRAY_SIZE(wined3d_rtvs))
     {
-        struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D11RenderTargetView(render_target_views[i]);
-        wined3d_device_set_rendertarget_view(device->wined3d_device, i, rtv ? rtv->wined3d_view : NULL, FALSE);
+        WARN("View count %u exceeds limit.\n", rtv_count);
+        rtv_count = ARRAY_SIZE(wined3d_rtvs);
     }
-    for (; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+
+    for (i = 0; i < rtv_count; ++i)
     {
-        wined3d_device_set_rendertarget_view(device->wined3d_device, i, NULL, FALSE);
+        struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D11RenderTargetView(rtvs[i]);
+
+        wined3d_rtvs[i] = rtv ? rtv->wined3d_view : NULL;
     }
 
     dsv = unsafe_impl_from_ID3D11DepthStencilView(depth_stencil_view);
-    wined3d_device_set_depth_stencil_view(device->wined3d_device, dsv ? dsv->wined3d_view : NULL);
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_render_targets_and_unordered_access_views(context->wined3d_context,
+            ARRAY_SIZE(wined3d_rtvs), wined3d_rtvs, dsv ? dsv->wined3d_view : NULL, ~0u, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetRenderTargetsAndUnorderedAccessViews(
-        ID3D11DeviceContext1 *iface, UINT render_target_view_count,
-        ID3D11RenderTargetView *const *render_target_views, ID3D11DepthStencilView *depth_stencil_view,
-        UINT unordered_access_view_start_slot, UINT unordered_access_view_count,
-        ID3D11UnorderedAccessView *const *unordered_access_views, const UINT *initial_counts)
+static void STDMETHODCALLTYPE d3d11_device_context_OMSetRenderTargetsAndUnorderedAccessViews(
+        ID3D11DeviceContext1 *iface, UINT render_target_view_count, ID3D11RenderTargetView *const *render_target_views,
+        ID3D11DepthStencilView *depth_stencil_view, UINT uav_start_idx, UINT uav_count,
+        ID3D11UnorderedAccessView *const *uavs, const UINT *initial_counts)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d_depthstencil_view *dsv = unsafe_impl_from_ID3D11DepthStencilView(depth_stencil_view);
+    struct wined3d_rendertarget_view *wined3d_rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT] = {0};
+    struct wined3d_unordered_access_view *wined3d_uavs[D3D11_PS_CS_UAV_REGISTER_COUNT] = {0};
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    unsigned int wined3d_initial_counts[D3D11_PS_CS_UAV_REGISTER_COUNT];
     unsigned int i;
 
     TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p, "
-            "unordered_access_view_start_slot %u, unordered_access_view_count %u, unordered_access_views %p, "
-            "initial_counts %p.\n",
+            "uav_start_idx %u, uav_count %u, uavs %p, initial_counts %p.\n",
             iface, render_target_view_count, render_target_views, depth_stencil_view,
-            unordered_access_view_start_slot, unordered_access_view_count, unordered_access_views,
-            initial_counts);
+            uav_start_idx, uav_count, uavs, initial_counts);
 
-    if (render_target_view_count != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
+    if (render_target_view_count == D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
+        render_target_view_count = ~0u;
+    else
     {
-        d3d11_immediate_context_OMSetRenderTargets(iface, render_target_view_count, render_target_views,
-                depth_stencil_view);
+        if (render_target_view_count > ARRAY_SIZE(wined3d_rtvs))
+        {
+            WARN("View count %u exceeds limit.\n", render_target_view_count);
+            render_target_view_count = ARRAY_SIZE(wined3d_rtvs);
+        }
+
+        for (i = 0; i < render_target_view_count; ++i)
+        {
+            struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D11RenderTargetView(render_target_views[i]);
+
+            wined3d_rtvs[i] = rtv ? rtv->wined3d_view : NULL;
+        }
     }
 
-    if (unordered_access_view_count != D3D11_KEEP_UNORDERED_ACCESS_VIEWS)
+    if (uav_count == D3D11_KEEP_UNORDERED_ACCESS_VIEWS)
+        uav_count = ~0u;
+    else
     {
-        wined3d_mutex_lock();
-        for (i = 0; i < unordered_access_view_start_slot; ++i)
+        if (!wined3d_bound_range(uav_start_idx, uav_count, ARRAY_SIZE(wined3d_uavs)))
         {
-            wined3d_device_set_unordered_access_view(device->wined3d_device, i, NULL, ~0u);
+            WARN("View count %u exceeds limit; ignoring call.\n", uav_count);
+            return;
         }
-        for (i = 0; i < unordered_access_view_count; ++i)
-        {
-            struct d3d11_unordered_access_view *view
-                    = unsafe_impl_from_ID3D11UnorderedAccessView(unordered_access_views[i]);
 
-            wined3d_device_set_unordered_access_view(device->wined3d_device,
-                    unordered_access_view_start_slot + i,
-                    view ? view->wined3d_view : NULL, initial_counts ? initial_counts[i] : ~0u);
-        }
-        for (; unordered_access_view_start_slot + i < D3D11_PS_CS_UAV_REGISTER_COUNT; ++i)
+        memset(wined3d_initial_counts, 0xff, sizeof(wined3d_initial_counts));
+
+        for (i = 0; i < uav_count; ++i)
         {
-            wined3d_device_set_unordered_access_view(device->wined3d_device,
-                    unordered_access_view_start_slot + i, NULL, ~0u);
+            struct d3d11_unordered_access_view *view =
+                    unsafe_impl_from_ID3D11UnorderedAccessView(uavs[i]);
+
+            wined3d_uavs[uav_start_idx + i] = view ? view->wined3d_view : NULL;
+            wined3d_initial_counts[uav_start_idx + i] = initial_counts ? initial_counts[i] : ~0u;
         }
-        wined3d_mutex_unlock();
     }
+
+    wined3d_device_context_set_render_targets_and_unordered_access_views(context->wined3d_context, ARRAY_SIZE(wined3d_rtvs),
+            wined3d_rtvs, dsv ? dsv->wined3d_view : NULL, ARRAY_SIZE(wined3d_uavs), wined3d_uavs,
+            wined3d_initial_counts);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetBlendState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_OMSetBlendState(ID3D11DeviceContext1 *iface,
         ID3D11BlendState *blend_state, const float blend_factor[4], UINT sample_mask)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     static const float default_blend_factor[] = {1.0f, 1.0f, 1.0f, 1.0f};
     struct d3d_blend_state *blend_state_impl;
 
@@ -2094,207 +2558,126 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetBlendState(ID3D11Devi
     if (!blend_factor)
         blend_factor = default_blend_factor;
 
-    wined3d_mutex_lock();
-    wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_MULTISAMPLEMASK, sample_mask);
     if (!(blend_state_impl = unsafe_impl_from_ID3D11BlendState(blend_state)))
-        wined3d_device_set_blend_state(device->wined3d_device, NULL,
-                (const struct wined3d_color *)blend_factor);
+        wined3d_device_context_set_blend_state(context->wined3d_context, NULL,
+                (const struct wined3d_color *)blend_factor, sample_mask);
     else
-        wined3d_device_set_blend_state(device->wined3d_device, blend_state_impl->wined3d_state,
-                (const struct wined3d_color *)blend_factor);
-    wined3d_mutex_unlock();
+        wined3d_device_context_set_blend_state(context->wined3d_context, blend_state_impl->wined3d_state,
+                (const struct wined3d_color *)blend_factor, sample_mask);
 }
 
-static void set_default_depth_stencil_state(struct wined3d_device *wined3d_device)
-{
-    wined3d_device_set_render_state(wined3d_device, WINED3D_RS_ZENABLE, TRUE);
-    wined3d_device_set_render_state(wined3d_device, WINED3D_RS_ZWRITEENABLE, D3D11_DEPTH_WRITE_MASK_ALL);
-    wined3d_device_set_render_state(wined3d_device, WINED3D_RS_ZFUNC, WINED3D_CMP_LESS);
-    wined3d_device_set_render_state(wined3d_device, WINED3D_RS_STENCILENABLE, FALSE);
-}
-
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMSetDepthStencilState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_OMSetDepthStencilState(ID3D11DeviceContext1 *iface,
         ID3D11DepthStencilState *depth_stencil_state, UINT stencil_ref)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    const D3D11_DEPTH_STENCILOP_DESC *front, *back;
-    const D3D11_DEPTH_STENCIL_DESC *desc;
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d_depthstencil_state *state_impl;
 
     TRACE("iface %p, depth_stencil_state %p, stencil_ref %u.\n",
             iface, depth_stencil_state, stencil_ref);
 
-    wined3d_mutex_lock();
-    device->stencil_ref = stencil_ref;
-    if (!(device->depth_stencil_state = unsafe_impl_from_ID3D11DepthStencilState(depth_stencil_state)))
+    if (!(state_impl = unsafe_impl_from_ID3D11DepthStencilState(depth_stencil_state)))
     {
-        set_default_depth_stencil_state(device->wined3d_device);
-        wined3d_mutex_unlock();
+        wined3d_device_context_set_depth_stencil_state(context->wined3d_context, NULL, stencil_ref);
         return;
     }
 
-    desc = &device->depth_stencil_state->desc;
-
-    front = &desc->FrontFace;
-    back = &desc->BackFace;
-
-    wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_ZENABLE, desc->DepthEnable);
-    if (desc->DepthEnable)
-    {
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_ZWRITEENABLE, desc->DepthWriteMask);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_ZFUNC, desc->DepthFunc);
-    }
-
-    wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILENABLE, desc->StencilEnable);
-    if (desc->StencilEnable)
-    {
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILMASK, desc->StencilReadMask);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILWRITEMASK, desc->StencilWriteMask);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILREF, stencil_ref);
-
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILFAIL, front->StencilFailOp);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILZFAIL, front->StencilDepthFailOp);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILPASS, front->StencilPassOp);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_STENCILFUNC, front->StencilFunc);
-        if (front->StencilFailOp != back->StencilFailOp
-                || front->StencilDepthFailOp != back->StencilDepthFailOp
-                || front->StencilPassOp != back->StencilPassOp
-                || front->StencilFunc != back->StencilFunc)
-        {
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_TWOSIDEDSTENCILMODE, TRUE);
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_BACK_STENCILFAIL, back->StencilFailOp);
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_BACK_STENCILZFAIL,
-                    back->StencilDepthFailOp);
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_BACK_STENCILPASS, back->StencilPassOp);
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_BACK_STENCILFUNC, back->StencilFunc);
-        }
-        else
-        {
-            wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_TWOSIDEDSTENCILMODE, FALSE);
-        }
-    }
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_depth_stencil_state(context->wined3d_context, state_impl->wined3d_state, stencil_ref);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_SOSetTargets(ID3D11DeviceContext1 *iface, UINT buffer_count,
+static void STDMETHODCALLTYPE d3d11_device_context_SOSetTargets(ID3D11DeviceContext1 *iface, UINT buffer_count,
         ID3D11Buffer *const *buffers, const UINT *offsets)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct wined3d_stream_output outputs[WINED3D_MAX_STREAM_OUTPUT_BUFFERS] = {0};
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int count, i;
 
     TRACE("iface %p, buffer_count %u, buffers %p, offsets %p.\n", iface, buffer_count, buffers, offsets);
 
-    count = min(buffer_count, D3D11_SO_BUFFER_SLOT_COUNT);
-    wined3d_mutex_lock();
+    count = min(buffer_count, ARRAY_SIZE(outputs));
     for (i = 0; i < count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D11Buffer(buffers[i]);
 
-        wined3d_device_set_stream_output(device->wined3d_device, i,
-                buffer ? buffer->wined3d_buffer : NULL, offsets ? offsets[i] : 0);
+        outputs[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        outputs[i].offset = offsets ? offsets[i] : 0;
     }
-    for (; i < D3D11_SO_BUFFER_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_stream_output(device->wined3d_device, i, NULL, 0);
-    }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_stream_outputs(context->wined3d_context, outputs);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawAuto(ID3D11DeviceContext1 *iface)
+static void STDMETHODCALLTYPE d3d11_device_context_DrawAuto(ID3D11DeviceContext1 *iface)
 {
     FIXME("iface %p stub!\n", iface);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawIndexedInstancedIndirect(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DrawIndexedInstancedIndirect(ID3D11DeviceContext1 *iface,
         ID3D11Buffer *buffer, UINT offset)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_buffer *d3d_buffer;
 
     TRACE("iface %p, buffer %p, offset %u.\n", iface, buffer, offset);
 
     d3d_buffer = unsafe_impl_from_ID3D11Buffer(buffer);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_indexed_primitive_instanced_indirect(device->wined3d_device,
-            d3d_buffer->wined3d_buffer, offset);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indirect(context->wined3d_context, d3d_buffer->wined3d_buffer, offset, true);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DrawInstancedIndirect(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DrawInstancedIndirect(ID3D11DeviceContext1 *iface,
         ID3D11Buffer *buffer, UINT offset)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_buffer *d3d_buffer;
 
     TRACE("iface %p, buffer %p, offset %u.\n", iface, buffer, offset);
 
     d3d_buffer = unsafe_impl_from_ID3D11Buffer(buffer);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_primitive_instanced_indirect(device->wined3d_device,
-            d3d_buffer->wined3d_buffer, offset);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indirect(context->wined3d_context, d3d_buffer->wined3d_buffer, offset, false);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_Dispatch(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_Dispatch(ID3D11DeviceContext1 *iface,
         UINT thread_group_count_x, UINT thread_group_count_y, UINT thread_group_count_z)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, thread_group_count_x %u, thread_group_count_y %u, thread_group_count_z %u.\n",
             iface, thread_group_count_x, thread_group_count_y, thread_group_count_z);
 
-    wined3d_mutex_lock();
-    wined3d_device_dispatch_compute(device->wined3d_device,
+    wined3d_device_context_dispatch(context->wined3d_context,
             thread_group_count_x, thread_group_count_y, thread_group_count_z);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DispatchIndirect(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DispatchIndirect(ID3D11DeviceContext1 *iface,
         ID3D11Buffer *buffer, UINT offset)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_buffer *buffer_impl;
 
     TRACE("iface %p, buffer %p, offset %u.\n", iface, buffer, offset);
 
     buffer_impl = unsafe_impl_from_ID3D11Buffer(buffer);
 
-    wined3d_mutex_lock();
-    wined3d_device_dispatch_compute_indirect(device->wined3d_device,
-            buffer_impl->wined3d_buffer, offset);
-    wined3d_mutex_unlock();
+    wined3d_device_context_dispatch_indirect(context->wined3d_context, buffer_impl->wined3d_buffer, offset);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSSetState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSSetState(ID3D11DeviceContext1 *iface,
         ID3D11RasterizerState *rasterizer_state)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_rasterizer_state *rasterizer_state_impl;
-    const D3D11_RASTERIZER_DESC *desc;
 
     TRACE("iface %p, rasterizer_state %p.\n", iface, rasterizer_state);
 
-    wined3d_mutex_lock();
-    if (!(rasterizer_state_impl = unsafe_impl_from_ID3D11RasterizerState(rasterizer_state)))
-    {
-        wined3d_device_set_rasterizer_state(device->wined3d_device, NULL);
-        wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_MULTISAMPLEANTIALIAS, FALSE);
-        wined3d_mutex_unlock();
-        return;
-    }
-
-    wined3d_device_set_rasterizer_state(device->wined3d_device, rasterizer_state_impl->wined3d_state);
-
-    desc = &rasterizer_state_impl->desc;
-    wined3d_device_set_render_state(device->wined3d_device, WINED3D_RS_MULTISAMPLEANTIALIAS, desc->MultisampleEnable);
-    wined3d_mutex_unlock();
+    rasterizer_state_impl = unsafe_impl_from_ID3D11RasterizerState(rasterizer_state);
+    wined3d_device_context_set_rasterizer_state(context->wined3d_context,
+            rasterizer_state_impl ? rasterizer_state_impl->wined3d_state : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSSetViewports(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSSetViewports(ID3D11DeviceContext1 *iface,
         UINT viewport_count, const D3D11_VIEWPORT *viewports)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_viewport wined3d_vp[WINED3D_MAX_VIEWPORTS];
     unsigned int i;
 
@@ -2313,31 +2696,27 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_RSSetViewports(ID3D11Devic
         wined3d_vp[i].max_z = viewports[i].MaxDepth;
     }
 
-    wined3d_mutex_lock();
-    wined3d_device_set_viewports(device->wined3d_device, viewport_count, wined3d_vp);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_viewports(context->wined3d_context, viewport_count, wined3d_vp);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSSetScissorRects(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSSetScissorRects(ID3D11DeviceContext1 *iface,
         UINT rect_count, const D3D11_RECT *rects)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p, rect_count %u, rects %p.\n", iface, rect_count, rects);
 
     if (rect_count > WINED3D_MAX_VIEWPORTS)
         return;
 
-    wined3d_mutex_lock();
-    wined3d_device_set_scissor_rects(device->wined3d_device, rect_count, rects);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_scissor_rects(context->wined3d_context, rect_count, rects);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CopySubresourceRegion(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CopySubresourceRegion(ID3D11DeviceContext1 *iface,
         ID3D11Resource *dst_resource, UINT dst_subresource_idx, UINT dst_x, UINT dst_y, UINT dst_z,
         ID3D11Resource *src_resource, UINT src_subresource_idx, const D3D11_BOX *src_box)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_dst_resource, *wined3d_src_resource;
     struct wined3d_box wined3d_src_box;
 
@@ -2346,38 +2725,37 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CopySubresourceRegion(ID3D
             iface, dst_resource, dst_subresource_idx, dst_x, dst_y, dst_z,
             src_resource, src_subresource_idx, src_box);
 
+    if (!dst_resource || !src_resource)
+        return;
+
     if (src_box)
         wined3d_box_set(&wined3d_src_box, src_box->left, src_box->top,
                 src_box->right, src_box->bottom, src_box->front, src_box->back);
 
     wined3d_dst_resource = wined3d_resource_from_d3d11_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d11_resource(src_resource);
-    wined3d_mutex_lock();
-    wined3d_device_copy_sub_resource_region(device->wined3d_device, wined3d_dst_resource, dst_subresource_idx,
+    wined3d_device_context_copy_sub_resource_region(context->wined3d_context, wined3d_dst_resource, dst_subresource_idx,
             dst_x, dst_y, dst_z, wined3d_src_resource, src_subresource_idx, src_box ? &wined3d_src_box : NULL, 0);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CopyResource(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CopyResource(ID3D11DeviceContext1 *iface,
         ID3D11Resource *dst_resource, ID3D11Resource *src_resource)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_dst_resource, *wined3d_src_resource;
 
     TRACE("iface %p, dst_resource %p, src_resource %p.\n", iface, dst_resource, src_resource);
 
     wined3d_dst_resource = wined3d_resource_from_d3d11_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d11_resource(src_resource);
-    wined3d_mutex_lock();
-    wined3d_device_copy_resource(device->wined3d_device, wined3d_dst_resource, wined3d_src_resource);
-    wined3d_mutex_unlock();
+    wined3d_device_context_copy_resource(context->wined3d_context, wined3d_dst_resource, wined3d_src_resource);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_UpdateSubresource(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_UpdateSubresource(ID3D11DeviceContext1 *iface,
         ID3D11Resource *resource, UINT subresource_idx, const D3D11_BOX *box,
         const void *data, UINT row_pitch, UINT depth_pitch)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_resource;
     struct wined3d_box wined3d_box;
 
@@ -2388,16 +2766,14 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_UpdateSubresource(ID3D11De
         wined3d_box_set(&wined3d_box, box->left, box->top, box->right, box->bottom, box->front, box->back);
 
     wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
-    wined3d_mutex_lock();
-    wined3d_device_update_sub_resource(device->wined3d_device, wined3d_resource,
+    wined3d_device_context_update_sub_resource(context->wined3d_context, wined3d_resource,
             subresource_idx, box ? &wined3d_box : NULL, data, row_pitch, depth_pitch, 0);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CopyStructureCount(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CopyStructureCount(ID3D11DeviceContext1 *iface,
         ID3D11Buffer *dst_buffer, UINT dst_offset, ID3D11UnorderedAccessView *src_view)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_unordered_access_view *uav;
     struct d3d_buffer *buffer_impl;
 
@@ -2407,16 +2783,14 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CopyStructureCount(ID3D11D
     buffer_impl = unsafe_impl_from_ID3D11Buffer(dst_buffer);
     uav = unsafe_impl_from_ID3D11UnorderedAccessView(src_view);
 
-    wined3d_mutex_lock();
-    wined3d_device_copy_uav_counter(device->wined3d_device,
+    wined3d_device_context_copy_uav_counter(context->wined3d_context,
             buffer_impl->wined3d_buffer, dst_offset, uav->wined3d_view);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearRenderTargetView(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_ClearRenderTargetView(ID3D11DeviceContext1 *iface,
         ID3D11RenderTargetView *render_target_view, const float color_rgba[4])
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_rendertarget_view *view = unsafe_impl_from_ID3D11RenderTargetView(render_target_view);
     const struct wined3d_color color = {color_rgba[0], color_rgba[1], color_rgba[2], color_rgba[3]};
     HRESULT hr;
@@ -2427,40 +2801,43 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_ClearRenderTargetView(ID3D
     if (!view)
         return;
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_device_clear_rendertarget_view(device->wined3d_device, view->wined3d_view, NULL,
+    if (FAILED(hr = wined3d_device_context_clear_rendertarget_view(context->wined3d_context, view->wined3d_view, NULL,
             WINED3DCLEAR_TARGET, &color, 0.0f, 0)))
         ERR("Failed to clear view, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearUnorderedAccessViewUint(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_ClearUnorderedAccessViewUint(ID3D11DeviceContext1 *iface,
         ID3D11UnorderedAccessView *unordered_access_view, const UINT values[4])
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_unordered_access_view *view;
 
     TRACE("iface %p, unordered_access_view %p, values {%u, %u, %u, %u}.\n",
             iface, unordered_access_view, values[0], values[1], values[2], values[3]);
 
     view = unsafe_impl_from_ID3D11UnorderedAccessView(unordered_access_view);
-    wined3d_mutex_lock();
-    wined3d_device_clear_unordered_access_view_uint(device->wined3d_device,
+    wined3d_device_context_clear_uav_uint(context->wined3d_context,
             view->wined3d_view, (const struct wined3d_uvec4 *)values);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearUnorderedAccessViewFloat(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_ClearUnorderedAccessViewFloat(ID3D11DeviceContext1 *iface,
         ID3D11UnorderedAccessView *unordered_access_view, const float values[4])
 {
-    FIXME("iface %p, unordered_access_view %p, values %s stub!\n",
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_unordered_access_view *view;
+
+    TRACE("iface %p, unordered_access_view %p, values %s.\n",
             iface, unordered_access_view, debug_float4(values));
+
+    view = unsafe_impl_from_ID3D11UnorderedAccessView(unordered_access_view);
+    wined3d_device_context_clear_uav_float(context->wined3d_context,
+            view->wined3d_view, (const struct wined3d_vec4 *)values);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearDepthStencilView(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_ClearDepthStencilView(ID3D11DeviceContext1 *iface,
         ID3D11DepthStencilView *depth_stencil_view, UINT flags, FLOAT depth, UINT8 stencil)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_depthstencil_view *view = unsafe_impl_from_ID3D11DepthStencilView(depth_stencil_view);
     DWORD wined3d_flags;
     HRESULT hr;
@@ -2473,32 +2850,29 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_ClearDepthStencilView(ID3D
 
     wined3d_flags = wined3d_clear_flags_from_d3d11_clear_flags(flags);
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_device_clear_rendertarget_view(device->wined3d_device, view->wined3d_view, NULL,
+    if (FAILED(hr = wined3d_device_context_clear_rendertarget_view(context->wined3d_context, view->wined3d_view, NULL,
             wined3d_flags, NULL, depth, stencil)))
         ERR("Failed to clear view, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GenerateMips(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GenerateMips(ID3D11DeviceContext1 *iface,
         ID3D11ShaderResourceView *view)
 {
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_shader_resource_view *srv = unsafe_impl_from_ID3D11ShaderResourceView(view);
 
     TRACE("iface %p, view %p.\n", iface, view);
 
-    wined3d_mutex_lock();
-    wined3d_shader_resource_view_generate_mipmaps(srv->wined3d_view);
-    wined3d_mutex_unlock();
+    wined3d_device_context_generate_mipmaps(context->wined3d_context, srv->wined3d_view);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_SetResourceMinLOD(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_SetResourceMinLOD(ID3D11DeviceContext1 *iface,
         ID3D11Resource *resource, FLOAT min_lod)
 {
     FIXME("iface %p, resource %p, min_lod %f stub!\n", iface, resource, min_lod);
 }
 
-static FLOAT STDMETHODCALLTYPE d3d11_immediate_context_GetResourceMinLOD(ID3D11DeviceContext1 *iface,
+static FLOAT STDMETHODCALLTYPE d3d11_device_context_GetResourceMinLOD(ID3D11DeviceContext1 *iface,
         ID3D11Resource *resource)
 {
     FIXME("iface %p, resource %p stub!\n", iface, resource);
@@ -2506,12 +2880,12 @@ static FLOAT STDMETHODCALLTYPE d3d11_immediate_context_GetResourceMinLOD(ID3D11D
     return 0.0f;
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ResolveSubresource(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_ResolveSubresource(ID3D11DeviceContext1 *iface,
         ID3D11Resource *dst_resource, UINT dst_subresource_idx,
         ID3D11Resource *src_resource, UINT src_subresource_idx,
         DXGI_FORMAT format)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_dst_resource, *wined3d_src_resource;
     enum wined3d_format_id wined3d_format;
 
@@ -2523,13 +2897,12 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_ResolveSubresource(ID3D11D
     wined3d_dst_resource = wined3d_resource_from_d3d11_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d11_resource(src_resource);
     wined3d_format = wined3dformat_from_dxgi_format(format);
-    wined3d_mutex_lock();
-    wined3d_device_resolve_sub_resource(device->wined3d_device,
+    wined3d_device_context_resolve_sub_resource(context->wined3d_context,
             wined3d_dst_resource, dst_subresource_idx,
             wined3d_src_resource, src_subresource_idx, wined3d_format);
-    wined3d_mutex_unlock();
 }
 
+<<<<<<< HEAD
 static struct d3d11_state *state_capture(ID3D11DeviceContext1 *context)
 {
     struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(context);
@@ -2716,243 +3089,192 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_ExecuteCommandList(ID3D11D
     if (restore_state) state_apply(iface, stateblock);
     else ID3D11DeviceContext1_ClearState(iface);
     wined3d_mutex_unlock();
+=======
+static void STDMETHODCALLTYPE d3d11_device_context_ExecuteCommandList(ID3D11DeviceContext1 *iface,
+        ID3D11CommandList *command_list, BOOL restore_state)
+{
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_command_list *list_impl = unsafe_impl_from_ID3D11CommandList(command_list);
+
+    TRACE("iface %p, command_list %p, restore_state %#x.\n", iface, command_list, restore_state);
+
+    wined3d_device_context_execute_command_list(context->wined3d_context, list_impl->wined3d_list, !!restore_state);
+>>>>>>> github-desktop-wine-mirror/master
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_hs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_HULL, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11HullShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_hull_shader *hs = unsafe_impl_from_ID3D11HullShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_hull_shader(device->wined3d_device, hs ? hs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_HULL,
+            hs ? hs->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_hs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_HULL, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_ds_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11DomainShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_domain_shader *ds = unsafe_impl_from_ID3D11DomainShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_domain_shader(device->wined3d_device, ds ? ds->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_DOMAIN,
+            ds ? ds->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_ds_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView *const *views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D11ShaderResourceView(views[i]);
-
-        wined3d_device_set_cs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot, view_count, views);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetUnorderedAccessViews(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetUnorderedAccessViews(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11UnorderedAccessView *const *views, const UINT *initial_counts)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct wined3d_unordered_access_view *wined3d_views[D3D11_PS_CS_UAV_REGISTER_COUNT];
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p, initial_counts %p.\n",
             iface, start_slot, view_count, views, initial_counts);
 
-    wined3d_mutex_lock();
+    if (view_count > ARRAY_SIZE(wined3d_views))
+    {
+        WARN("View count %u exceeds limit; ignoring call.\n", view_count);
+        return;
+    }
+
     for (i = 0; i < view_count; ++i)
     {
         struct d3d11_unordered_access_view *view = unsafe_impl_from_ID3D11UnorderedAccessView(views[i]);
 
-        wined3d_device_set_cs_uav(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL, initial_counts ? initial_counts[i] : ~0u);
+        wined3d_views[i] = view ? view->wined3d_view : NULL;
     }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_unordered_access_views(context->wined3d_context, WINED3D_PIPELINE_COMPUTE,
+            start_slot, view_count, wined3d_views, initial_counts);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetShader(ID3D11DeviceContext1 *iface,
         ID3D11ComputeShader *shader, ID3D11ClassInstance *const *class_instances, UINT class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_compute_shader *cs = unsafe_impl_from_ID3D11ComputeShader(shader);
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %u.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances)
+    if (class_instance_count)
         FIXME("Dynamic linking is not implemented yet.\n");
 
-    wined3d_mutex_lock();
-    wined3d_device_set_compute_shader(device->wined3d_device, cs ? cs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(context->wined3d_context, WINED3D_SHADER_TYPE_COMPUTE,
+            cs ? cs->wined3d_shader : NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState *const *samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D11SamplerState(samplers[i]);
-
-        wined3d_device_set_cs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d11_device_context_set_samplers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot, sampler_count, samplers);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer *const *buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
@@ -2964,7 +3286,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_ps_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_PIXEL, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -2977,23 +3300,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11PixelShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_shader *wined3d_shader;
     struct d3d_pixel_shader *shader_impl;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_pixel_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_PIXEL)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3006,10 +3327,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetShader(ID3D11DeviceCo
     ID3D11PixelShader_AddRef(*shader);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3021,7 +3342,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetSamplers(ID3D11Device
         struct wined3d_sampler *wined3d_sampler;
         struct d3d_sampler_state *sampler_impl;
 
-        if (!(wined3d_sampler = wined3d_device_get_ps_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_PIXEL, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3034,23 +3356,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11VertexShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_vertex_shader *shader_impl;
     struct wined3d_shader *wined3d_shader;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_vertex_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_VERTEX)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3063,27 +3383,27 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetShader(ID3D11DeviceCo
     ID3D11VertexShader_AddRef(*shader);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetInputLayout(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IAGetInputLayout(ID3D11DeviceContext1 *iface,
         ID3D11InputLayout **input_layout)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_vertex_declaration *wined3d_declaration;
     struct d3d_input_layout *input_layout_impl;
 
     TRACE("iface %p, input_layout %p.\n", iface, input_layout);
 
     wined3d_mutex_lock();
-    if (!(wined3d_declaration = wined3d_device_get_vertex_declaration(device->wined3d_device)))
+    if (!(wined3d_declaration = wined3d_device_context_get_vertex_declaration(context->wined3d_context)))
     {
         wined3d_mutex_unlock();
         *input_layout = NULL;
@@ -3096,10 +3416,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetInputLayout(ID3D11Dev
     ID3D11InputLayout_AddRef(*input_layout);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetVertexBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IAGetVertexBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *strides, UINT *offsets)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, strides %p, offsets %p.\n",
@@ -3111,7 +3431,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetVertexBuffers(ID3D11D
         struct wined3d_buffer *wined3d_buffer = NULL;
         struct d3d_buffer *buffer_impl;
 
-        if (FAILED(wined3d_device_get_stream_source(device->wined3d_device, start_slot + i,
+        if (FAILED(wined3d_device_context_get_stream_source(context->wined3d_context, start_slot + i,
                 &wined3d_buffer, &offsets[i], &strides[i])))
         {
             FIXME("Failed to get vertex buffer %u.\n", start_slot + i);
@@ -3133,10 +3453,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetVertexBuffers(ID3D11D
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetIndexBuffer(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IAGetIndexBuffer(ID3D11DeviceContext1 *iface,
         ID3D11Buffer **buffer, DXGI_FORMAT *format, UINT *offset)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     enum wined3d_format_id wined3d_format;
     struct wined3d_buffer *wined3d_buffer;
     struct d3d_buffer *buffer_impl;
@@ -3144,7 +3464,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetIndexBuffer(ID3D11Dev
     TRACE("iface %p, buffer %p, format %p, offset %p.\n", iface, buffer, format, offset);
 
     wined3d_mutex_lock();
-    wined3d_buffer = wined3d_device_get_index_buffer(device->wined3d_device, &wined3d_format, offset);
+    wined3d_buffer = wined3d_device_context_get_index_buffer(context->wined3d_context, &wined3d_format, offset);
     *format = dxgi_format_from_wined3dformat(wined3d_format);
     if (!wined3d_buffer)
     {
@@ -3158,33 +3478,31 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetIndexBuffer(ID3D11Dev
     ID3D11Buffer_AddRef(*buffer = &buffer_impl->ID3D11Buffer_iface);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11GeometryShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_geometry_shader *shader_impl;
     struct wined3d_shader *wined3d_shader;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_geometry_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3197,26 +3515,26 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetShader(ID3D11DeviceCo
     ID3D11GeometryShader_AddRef(*shader);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_IAGetPrimitiveTopology(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_IAGetPrimitiveTopology(ID3D11DeviceContext1 *iface,
         D3D11_PRIMITIVE_TOPOLOGY *topology)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     enum wined3d_primitive_type primitive_type;
     unsigned int patch_vertex_count;
 
     TRACE("iface %p, topology %p.\n", iface, topology);
 
     wined3d_mutex_lock();
-    wined3d_device_get_primitive_type(device->wined3d_device, &primitive_type, &patch_vertex_count);
+    wined3d_device_context_get_primitive_type(context->wined3d_context, &primitive_type, &patch_vertex_count);
     wined3d_mutex_unlock();
 
     d3d11_primitive_topology_from_wined3d_primitive_type(primitive_type, patch_vertex_count, topology);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
@@ -3227,7 +3545,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_vs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_VERTEX, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3240,10 +3559,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3255,7 +3574,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetSamplers(ID3D11Device
         struct wined3d_sampler *wined3d_sampler;
         struct d3d_sampler_state *sampler_impl;
 
-        if (!(wined3d_sampler = wined3d_device_get_vs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_VERTEX, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3268,17 +3588,17 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GetPredication(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GetPredication(ID3D11DeviceContext1 *iface,
         ID3D11Predicate **predicate, BOOL *value)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_query *wined3d_predicate;
     struct d3d_query *predicate_impl;
 
     TRACE("iface %p, predicate %p, value %p.\n", iface, predicate, value);
 
     wined3d_mutex_lock();
-    if (!(wined3d_predicate = wined3d_device_get_predication(device->wined3d_device, value)))
+    if (!(wined3d_predicate = wined3d_device_context_get_predication(context->wined3d_context, value)))
     {
         wined3d_mutex_unlock();
         *predicate = NULL;
@@ -3291,10 +3611,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GetPredication(ID3D11Devic
     ID3D11Predicate_AddRef(*predicate);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
@@ -3305,7 +3625,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_gs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3318,10 +3639,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3333,7 +3654,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetSamplers(ID3D11Device
         struct d3d_sampler_state *sampler_impl;
         struct wined3d_sampler *wined3d_sampler;
 
-        if (!(wined3d_sampler = wined3d_device_get_gs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3346,11 +3668,11 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargets(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_OMGetRenderTargets(ID3D11DeviceContext1 *iface,
         UINT render_target_view_count, ID3D11RenderTargetView **render_target_views,
         ID3D11DepthStencilView **depth_stencil_view)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_rendertarget_view *wined3d_view;
 
     TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p.\n",
@@ -3364,7 +3686,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargets(ID3D11D
 
         for (i = 0; i < render_target_view_count; ++i)
         {
-            if (!(wined3d_view = wined3d_device_get_rendertarget_view(device->wined3d_device, i))
+            if (!(wined3d_view = wined3d_device_context_get_rendertarget_view(context->wined3d_context, i))
                     || !(view_impl = wined3d_rendertarget_view_get_parent(wined3d_view)))
             {
                 render_target_views[i] = NULL;
@@ -3380,7 +3702,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargets(ID3D11D
     {
         struct d3d_depthstencil_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_depth_stencil_view(device->wined3d_device))
+        if (!(wined3d_view = wined3d_device_context_get_depth_stencil_view(context->wined3d_context))
                 || !(view_impl = wined3d_rendertarget_view_get_parent(wined3d_view)))
         {
             *depth_stencil_view = NULL;
@@ -3394,14 +3716,14 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargets(ID3D11D
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargetsAndUnorderedAccessViews(
+static void STDMETHODCALLTYPE d3d11_device_context_OMGetRenderTargetsAndUnorderedAccessViews(
         ID3D11DeviceContext1 *iface,
         UINT render_target_view_count, ID3D11RenderTargetView **render_target_views,
         ID3D11DepthStencilView **depth_stencil_view,
         UINT unordered_access_view_start_slot, UINT unordered_access_view_count,
         ID3D11UnorderedAccessView **unordered_access_views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_unordered_access_view *wined3d_view;
     struct d3d11_unordered_access_view *view_impl;
     unsigned int i;
@@ -3413,7 +3735,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargetsAndUnord
             unordered_access_view_start_slot, unordered_access_view_count, unordered_access_views);
 
     if (render_target_views || depth_stencil_view)
-        d3d11_immediate_context_OMGetRenderTargets(iface, render_target_view_count,
+        d3d11_device_context_OMGetRenderTargets(iface, render_target_view_count,
                 render_target_views, depth_stencil_view);
 
     if (unordered_access_views)
@@ -3421,8 +3743,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargetsAndUnord
         wined3d_mutex_lock();
         for (i = 0; i < unordered_access_view_count; ++i)
         {
-            if (!(wined3d_view = wined3d_device_get_unordered_access_view(device->wined3d_device,
-                    unordered_access_view_start_slot + i)))
+            if (!(wined3d_view = wined3d_device_context_get_unordered_access_view(context->wined3d_context,
+                    WINED3D_PIPELINE_GRAPHICS, unordered_access_view_start_slot + i)))
             {
                 unordered_access_views[i] = NULL;
                 continue;
@@ -3436,49 +3758,69 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetRenderTargetsAndUnord
     }
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetBlendState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_OMGetBlendState(ID3D11DeviceContext1 *iface,
         ID3D11BlendState **blend_state, FLOAT blend_factor[4], UINT *sample_mask)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_blend_state *wined3d_state;
     struct d3d_blend_state *blend_state_impl;
+    unsigned int tmp_sample_mask;
+    float tmp_blend_factor[4];
 
     TRACE("iface %p, blend_state %p, blend_factor %p, sample_mask %p.\n",
             iface, blend_state, blend_factor, sample_mask);
 
     wined3d_mutex_lock();
-    if ((wined3d_state = wined3d_device_get_blend_state(device->wined3d_device,
-            (struct wined3d_color *)blend_factor)))
+    if (!blend_factor) blend_factor = tmp_blend_factor;
+    if (!sample_mask) sample_mask = &tmp_sample_mask;
+    wined3d_state = wined3d_device_context_get_blend_state(context->wined3d_context,
+            (struct wined3d_color *)blend_factor, sample_mask);
+    if (blend_state)
     {
-        blend_state_impl = wined3d_blend_state_get_parent(wined3d_state);
-        ID3D11BlendState_AddRef(*blend_state = &blend_state_impl->ID3D11BlendState_iface);
+        if (wined3d_state)
+        {
+            blend_state_impl = wined3d_blend_state_get_parent(wined3d_state);
+            ID3D11BlendState_AddRef(*blend_state = &blend_state_impl->ID3D11BlendState_iface);
+        }
+        else
+            *blend_state = NULL;
     }
-    else
-    {
-        *blend_state = NULL;
-    }
-    *sample_mask = wined3d_device_get_render_state(device->wined3d_device, WINED3D_RS_MULTISAMPLEMASK);
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_OMGetDepthStencilState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_OMGetDepthStencilState(ID3D11DeviceContext1 *iface,
         ID3D11DepthStencilState **depth_stencil_state, UINT *stencil_ref)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct wined3d_depth_stencil_state *wined3d_state;
+    struct d3d_depthstencil_state *state_impl;
+    UINT stencil_ref_tmp;
 
     TRACE("iface %p, depth_stencil_state %p, stencil_ref %p.\n",
             iface, depth_stencil_state, stencil_ref);
 
-    if ((*depth_stencil_state = device->depth_stencil_state
-            ? &device->depth_stencil_state->ID3D11DepthStencilState_iface : NULL))
-        ID3D11DepthStencilState_AddRef(*depth_stencil_state);
-    *stencil_ref = device->stencil_ref;
+    wined3d_mutex_lock();
+    if (!stencil_ref) stencil_ref = &stencil_ref_tmp;
+    wined3d_state = wined3d_device_context_get_depth_stencil_state(context->wined3d_context, stencil_ref);
+    if (depth_stencil_state)
+    {
+        if (wined3d_state)
+        {
+            state_impl = wined3d_depth_stencil_state_get_parent(wined3d_state);
+            ID3D11DepthStencilState_AddRef(*depth_stencil_state = &state_impl->ID3D11DepthStencilState_iface);
+        }
+        else
+        {
+            *depth_stencil_state = NULL;
+        }
+    }
+    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_SOGetTargets(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_SOGetTargets(ID3D11DeviceContext1 *iface,
         UINT buffer_count, ID3D11Buffer **buffers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, buffer_count %u, buffers %p.\n", iface, buffer_count, buffers);
@@ -3489,7 +3831,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_SOGetTargets(ID3D11DeviceC
         struct wined3d_buffer *wined3d_buffer;
         struct d3d_buffer *buffer_impl;
 
-        if (!(wined3d_buffer = wined3d_device_get_stream_output(device->wined3d_device, i, NULL)))
+        if (!(wined3d_buffer = wined3d_device_context_get_stream_output(context->wined3d_context, i, NULL)))
         {
             buffers[i] = NULL;
             continue;
@@ -3502,20 +3844,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_SOGetTargets(ID3D11DeviceC
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetState(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSGetState(ID3D11DeviceContext1 *iface,
         ID3D11RasterizerState **rasterizer_state)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d_rasterizer_state *rasterizer_state_impl;
     struct wined3d_rasterizer_state *wined3d_state;
 
     TRACE("iface %p, rasterizer_state %p.\n", iface, rasterizer_state);
 
     wined3d_mutex_lock();
-    if ((wined3d_state = wined3d_device_get_rasterizer_state(device->wined3d_device)))
+    if ((wined3d_state = wined3d_device_context_get_rasterizer_state(context->wined3d_context)))
     {
         rasterizer_state_impl = wined3d_rasterizer_state_get_parent(wined3d_state);
-        ID3D11RasterizerState_AddRef(*rasterizer_state = &rasterizer_state_impl->ID3D11RasterizerState_iface);
+        *rasterizer_state = (ID3D11RasterizerState *)&rasterizer_state_impl->ID3D11RasterizerState1_iface;
+        ID3D11RasterizerState_AddRef(*rasterizer_state);
     }
     else
     {
@@ -3524,10 +3867,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetState(ID3D11DeviceCon
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetViewports(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSGetViewports(ID3D11DeviceContext1 *iface,
         UINT *viewport_count, D3D11_VIEWPORT *viewports)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_viewport wined3d_vp[WINED3D_MAX_VIEWPORTS];
     unsigned int actual_count = ARRAY_SIZE(wined3d_vp), i;
 
@@ -3537,7 +3880,7 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetViewports(ID3D11Devic
         return;
 
     wined3d_mutex_lock();
-    wined3d_device_get_viewports(device->wined3d_device, &actual_count, viewports ? wined3d_vp : NULL);
+    wined3d_device_context_get_viewports(context->wined3d_context, &actual_count, viewports ? wined3d_vp : NULL);
     wined3d_mutex_unlock();
 
     if (!viewports)
@@ -3561,10 +3904,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetViewports(ID3D11Devic
     }
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetScissorRects(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_RSGetScissorRects(ID3D11DeviceContext1 *iface,
         UINT *rect_count, D3D11_RECT *rects)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int actual_count;
 
     TRACE("iface %p, rect_count %p, rects %p.\n", iface, rect_count, rects);
@@ -3575,23 +3918,18 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_RSGetScissorRects(ID3D11De
     actual_count = *rect_count;
 
     wined3d_mutex_lock();
-    wined3d_device_get_scissor_rects(device->wined3d_device, &actual_count, rects);
+    wined3d_device_context_get_scissor_rects(context->wined3d_context, &actual_count, rects);
     wined3d_mutex_unlock();
 
-    if (!rects)
-    {
-        *rect_count = actual_count;
-        return;
-    }
-
-    if (*rect_count > actual_count)
+    if (rects && *rect_count > actual_count)
         memset(&rects[actual_count], 0, (*rect_count - actual_count) * sizeof(*rects));
+    *rect_count = actual_count;
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
@@ -3602,7 +3940,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_hs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_HULL, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3614,23 +3953,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11HullShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_hull_shader *shader_impl;
     struct wined3d_shader *wined3d_shader;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_hull_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_HULL)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3642,10 +3979,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetShader(ID3D11DeviceCo
     ID3D11HullShader_AddRef(*shader = &shader_impl->ID3D11HullShader_iface);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3657,7 +3994,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetSamplers(ID3D11Device
         struct wined3d_sampler *wined3d_sampler;
         struct d3d_sampler_state *sampler_impl;
 
-        if (!(wined3d_sampler = wined3d_device_get_hs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_HULL, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3669,20 +4007,20 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
@@ -3694,7 +4032,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_ds_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_DOMAIN, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3706,23 +4045,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11DomainShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_domain_shader *shader_impl;
     struct wined3d_shader *wined3d_shader;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_domain_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_DOMAIN)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3734,10 +4071,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetShader(ID3D11DeviceCo
     ID3D11DomainShader_AddRef(*shader = &shader_impl->ID3D11DomainShader_iface);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3749,7 +4086,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetSamplers(ID3D11Device
         struct wined3d_sampler *wined3d_sampler;
         struct d3d_sampler_state *sampler_impl;
 
-        if (!(wined3d_sampler = wined3d_device_get_ds_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_DOMAIN, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3761,20 +4099,20 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetShaderResources(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetShaderResources(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11ShaderResourceView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
@@ -3785,7 +4123,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetShaderResources(ID3D1
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_cs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                context->wined3d_context, WINED3D_SHADER_TYPE_COMPUTE, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3797,10 +4136,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetShaderResources(ID3D1
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetUnorderedAccessViews(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetUnorderedAccessViews(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT view_count, ID3D11UnorderedAccessView **views)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n", iface, start_slot, view_count, views);
@@ -3811,7 +4150,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetUnorderedAccessViews(
         struct wined3d_unordered_access_view *wined3d_view;
         struct d3d11_unordered_access_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_cs_uav(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_unordered_access_view(
+                context->wined3d_context, WINED3D_PIPELINE_COMPUTE, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -3823,23 +4163,21 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetUnorderedAccessViews(
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetShader(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetShader(ID3D11DeviceContext1 *iface,
         ID3D11ComputeShader **shader, ID3D11ClassInstance **class_instances, UINT *class_instance_count)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct d3d11_compute_shader *shader_impl;
     struct wined3d_shader *wined3d_shader;
 
     TRACE("iface %p, shader %p, class_instances %p, class_instance_count %p.\n",
             iface, shader, class_instances, class_instance_count);
 
-    if (class_instances || class_instance_count)
-        FIXME("Dynamic linking not implemented yet.\n");
     if (class_instance_count)
         *class_instance_count = 0;
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_compute_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(context->wined3d_context, WINED3D_SHADER_TYPE_COMPUTE)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -3851,10 +4189,10 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetShader(ID3D11DeviceCo
     ID3D11ComputeShader_AddRef(*shader = &shader_impl->ID3D11ComputeShader_iface);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetSamplers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetSamplers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT sampler_count, ID3D11SamplerState **samplers)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
@@ -3866,7 +4204,8 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetSamplers(ID3D11Device
         struct wined3d_sampler *wined3d_sampler;
         struct d3d_sampler_state *sampler_impl;
 
-        if (!(wined3d_sampler = wined3d_device_get_cs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                context->wined3d_context, WINED3D_SHADER_TYPE_COMPUTE, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -3878,116 +4217,94 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetSamplers(ID3D11Device
     wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetConstantBuffers(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetConstantBuffers(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers)
 {
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p.\n",
             iface, start_slot, buffer_count, buffers);
 
-    d3d11_immediate_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
-            buffer_count, buffers);
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
+            buffer_count, buffers, NULL, NULL);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearState(ID3D11DeviceContext1 *iface)
+static void STDMETHODCALLTYPE d3d11_device_context_ClearState(ID3D11DeviceContext1 *iface)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
-    static const float blend_factor[] = {1.0f, 1.0f, 1.0f, 1.0f};
-    unsigned int i, j;
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
     TRACE("iface %p.\n", iface);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_vertex_shader(device->wined3d_device, NULL);
-    wined3d_device_set_hull_shader(device->wined3d_device, NULL);
-    wined3d_device_set_domain_shader(device->wined3d_device, NULL);
-    wined3d_device_set_geometry_shader(device->wined3d_device, NULL);
-    wined3d_device_set_pixel_shader(device->wined3d_device, NULL);
-    wined3d_device_set_compute_shader(device->wined3d_device, NULL);
-    for (i = 0; i < D3D11_COMMONSHADER_SAMPLER_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_vs_sampler(device->wined3d_device, i, NULL);
-        wined3d_device_set_hs_sampler(device->wined3d_device, i, NULL);
-        wined3d_device_set_ds_sampler(device->wined3d_device, i, NULL);
-        wined3d_device_set_gs_sampler(device->wined3d_device, i, NULL);
-        wined3d_device_set_ps_sampler(device->wined3d_device, i, NULL);
-        wined3d_device_set_cs_sampler(device->wined3d_device, i, NULL);
-    }
-    for (i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_vs_resource_view(device->wined3d_device, i, NULL);
-        wined3d_device_set_hs_resource_view(device->wined3d_device, i, NULL);
-        wined3d_device_set_ds_resource_view(device->wined3d_device, i, NULL);
-        wined3d_device_set_gs_resource_view(device->wined3d_device, i, NULL);
-        wined3d_device_set_ps_resource_view(device->wined3d_device, i, NULL);
-        wined3d_device_set_cs_resource_view(device->wined3d_device, i, NULL);
-    }
-    for (i = 0; i < WINED3D_SHADER_TYPE_COUNT; ++i)
-    {
-        for (j = 0; j < D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT; ++j)
-            wined3d_device_set_constant_buffer(device->wined3d_device, i, j, NULL);
-    }
-    for (i = 0; i < D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_stream_source(device->wined3d_device, i, NULL, 0, 0);
-    }
-    wined3d_device_set_index_buffer(device->wined3d_device, NULL, WINED3DFMT_UNKNOWN, 0);
-    wined3d_device_set_vertex_declaration(device->wined3d_device, NULL);
-    wined3d_device_set_primitive_type(device->wined3d_device, WINED3D_PT_UNDEFINED, 0);
-    for (i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
-    {
-        wined3d_device_set_rendertarget_view(device->wined3d_device, i, NULL, FALSE);
-    }
-    wined3d_device_set_depth_stencil_view(device->wined3d_device, NULL);
-    for (i = 0; i < D3D11_PS_CS_UAV_REGISTER_COUNT; ++i)
-    {
-        wined3d_device_set_unordered_access_view(device->wined3d_device, i, NULL, ~0u);
-        wined3d_device_set_cs_uav(device->wined3d_device, i, NULL, ~0u);
-    }
-    ID3D11DeviceContext1_OMSetDepthStencilState(iface, NULL, 0);
-    ID3D11DeviceContext1_OMSetBlendState(iface, NULL, blend_factor, D3D11_DEFAULT_SAMPLE_MASK);
-    ID3D11DeviceContext1_RSSetViewports(iface, 0, NULL);
-    ID3D11DeviceContext1_RSSetScissorRects(iface, 0, NULL);
-    ID3D11DeviceContext1_RSSetState(iface, NULL);
-    for (i = 0; i < D3D11_SO_BUFFER_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_stream_output(device->wined3d_device, i, NULL, 0);
-    }
-    wined3d_device_set_predication(device->wined3d_device, NULL, FALSE);
-    wined3d_mutex_unlock();
+    wined3d_device_context_reset_state(context->wined3d_context);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_Flush(ID3D11DeviceContext1 *iface)
+static void STDMETHODCALLTYPE d3d11_device_context_Flush(ID3D11DeviceContext1 *iface)
 {
-    FIXME("iface %p stub!\n", iface);
-}
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
 
-static D3D11_DEVICE_CONTEXT_TYPE STDMETHODCALLTYPE d3d11_immediate_context_GetType(ID3D11DeviceContext1 *iface)
-{
     TRACE("iface %p.\n", iface);
 
-    return D3D11_DEVICE_CONTEXT_IMMEDIATE;
+    wined3d_device_context_flush(context->wined3d_context);
 }
 
-static UINT STDMETHODCALLTYPE d3d11_immediate_context_GetContextFlags(ID3D11DeviceContext1 *iface)
+static D3D11_DEVICE_CONTEXT_TYPE STDMETHODCALLTYPE d3d11_device_context_GetType(ID3D11DeviceContext1 *iface)
 {
-    FIXME("iface %p stub!\n", iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+
+    TRACE("iface %p.\n", iface);
+
+    return context->type;
+}
+
+static UINT STDMETHODCALLTYPE d3d11_device_context_GetContextFlags(ID3D11DeviceContext1 *iface)
+{
+    TRACE("iface %p.\n", iface);
 
     return 0;
 }
 
-static HRESULT STDMETHODCALLTYPE d3d11_immediate_context_FinishCommandList(ID3D11DeviceContext1 *iface,
+static HRESULT STDMETHODCALLTYPE d3d11_device_context_FinishCommandList(ID3D11DeviceContext1 *iface,
         BOOL restore, ID3D11CommandList **command_list)
 {
-    FIXME("iface %p, restore %#x, command_list %p stub!\n", iface, restore, command_list);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d11_command_list *object;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, restore %#x, command_list %p.\n", iface, restore, command_list);
+
+    if (context->type == D3D11_DEVICE_CONTEXT_IMMEDIATE)
+    {
+        WARN("Attempt to record command list on an immediate context; returning DXGI_ERROR_INVALID_CALL.\n");
+        return DXGI_ERROR_INVALID_CALL;
+    }
+
+    if (!(object = heap_alloc_zero(sizeof(*object))))
+        return E_OUTOFMEMORY;
+
+    if (FAILED(hr = wined3d_deferred_context_record_command_list(context->wined3d_context,
+            !!restore, &object->wined3d_list)))
+    {
+        WARN("Failed to record wined3d command list, hr %#x.\n", hr);
+        heap_free(object);
+        return hr;
+    }
+
+    object->ID3D11CommandList_iface.lpVtbl = &d3d11_command_list_vtbl;
+    object->refcount = 1;
+    object->device = &context->device->ID3D11Device2_iface;
+    wined3d_private_store_init(&object->private_store);
+
+    ID3D11Device2_AddRef(object->device);
+
+    TRACE("Created command list %p.\n", object);
+    *command_list = &object->ID3D11CommandList_iface;
+
+    return S_OK;
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CopySubresourceRegion1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CopySubresourceRegion1(ID3D11DeviceContext1 *iface,
         ID3D11Resource *dst_resource, UINT dst_subresource_idx, UINT dst_x, UINT dst_y, UINT dst_z,
         ID3D11Resource *src_resource, UINT src_subresource_idx, const D3D11_BOX *src_box, UINT flags)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_dst_resource, *wined3d_src_resource;
     struct wined3d_box wined3d_src_box;
 
@@ -3996,23 +4313,24 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_CopySubresourceRegion1(ID3
             iface, dst_resource, dst_subresource_idx, dst_x, dst_y, dst_z,
             src_resource, src_subresource_idx, src_box, flags);
 
+    if (!dst_resource || !src_resource)
+        return;
+
     if (src_box)
         wined3d_box_set(&wined3d_src_box, src_box->left, src_box->top,
                 src_box->right, src_box->bottom, src_box->front, src_box->back);
 
     wined3d_dst_resource = wined3d_resource_from_d3d11_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d11_resource(src_resource);
-    wined3d_mutex_lock();
-    wined3d_device_copy_sub_resource_region(device->wined3d_device, wined3d_dst_resource, dst_subresource_idx,
+    wined3d_device_context_copy_sub_resource_region(context->wined3d_context, wined3d_dst_resource, dst_subresource_idx,
             dst_x, dst_y, dst_z, wined3d_src_resource, src_subresource_idx, src_box ? &wined3d_src_box : NULL, flags);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_UpdateSubresource1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_UpdateSubresource1(ID3D11DeviceContext1 *iface,
         ID3D11Resource *resource, UINT subresource_idx, const D3D11_BOX *box, const void *data,
         UINT row_pitch, UINT depth_pitch, UINT flags)
 {
-    struct d3d_device *device = device_from_immediate_ID3D11DeviceContext1(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
     struct wined3d_resource *wined3d_resource;
     struct wined3d_box wined3d_box;
 
@@ -4024,306 +4342,377 @@ static void STDMETHODCALLTYPE d3d11_immediate_context_UpdateSubresource1(ID3D11D
                 box->front, box->back);
 
     wined3d_resource = wined3d_resource_from_d3d11_resource(resource);
-    wined3d_mutex_lock();
-    wined3d_device_update_sub_resource(device->wined3d_device, wined3d_resource, subresource_idx,
+    wined3d_device_context_update_sub_resource(context->wined3d_context, wined3d_resource, subresource_idx,
             box ? &wined3d_box : NULL, data, row_pitch, depth_pitch, flags);
-    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DiscardResource(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DiscardResource(ID3D11DeviceContext1 *iface,
         ID3D11Resource *resource)
 {
     FIXME("iface %p, resource %p stub!\n", iface, resource);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DiscardView(ID3D11DeviceContext1 *iface, ID3D11View *view)
+static void STDMETHODCALLTYPE d3d11_device_context_DiscardView(ID3D11DeviceContext1 *iface, ID3D11View *view)
 {
     FIXME("iface %p, view %p stub!\n", iface, view);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSSetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer * const *buffers, const UINT *first_constant,
         const UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_set_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_VSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_VSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_HSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_HSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_HULL, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_DSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_DOMAIN, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_GSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_GSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_PSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_PSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_CSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
+static void STDMETHODCALLTYPE d3d11_device_context_CSGetConstantBuffers1(ID3D11DeviceContext1 *iface,
         UINT start_slot, UINT buffer_count, ID3D11Buffer **buffers, UINT *first_constant, UINT *num_constants)
 {
-    FIXME("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p stub!\n",
+    TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, first_constant %p, num_constants %p.\n",
             iface, start_slot, buffer_count, buffers, first_constant, num_constants);
+
+    d3d11_device_context_get_constant_buffers(iface, WINED3D_SHADER_TYPE_COMPUTE, start_slot,
+            buffer_count, buffers, first_constant, num_constants);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_SwapDeviceContextState(ID3D11DeviceContext1 *iface,
-        ID3DDeviceContextState *state, ID3DDeviceContextState **prev_state)
+static void STDMETHODCALLTYPE d3d11_device_context_SwapDeviceContextState(ID3D11DeviceContext1 *iface,
+        ID3DDeviceContextState *state, ID3DDeviceContextState **prev)
 {
-    FIXME("iface %p, state %p, prev_state %p stub!\n", iface, state, prev_state);
+    struct d3d11_device_context *context = impl_from_ID3D11DeviceContext1(iface);
+    struct d3d_device_context_state *state_impl, *prev_impl;
+    struct d3d_device *device = context->device;
+    struct wined3d_state *wined3d_state;
+    static unsigned int once;
+
+    TRACE("iface %p, state %p, prev %p.\n", iface, state, prev);
+
+    if (prev)
+        *prev = NULL;
+
+    if (context->type != D3D11_DEVICE_CONTEXT_IMMEDIATE)
+    {
+        WARN("SwapDeviceContextState is not allowed on a deferred context.\n");
+        return;
+    }
+
+    if (!state)
+        return;
+
+    wined3d_mutex_lock();
+
+    prev_impl = device->state;
+    state_impl = impl_from_ID3DDeviceContextState(state);
+    if (!(wined3d_state = d3d_device_context_state_get_wined3d_state(state_impl, device)))
+        ERR("Failed to get wined3d state for device context state %p.\n", state_impl);
+    wined3d_device_context_set_state(context->wined3d_context, wined3d_state);
+
+    if (prev)
+        ID3DDeviceContextState_AddRef(*prev = &prev_impl->ID3DDeviceContextState_iface);
+
+    d3d_device_context_state_private_addref(state_impl);
+    device->state = state_impl;
+    d3d_device_context_state_private_release(prev_impl);
+
+    if (d3d_device_is_d3d10_active(device) && !once++)
+        FIXME("D3D10 interface emulation not fully implemented yet!\n");
+    wined3d_mutex_unlock();
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_ClearView(ID3D11DeviceContext1 *iface, ID3D11View *view,
+static void STDMETHODCALLTYPE d3d11_device_context_ClearView(ID3D11DeviceContext1 *iface, ID3D11View *view,
         const FLOAT color[4], const D3D11_RECT *rect, UINT num_rects)
 {
     FIXME("iface %p, view %p, color %p, rect %p, num_rects %u stub!\n", iface, view, color, rect, num_rects);
 }
 
-static void STDMETHODCALLTYPE d3d11_immediate_context_DiscardView1(ID3D11DeviceContext1 *iface, ID3D11View *view,
+static void STDMETHODCALLTYPE d3d11_device_context_DiscardView1(ID3D11DeviceContext1 *iface, ID3D11View *view,
         const D3D11_RECT *rects, UINT num_rects)
 {
     FIXME("iface %p, view %p, rects %p, num_rects %u stub!\n", iface, view, rects, num_rects);
 }
 
-static const struct ID3D11DeviceContext1Vtbl d3d11_immediate_context_vtbl =
+static const struct ID3D11DeviceContext1Vtbl d3d11_device_context_vtbl =
 {
     /* IUnknown methods */
-    d3d11_immediate_context_QueryInterface,
-    d3d11_immediate_context_AddRef,
-    d3d11_immediate_context_Release,
+    d3d11_device_context_QueryInterface,
+    d3d11_device_context_AddRef,
+    d3d11_device_context_Release,
     /* ID3D11DeviceChild methods */
-    d3d11_immediate_context_GetDevice,
-    d3d11_immediate_context_GetPrivateData,
-    d3d11_immediate_context_SetPrivateData,
-    d3d11_immediate_context_SetPrivateDataInterface,
+    d3d11_device_context_GetDevice,
+    d3d11_device_context_GetPrivateData,
+    d3d11_device_context_SetPrivateData,
+    d3d11_device_context_SetPrivateDataInterface,
     /* ID3D11DeviceContext methods */
-    d3d11_immediate_context_VSSetConstantBuffers,
-    d3d11_immediate_context_PSSetShaderResources,
-    d3d11_immediate_context_PSSetShader,
-    d3d11_immediate_context_PSSetSamplers,
-    d3d11_immediate_context_VSSetShader,
-    d3d11_immediate_context_DrawIndexed,
-    d3d11_immediate_context_Draw,
-    d3d11_immediate_context_Map,
-    d3d11_immediate_context_Unmap,
-    d3d11_immediate_context_PSSetConstantBuffers,
-    d3d11_immediate_context_IASetInputLayout,
-    d3d11_immediate_context_IASetVertexBuffers,
-    d3d11_immediate_context_IASetIndexBuffer,
-    d3d11_immediate_context_DrawIndexedInstanced,
-    d3d11_immediate_context_DrawInstanced,
-    d3d11_immediate_context_GSSetConstantBuffers,
-    d3d11_immediate_context_GSSetShader,
-    d3d11_immediate_context_IASetPrimitiveTopology,
-    d3d11_immediate_context_VSSetShaderResources,
-    d3d11_immediate_context_VSSetSamplers,
-    d3d11_immediate_context_Begin,
-    d3d11_immediate_context_End,
-    d3d11_immediate_context_GetData,
-    d3d11_immediate_context_SetPredication,
-    d3d11_immediate_context_GSSetShaderResources,
-    d3d11_immediate_context_GSSetSamplers,
-    d3d11_immediate_context_OMSetRenderTargets,
-    d3d11_immediate_context_OMSetRenderTargetsAndUnorderedAccessViews,
-    d3d11_immediate_context_OMSetBlendState,
-    d3d11_immediate_context_OMSetDepthStencilState,
-    d3d11_immediate_context_SOSetTargets,
-    d3d11_immediate_context_DrawAuto,
-    d3d11_immediate_context_DrawIndexedInstancedIndirect,
-    d3d11_immediate_context_DrawInstancedIndirect,
-    d3d11_immediate_context_Dispatch,
-    d3d11_immediate_context_DispatchIndirect,
-    d3d11_immediate_context_RSSetState,
-    d3d11_immediate_context_RSSetViewports,
-    d3d11_immediate_context_RSSetScissorRects,
-    d3d11_immediate_context_CopySubresourceRegion,
-    d3d11_immediate_context_CopyResource,
-    d3d11_immediate_context_UpdateSubresource,
-    d3d11_immediate_context_CopyStructureCount,
-    d3d11_immediate_context_ClearRenderTargetView,
-    d3d11_immediate_context_ClearUnorderedAccessViewUint,
-    d3d11_immediate_context_ClearUnorderedAccessViewFloat,
-    d3d11_immediate_context_ClearDepthStencilView,
-    d3d11_immediate_context_GenerateMips,
-    d3d11_immediate_context_SetResourceMinLOD,
-    d3d11_immediate_context_GetResourceMinLOD,
-    d3d11_immediate_context_ResolveSubresource,
-    d3d11_immediate_context_ExecuteCommandList,
-    d3d11_immediate_context_HSSetShaderResources,
-    d3d11_immediate_context_HSSetShader,
-    d3d11_immediate_context_HSSetSamplers,
-    d3d11_immediate_context_HSSetConstantBuffers,
-    d3d11_immediate_context_DSSetShaderResources,
-    d3d11_immediate_context_DSSetShader,
-    d3d11_immediate_context_DSSetSamplers,
-    d3d11_immediate_context_DSSetConstantBuffers,
-    d3d11_immediate_context_CSSetShaderResources,
-    d3d11_immediate_context_CSSetUnorderedAccessViews,
-    d3d11_immediate_context_CSSetShader,
-    d3d11_immediate_context_CSSetSamplers,
-    d3d11_immediate_context_CSSetConstantBuffers,
-    d3d11_immediate_context_VSGetConstantBuffers,
-    d3d11_immediate_context_PSGetShaderResources,
-    d3d11_immediate_context_PSGetShader,
-    d3d11_immediate_context_PSGetSamplers,
-    d3d11_immediate_context_VSGetShader,
-    d3d11_immediate_context_PSGetConstantBuffers,
-    d3d11_immediate_context_IAGetInputLayout,
-    d3d11_immediate_context_IAGetVertexBuffers,
-    d3d11_immediate_context_IAGetIndexBuffer,
-    d3d11_immediate_context_GSGetConstantBuffers,
-    d3d11_immediate_context_GSGetShader,
-    d3d11_immediate_context_IAGetPrimitiveTopology,
-    d3d11_immediate_context_VSGetShaderResources,
-    d3d11_immediate_context_VSGetSamplers,
-    d3d11_immediate_context_GetPredication,
-    d3d11_immediate_context_GSGetShaderResources,
-    d3d11_immediate_context_GSGetSamplers,
-    d3d11_immediate_context_OMGetRenderTargets,
-    d3d11_immediate_context_OMGetRenderTargetsAndUnorderedAccessViews,
-    d3d11_immediate_context_OMGetBlendState,
-    d3d11_immediate_context_OMGetDepthStencilState,
-    d3d11_immediate_context_SOGetTargets,
-    d3d11_immediate_context_RSGetState,
-    d3d11_immediate_context_RSGetViewports,
-    d3d11_immediate_context_RSGetScissorRects,
-    d3d11_immediate_context_HSGetShaderResources,
-    d3d11_immediate_context_HSGetShader,
-    d3d11_immediate_context_HSGetSamplers,
-    d3d11_immediate_context_HSGetConstantBuffers,
-    d3d11_immediate_context_DSGetShaderResources,
-    d3d11_immediate_context_DSGetShader,
-    d3d11_immediate_context_DSGetSamplers,
-    d3d11_immediate_context_DSGetConstantBuffers,
-    d3d11_immediate_context_CSGetShaderResources,
-    d3d11_immediate_context_CSGetUnorderedAccessViews,
-    d3d11_immediate_context_CSGetShader,
-    d3d11_immediate_context_CSGetSamplers,
-    d3d11_immediate_context_CSGetConstantBuffers,
-    d3d11_immediate_context_ClearState,
-    d3d11_immediate_context_Flush,
-    d3d11_immediate_context_GetType,
-    d3d11_immediate_context_GetContextFlags,
-    d3d11_immediate_context_FinishCommandList,
+    d3d11_device_context_VSSetConstantBuffers,
+    d3d11_device_context_PSSetShaderResources,
+    d3d11_device_context_PSSetShader,
+    d3d11_device_context_PSSetSamplers,
+    d3d11_device_context_VSSetShader,
+    d3d11_device_context_DrawIndexed,
+    d3d11_device_context_Draw,
+    d3d11_device_context_Map,
+    d3d11_device_context_Unmap,
+    d3d11_device_context_PSSetConstantBuffers,
+    d3d11_device_context_IASetInputLayout,
+    d3d11_device_context_IASetVertexBuffers,
+    d3d11_device_context_IASetIndexBuffer,
+    d3d11_device_context_DrawIndexedInstanced,
+    d3d11_device_context_DrawInstanced,
+    d3d11_device_context_GSSetConstantBuffers,
+    d3d11_device_context_GSSetShader,
+    d3d11_device_context_IASetPrimitiveTopology,
+    d3d11_device_context_VSSetShaderResources,
+    d3d11_device_context_VSSetSamplers,
+    d3d11_device_context_Begin,
+    d3d11_device_context_End,
+    d3d11_device_context_GetData,
+    d3d11_device_context_SetPredication,
+    d3d11_device_context_GSSetShaderResources,
+    d3d11_device_context_GSSetSamplers,
+    d3d11_device_context_OMSetRenderTargets,
+    d3d11_device_context_OMSetRenderTargetsAndUnorderedAccessViews,
+    d3d11_device_context_OMSetBlendState,
+    d3d11_device_context_OMSetDepthStencilState,
+    d3d11_device_context_SOSetTargets,
+    d3d11_device_context_DrawAuto,
+    d3d11_device_context_DrawIndexedInstancedIndirect,
+    d3d11_device_context_DrawInstancedIndirect,
+    d3d11_device_context_Dispatch,
+    d3d11_device_context_DispatchIndirect,
+    d3d11_device_context_RSSetState,
+    d3d11_device_context_RSSetViewports,
+    d3d11_device_context_RSSetScissorRects,
+    d3d11_device_context_CopySubresourceRegion,
+    d3d11_device_context_CopyResource,
+    d3d11_device_context_UpdateSubresource,
+    d3d11_device_context_CopyStructureCount,
+    d3d11_device_context_ClearRenderTargetView,
+    d3d11_device_context_ClearUnorderedAccessViewUint,
+    d3d11_device_context_ClearUnorderedAccessViewFloat,
+    d3d11_device_context_ClearDepthStencilView,
+    d3d11_device_context_GenerateMips,
+    d3d11_device_context_SetResourceMinLOD,
+    d3d11_device_context_GetResourceMinLOD,
+    d3d11_device_context_ResolveSubresource,
+    d3d11_device_context_ExecuteCommandList,
+    d3d11_device_context_HSSetShaderResources,
+    d3d11_device_context_HSSetShader,
+    d3d11_device_context_HSSetSamplers,
+    d3d11_device_context_HSSetConstantBuffers,
+    d3d11_device_context_DSSetShaderResources,
+    d3d11_device_context_DSSetShader,
+    d3d11_device_context_DSSetSamplers,
+    d3d11_device_context_DSSetConstantBuffers,
+    d3d11_device_context_CSSetShaderResources,
+    d3d11_device_context_CSSetUnorderedAccessViews,
+    d3d11_device_context_CSSetShader,
+    d3d11_device_context_CSSetSamplers,
+    d3d11_device_context_CSSetConstantBuffers,
+    d3d11_device_context_VSGetConstantBuffers,
+    d3d11_device_context_PSGetShaderResources,
+    d3d11_device_context_PSGetShader,
+    d3d11_device_context_PSGetSamplers,
+    d3d11_device_context_VSGetShader,
+    d3d11_device_context_PSGetConstantBuffers,
+    d3d11_device_context_IAGetInputLayout,
+    d3d11_device_context_IAGetVertexBuffers,
+    d3d11_device_context_IAGetIndexBuffer,
+    d3d11_device_context_GSGetConstantBuffers,
+    d3d11_device_context_GSGetShader,
+    d3d11_device_context_IAGetPrimitiveTopology,
+    d3d11_device_context_VSGetShaderResources,
+    d3d11_device_context_VSGetSamplers,
+    d3d11_device_context_GetPredication,
+    d3d11_device_context_GSGetShaderResources,
+    d3d11_device_context_GSGetSamplers,
+    d3d11_device_context_OMGetRenderTargets,
+    d3d11_device_context_OMGetRenderTargetsAndUnorderedAccessViews,
+    d3d11_device_context_OMGetBlendState,
+    d3d11_device_context_OMGetDepthStencilState,
+    d3d11_device_context_SOGetTargets,
+    d3d11_device_context_RSGetState,
+    d3d11_device_context_RSGetViewports,
+    d3d11_device_context_RSGetScissorRects,
+    d3d11_device_context_HSGetShaderResources,
+    d3d11_device_context_HSGetShader,
+    d3d11_device_context_HSGetSamplers,
+    d3d11_device_context_HSGetConstantBuffers,
+    d3d11_device_context_DSGetShaderResources,
+    d3d11_device_context_DSGetShader,
+    d3d11_device_context_DSGetSamplers,
+    d3d11_device_context_DSGetConstantBuffers,
+    d3d11_device_context_CSGetShaderResources,
+    d3d11_device_context_CSGetUnorderedAccessViews,
+    d3d11_device_context_CSGetShader,
+    d3d11_device_context_CSGetSamplers,
+    d3d11_device_context_CSGetConstantBuffers,
+    d3d11_device_context_ClearState,
+    d3d11_device_context_Flush,
+    d3d11_device_context_GetType,
+    d3d11_device_context_GetContextFlags,
+    d3d11_device_context_FinishCommandList,
     /* ID3D11DeviceContext1 methods */
-    d3d11_immediate_context_CopySubresourceRegion1,
-    d3d11_immediate_context_UpdateSubresource1,
-    d3d11_immediate_context_DiscardResource,
-    d3d11_immediate_context_DiscardView,
-    d3d11_immediate_context_VSSetConstantBuffers1,
-    d3d11_immediate_context_HSSetConstantBuffers1,
-    d3d11_immediate_context_DSSetConstantBuffers1,
-    d3d11_immediate_context_GSSetConstantBuffers1,
-    d3d11_immediate_context_PSSetConstantBuffers1,
-    d3d11_immediate_context_CSSetConstantBuffers1,
-    d3d11_immediate_context_VSGetConstantBuffers1,
-    d3d11_immediate_context_HSGetConstantBuffers1,
-    d3d11_immediate_context_DSGetConstantBuffers1,
-    d3d11_immediate_context_GSGetConstantBuffers1,
-    d3d11_immediate_context_PSGetConstantBuffers1,
-    d3d11_immediate_context_CSGetConstantBuffers1,
-    d3d11_immediate_context_SwapDeviceContextState,
-    d3d11_immediate_context_ClearView,
-    d3d11_immediate_context_DiscardView1,
+    d3d11_device_context_CopySubresourceRegion1,
+    d3d11_device_context_UpdateSubresource1,
+    d3d11_device_context_DiscardResource,
+    d3d11_device_context_DiscardView,
+    d3d11_device_context_VSSetConstantBuffers1,
+    d3d11_device_context_HSSetConstantBuffers1,
+    d3d11_device_context_DSSetConstantBuffers1,
+    d3d11_device_context_GSSetConstantBuffers1,
+    d3d11_device_context_PSSetConstantBuffers1,
+    d3d11_device_context_CSSetConstantBuffers1,
+    d3d11_device_context_VSGetConstantBuffers1,
+    d3d11_device_context_HSGetConstantBuffers1,
+    d3d11_device_context_DSGetConstantBuffers1,
+    d3d11_device_context_GSGetConstantBuffers1,
+    d3d11_device_context_PSGetConstantBuffers1,
+    d3d11_device_context_CSGetConstantBuffers1,
+    d3d11_device_context_SwapDeviceContextState,
+    d3d11_device_context_ClearView,
+    d3d11_device_context_DiscardView1,
 };
 
 /* ID3D11Multithread methods */
 
-static inline struct d3d11_immediate_context *impl_from_ID3D11Multithread(ID3D11Multithread *iface)
+static inline struct d3d11_device_context *impl_from_ID3D11Multithread(ID3D11Multithread *iface)
 {
-    return CONTAINING_RECORD(iface, struct d3d11_immediate_context, ID3D11Multithread_iface);
+    return CONTAINING_RECORD(iface, struct d3d11_device_context, ID3D11Multithread_iface);
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_multithread_QueryInterface(ID3D11Multithread *iface,
         REFIID iid, void **out)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11Multithread(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11Multithread(iface);
 
     TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
 
-    return d3d11_immediate_context_QueryInterface(&context->ID3D11DeviceContext1_iface, iid, out);
+    return d3d11_device_context_QueryInterface(&context->ID3D11DeviceContext1_iface, iid, out);
 }
 
 static ULONG STDMETHODCALLTYPE d3d11_multithread_AddRef(ID3D11Multithread *iface)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11Multithread(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11Multithread(iface);
 
     TRACE("iface %p.\n", iface);
 
-    return d3d11_immediate_context_AddRef(&context->ID3D11DeviceContext1_iface);
+    return d3d11_device_context_AddRef(&context->ID3D11DeviceContext1_iface);
 }
 
 static ULONG STDMETHODCALLTYPE d3d11_multithread_Release(ID3D11Multithread *iface)
 {
-    struct d3d11_immediate_context *context = impl_from_ID3D11Multithread(iface);
+    struct d3d11_device_context *context = impl_from_ID3D11Multithread(iface);
 
     TRACE("iface %p.\n", iface);
 
-    return d3d11_immediate_context_Release(&context->ID3D11DeviceContext1_iface);
+    return d3d11_device_context_Release(&context->ID3D11DeviceContext1_iface);
 }
 
 static void STDMETHODCALLTYPE d3d11_multithread_Enter(ID3D11Multithread *iface)
@@ -4366,17 +4755,96 @@ static const struct ID3D11MultithreadVtbl d3d11_multithread_vtbl =
     d3d11_multithread_GetMultithreadProtected,
 };
 
-static void d3d11_immediate_context_init(struct d3d11_immediate_context *context, struct d3d_device *device)
-{
-    context->ID3D11DeviceContext1_iface.lpVtbl = &d3d11_immediate_context_vtbl;
-    context->ID3D11Multithread_iface.lpVtbl = &d3d11_multithread_vtbl;
-    context->refcount = 1;
+/* ID3DUserDefinedAnnotation methods */
 
+static inline struct d3d11_device_context *impl_from_ID3DUserDefinedAnnotation(ID3DUserDefinedAnnotation *iface)
+{
+    return CONTAINING_RECORD(iface, struct d3d11_device_context, ID3DUserDefinedAnnotation_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d3d11_user_defined_annotation_QueryInterface(ID3DUserDefinedAnnotation *iface,
+        REFIID iid, void **out)
+{
+    struct d3d11_device_context *context = impl_from_ID3DUserDefinedAnnotation(iface);
+
+    TRACE("iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out);
+
+    return d3d11_device_context_QueryInterface(&context->ID3D11DeviceContext1_iface, iid, out);
+}
+
+static ULONG STDMETHODCALLTYPE d3d11_user_defined_annotation_AddRef(ID3DUserDefinedAnnotation *iface)
+{
+    struct d3d11_device_context *context = impl_from_ID3DUserDefinedAnnotation(iface);
+
+    TRACE("iface %p.\n", iface);
+
+    return d3d11_device_context_AddRef(&context->ID3D11DeviceContext1_iface);
+}
+
+static ULONG STDMETHODCALLTYPE d3d11_user_defined_annotation_Release(ID3DUserDefinedAnnotation *iface)
+{
+    struct d3d11_device_context *context = impl_from_ID3DUserDefinedAnnotation(iface);
+
+    TRACE("iface %p.\n", iface);
+
+    return d3d11_device_context_Release(&context->ID3D11DeviceContext1_iface);
+}
+
+static int STDMETHODCALLTYPE d3d11_user_defined_annotation_BeginEvent(ID3DUserDefinedAnnotation *iface,
+        const WCHAR *name)
+{
+    TRACE("iface %p, name %s.\n", iface, debugstr_w(name));
+
+    return -1;
+}
+
+static int STDMETHODCALLTYPE d3d11_user_defined_annotation_EndEvent(ID3DUserDefinedAnnotation *iface)
+{
+    TRACE("iface %p.\n", iface);
+
+    return -1;
+}
+
+static void STDMETHODCALLTYPE d3d11_user_defined_annotation_SetMarker(ID3DUserDefinedAnnotation *iface,
+        const WCHAR *name)
+{
+    TRACE("iface %p, name %s.\n", iface, debugstr_w(name));
+}
+
+static BOOL STDMETHODCALLTYPE d3d11_user_defined_annotation_GetStatus(ID3DUserDefinedAnnotation *iface)
+{
+    TRACE("iface %p.\n", iface);
+
+    return FALSE;
+}
+
+static const struct ID3DUserDefinedAnnotationVtbl d3d11_user_defined_annotation_vtbl =
+{
+    d3d11_user_defined_annotation_QueryInterface,
+    d3d11_user_defined_annotation_AddRef,
+    d3d11_user_defined_annotation_Release,
+    d3d11_user_defined_annotation_BeginEvent,
+    d3d11_user_defined_annotation_EndEvent,
+    d3d11_user_defined_annotation_SetMarker,
+    d3d11_user_defined_annotation_GetStatus,
+};
+
+static void d3d11_device_context_init(struct d3d11_device_context *context, struct d3d_device *device,
+        D3D11_DEVICE_CONTEXT_TYPE type)
+{
+    context->ID3D11DeviceContext1_iface.lpVtbl = &d3d11_device_context_vtbl;
+    context->ID3D11Multithread_iface.lpVtbl = &d3d11_multithread_vtbl;
+    context->ID3DUserDefinedAnnotation_iface.lpVtbl = &d3d11_user_defined_annotation_vtbl;
+    context->refcount = 1;
+    context->type = type;
+
+    context->device = device;
     ID3D11Device2_AddRef(&device->ID3D11Device2_iface);
 
     wined3d_private_store_init(&context->private_store);
 }
 
+<<<<<<< HEAD
 static void d3d11_immediate_context_destroy(struct d3d11_immediate_context *context)
 {
     wined3d_private_store_cleanup(&context->private_store);
@@ -6095,6 +6563,8 @@ static const struct ID3D11DeviceContextVtbl d3d11_deferred_context_vtbl =
     d3d11_deferred_context_FinishCommandList,
 };
 
+=======
+>>>>>>> github-desktop-wine-mirror/master
 /* ID3D11Device methods */
 
 static HRESULT STDMETHODCALLTYPE d3d11_device_QueryInterface(ID3D11Device2 *iface, REFIID riid, void **out)
@@ -6192,6 +6662,8 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateShaderResourceView(ID3D11Dev
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
 
+    *view = NULL;
+
     if (!resource)
         return E_INVALIDARG;
 
@@ -6212,6 +6684,8 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateUnorderedAccessView(ID3D11De
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
 
+    *view = NULL;
+
     if (FAILED(hr = d3d11_unordered_access_view_create(device, resource, desc, &object)))
         return hr;
 
@@ -6228,6 +6702,8 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateRenderTargetView(ID3D11Devic
     HRESULT hr;
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
+
+    *view = NULL;
 
     if (!resource)
         return E_INVALIDARG;
@@ -6248,6 +6724,8 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDepthStencilView(ID3D11Devic
     HRESULT hr;
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
+
+    *view = NULL;
 
     if (FAILED(hr = d3d_depthstencil_view_create(device, resource, desc, &object)))
         return hr;
@@ -6490,14 +6968,21 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateRasterizerState(ID3D11Device
 {
     struct d3d_device *device = impl_from_ID3D11Device2(iface);
     struct d3d_rasterizer_state *object;
+    D3D11_RASTERIZER_DESC1 desc1;
     HRESULT hr;
 
     TRACE("iface %p, desc %p, rasterizer_state %p.\n", iface, desc, rasterizer_state);
 
-    if (FAILED(hr = d3d_rasterizer_state_create(device, desc, &object)))
+    if (!desc)
+        return E_INVALIDARG;
+
+    memcpy(&desc1, desc, sizeof(*desc));
+    desc1.ForcedSampleCount = 0;
+
+    if (FAILED(hr = d3d_rasterizer_state_create(device, &desc1, &object)))
         return hr;
 
-    *rasterizer_state = &object->ID3D11RasterizerState_iface;
+    *rasterizer_state = (ID3D11RasterizerState *)&object->ID3D11RasterizerState1_iface;
 
     return S_OK;
 }
@@ -6571,9 +7056,36 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateCounter(ID3D11Device2 *iface
     return E_NOTIMPL;
 }
 
+static HRESULT d3d11_deferred_context_create(struct d3d_device *device,
+        UINT flags, struct d3d11_device_context **context)
+{
+    struct d3d11_device_context *object;
+    HRESULT hr;
+
+    if (flags)
+        FIXME("Ignoring flags %#x.\n", flags);
+
+    if (!(object = heap_alloc_zero(sizeof(*object))))
+        return E_OUTOFMEMORY;
+    d3d11_device_context_init(object, device, D3D11_DEVICE_CONTEXT_DEFERRED);
+
+    if (FAILED(hr = wined3d_deferred_context_create(device->wined3d_device, &object->wined3d_context)))
+    {
+        WARN("Failed to create wined3d deferred context, hr %#x.\n", hr);
+        heap_free(object);
+        return hr;
+    }
+
+    TRACE("Created deferred context %p.\n", object);
+    *context = object;
+
+    return S_OK;
+}
+
 static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDeferredContext(ID3D11Device2 *iface, UINT flags,
         ID3D11DeviceContext **context)
 {
+<<<<<<< HEAD
     struct d3d11_deferred_context *object;
 
     TRACE("iface %p, flags %#x, context %p.\n", iface, flags, context);
@@ -6591,6 +7103,18 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDeferredContext(ID3D11Device
     wined3d_private_store_init(&object->private_store);
 
     *context = &object->ID3D11DeviceContext_iface;
+=======
+    struct d3d_device *device = impl_from_ID3D11Device2(iface);
+    struct d3d11_device_context *object;
+    HRESULT hr;
+
+    TRACE("iface %p, flags %#x, context %p.\n", iface, flags, context);
+
+    if (FAILED(hr = d3d11_deferred_context_create(device, flags, &object)))
+        return hr;
+
+    *context = (ID3D11DeviceContext *)&object->ID3D11DeviceContext1_iface;
+>>>>>>> github-desktop-wine-mirror/master
     return S_OK;
 }
 
@@ -6617,15 +7141,23 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device2 *
     {
         enum wined3d_resource_type rtype;
         unsigned int bind_flags;
+        unsigned int usage;
         D3D11_FORMAT_SUPPORT flag;
     }
     flag_mapping[] =
     {
-        {WINED3D_RTYPE_TEXTURE_1D, WINED3D_BIND_SHADER_RESOURCE, D3D11_FORMAT_SUPPORT_TEXTURE1D},
-        {WINED3D_RTYPE_TEXTURE_2D, WINED3D_BIND_SHADER_RESOURCE, D3D11_FORMAT_SUPPORT_TEXTURE2D},
-        {WINED3D_RTYPE_TEXTURE_3D, WINED3D_BIND_SHADER_RESOURCE, D3D11_FORMAT_SUPPORT_TEXTURE3D},
-        {WINED3D_RTYPE_NONE,       WINED3D_BIND_RENDER_TARGET,   D3D11_FORMAT_SUPPORT_RENDER_TARGET},
-        {WINED3D_RTYPE_NONE,       WINED3D_BIND_DEPTH_STENCIL,   D3D11_FORMAT_SUPPORT_DEPTH_STENCIL},
+        {WINED3D_RTYPE_BUFFER,     WINED3D_BIND_SHADER_RESOURCE, 0, D3D11_FORMAT_SUPPORT_BUFFER},
+        {WINED3D_RTYPE_BUFFER,     WINED3D_BIND_VERTEX_BUFFER,   0, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER},
+        {WINED3D_RTYPE_BUFFER,     WINED3D_BIND_INDEX_BUFFER,    0, D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER},
+        {WINED3D_RTYPE_TEXTURE_1D, WINED3D_BIND_SHADER_RESOURCE, 0, D3D11_FORMAT_SUPPORT_TEXTURE1D},
+        {WINED3D_RTYPE_TEXTURE_2D, WINED3D_BIND_SHADER_RESOURCE, 0, D3D11_FORMAT_SUPPORT_TEXTURE2D},
+        {WINED3D_RTYPE_TEXTURE_3D, WINED3D_BIND_SHADER_RESOURCE, 0, D3D11_FORMAT_SUPPORT_TEXTURE3D},
+        {WINED3D_RTYPE_NONE,       WINED3D_BIND_RENDER_TARGET,   0, D3D11_FORMAT_SUPPORT_RENDER_TARGET},
+        {WINED3D_RTYPE_NONE,       WINED3D_BIND_DEPTH_STENCIL,   0, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL},
+        {WINED3D_RTYPE_NONE,       WINED3D_BIND_UNORDERED_ACCESS, 0, D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW},
+        {WINED3D_RTYPE_TEXTURE_2D, WINED3D_BIND_SHADER_RESOURCE, WINED3DUSAGE_QUERY_WRAPANDMIP, D3D11_FORMAT_SUPPORT_MIP},
+        {WINED3D_RTYPE_TEXTURE_2D, WINED3D_BIND_SHADER_RESOURCE, WINED3DUSAGE_QUERY_GENMIPMAP, D3D11_FORMAT_SUPPORT_MIP_AUTOGEN},
+        {WINED3D_RTYPE_NONE,       WINED3D_BIND_RENDER_TARGET, WINED3DUSAGE_QUERY_POSTPIXELSHADER_BLENDING, D3D11_FORMAT_SUPPORT_BLENDABLE},
     };
     HRESULT hr;
 
@@ -6642,14 +7174,14 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device2 *
     *format_support = 0;
 
     wined3d_mutex_lock();
-    feature_level = device->feature_level;
+    feature_level = device->state->feature_level;
     wined3d = wined3d_device_get_wined3d(device->wined3d_device);
     wined3d_device_get_creation_parameters(device->wined3d_device, &params);
     wined3d_adapter = wined3d_get_adapter(wined3d, params.adapter_idx);
     for (i = 0; i < ARRAY_SIZE(flag_mapping); ++i)
     {
         hr = wined3d_check_device_format(wined3d, wined3d_adapter, params.device_type,
-                WINED3DFMT_UNKNOWN, 0, flag_mapping[i].bind_flags, flag_mapping[i].rtype, wined3d_format);
+                WINED3DFMT_UNKNOWN, flag_mapping[i].usage, flag_mapping[i].bind_flags, flag_mapping[i].rtype, wined3d_format);
         if (hr == WINED3DERR_NOTAVAILABLE || hr == WINED3DOK_NOMIPGEN)
             continue;
         if (hr != WINED3D_OK)
@@ -6663,11 +7195,15 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device2 *
     }
     wined3d_mutex_unlock();
 
+    if (feature_level < D3D_FEATURE_LEVEL_10_0)
+        *format_support &= ~D3D11_FORMAT_SUPPORT_BUFFER;
+
     if (*format_support & (D3D11_FORMAT_SUPPORT_TEXTURE1D
             | D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_TEXTURE3D))
     {
         *format_support |= D3D11_FORMAT_SUPPORT_SHADER_LOAD;
         *format_support |= D3D11_FORMAT_SUPPORT_SHADER_SAMPLE;
+        *format_support |= D3D11_FORMAT_SUPPORT_TEXTURECUBE;
 
         if (feature_level >= D3D_FEATURE_LEVEL_10_1)
             *format_support |= D3D11_FORMAT_SUPPORT_SHADER_GATHER;
@@ -6680,6 +7216,18 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFormatSupport(ID3D11Device2 *
             if (feature_level >= D3D_FEATURE_LEVEL_10_1)
                 *format_support |= D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON;
         }
+    }
+
+    /* d3d11 requires 4 and 8 sample counts support for formats reported to
+     * support multisample. */
+    if (wined3d_check_device_multisample_type(wined3d_adapter, params.device_type, wined3d_format,
+            TRUE, WINED3D_MULTISAMPLE_4_SAMPLES, NULL) == WINED3D_OK &&
+            wined3d_check_device_multisample_type(wined3d_adapter, params.device_type, wined3d_format,
+            TRUE, WINED3D_MULTISAMPLE_8_SAMPLES, NULL) == WINED3D_OK)
+    {
+        *format_support |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE
+                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET
+                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD;
     }
 
     return S_OK;
@@ -6795,6 +7343,28 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFeatureSupport(ID3D11Device2 
             return S_OK;
         }
 
+        case D3D11_FEATURE_D3D9_OPTIONS:
+        {
+            D3D11_FEATURE_DATA_D3D9_OPTIONS *options = feature_support_data;
+            if (feature_support_data_size != sizeof(*options))
+            {
+                WARN("Invalid data size.\n");
+                return E_INVALIDARG;
+            }
+
+            wined3d_mutex_lock();
+            hr = wined3d_device_get_device_caps(device->wined3d_device, &wined3d_caps);
+            wined3d_mutex_unlock();
+            if (FAILED(hr))
+            {
+                WARN("Failed to get device caps, hr %#x.\n", hr);
+                return hr;
+            }
+
+            options->FullNonPow2TextureSupport = !(wined3d_caps.TextureCaps & WINED3DPTEXTURECAPS_POW2);
+            return S_OK;
+        }
+
         case D3D11_FEATURE_D3D10_X_HARDWARE_OPTIONS:
         {
             D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS *options = feature_support_data;
@@ -6804,7 +7374,17 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFeatureSupport(ID3D11Device2 
                 return E_INVALIDARG;
             }
 
-            options->ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x = FALSE;
+            wined3d_mutex_lock();
+            hr = wined3d_device_get_device_caps(device->wined3d_device, &wined3d_caps);
+            wined3d_mutex_unlock();
+            if (FAILED(hr))
+            {
+                WARN("Failed to get device caps, hr %#x.\n", hr);
+                return hr;
+            }
+
+            options->ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x
+                    = wined3d_caps.max_feature_level >= WINED3D_FEATURE_LEVEL_11;
             return S_OK;
         }
 
@@ -6824,10 +7404,10 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CheckFeatureSupport(ID3D11Device2 
             options->FlagsForUpdateAndCopySeenByDriver = FALSE;
             options->ClearView = FALSE;
             options->CopyWithOverlap = FALSE;
-            options->ConstantBufferPartialUpdate = FALSE;
-            options->ConstantBufferOffsetting = FALSE;
-            options->MapNoOverwriteOnDynamicConstantBuffer = FALSE;
-            options->MapNoOverwriteOnDynamicBufferSRV = FALSE;
+            options->ConstantBufferPartialUpdate = TRUE;
+            options->ConstantBufferOffsetting = TRUE;
+            options->MapNoOverwriteOnDynamicConstantBuffer = TRUE;
+            options->MapNoOverwriteOnDynamicBufferSRV = TRUE;
             options->MultisampleRTVWithForcedSampleCountOne = FALSE;
             options->SAD4ShaderInstructions = FALSE;
             options->ExtendedDoublesShaderInstructions = FALSE;
@@ -6949,7 +7529,7 @@ static D3D_FEATURE_LEVEL STDMETHODCALLTYPE d3d11_device_GetFeatureLevel(ID3D11De
 
     TRACE("iface %p.\n", iface);
 
-    return device->feature_level;
+    return device->state->feature_level;
 }
 
 static UINT STDMETHODCALLTYPE d3d11_device_GetCreationFlags(ID3D11Device2 *iface)
@@ -7005,9 +7585,17 @@ static void STDMETHODCALLTYPE d3d11_device_GetImmediateContext1(ID3D11Device2 *i
 static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDeferredContext1(ID3D11Device2 *iface, UINT flags,
         ID3D11DeviceContext1 **context)
 {
-    FIXME("iface %p, flags %#x, context %p stub!\n", iface, flags, context);
+    struct d3d_device *device = impl_from_ID3D11Device2(iface);
+    struct d3d11_device_context *object;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, flags %#x, context %p.\n", iface, flags, context);
+
+    if (FAILED(hr = d3d11_deferred_context_create(device, flags, &object)))
+        return hr;
+
+    *context = &object->ID3D11DeviceContext1_iface;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_device_CreateBlendState1(ID3D11Device2 *iface,
@@ -7021,20 +7609,90 @@ static HRESULT STDMETHODCALLTYPE d3d11_device_CreateBlendState1(ID3D11Device2 *i
 static HRESULT STDMETHODCALLTYPE d3d11_device_CreateRasterizerState1(ID3D11Device2 *iface,
         const D3D11_RASTERIZER_DESC1 *desc, ID3D11RasterizerState1 **state)
 {
-    FIXME("iface %p, desc %p, state %p stub!\n", iface, desc, state);
+    struct d3d_device *device = impl_from_ID3D11Device2(iface);
+    struct d3d_rasterizer_state *object;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, desc %p, state %p.\n", iface, desc, state);
+
+    if (!desc)
+        return E_INVALIDARG;
+
+    if (FAILED(hr = d3d_rasterizer_state_create(device, desc, &object)))
+        return hr;
+
+    *state = &object->ID3D11RasterizerState1_iface;
+
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_device_CreateDeviceContextState(ID3D11Device2 *iface, UINT flags,
-        const D3D_FEATURE_LEVEL *feature_levels, UINT feature_levels_count, UINT sdk_version,
+        const D3D_FEATURE_LEVEL *feature_levels, UINT feature_level_count, UINT sdk_version,
         REFIID emulated_interface, D3D_FEATURE_LEVEL *chosen_feature_level, ID3DDeviceContextState **state)
 {
-    FIXME("iface %p, flags %#x, feature_levels %p, feature_level_count %u, sdk_version %u, "
-            "emulated_interface %s, chosen_feature_level %p, state %p stub!\n", iface, flags, feature_levels,
-            feature_levels_count, sdk_version, debugstr_guid(emulated_interface), chosen_feature_level, state);
+    struct d3d_device *device = impl_from_ID3D11Device2(iface);
+    struct d3d_device_context_state *state_impl;
+    struct wined3d_state *wined3d_state;
+    D3D_FEATURE_LEVEL feature_level;
+    HRESULT hr = E_INVALIDARG;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, flags %#x, feature_levels %p, feature_level_count %u, "
+            "sdk_version %u, emulated_interface %s, chosen_feature_level %p, state %p.\n",
+            iface, flags, feature_levels, feature_level_count,
+            sdk_version, debugstr_guid(emulated_interface), chosen_feature_level, state);
+
+    if (flags)
+        FIXME("Ignoring flags %#x.\n", flags);
+
+    wined3d_mutex_lock();
+
+    if (!feature_level_count)
+        goto fail;
+
+    if (FAILED(hr = wined3d_state_create(device->wined3d_device,
+            (const enum wined3d_feature_level *)feature_levels, feature_level_count, &wined3d_state)))
+        goto fail;
+    feature_level = d3d_feature_level_from_wined3d(wined3d_state_get_feature_level(wined3d_state));
+
+    if (chosen_feature_level)
+        *chosen_feature_level = feature_level;
+
+    if (!state)
+    {
+        wined3d_state_destroy(wined3d_state);
+        wined3d_mutex_unlock();
+        return S_FALSE;
+    }
+
+    if (!(state_impl = heap_alloc_zero(sizeof(*state_impl))))
+    {
+        wined3d_state_destroy(wined3d_state);
+        hr = E_OUTOFMEMORY;
+        goto fail;
+    }
+
+    d3d_device_context_state_init(state_impl, device, feature_level, emulated_interface);
+    if (!d3d_device_context_state_add_entry(state_impl, device, wined3d_state))
+    {
+        wined3d_state_destroy(wined3d_state);
+        ID3DDeviceContextState_Release(&state_impl->ID3DDeviceContextState_iface);
+        hr = E_FAIL;
+        goto fail;
+    }
+
+    *state = &state_impl->ID3DDeviceContextState_iface;
+    device->d3d11_only = FALSE;
+    wined3d_mutex_unlock();
+
+    return S_OK;
+
+fail:
+    wined3d_mutex_unlock();
+    if (chosen_feature_level)
+        *chosen_feature_level = 0;
+    if (state)
+        *state = NULL;
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d3d11_device_OpenSharedResource1(ID3D11Device2 *iface, HANDLE handle,
@@ -7170,8 +7828,9 @@ static HRESULT STDMETHODCALLTYPE d3d_device_inner_QueryInterface(IUnknown *iface
     {
         *out = &device->ID3D11Device2_iface;
     }
-    else if (IsEqualGUID(riid, &IID_ID3D10Device1)
-            || IsEqualGUID(riid, &IID_ID3D10Device))
+    else if (!device->d3d11_only
+            && (IsEqualGUID(riid, &IID_ID3D10Device1)
+            || IsEqualGUID(riid, &IID_ID3D10Device)))
     {
         *out = &device->ID3D10Device1_iface;
     }
@@ -7213,17 +7872,23 @@ static ULONG STDMETHODCALLTYPE d3d_device_inner_Release(IUnknown *iface)
 {
     struct d3d_device *device = impl_from_IUnknown(iface);
     ULONG refcount = InterlockedDecrement(&device->refcount);
+    unsigned int i;
 
     TRACE("%p decreasing refcount to %u.\n", device, refcount);
 
     if (!refcount)
     {
-        d3d11_immediate_context_destroy(&device->immediate_context);
+        if (device->state)
+            d3d_device_context_state_private_release(device->state);
+        for (i = 0; i < device->context_state_count; ++i)
+        {
+            d3d_device_context_state_remove_entry(device->context_states[i], device);
+        }
+        heap_free(device->context_states);
+        d3d11_device_context_cleanup(&device->immediate_context);
         if (device->wined3d_device)
         {
-            wined3d_mutex_lock();
             wined3d_device_decref(device->wined3d_device);
-            wined3d_mutex_unlock();
         }
         wine_rb_destroy(&device->sampler_states, NULL, NULL);
         wine_rb_destroy(&device->rasterizer_states, NULL, NULL);
@@ -7266,38 +7931,97 @@ static void d3d10_device_get_constant_buffers(ID3D10Device1 *iface,
     wined3d_mutex_lock();
     for (i = 0; i < buffer_count; ++i)
     {
-        struct wined3d_buffer *wined3d_buffer;
+        struct wined3d_constant_buffer_state state;
         struct d3d_buffer *buffer_impl;
 
-        if (!(wined3d_buffer = wined3d_device_get_constant_buffer(device->wined3d_device,
-                type, start_slot + i)))
+        wined3d_device_context_get_constant_buffer(device->immediate_context.wined3d_context,
+                type, start_slot + i, &state);
+
+        if (!state.buffer)
         {
             buffers[i] = NULL;
             continue;
         }
 
-        buffer_impl = wined3d_buffer_get_parent(wined3d_buffer);
+        buffer_impl = wined3d_buffer_get_parent(state.buffer);
         buffers[i] = &buffer_impl->ID3D10Buffer_iface;
         ID3D10Buffer_AddRef(buffers[i]);
     }
     wined3d_mutex_unlock();
 }
 
-static void d3d10_device_set_constant_buffers(ID3D10Device1 *iface,
-        enum wined3d_shader_type type, UINT start_slot, UINT buffer_count, ID3D10Buffer *const *buffers)
+static void d3d10_device_set_constant_buffers(ID3D10Device1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int buffer_count, ID3D10Buffer *const *buffers)
 {
+    struct wined3d_constant_buffer_state wined3d_buffers[D3D10_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
     struct d3d_device *device = impl_from_ID3D10Device(iface);
     unsigned int i;
 
-    wined3d_mutex_lock();
+    if (buffer_count > ARRAY_SIZE(wined3d_buffers))
+    {
+        WARN("Buffer count %u exceeds limit; ignoring call.\n", buffer_count);
+        return;
+    }
+
     for (i = 0; i < buffer_count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D10Buffer(buffers[i]);
 
-        wined3d_device_set_constant_buffer(device->wined3d_device, type, start_slot + i,
-                buffer ? buffer->wined3d_buffer : NULL);
+        wined3d_buffers[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        wined3d_buffers[i].offset = 0;
+        wined3d_buffers[i].size = WINED3D_MAX_CONSTANT_BUFFER_SIZE * sizeof(struct wined3d_vec4);
     }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_constant_buffers(device->immediate_context.wined3d_context,
+            type, start_slot, buffer_count, wined3d_buffers);
+}
+
+static void d3d10_device_set_shader_resource_views(ID3D10Device1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int count, ID3D10ShaderResourceView *const *views)
+{
+    struct wined3d_shader_resource_view *wined3d_views[D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+    struct d3d_device *device = impl_from_ID3D10Device(iface);
+    unsigned int i;
+
+    if (count > ARRAY_SIZE(wined3d_views))
+    {
+        WARN("View count %u exceeds limit; ignoring call.\n", count);
+        return;
+    }
+
+    for (i = 0; i < count; ++i)
+    {
+        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D10ShaderResourceView(views[i]);
+
+        wined3d_views[i] = view ? view->wined3d_view : NULL;
+    }
+
+    wined3d_device_context_set_shader_resource_views(device->immediate_context.wined3d_context,
+            type, start_slot, count, wined3d_views);
+}
+
+static void d3d10_device_set_samplers(ID3D10Device1 *iface, enum wined3d_shader_type type,
+        unsigned int start_slot, unsigned int count, ID3D10SamplerState *const *samplers)
+{
+    struct wined3d_sampler *wined3d_samplers[D3D10_COMMONSHADER_SAMPLER_SLOT_COUNT];
+    struct d3d_device *device = impl_from_ID3D10Device(iface);
+    unsigned int i;
+
+    if (count > ARRAY_SIZE(wined3d_samplers))
+    {
+        WARN("Sampler count %u exceeds limit; ignoring call.\n", count);
+        return;
+    }
+
+    for (i = 0; i < count; ++i)
+    {
+        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D10SamplerState(samplers[i]);
+
+        wined3d_samplers[i] = sampler ? sampler->wined3d_sampler : NULL;
+    }
+
+    wined3d_device_context_set_samplers(device->immediate_context.wined3d_context,
+            type, start_slot, count, wined3d_samplers);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSSetConstantBuffers(ID3D10Device1 *iface,
@@ -7313,21 +8037,10 @@ static void STDMETHODCALLTYPE d3d10_device_VSSetConstantBuffers(ID3D10Device1 *i
 static void STDMETHODCALLTYPE d3d10_device_PSSetShaderResources(ID3D10Device1 *iface,
         UINT start_slot, UINT view_count, ID3D10ShaderResourceView *const *views)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D10ShaderResourceView(views[i]);
-
-        wined3d_device_set_ps_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot, view_count, views);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_PSSetShader(ID3D10Device1 *iface,
@@ -7338,29 +8051,17 @@ static void STDMETHODCALLTYPE d3d10_device_PSSetShader(ID3D10Device1 *iface,
 
     TRACE("iface %p, shader %p\n", iface, shader);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_pixel_shader(device->wined3d_device, ps ? ps->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_PIXEL, ps ? ps->wined3d_shader : NULL);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_PSSetSamplers(ID3D10Device1 *iface,
         UINT start_slot, UINT sampler_count, ID3D10SamplerState *const *samplers)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D10SamplerState(samplers[i]);
-
-        wined3d_device_set_ps_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_samplers(iface, WINED3D_SHADER_TYPE_PIXEL, start_slot, sampler_count, samplers);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSSetShader(ID3D10Device1 *iface,
@@ -7371,9 +8072,8 @@ static void STDMETHODCALLTYPE d3d10_device_VSSetShader(ID3D10Device1 *iface,
 
     TRACE("iface %p, shader %p\n", iface, shader);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_vertex_shader(device->wined3d_device, vs ? vs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_VERTEX, vs ? vs->wined3d_shader : NULL);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_DrawIndexed(ID3D10Device1 *iface, UINT index_count,
@@ -7384,10 +8084,8 @@ static void STDMETHODCALLTYPE d3d10_device_DrawIndexed(ID3D10Device1 *iface, UIN
     TRACE("iface %p, index_count %u, start_index_location %u, base_vertex_location %d.\n",
             iface, index_count, start_index_location, base_vertex_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_base_vertex_index(device->wined3d_device, base_vertex_location);
-    wined3d_device_draw_indexed_primitive(device->wined3d_device, start_index_location, index_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indexed(device->immediate_context.wined3d_context,
+            base_vertex_location, start_index_location, index_count, 0, 0);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_Draw(ID3D10Device1 *iface, UINT vertex_count,
@@ -7398,9 +8096,7 @@ static void STDMETHODCALLTYPE d3d10_device_Draw(ID3D10Device1 *iface, UINT verte
     TRACE("iface %p, vertex_count %u, start_vertex_location %u\n",
             iface, vertex_count, start_vertex_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_primitive(device->wined3d_device, start_vertex_location, vertex_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw(device->immediate_context.wined3d_context, start_vertex_location, vertex_count, 0, 0);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_PSSetConstantBuffers(ID3D10Device1 *iface,
@@ -7421,30 +8117,39 @@ static void STDMETHODCALLTYPE d3d10_device_IASetInputLayout(ID3D10Device1 *iface
 
     TRACE("iface %p, input_layout %p\n", iface, input_layout);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_vertex_declaration(device->wined3d_device,
+    wined3d_device_context_set_vertex_declaration(device->immediate_context.wined3d_context,
             layout ? layout->wined3d_decl : NULL);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_IASetVertexBuffers(ID3D10Device1 *iface, UINT start_slot,
         UINT buffer_count, ID3D10Buffer *const *buffers, const UINT *strides, const UINT *offsets)
 {
+    struct wined3d_stream_state streams[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
     struct d3d_device *device = impl_from_ID3D10Device(iface);
     unsigned int i;
 
     TRACE("iface %p, start_slot %u, buffer_count %u, buffers %p, strides %p, offsets %p\n",
             iface, start_slot, buffer_count, buffers, strides, offsets);
 
-    wined3d_mutex_lock();
+    if (buffer_count > ARRAY_SIZE(streams))
+    {
+        WARN("Buffer count %u exceeds limit.\n", buffer_count);
+        buffer_count = ARRAY_SIZE(streams);
+    }
+
     for (i = 0; i < buffer_count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D10Buffer(buffers[i]);
 
-        wined3d_device_set_stream_source(device->wined3d_device, start_slot + i,
-                buffer ? buffer->wined3d_buffer : NULL, offsets[i], strides[i]);
+        streams[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        streams[i].offset = offsets[i];
+        streams[i].stride = strides[i];
+        streams[i].frequency = 1;
+        streams[i].flags = 0;
     }
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_stream_sources(device->immediate_context.wined3d_context,
+            start_slot, buffer_count, streams);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_IASetIndexBuffer(ID3D10Device1 *iface,
@@ -7456,11 +8161,9 @@ static void STDMETHODCALLTYPE d3d10_device_IASetIndexBuffer(ID3D10Device1 *iface
     TRACE("iface %p, buffer %p, format %s, offset %u.\n",
             iface, buffer, debug_dxgi_format(format), offset);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_index_buffer(device->wined3d_device,
+    wined3d_device_context_set_index_buffer(device->immediate_context.wined3d_context,
             buffer_impl ? buffer_impl->wined3d_buffer : NULL,
             wined3dformat_from_dxgi_format(format), offset);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_DrawIndexedInstanced(ID3D10Device1 *iface,
@@ -7474,11 +8177,8 @@ static void STDMETHODCALLTYPE d3d10_device_DrawIndexedInstanced(ID3D10Device1 *i
             iface, instance_index_count, instance_count, start_index_location,
             base_vertex_location, start_instance_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_base_vertex_index(device->wined3d_device, base_vertex_location);
-    wined3d_device_draw_indexed_primitive_instanced(device->wined3d_device, start_index_location,
-            instance_index_count, start_instance_location, instance_count);
-    wined3d_mutex_unlock();
+    wined3d_device_context_draw_indexed(device->immediate_context.wined3d_context, base_vertex_location,
+            start_index_location, instance_index_count, start_instance_location, instance_count);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_DrawInstanced(ID3D10Device1 *iface,
@@ -7491,10 +8191,8 @@ static void STDMETHODCALLTYPE d3d10_device_DrawInstanced(ID3D10Device1 *iface,
             "start_instance_location %u.\n", iface, instance_vertex_count, instance_count,
             start_vertex_location, start_instance_location);
 
-    wined3d_mutex_lock();
-    wined3d_device_draw_primitive_instanced(device->wined3d_device, start_vertex_location,
+    wined3d_device_context_draw(device->immediate_context.wined3d_context, start_vertex_location,
             instance_vertex_count, start_instance_location, instance_count);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_GSSetConstantBuffers(ID3D10Device1 *iface,
@@ -7514,9 +8212,8 @@ static void STDMETHODCALLTYPE d3d10_device_GSSetShader(ID3D10Device1 *iface, ID3
 
     TRACE("iface %p, shader %p.\n", iface, shader);
 
-    wined3d_mutex_lock();
-    wined3d_device_set_geometry_shader(device->wined3d_device, gs ? gs->wined3d_shader : NULL);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_GEOMETRY, gs ? gs->wined3d_shader : NULL);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_IASetPrimitiveTopology(ID3D10Device1 *iface,
@@ -7526,49 +8223,26 @@ static void STDMETHODCALLTYPE d3d10_device_IASetPrimitiveTopology(ID3D10Device1 
 
     TRACE("iface %p, topology %s.\n", iface, debug_d3d10_primitive_topology(topology));
 
-    wined3d_mutex_lock();
-    wined3d_device_set_primitive_type(device->wined3d_device, (enum wined3d_primitive_type)topology, 0);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_primitive_type(device->immediate_context.wined3d_context,
+            (enum wined3d_primitive_type)topology, 0);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSSetShaderResources(ID3D10Device1 *iface,
         UINT start_slot, UINT view_count, ID3D10ShaderResourceView *const *views)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D10ShaderResourceView(views[i]);
-
-        wined3d_device_set_vs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot, view_count, views);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSSetSamplers(ID3D10Device1 *iface,
         UINT start_slot, UINT sampler_count, ID3D10SamplerState *const *samplers)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D10SamplerState(samplers[i]);
-
-        wined3d_device_set_vs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_samplers(iface, WINED3D_SHADER_TYPE_VERTEX, start_slot, sampler_count, samplers);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_SetPredication(ID3D10Device1 *iface, ID3D10Predicate *predicate, BOOL value)
@@ -7579,79 +8253,55 @@ static void STDMETHODCALLTYPE d3d10_device_SetPredication(ID3D10Device1 *iface, 
     TRACE("iface %p, predicate %p, value %#x.\n", iface, predicate, value);
 
     query = unsafe_impl_from_ID3D10Query((ID3D10Query *)predicate);
-    wined3d_mutex_lock();
-    wined3d_device_set_predication(device->wined3d_device, query ? query->wined3d_query : NULL, value);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_predication(device->immediate_context.wined3d_context,
+            query ? query->wined3d_query : NULL, value);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_GSSetShaderResources(ID3D10Device1 *iface,
         UINT start_slot, UINT view_count, ID3D10ShaderResourceView *const *views)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, view_count %u, views %p.\n",
             iface, start_slot, view_count, views);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < view_count; ++i)
-    {
-        struct d3d_shader_resource_view *view = unsafe_impl_from_ID3D10ShaderResourceView(views[i]);
-
-        wined3d_device_set_gs_resource_view(device->wined3d_device, start_slot + i,
-                view ? view->wined3d_view : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_shader_resource_views(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot, view_count, views);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_GSSetSamplers(ID3D10Device1 *iface,
         UINT start_slot, UINT sampler_count, ID3D10SamplerState *const *samplers)
 {
-    struct d3d_device *device = impl_from_ID3D10Device(iface);
-    unsigned int i;
-
     TRACE("iface %p, start_slot %u, sampler_count %u, samplers %p.\n",
             iface, start_slot, sampler_count, samplers);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < sampler_count; ++i)
-    {
-        struct d3d_sampler_state *sampler = unsafe_impl_from_ID3D10SamplerState(samplers[i]);
-
-        wined3d_device_set_gs_sampler(device->wined3d_device, start_slot + i,
-                sampler ? sampler->wined3d_sampler : NULL);
-    }
-    wined3d_mutex_unlock();
+    d3d10_device_set_samplers(iface, WINED3D_SHADER_TYPE_GEOMETRY, start_slot, sampler_count, samplers);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_OMSetRenderTargets(ID3D10Device1 *iface,
-        UINT render_target_view_count, ID3D10RenderTargetView *const *render_target_views,
-        ID3D10DepthStencilView *depth_stencil_view)
+        UINT rtv_count, ID3D10RenderTargetView *const *rtvs, ID3D10DepthStencilView *depth_stencil_view)
 {
+    struct wined3d_rendertarget_view *wined3d_rtvs[D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT] = {0};
     struct d3d_device *device = impl_from_ID3D10Device(iface);
     struct d3d_depthstencil_view *dsv;
     unsigned int i;
 
-    TRACE("iface %p, render_target_view_count %u, render_target_views %p, depth_stencil_view %p.\n",
-            iface, render_target_view_count, render_target_views, depth_stencil_view);
+    TRACE("iface %p, rtv_count %u, rtvs %p, depth_stencil_view %p.\n", iface, rtv_count, rtvs, depth_stencil_view);
 
-    wined3d_mutex_lock();
-    for (i = 0; i < render_target_view_count; ++i)
+    if (rtv_count > ARRAY_SIZE(wined3d_rtvs))
     {
-        struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D10RenderTargetView(render_target_views[i]);
-
-        wined3d_device_set_rendertarget_view(device->wined3d_device, i,
-                rtv ? rtv->wined3d_view : NULL, FALSE);
+        WARN("View count %u exceeds limit.\n", rtv_count);
+        rtv_count = ARRAY_SIZE(wined3d_rtvs);
     }
-    for (; i < D3D10_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
+
+    for (i = 0; i < rtv_count; ++i)
     {
-        wined3d_device_set_rendertarget_view(device->wined3d_device, i, NULL, FALSE);
+        struct d3d_rendertarget_view *rtv = unsafe_impl_from_ID3D10RenderTargetView(rtvs[i]);
+
+        wined3d_rtvs[i] = rtv ? rtv->wined3d_view : NULL;
     }
 
     dsv = unsafe_impl_from_ID3D10DepthStencilView(depth_stencil_view);
-    wined3d_device_set_depth_stencil_view(device->wined3d_device,
-            dsv ? dsv->wined3d_view : NULL);
-    wined3d_mutex_unlock();
+
+    wined3d_device_context_set_render_targets_and_unordered_access_views(device->immediate_context.wined3d_context,
+            ARRAY_SIZE(wined3d_rtvs), wined3d_rtvs, dsv ? dsv->wined3d_view : NULL, ~0u, NULL, NULL);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_OMSetBlendState(ID3D10Device1 *iface,
@@ -7664,7 +8314,7 @@ static void STDMETHODCALLTYPE d3d10_device_OMSetBlendState(ID3D10Device1 *iface,
             iface, blend_state, debug_float4(blend_factor), sample_mask);
 
     blend_state_object = unsafe_impl_from_ID3D10BlendState(blend_state);
-    d3d11_immediate_context_OMSetBlendState(&device->immediate_context.ID3D11DeviceContext1_iface,
+    d3d11_device_context_OMSetBlendState(&device->immediate_context.ID3D11DeviceContext1_iface,
             blend_state_object ? &blend_state_object->ID3D11BlendState_iface : NULL, blend_factor, sample_mask);
 }
 
@@ -7678,33 +8328,29 @@ static void STDMETHODCALLTYPE d3d10_device_OMSetDepthStencilState(ID3D10Device1 
             iface, depth_stencil_state, stencil_ref);
 
     ds_state_object = unsafe_impl_from_ID3D10DepthStencilState(depth_stencil_state);
-    d3d11_immediate_context_OMSetDepthStencilState(&device->immediate_context.ID3D11DeviceContext1_iface,
+    d3d11_device_context_OMSetDepthStencilState(&device->immediate_context.ID3D11DeviceContext1_iface,
             ds_state_object ? &ds_state_object->ID3D11DepthStencilState_iface : NULL, stencil_ref);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_SOSetTargets(ID3D10Device1 *iface,
         UINT target_count, ID3D10Buffer *const *targets, const UINT *offsets)
 {
+    struct wined3d_stream_output outputs[WINED3D_MAX_STREAM_OUTPUT_BUFFERS] = {0};
     struct d3d_device *device = impl_from_ID3D10Device(iface);
     unsigned int count, i;
 
     TRACE("iface %p, target_count %u, targets %p, offsets %p.\n", iface, target_count, targets, offsets);
 
-    count = min(target_count, D3D10_SO_BUFFER_SLOT_COUNT);
-    wined3d_mutex_lock();
+    count = min(target_count, ARRAY_SIZE(outputs));
     for (i = 0; i < count; ++i)
     {
         struct d3d_buffer *buffer = unsafe_impl_from_ID3D10Buffer(targets[i]);
 
-        wined3d_device_set_stream_output(device->wined3d_device, i,
-                buffer ? buffer->wined3d_buffer : NULL, offsets[i]);
+        outputs[i].buffer = buffer ? buffer->wined3d_buffer : NULL;
+        outputs[i].offset = offsets ? offsets[i] : 0;
     }
 
-    for (i = count; i < D3D10_SO_BUFFER_SLOT_COUNT; ++i)
-    {
-        wined3d_device_set_stream_output(device->wined3d_device, i, NULL, 0);
-    }
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_stream_outputs(device->immediate_context.wined3d_context, outputs);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_DrawAuto(ID3D10Device1 *iface)
@@ -7720,8 +8366,8 @@ static void STDMETHODCALLTYPE d3d10_device_RSSetState(ID3D10Device1 *iface, ID3D
     TRACE("iface %p, rasterizer_state %p.\n", iface, rasterizer_state);
 
     rasterizer_state_object = unsafe_impl_from_ID3D10RasterizerState(rasterizer_state);
-    d3d11_immediate_context_RSSetState(&device->immediate_context.ID3D11DeviceContext1_iface,
-            rasterizer_state_object ? &rasterizer_state_object->ID3D11RasterizerState_iface : NULL);
+    d3d11_device_context_RSSetState(&device->immediate_context.ID3D11DeviceContext1_iface,
+            rasterizer_state_object ? (ID3D11RasterizerState *)&rasterizer_state_object->ID3D11RasterizerState1_iface : NULL);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_RSSetViewports(ID3D10Device1 *iface,
@@ -7746,9 +8392,7 @@ static void STDMETHODCALLTYPE d3d10_device_RSSetViewports(ID3D10Device1 *iface,
         wined3d_vp[i].max_z = viewports[i].MaxDepth;
     }
 
-    wined3d_mutex_lock();
-    wined3d_device_set_viewports(device->wined3d_device, viewport_count, wined3d_vp);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_viewports(device->immediate_context.wined3d_context, viewport_count, wined3d_vp);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_RSSetScissorRects(ID3D10Device1 *iface,
@@ -7761,9 +8405,7 @@ static void STDMETHODCALLTYPE d3d10_device_RSSetScissorRects(ID3D10Device1 *ifac
     if (rect_count > WINED3D_MAX_VIEWPORTS)
         return;
 
-    wined3d_mutex_lock();
-    wined3d_device_set_scissor_rects(device->wined3d_device, rect_count, rects);
-    wined3d_mutex_unlock();
+    wined3d_device_context_set_scissor_rects(device->immediate_context.wined3d_context, rect_count, rects);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_CopySubresourceRegion(ID3D10Device1 *iface,
@@ -7779,16 +8421,18 @@ static void STDMETHODCALLTYPE d3d10_device_CopySubresourceRegion(ID3D10Device1 *
             iface, dst_resource, dst_subresource_idx, dst_x, dst_y, dst_z,
             src_resource, src_subresource_idx, src_box);
 
+    if (!dst_resource || !src_resource)
+        return;
+
     if (src_box)
         wined3d_box_set(&wined3d_src_box, src_box->left, src_box->top,
                 src_box->right, src_box->bottom, src_box->front, src_box->back);
 
     wined3d_dst_resource = wined3d_resource_from_d3d10_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d10_resource(src_resource);
-    wined3d_mutex_lock();
-    wined3d_device_copy_sub_resource_region(device->wined3d_device, wined3d_dst_resource, dst_subresource_idx,
-            dst_x, dst_y, dst_z, wined3d_src_resource, src_subresource_idx, src_box ? &wined3d_src_box : NULL, 0);
-    wined3d_mutex_unlock();
+    wined3d_device_context_copy_sub_resource_region(device->immediate_context.wined3d_context,
+            wined3d_dst_resource, dst_subresource_idx, dst_x, dst_y, dst_z,
+            wined3d_src_resource, src_subresource_idx, src_box ? &wined3d_src_box : NULL, 0);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_CopyResource(ID3D10Device1 *iface,
@@ -7801,9 +8445,8 @@ static void STDMETHODCALLTYPE d3d10_device_CopyResource(ID3D10Device1 *iface,
 
     wined3d_dst_resource = wined3d_resource_from_d3d10_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d10_resource(src_resource);
-    wined3d_mutex_lock();
-    wined3d_device_copy_resource(device->wined3d_device, wined3d_dst_resource, wined3d_src_resource);
-    wined3d_mutex_unlock();
+    wined3d_device_context_copy_resource(device->immediate_context.wined3d_context,
+            wined3d_dst_resource, wined3d_src_resource);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_UpdateSubresource(ID3D10Device1 *iface,
@@ -7817,7 +8460,7 @@ static void STDMETHODCALLTYPE d3d10_device_UpdateSubresource(ID3D10Device1 *ifac
             iface, resource, subresource_idx, box, data, row_pitch, depth_pitch);
 
     ID3D10Resource_QueryInterface(resource, &IID_ID3D11Resource, (void **)&d3d11_resource);
-    d3d11_immediate_context_UpdateSubresource(&device->immediate_context.ID3D11DeviceContext1_iface,
+    d3d11_device_context_UpdateSubresource(&device->immediate_context.ID3D11DeviceContext1_iface,
             d3d11_resource, subresource_idx, (const D3D11_BOX *)box, data, row_pitch, depth_pitch);
     ID3D11Resource_Release(d3d11_resource);
 }
@@ -7836,11 +8479,9 @@ static void STDMETHODCALLTYPE d3d10_device_ClearRenderTargetView(ID3D10Device1 *
     if (!view)
         return;
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_device_clear_rendertarget_view(device->wined3d_device, view->wined3d_view, NULL,
-            WINED3DCLEAR_TARGET, &color, 0.0f, 0)))
+    if (FAILED(hr = wined3d_device_context_clear_rendertarget_view(device->immediate_context.wined3d_context,
+            view->wined3d_view, NULL, WINED3DCLEAR_TARGET, &color, 0.0f, 0)))
         ERR("Failed to clear view, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_ClearDepthStencilView(ID3D10Device1 *iface,
@@ -7859,23 +8500,20 @@ static void STDMETHODCALLTYPE d3d10_device_ClearDepthStencilView(ID3D10Device1 *
 
     wined3d_flags = wined3d_clear_flags_from_d3d11_clear_flags(flags);
 
-    wined3d_mutex_lock();
-    if (FAILED(hr = wined3d_device_clear_rendertarget_view(device->wined3d_device, view->wined3d_view, NULL,
-            wined3d_flags, NULL, depth, stencil)))
+    if (FAILED(hr = wined3d_device_context_clear_rendertarget_view(device->immediate_context.wined3d_context,
+            view->wined3d_view, NULL, wined3d_flags, NULL, depth, stencil)))
         ERR("Failed to clear view, hr %#x.\n", hr);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_GenerateMips(ID3D10Device1 *iface,
         ID3D10ShaderResourceView *view)
 {
+    struct d3d_device *device = impl_from_ID3D10Device(iface);
     struct d3d_shader_resource_view *srv = unsafe_impl_from_ID3D10ShaderResourceView(view);
 
     TRACE("iface %p, view %p.\n", iface, view);
 
-    wined3d_mutex_lock();
-    wined3d_shader_resource_view_generate_mipmaps(srv->wined3d_view);
-    wined3d_mutex_unlock();
+    wined3d_device_context_generate_mipmaps(device->immediate_context.wined3d_context, srv->wined3d_view);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_ResolveSubresource(ID3D10Device1 *iface,
@@ -7894,11 +8532,9 @@ static void STDMETHODCALLTYPE d3d10_device_ResolveSubresource(ID3D10Device1 *ifa
     wined3d_dst_resource = wined3d_resource_from_d3d10_resource(dst_resource);
     wined3d_src_resource = wined3d_resource_from_d3d10_resource(src_resource);
     wined3d_format = wined3dformat_from_dxgi_format(format);
-    wined3d_mutex_lock();
-    wined3d_device_resolve_sub_resource(device->wined3d_device,
+    wined3d_device_context_resolve_sub_resource(device->immediate_context.wined3d_context,
             wined3d_dst_resource, dst_subresource_idx,
             wined3d_src_resource, src_subresource_idx, wined3d_format);
-    wined3d_mutex_unlock();
 }
 
 static void STDMETHODCALLTYPE d3d10_device_VSGetConstantBuffers(ID3D10Device1 *iface,
@@ -7926,7 +8562,8 @@ static void STDMETHODCALLTYPE d3d10_device_PSGetShaderResources(ID3D10Device1 *i
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_ps_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_PIXEL, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -7948,7 +8585,8 @@ static void STDMETHODCALLTYPE d3d10_device_PSGetShader(ID3D10Device1 *iface, ID3
     TRACE("iface %p, shader %p.\n", iface, shader);
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_pixel_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_PIXEL)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -7976,7 +8614,8 @@ static void STDMETHODCALLTYPE d3d10_device_PSGetSamplers(ID3D10Device1 *iface,
         struct d3d_sampler_state *sampler_impl;
         struct wined3d_sampler *wined3d_sampler;
 
-        if (!(wined3d_sampler = wined3d_device_get_ps_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_PIXEL, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -7998,7 +8637,8 @@ static void STDMETHODCALLTYPE d3d10_device_VSGetShader(ID3D10Device1 *iface, ID3
     TRACE("iface %p, shader %p.\n", iface, shader);
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_vertex_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_VERTEX)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -8030,7 +8670,8 @@ static void STDMETHODCALLTYPE d3d10_device_IAGetInputLayout(ID3D10Device1 *iface
     TRACE("iface %p, input_layout %p.\n", iface, input_layout);
 
     wined3d_mutex_lock();
-    if (!(wined3d_declaration = wined3d_device_get_vertex_declaration(device->wined3d_device)))
+    if (!(wined3d_declaration = wined3d_device_context_get_vertex_declaration(
+            device->immediate_context.wined3d_context)))
     {
         wined3d_mutex_unlock();
         *input_layout = NULL;
@@ -8058,7 +8699,7 @@ static void STDMETHODCALLTYPE d3d10_device_IAGetVertexBuffers(ID3D10Device1 *ifa
         struct wined3d_buffer *wined3d_buffer = NULL;
         struct d3d_buffer *buffer_impl;
 
-        if (FAILED(wined3d_device_get_stream_source(device->wined3d_device, start_slot + i,
+        if (FAILED(wined3d_device_context_get_stream_source(device->immediate_context.wined3d_context, start_slot + i,
                 &wined3d_buffer, &offsets[i], &strides[i])))
             ERR("Failed to get vertex buffer.\n");
 
@@ -8086,7 +8727,8 @@ static void STDMETHODCALLTYPE d3d10_device_IAGetIndexBuffer(ID3D10Device1 *iface
     TRACE("iface %p, buffer %p, format %p, offset %p.\n", iface, buffer, format, offset);
 
     wined3d_mutex_lock();
-    wined3d_buffer = wined3d_device_get_index_buffer(device->wined3d_device, &wined3d_format, offset);
+    wined3d_buffer = wined3d_device_context_get_index_buffer(
+            device->immediate_context.wined3d_context, &wined3d_format, offset);
     *format = dxgi_format_from_wined3dformat(wined3d_format);
     if (!wined3d_buffer)
     {
@@ -8120,7 +8762,8 @@ static void STDMETHODCALLTYPE d3d10_device_GSGetShader(ID3D10Device1 *iface, ID3
     TRACE("iface %p, shader %p.\n", iface, shader);
 
     wined3d_mutex_lock();
-    if (!(wined3d_shader = wined3d_device_get_geometry_shader(device->wined3d_device)))
+    if (!(wined3d_shader = wined3d_device_context_get_shader(device->immediate_context.wined3d_context,
+            WINED3D_SHADER_TYPE_GEOMETRY)))
     {
         wined3d_mutex_unlock();
         *shader = NULL;
@@ -8141,7 +8784,8 @@ static void STDMETHODCALLTYPE d3d10_device_IAGetPrimitiveTopology(ID3D10Device1 
     TRACE("iface %p, topology %p.\n", iface, topology);
 
     wined3d_mutex_lock();
-    wined3d_device_get_primitive_type(device->wined3d_device, (enum wined3d_primitive_type *)topology, NULL);
+    wined3d_device_context_get_primitive_type(device->immediate_context.wined3d_context,
+            (enum wined3d_primitive_type *)topology, NULL);
     wined3d_mutex_unlock();
 }
 
@@ -8160,7 +8804,8 @@ static void STDMETHODCALLTYPE d3d10_device_VSGetShaderResources(ID3D10Device1 *i
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_vs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_VERTEX, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -8188,7 +8833,8 @@ static void STDMETHODCALLTYPE d3d10_device_VSGetSamplers(ID3D10Device1 *iface,
         struct d3d_sampler_state *sampler_impl;
         struct wined3d_sampler *wined3d_sampler;
 
-        if (!(wined3d_sampler = wined3d_device_get_vs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_VERTEX, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -8211,7 +8857,7 @@ static void STDMETHODCALLTYPE d3d10_device_GetPredication(ID3D10Device1 *iface,
     TRACE("iface %p, predicate %p, value %p.\n", iface, predicate, value);
 
     wined3d_mutex_lock();
-    if (!(wined3d_predicate = wined3d_device_get_predication(device->wined3d_device, value)))
+    if (!(wined3d_predicate = wined3d_device_context_get_predication(device->immediate_context.wined3d_context, value)))
     {
         wined3d_mutex_unlock();
         *predicate = NULL;
@@ -8239,7 +8885,8 @@ static void STDMETHODCALLTYPE d3d10_device_GSGetShaderResources(ID3D10Device1 *i
         struct wined3d_shader_resource_view *wined3d_view;
         struct d3d_shader_resource_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_gs_resource_view(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_view = wined3d_device_context_get_shader_resource_view(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY, start_slot + i)))
         {
             views[i] = NULL;
             continue;
@@ -8267,7 +8914,8 @@ static void STDMETHODCALLTYPE d3d10_device_GSGetSamplers(ID3D10Device1 *iface,
         struct d3d_sampler_state *sampler_impl;
         struct wined3d_sampler *wined3d_sampler;
 
-        if (!(wined3d_sampler = wined3d_device_get_gs_sampler(device->wined3d_device, start_slot + i)))
+        if (!(wined3d_sampler = wined3d_device_context_get_sampler(
+                device->immediate_context.wined3d_context, WINED3D_SHADER_TYPE_GEOMETRY, start_slot + i)))
         {
             samplers[i] = NULL;
             continue;
@@ -8297,7 +8945,8 @@ static void STDMETHODCALLTYPE d3d10_device_OMGetRenderTargets(ID3D10Device1 *ifa
 
         for (i = 0; i < view_count; ++i)
         {
-            if (!(wined3d_view = wined3d_device_get_rendertarget_view(device->wined3d_device, i))
+            if (!(wined3d_view = wined3d_device_context_get_rendertarget_view(
+                    device->immediate_context.wined3d_context, i))
                     || !(view_impl = wined3d_rendertarget_view_get_parent(wined3d_view)))
             {
                 render_target_views[i] = NULL;
@@ -8313,7 +8962,7 @@ static void STDMETHODCALLTYPE d3d10_device_OMGetRenderTargets(ID3D10Device1 *ifa
     {
         struct d3d_depthstencil_view *view_impl;
 
-        if (!(wined3d_view = wined3d_device_get_depth_stencil_view(device->wined3d_device))
+        if (!(wined3d_view = wined3d_device_context_get_depth_stencil_view(device->immediate_context.wined3d_context))
                 || !(view_impl = wined3d_rendertarget_view_get_parent(wined3d_view)))
         {
             *depth_stencil_view = NULL;
@@ -8336,31 +8985,49 @@ static void STDMETHODCALLTYPE d3d10_device_OMGetBlendState(ID3D10Device1 *iface,
     TRACE("iface %p, blend_state %p, blend_factor %p, sample_mask %p.\n",
             iface, blend_state, blend_factor, sample_mask);
 
-    d3d11_immediate_context_OMGetBlendState(&device->immediate_context.ID3D11DeviceContext1_iface,
+    d3d11_device_context_OMGetBlendState(&device->immediate_context.ID3D11DeviceContext1_iface,
             &d3d11_blend_state, blend_factor, sample_mask);
 
+    if (blend_state)
+    {
+        if (d3d11_blend_state)
+        {
+            *blend_state = (ID3D10BlendState *)&impl_from_ID3D11BlendState(d3d11_blend_state)->ID3D10BlendState1_iface;
+            ID3D10BlendState_AddRef(*blend_state);
+        }
+        else
+            *blend_state = NULL;
+    }
+
     if (d3d11_blend_state)
-        *blend_state = (ID3D10BlendState *)&impl_from_ID3D11BlendState(d3d11_blend_state)->ID3D10BlendState1_iface;
-    else
-        *blend_state = NULL;
+        ID3D11BlendState_Release(d3d11_blend_state);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_OMGetDepthStencilState(ID3D10Device1 *iface,
         ID3D10DepthStencilState **depth_stencil_state, UINT *stencil_ref)
 {
     struct d3d_device *device = impl_from_ID3D10Device(iface);
-    ID3D11DepthStencilState *d3d11_iface;
+    ID3D11DepthStencilState *d3d11_iface = NULL;
 
     TRACE("iface %p, depth_stencil_state %p, stencil_ref %p.\n",
             iface, depth_stencil_state, stencil_ref);
 
-    d3d11_immediate_context_OMGetDepthStencilState(&device->immediate_context.ID3D11DeviceContext1_iface,
+    d3d11_device_context_OMGetDepthStencilState(&device->immediate_context.ID3D11DeviceContext1_iface,
             &d3d11_iface, stencil_ref);
 
+    if (depth_stencil_state)
+    {
+        if (d3d11_iface)
+        {
+            *depth_stencil_state = &impl_from_ID3D11DepthStencilState(d3d11_iface)->ID3D10DepthStencilState_iface;
+            ID3D10DepthStencilState_AddRef(*depth_stencil_state);
+        }
+        else
+            *depth_stencil_state = NULL;
+    }
+
     if (d3d11_iface)
-        *depth_stencil_state = &impl_from_ID3D11DepthStencilState(d3d11_iface)->ID3D10DepthStencilState_iface;
-    else
-        *depth_stencil_state = NULL;
+        ID3D11DepthStencilState_Release(d3d11_iface);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_SOGetTargets(ID3D10Device1 *iface,
@@ -8378,7 +9045,8 @@ static void STDMETHODCALLTYPE d3d10_device_SOGetTargets(ID3D10Device1 *iface,
         struct wined3d_buffer *wined3d_buffer;
         struct d3d_buffer *buffer_impl;
 
-        if (!(wined3d_buffer = wined3d_device_get_stream_output(device->wined3d_device, i, &offsets[i])))
+        if (!(wined3d_buffer = wined3d_device_context_get_stream_output(
+                device->immediate_context.wined3d_context, i, &offsets[i])))
         {
             buffers[i] = NULL;
             continue;
@@ -8400,7 +9068,7 @@ static void STDMETHODCALLTYPE d3d10_device_RSGetState(ID3D10Device1 *iface, ID3D
     TRACE("iface %p, rasterizer_state %p.\n", iface, rasterizer_state);
 
     wined3d_mutex_lock();
-    if ((wined3d_state = wined3d_device_get_rasterizer_state(device->wined3d_device)))
+    if ((wined3d_state = wined3d_device_context_get_rasterizer_state(device->immediate_context.wined3d_context)))
     {
         rasterizer_state_impl = wined3d_rasterizer_state_get_parent(wined3d_state);
         ID3D10RasterizerState_AddRef(*rasterizer_state = &rasterizer_state_impl->ID3D10RasterizerState_iface);
@@ -8425,7 +9093,8 @@ static void STDMETHODCALLTYPE d3d10_device_RSGetViewports(ID3D10Device1 *iface,
         return;
 
     wined3d_mutex_lock();
-    wined3d_device_get_viewports(device->wined3d_device, &actual_count, viewports ? wined3d_vp : NULL);
+    wined3d_device_context_get_viewports(device->immediate_context.wined3d_context,
+            &actual_count, viewports ? wined3d_vp : NULL);
     wined3d_mutex_unlock();
 
     if (!viewports)
@@ -8462,7 +9131,7 @@ static void STDMETHODCALLTYPE d3d10_device_RSGetScissorRects(ID3D10Device1 *ifac
     actual_count = *rect_count;
 
     wined3d_mutex_lock();
-    wined3d_device_get_scissor_rects(device->wined3d_device, &actual_count, rects);
+    wined3d_device_context_get_scissor_rects(device->immediate_context.wined3d_context, &actual_count, rects);
     wined3d_mutex_unlock();
 
     if (!rects)
@@ -8535,12 +9204,16 @@ static void STDMETHODCALLTYPE d3d10_device_ClearState(ID3D10Device1 *iface)
 
     TRACE("iface %p.\n", iface);
 
-    d3d11_immediate_context_ClearState(&device->immediate_context.ID3D11DeviceContext1_iface);
+    d3d11_device_context_ClearState(&device->immediate_context.ID3D11DeviceContext1_iface);
 }
 
 static void STDMETHODCALLTYPE d3d10_device_Flush(ID3D10Device1 *iface)
 {
-    FIXME("iface %p stub!\n", iface);
+    struct d3d_device *device = impl_from_ID3D10Device(iface);
+
+    TRACE("iface %p.\n", iface);
+
+    wined3d_device_context_flush(device->immediate_context.wined3d_context);
 }
 
 static HRESULT STDMETHODCALLTYPE d3d10_device_CreateBuffer(ID3D10Device1 *iface,
@@ -8664,6 +9337,8 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateShaderResourceView1(ID3D10De
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
 
+    *view = NULL;
+
     if (!resource)
         return E_INVALIDARG;
 
@@ -8703,6 +9378,8 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateRenderTargetView(ID3D10Devic
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
 
+    *view = NULL;
+
     if (!resource)
         return E_INVALIDARG;
 
@@ -8722,6 +9399,11 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateRenderTargetView(ID3D10Devic
     return S_OK;
 }
 
+static D3D11_DSV_DIMENSION d3d11_dsv_dimension_from_d3d10(D3D10_DSV_DIMENSION dim)
+{
+    return (D3D11_DSV_DIMENSION)dim;
+}
+
 static HRESULT STDMETHODCALLTYPE d3d10_device_CreateDepthStencilView(ID3D10Device1 *iface,
         ID3D10Resource *resource, const D3D10_DEPTH_STENCIL_VIEW_DESC *desc, ID3D10DepthStencilView **view)
 {
@@ -8733,10 +9415,12 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateDepthStencilView(ID3D10Devic
 
     TRACE("iface %p, resource %p, desc %p, view %p.\n", iface, resource, desc, view);
 
+    *view = NULL;
+
     if (desc)
     {
         d3d11_desc.Format = desc->Format;
-        d3d11_desc.ViewDimension = desc->ViewDimension;
+        d3d11_desc.ViewDimension = d3d11_dsv_dimension_from_d3d10(desc->ViewDimension);
         d3d11_desc.Flags = 0;
         memcpy(&d3d11_desc.u, &desc->u, sizeof(d3d11_desc.u));
     }
@@ -8975,11 +9659,18 @@ static HRESULT STDMETHODCALLTYPE d3d10_device_CreateRasterizerState(ID3D10Device
 {
     struct d3d_device *device = impl_from_ID3D10Device(iface);
     struct d3d_rasterizer_state *object;
+    D3D11_RASTERIZER_DESC1 desc1;
     HRESULT hr;
 
     TRACE("iface %p, desc %p, rasterizer_state %p.\n", iface, desc, rasterizer_state);
 
-    if (FAILED(hr = d3d_rasterizer_state_create(device, (const D3D11_RASTERIZER_DESC *)desc, &object)))
+    if (!desc)
+        return E_INVALIDARG;
+
+    memcpy(&desc1, desc, sizeof(*desc));
+    desc1.ForcedSampleCount = 0;
+
+    if (FAILED(hr = d3d_rasterizer_state_create(device, &desc1, &object)))
         return hr;
 
     *rasterizer_state = &object->ID3D10RasterizerState_iface;
@@ -9122,13 +9813,18 @@ static void STDMETHODCALLTYPE d3d10_device_GetTextFilterSize(ID3D10Device1 *ifac
     FIXME("iface %p, width %p, height %p stub!\n", iface, width, height);
 }
 
+static D3D10_FEATURE_LEVEL1 d3d10_feature_level1_from_d3d_feature_level(D3D_FEATURE_LEVEL level)
+{
+    return (D3D10_FEATURE_LEVEL1)level;
+}
+
 static D3D10_FEATURE_LEVEL1 STDMETHODCALLTYPE d3d10_device_GetFeatureLevel(ID3D10Device1 *iface)
 {
     struct d3d_device *device = impl_from_ID3D10Device(iface);
 
     TRACE("iface %p.\n", iface);
 
-    return device->feature_level;
+    return d3d10_feature_level1_from_d3d_feature_level(device->state->feature_level);
 }
 
 static const struct ID3D10Device1Vtbl d3d10_device1_vtbl =
@@ -9371,15 +10067,34 @@ static void CDECL device_parent_wined3d_device_created(struct wined3d_device_par
         struct wined3d_device *wined3d_device)
 {
     struct d3d_device *device = device_from_wined3d_device_parent(device_parent);
+    struct d3d_device_context_state *state;
+    struct wined3d_state *wined3d_state;
+    D3D_FEATURE_LEVEL feature_level;
 
     TRACE("device_parent %p, wined3d_device %p.\n", device_parent, wined3d_device);
 
     wined3d_device_incref(wined3d_device);
     device->wined3d_device = wined3d_device;
+    device->immediate_context.wined3d_context = wined3d_device_get_immediate_context(wined3d_device);
 
-    device->feature_level = wined3d_device_get_feature_level(wined3d_device);
+    wined3d_state = wined3d_device_get_state(device->wined3d_device);
+    feature_level = d3d_feature_level_from_wined3d(wined3d_state_get_feature_level(wined3d_state));
 
-    set_default_depth_stencil_state(wined3d_device);
+    if (!(state = heap_alloc_zero(sizeof(*state))))
+    {
+        ERR("Failed to create the initial device context state.\n");
+        return;
+    }
+
+    d3d_device_context_state_init(state, device, feature_level,
+            device->d3d11_only ? &IID_ID3D11Device2 : &IID_ID3D10Device1);
+
+    device->state = state;
+    if (!d3d_device_context_state_add_entry(state, device, wined3d_state))
+        ERR("Failed to add entry for wined3d state %p, device %p.\n", wined3d_state, device);
+
+    d3d_device_context_state_private_addref(state);
+    ID3DDeviceContextState_Release(&state->ID3DDeviceContextState_iface);
 }
 
 static void CDECL device_parent_mode_changed(struct wined3d_device_parent *device_parent)
@@ -9491,8 +10206,8 @@ static int d3d_depthstencil_state_compare(const void *key, const struct wine_rb_
 
 static int d3d_rasterizer_state_compare(const void *key, const struct wine_rb_entry *entry)
 {
-    const D3D11_RASTERIZER_DESC *ka = key;
-    const D3D11_RASTERIZER_DESC *kb = &WINE_RB_ENTRY_VALUE(entry, const struct d3d_rasterizer_state, entry)->desc;
+    const D3D11_RASTERIZER_DESC1 *ka = key;
+    const D3D11_RASTERIZER_DESC1 *kb = &WINE_RB_ENTRY_VALUE(entry, const struct d3d_rasterizer_state, entry)->desc;
 
     return memcmp(ka, kb, sizeof(*ka));
 }
@@ -9508,8 +10223,10 @@ void d3d_device_init(struct d3d_device *device, void *outer_unknown)
     device->refcount = 1;
     /* COM aggregation always takes place */
     device->outer_unk = outer_unknown;
+    device->d3d11_only = FALSE;
+    device->state = NULL;
 
-    d3d11_immediate_context_init(&device->immediate_context, device);
+    d3d11_device_context_init(&device->immediate_context, device, D3D11_DEVICE_CONTEXT_IMMEDIATE);
     ID3D11DeviceContext1_Release(&device->immediate_context.ID3D11DeviceContext1_iface);
 
     wine_rb_init(&device->blend_states, d3d_blend_state_compare);

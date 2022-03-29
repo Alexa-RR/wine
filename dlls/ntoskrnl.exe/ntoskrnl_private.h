@@ -21,8 +21,25 @@
 #ifndef __WINE_NTOSKRNL_PRIVATE_H
 #define __WINE_NTOSKRNL_PRIVATE_H
 
+#include <stdarg.h>
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
+#include "windef.h"
+#include "winioctl.h"
+#include "winbase.h"
+#include "winsvc.h"
+#include "winternl.h"
+#include "ddk/ntifs.h"
+#include "ddk/wdm.h"
+
 #include "wine/asm.h"
+<<<<<<< HEAD
 #include "wine/list.h"
+=======
+#include "wine/debug.h"
+#include "wine/list.h"
+#include "wine/rbtree.h"
+>>>>>>> github-desktop-wine-mirror/master
 
 static inline LPCSTR debugstr_us( const UNICODE_STRING *us )
 {
@@ -57,11 +74,14 @@ struct _EPROCESS
     CHAR padding[0x200 - sizeof(DISPATCHER_HEADER)];
     PVOID handle_table;
     PROCESS_BASIC_INFORMATION info;
+<<<<<<< HEAD
     /* TODO: we should store a section object here instead */
     PFILE_OBJECT file_object;
     PVOID section_base_address;
     CHAR image_file_name[16];
     LONGLONG create_time;
+=======
+>>>>>>> github-desktop-wine-mirror/master
     BOOL wow64;
 };
 
@@ -75,6 +95,7 @@ struct _KTHREAD
     PEPROCESS process;
     CLIENT_ID id;
     unsigned int critical_region;
+<<<<<<< HEAD
     LIST_ENTRY ApcListHead[2];
     CRITICAL_SECTION apc_cs;
     HANDLE apc_event;
@@ -83,6 +104,9 @@ struct _KTHREAD
     PVOID user_input_copy, user_output_copy;
     PBYTE user_input, user_output;
     CHAR more_padding[750];
+=======
+    KAFFINITY user_affinity;
+>>>>>>> github-desktop-wine-mirror/master
 };
 
 struct _ETHREAD
@@ -109,14 +133,29 @@ extern POBJECT_TYPE SeTokenObjectType;
       0, 0, { (DWORD_PTR)(__FILE__ ": " # cs) }}; \
     static CRITICAL_SECTION cs = { &cs##_debug, -1, 0, 0, 0, 0 };
 
+struct wine_driver
+{
+    DRIVER_OBJECT driver_obj;
+    DRIVER_EXTENSION driver_extension;
+    SERVICE_STATUS_HANDLE service_handle;
+    struct wine_rb_entry entry;
+    struct list root_pnp_devices;
+};
+
 void ObReferenceObject( void *obj ) DECLSPEC_HIDDEN;
 
-void pnp_manager_enumerate_root_devices( const WCHAR *driver_name ) DECLSPEC_HIDDEN;
 void pnp_manager_start(void) DECLSPEC_HIDDEN;
+void pnp_manager_stop_driver( struct wine_driver *driver ) DECLSPEC_HIDDEN;
 void pnp_manager_stop(void) DECLSPEC_HIDDEN;
 
+<<<<<<< HEAD
 void disk_driver_start(void) DECLSPEC_HIDDEN;
 void disk_driver_stop(void) DECLSPEC_HIDDEN;
+=======
+void CDECL wine_enumerate_root_devices( const WCHAR *driver_name );
+
+struct wine_driver *get_driver( const WCHAR *name ) DECLSPEC_HIDDEN;
+>>>>>>> github-desktop-wine-mirror/master
 
 static const WCHAR servicesW[] = {'\\','R','e','g','i','s','t','r','y',
                                   '\\','M','a','c','h','i','n','e',

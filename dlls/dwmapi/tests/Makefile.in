@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 TESTDLL   = dwmapi.dll
 IMPORTS   = dwmapi
+=======
+TESTDLL = dwmapi.dll
+IMPORTS = dwmapi
+>>>>>>> github-desktop-wine-mirror/master
 
 C_SRCS = \
 	dwmapi.c

@@ -19,19 +19,10 @@
  */
 
 #define NONAMELESSUNION
-#include "config.h"
-#include "wine/port.h"
 
-#include <locale.h>
-#include <langinfo.h>
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
-
-#ifdef __APPLE__
-# include <CoreFoundation/CFLocale.h>
-# include <CoreFoundation/CFString.h>
-#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -39,7 +30,6 @@
 #include "winbase.h"
 #include "winnls.h"
 #include "ntdll_misc.h"
-#include "wine/library.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(nls);
@@ -110,34 +100,12 @@ struct norm_table
     /* WORD[]       composition character sequences */
 };
 
-LCID user_lcid = 0, system_lcid = 0;
-
-static LANGID user_ui_language, system_ui_language;
+static const WCHAR *locale_strings;
 static NLSTABLEINFO nls_info;
-static HMODULE kernel32_handle;
-static CPTABLEINFO unix_table;
 static struct norm_table *norm_tables[16];
-
-
-static NTSTATUS load_string( ULONG id, LANGID lang, WCHAR *buffer, ULONG len )
-{
-    const IMAGE_RESOURCE_DATA_ENTRY *data;
-    LDR_RESOURCE_INFO info;
-    NTSTATUS status;
-    WCHAR *p;
-    int i;
-
-    info.Type = 6; /* RT_STRING */
-    info.Name = (id >> 4) + 1;
-    info.Language = lang;
-    if ((status = LdrFindResource_U( kernel32_handle, &info, 3, &data ))) return status;
-    p = (WCHAR *)((char *)kernel32_handle + data->OffsetToData);
-    for (i = 0; i < (id & 0x0f); i++) p += *p + 1;
-    if (*p >= len) return STATUS_BUFFER_TOO_SMALL;
-    memcpy( buffer, p + 1, *p * sizeof(WCHAR) );
-    buffer[*p] = 0;
-    return STATUS_SUCCESS;
-}
+static const NLS_LOCALE_LCID_INDEX *lcids_index;
+static const NLS_LOCALE_LCNAME_INDEX *lcnames_index;
+static const NLS_LOCALE_HEADER *locale_table;
 
 
 static DWORD mbtowc_size( const CPTABLEINFO *info, LPCSTR str, UINT len )
@@ -238,15 +206,120 @@ static NTSTATUS load_norm_table( ULONG form, const struct norm_table **info )
             if (i && tables[i] < tables[i-1]) goto invalid;
         }
 
-        if (interlocked_cmpxchg_ptr( (void **)&norm_tables[form], data, NULL ))
-            RtlFreeHeap( GetProcessHeap(), 0, data );
+        if (InterlockedCompareExchangePointer( (void **)&norm_tables[form], data, NULL ))
+            NtUnmapViewOfSection( GetCurrentProcess(), data );
     }
     *info = norm_tables[form];
     return STATUS_SUCCESS;
 
 invalid:
-    RtlFreeHeap( GetProcessHeap(), 0, data );
+    NtUnmapViewOfSection( GetCurrentProcess(), data );
     return STATUS_INVALID_PARAMETER;
+}
+
+
+static int compare_locale_names( const WCHAR *n1, const WCHAR *n2 )
+{
+    for (;;)
+    {
+        WCHAR ch1 = casemap_ascii( *n1++ );
+        WCHAR ch2 = casemap_ascii( *n2++ );
+        if (ch1 == '_') ch1 = '-';
+        if (ch2 == '_') ch2 = '-';
+        if (!ch1 || ch1 != ch2) return ch1 - ch2;
+    }
+}
+
+
+static const NLS_LOCALE_LCNAME_INDEX *find_lcname_entry( const WCHAR *name )
+{
+    int min = 0, max = locale_table->nb_lcnames - 1;
+
+    if (!name) return NULL;
+    while (min <= max)
+    {
+        int res, pos = (min + max) / 2;
+        const WCHAR *str = locale_strings + lcnames_index[pos].name;
+        res = compare_locale_names( name, str + 1 );
+        if (res < 0) max = pos - 1;
+        else if (res > 0) min = pos + 1;
+        else return &lcnames_index[pos];
+    }
+    return NULL;
+}
+
+
+static const NLS_LOCALE_LCID_INDEX *find_lcid_entry( LCID lcid )
+{
+    int min = 0, max = locale_table->nb_lcids - 1;
+
+    while (min <= max)
+    {
+        int pos = (min + max) / 2;
+        if (lcid < lcids_index[pos].id) max = pos - 1;
+        else if (lcid > lcids_index[pos].id) min = pos + 1;
+        else return &lcids_index[pos];
+    }
+    return NULL;
+}
+
+
+static const NLS_LOCALE_DATA *get_locale_data( UINT idx )
+{
+    ULONG offset = locale_table->locales_offset + idx * locale_table->locale_size;
+    return (const NLS_LOCALE_DATA *)((const char *)locale_table + offset);
+}
+
+
+void locale_init(void)
+{
+    WCHAR locale[LOCALE_NAME_MAX_LENGTH];
+    UNICODE_STRING name, value;
+    LARGE_INTEGER unused;
+    LCID system_lcid, user_lcid = 0;
+    NTSTATUS status;
+    struct
+    {
+        UINT ctypes;
+        UINT unknown1;
+        UINT unknown2;
+        UINT unknown3;
+        UINT locales;
+        UINT charmaps;
+        UINT geoids;
+        UINT scripts;
+    } *header;
+
+    status = RtlGetLocaleFileMappingAddress( (void **)&header, &system_lcid, &unused );
+    if (status)
+    {
+        ERR( "locale init failed %x\n", status );
+        return;
+    }
+    locale_table = (const NLS_LOCALE_HEADER *)((char *)header + header->locales);
+    lcids_index = (const NLS_LOCALE_LCID_INDEX *)((char *)locale_table + locale_table->lcids_offset);
+    lcnames_index = (const NLS_LOCALE_LCNAME_INDEX *)((char *)locale_table + locale_table->lcnames_offset);
+    locale_strings = (const WCHAR *)((char *)locale_table + locale_table->strings_offset);
+
+    value.Buffer = locale;
+    value.MaximumLength = sizeof(locale);
+    RtlInitUnicodeString( &name, L"WINELOCALE" );
+    if (!RtlQueryEnvironmentVariable_U( NULL, &name, &value ))
+    {
+        const NLS_LOCALE_LCNAME_INDEX *entry = find_lcname_entry( locale );
+        if (entry) system_lcid = get_locale_data( entry->idx )->idefaultlanguage;
+    }
+    RtlInitUnicodeString( &name, L"WINEUSERLOCALE" );
+    if (!RtlQueryEnvironmentVariable_U( NULL, &name, &value ))
+    {
+        const NLS_LOCALE_LCNAME_INDEX *entry = find_lcname_entry( locale );
+        if (entry) user_lcid = get_locale_data( entry->idx )->idefaultlanguage;
+    }
+    if (!system_lcid) system_lcid = MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT );
+    if (!user_lcid) user_lcid = system_lcid;
+    NtSetDefaultUILanguage( user_lcid );
+    NtSetDefaultLocale( TRUE, user_lcid );
+    NtSetDefaultLocale( FALSE, system_lcid );
 }
 
 
@@ -545,44 +618,16 @@ static unsigned int compose_string( const struct norm_table *info, WCHAR *str, u
 }
 
 
-static NTSTATUS open_nls_data_file( ULONG type, ULONG id, HANDLE *file )
+static NTSTATUS get_dummy_preferred_ui_language( DWORD flags, LANGID lang, ULONG *count,
+                                                 WCHAR *buffer, ULONG *size )
 {
-    static const WCHAR pathfmtW[] = {'\\','?','?','\\','%','s','%','s',0};
-    static const WCHAR keyfmtW[] =
-    {'\\','R','e','g','i','s','t','r','y','\\','M','a','c','h','i','n','e','\\','S','y','s','t','e','m','\\',
-     'C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t','\\',
-     'C','o','n','t','r','o','l','\\','N','l','s','\\','%','s',0};
-    static const WCHAR sortdirW[] = {'C',':','\\','w','i','n','d','o','w','s','\\',
-                                     'g','l','o','b','a','l','i','z','a','t','i','o','n','\\',
-                                     's','o','r','t','i','n','g','\\',0};
-    static const WCHAR cpW[] = {'C','o','d','e','p','a','g','e',0};
-    static const WCHAR normW[] = {'N','o','r','m','a','l','i','z','a','t','i','o','n',0};
-    static const WCHAR langW[] = {'L','a','n','g','u','a','g','e',0};
-    static const WCHAR cpfmtW[] = {'%','u',0};
-    static const WCHAR normfmtW[] = {'%','x',0};
-    static const WCHAR langfmtW[] = {'%','0','4','x',0};
-    static const WCHAR winedatadirW[] = {'W','I','N','E','D','A','T','A','D','I','R',0};
-    static const WCHAR winebuilddirW[] = {'W','I','N','E','B','U','I','L','D','D','I','R',0};
-    static const WCHAR dataprefixW[] = {'\\','n','l','s','\\',0};
-    static const WCHAR cpdefaultW[] = {'c','_','%','0','3','d','.','n','l','s',0};
-    static const WCHAR intlW[] = {'l','_','i','n','t','l','.','n','l','s',0};
-    static const WCHAR normnfcW[] = {'n','o','r','m','n','f','c','.','n','l','s',0};
-    static const WCHAR normnfdW[] = {'n','o','r','m','n','f','d','.','n','l','s',0};
-    static const WCHAR normnfkcW[] = {'n','o','r','m','n','f','k','c','.','n','l','s',0};
-    static const WCHAR normnfkdW[] = {'n','o','r','m','n','f','k','d','.','n','l','s',0};
-    static const WCHAR normidnaW[] = {'n','o','r','m','i','d','n','a','.','n','l','s',0};
-    static const WCHAR sortkeysW[] = {'s','o','r','t','d','e','f','a','u','l','t','.','n','l','s',0};
+    WCHAR name[LOCALE_NAME_MAX_LENGTH + 2];
+    NTSTATUS status;
+    ULONG len;
 
-    DWORD size;
-    HANDLE handle;
-    NTSTATUS status = STATUS_OBJECT_NAME_NOT_FOUND;
-    IO_STATUS_BLOCK io;
-    OBJECT_ATTRIBUTES attr;
-    UNICODE_STRING nameW, valueW;
-    WCHAR buffer[MAX_PATH], value[10];
-    const WCHAR *name = NULL, *dir = system_dir;
-    KEY_VALUE_PARTIAL_INFORMATION *info;
+    FIXME("(0x%x %p %p %p) returning a dummy value (current locale)\n", flags, count, buffer, size);
 
+<<<<<<< HEAD
     /* get filename from registry */
 
     switch (type)
@@ -854,310 +899,116 @@ static LCID unix_locale_to_lcid( const char *unix_name )
             return MAKELCID( MAKELANGID(LANG_ENGLISH,SUBLANG_DEFAULT), SORT_DEFAULT );
         wcscpy( win_name, buffer );
     }
+=======
+    if (flags & MUI_LANGUAGE_ID) swprintf( name, ARRAY_SIZE(name), L"%04lX", lang );
+>>>>>>> github-desktop-wine-mirror/master
     else
     {
-        if (*p == '_')
-        {
-            *p++ = 0;
-            country = p;
-            p = wcspbrk( p, sepW + 1 );
-        }
-        if (p && *p == '.')
-        {
-            *p++ = 0;
-            /* charset, ignore */
-            p = wcschr( p, '@' );
-        }
-        if (p)
-        {
-            *p++ = 0;
-            modifier = p;
-        }
+        UNICODE_STRING str;
+
+        str.Buffer = name;
+        str.MaximumLength = sizeof(name);
+        status = RtlLcidToLocaleName( lang, &str, 0, FALSE );
+        if (status) return status;
     }
 
-    /* rebuild a Windows name */
-
-    wcscpy( win_name, buffer );
-    if (modifier)
+    len = wcslen( name ) + 2;
+    name[len - 1] = 0;
+    if (buffer)
     {
-        if (!wcscmp( modifier, latinW )) wcscat( win_name, latnW );
-        else if (!wcscmp( modifier, euroW )) {} /* ignore */
-        else return 0;
-    }
-    if (country)
-    {
-        p = win_name + wcslen(win_name);
-        *p++ = '-';
-        wcscpy( p, country );
-    }
-
-    if (!RtlLocaleNameToLcid( win_name, &lcid, 0 )) return lcid;
-
-    /* try neutral name */
-    if (country)
-    {
-        p[-1] = 0;
-        if (!RtlLocaleNameToLcid( win_name, &lcid, 2 ))
+        if (len > *size)
         {
-            if (SUBLANGID(lcid) == SUBLANG_NEUTRAL)
-                lcid = MAKELANGID( PRIMARYLANGID(lcid), SUBLANG_DEFAULT );
-            return lcid;
+            *size = len;
+            return STATUS_BUFFER_TOO_SMALL;
         }
+        memcpy( buffer, name, len * sizeof(WCHAR) );
     }
-    return 0;
-}
-
-
-/******************************************************************
- *		init_locale
- */
-void init_locale( HMODULE module )
-{
-    LCID system_lcid, user_lcid;
-
-    kernel32_handle = module;
-
-    setlocale( LC_ALL, "" );
-
-    system_lcid = unix_locale_to_lcid( setlocale( LC_CTYPE, NULL ));
-    user_lcid = unix_locale_to_lcid( setlocale( LC_MESSAGES, NULL ));
-
-#ifdef __APPLE__
-    {
-        const struct norm_table *info;
-        load_norm_table( NormalizationC, &info );
-    }
-    if (!system_lcid)
-    {
-        char buffer[LOCALE_NAME_MAX_LENGTH];
-
-        CFLocaleRef locale = CFLocaleCopyCurrent();
-        CFStringRef lang = CFLocaleGetValue( locale, kCFLocaleLanguageCode );
-        CFStringRef country = CFLocaleGetValue( locale, kCFLocaleCountryCode );
-        CFStringRef locale_string;
-
-        if (country)
-            locale_string = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@_%@"), lang, country);
-        else
-            locale_string = CFStringCreateCopy(NULL, lang);
-
-        CFStringGetCString(locale_string, buffer, sizeof(buffer), kCFStringEncodingUTF8);
-        system_lcid = unix_locale_to_lcid( buffer );
-        CFRelease(locale);
-        CFRelease(locale_string);
-    }
-    if (!user_lcid)
-    {
-        /* Retrieve the preferred language as chosen in System Preferences. */
-        char buffer[LOCALE_NAME_MAX_LENGTH];
-        CFArrayRef preferred_langs = CFLocaleCopyPreferredLanguages();
-        if (preferred_langs && CFArrayGetCount( preferred_langs ))
-        {
-            CFStringRef preferred_lang = CFArrayGetValueAtIndex( preferred_langs, 0 );
-            CFDictionaryRef components = CFLocaleCreateComponentsFromLocaleIdentifier( NULL, preferred_lang );
-            if (components)
-            {
-                CFStringRef lang = CFDictionaryGetValue( components, kCFLocaleLanguageCode );
-                CFStringRef country = CFDictionaryGetValue( components, kCFLocaleCountryCode );
-                CFLocaleRef locale = NULL;
-                CFStringRef locale_string;
-
-                if (!country)
-                {
-                    locale = CFLocaleCopyCurrent();
-                    country = CFLocaleGetValue( locale, kCFLocaleCountryCode );
-                }
-                if (country)
-                    locale_string = CFStringCreateWithFormat( NULL, NULL, CFSTR("%@_%@"), lang, country );
-                else
-                    locale_string = CFStringCreateCopy( NULL, lang );
-                CFStringGetCString( locale_string, buffer, sizeof(buffer), kCFStringEncodingUTF8 );
-                CFRelease( locale_string );
-                if (locale) CFRelease( locale );
-                CFRelease( components );
-                user_lcid = unix_locale_to_lcid( buffer );
-            }
-        }
-        if (preferred_langs) CFRelease( preferred_langs );
-    }
-#endif
-
-    if (!system_lcid) system_lcid = MAKELCID( MAKELANGID(LANG_ENGLISH,SUBLANG_DEFAULT), SORT_DEFAULT );
-    if (!user_lcid) user_lcid = system_lcid;
-
-    NtSetDefaultUILanguage( LANGIDFROMLCID(user_lcid) );
-    NtSetDefaultLocale( TRUE, user_lcid );
-    NtSetDefaultLocale( FALSE, system_lcid );
-    TRACE( "system=%04x user=%04x\n", system_lcid, user_lcid );
-
-    setlocale( LC_NUMERIC, "C" );  /* FIXME: oleaut32 depends on this */
-}
-
-
-/******************************************************************
- *      ntdll_umbstowcs
- */
-DWORD ntdll_umbstowcs( const char *src, DWORD srclen, WCHAR *dst, DWORD dstlen )
-{
-    DWORD reslen;
-
-    if (unix_table.CodePage)
-        RtlCustomCPToUnicodeN( &unix_table, dst, dstlen * sizeof(WCHAR), &reslen, src, srclen );
-    else
-        RtlUTF8ToUnicodeN( dst, dstlen * sizeof(WCHAR), &reslen, src, srclen );
-
-    reslen /= sizeof(WCHAR);
-#ifdef __APPLE__  /* work around broken Mac OS X filesystem that enforces decomposed Unicode */
-    if (reslen && dst && norm_tables[NormalizationC])
-        reslen = compose_string( norm_tables[NormalizationC], dst, reslen );
-#endif
-    return reslen;
-}
-
-
-/******************************************************************
- *      ntdll_wcstoumbs
- */
-int ntdll_wcstoumbs( const WCHAR *src, DWORD srclen, char *dst, DWORD dstlen, BOOL strict )
-{
-    DWORD i, reslen;
-
-    if (!unix_table.CodePage)
-        RtlUnicodeToUTF8N( dst, dstlen, &reslen, src, srclen * sizeof(WCHAR) );
-    else if (!strict)
-        RtlUnicodeToCustomCPN( &unix_table, dst, dstlen, &reslen, src, srclen * sizeof(WCHAR) );
-    else  /* do it by hand to make sure every character roundtrips correctly */
-    {
-        if (unix_table.DBCSOffsets)
-        {
-            const unsigned short *uni2cp = unix_table.WideCharTable;
-            for (i = dstlen; srclen && i; i--, srclen--, src++)
-            {
-                unsigned short ch = uni2cp[*src];
-                if (ch >> 8)
-                {
-                    if (unix_table.DBCSOffsets[unix_table.DBCSOffsets[ch >> 8] + (ch & 0xff)] != *src)
-                        return -1;
-                    if (i == 1) break;  /* do not output a partial char */
-                    i--;
-                    *dst++ = ch >> 8;
-                }
-                else
-                {
-                    if (unix_table.MultiByteTable[ch] != *src) return -1;
-                    *dst++ = (char)ch;
-                }
-            }
-            reslen = dstlen - i;
-        }
-        else
-        {
-            const unsigned char *uni2cp = unix_table.WideCharTable;
-            reslen = min( srclen, dstlen );
-            for (i = 0; i < reslen; i++)
-            {
-                unsigned char ch = uni2cp[src[i]];
-                if (unix_table.MultiByteTable[ch] != src[i]) return -1;
-                dst[i] = ch;
-            }
-        }
-    }
-    return reslen;
-}
-
-
-/******************************************************************
- *      __wine_get_unix_codepage   (NTDLL.@)
- */
-UINT CDECL __wine_get_unix_codepage(void)
-{
-    if (!unix_table.CodePage) return CP_UTF8;
-    return unix_table.CodePage;
-}
-
-
-/**********************************************************************
- *      NtQueryDefaultLocale  (NTDLL.@)
- */
-NTSTATUS WINAPI NtQueryDefaultLocale( BOOLEAN user, LCID *lcid )
-{
-    *lcid = user ? user_lcid : system_lcid;
+    *size = len;
+    *count = 1;
+    TRACE("returned variable content: %d, \"%s\", %d\n", *count, debugstr_w(buffer), *size);
     return STATUS_SUCCESS;
+
+}
+
+/**************************************************************************
+ *      RtlGetProcessPreferredUILanguages   (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlGetProcessPreferredUILanguages( DWORD flags, ULONG *count, WCHAR *buffer, ULONG *size )
+{
+    LANGID ui_language;
+
+    FIXME( "%08x, %p, %p %p\n", flags, count, buffer, size );
+
+    NtQueryDefaultUILanguage( &ui_language );
+    return get_dummy_preferred_ui_language( flags, ui_language, count, buffer, size );
 }
 
 
-/**********************************************************************
- *      NtSetDefaultLocale  (NTDLL.@)
+/**************************************************************************
+ *      RtlGetSystemPreferredUILanguages   (NTDLL.@)
  */
-NTSTATUS WINAPI NtSetDefaultLocale( BOOLEAN user, LCID lcid )
+NTSTATUS WINAPI RtlGetSystemPreferredUILanguages( DWORD flags, ULONG unknown, ULONG *count,
+                                                  WCHAR *buffer, ULONG *size )
 {
-    if (user) user_lcid = lcid;
-    else
-    {
-        system_lcid = lcid;
-        system_ui_language = LANGIDFROMLCID(lcid); /* there is no separate call to set it */
-    }
-    return STATUS_SUCCESS;
+    LANGID ui_language;
+
+    if (flags & ~(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID | MUI_MACHINE_LANGUAGE_SETTINGS)) return STATUS_INVALID_PARAMETER;
+    if ((flags & MUI_LANGUAGE_NAME) && (flags & MUI_LANGUAGE_ID)) return STATUS_INVALID_PARAMETER;
+    if (*size && !buffer) return STATUS_INVALID_PARAMETER;
+
+    NtQueryInstallUILanguage( &ui_language );
+    return get_dummy_preferred_ui_language( flags, ui_language, count, buffer, size );
 }
 
 
-/**********************************************************************
- *      NtQueryDefaultUILanguage  (NTDLL.@)
+/**************************************************************************
+ *      RtlGetThreadPreferredUILanguages   (NTDLL.@)
  */
-NTSTATUS WINAPI NtQueryDefaultUILanguage( LANGID *lang )
+NTSTATUS WINAPI RtlGetThreadPreferredUILanguages( DWORD flags, ULONG *count, WCHAR *buffer, ULONG *size )
 {
-    *lang = user_ui_language;
-    return STATUS_SUCCESS;
+    LANGID ui_language;
+
+    FIXME( "%08x, %p, %p %p\n", flags, count, buffer, size );
+
+    NtQueryDefaultUILanguage( &ui_language );
+    return get_dummy_preferred_ui_language( flags, ui_language, count, buffer, size );
 }
 
 
-/**********************************************************************
- *      NtSetDefaultUILanguage  (NTDLL.@)
+/**************************************************************************
+ *      RtlGetUserPreferredUILanguages   (NTDLL.@)
  */
-NTSTATUS WINAPI NtSetDefaultUILanguage( LANGID lang )
+NTSTATUS WINAPI RtlGetUserPreferredUILanguages( DWORD flags, ULONG unknown, ULONG *count,
+                                                WCHAR *buffer, ULONG *size )
 {
-    user_ui_language = lang;
-    return STATUS_SUCCESS;
+    LANGID ui_language;
+
+    if (flags & ~(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID)) return STATUS_INVALID_PARAMETER;
+    if ((flags & MUI_LANGUAGE_NAME) && (flags & MUI_LANGUAGE_ID)) return STATUS_INVALID_PARAMETER;
+    if (*size && !buffer) return STATUS_INVALID_PARAMETER;
+
+    NtQueryDefaultUILanguage( &ui_language );
+    return get_dummy_preferred_ui_language( flags, ui_language, count, buffer, size );
 }
 
 
-/**********************************************************************
- *      NtQueryInstallUILanguage  (NTDLL.@)
+/**************************************************************************
+ *      RtlSetProcessPreferredUILanguages   (NTDLL.@)
  */
-NTSTATUS WINAPI NtQueryInstallUILanguage( LANGID *lang )
+NTSTATUS WINAPI RtlSetProcessPreferredUILanguages( DWORD flags, PCZZWSTR buffer, ULONG *count )
 {
-    *lang = system_ui_language;
+    FIXME( "%u, %p, %p\n", flags, buffer, count );
     return STATUS_SUCCESS;
 }
 
 
 /**************************************************************************
- *      NtGetNlsSectionPtr   (NTDLL.@)
+ *      RtlSetThreadPreferredUILanguages   (NTDLL.@)
  */
-NTSTATUS WINAPI NtGetNlsSectionPtr( ULONG type, ULONG id, void *unknown, void **ptr, SIZE_T *size )
+NTSTATUS WINAPI RtlSetThreadPreferredUILanguages( DWORD flags, PCZZWSTR buffer, ULONG *count )
 {
-    FILE_END_OF_FILE_INFORMATION info;
-    IO_STATUS_BLOCK io;
-    HANDLE file;
-    NTSTATUS status;
-
-    if ((status = open_nls_data_file( type, id, &file ))) return status;
-
-    if ((status = NtQueryInformationFile( file, &io, &info, sizeof(info), FileEndOfFileInformation )))
-        goto done;
-    /* FIXME: return a heap block instead of a file mapping for now */
-    if (!(*ptr = RtlAllocateHeap( GetProcessHeap(), 0, info.EndOfFile.QuadPart )))
-    {
-        status = STATUS_NO_MEMORY;
-        goto done;
-    }
-    status = NtReadFile( file, 0, NULL, NULL, &io, *ptr, info.EndOfFile.QuadPart, NULL, NULL );
-    if (!status && io.Information != info.EndOfFile.QuadPart) status = STATUS_INVALID_FILE_FOR_SECTION;
-    if (!status) *size = io.Information;
-    else RtlFreeHeap( GetProcessHeap(), 0, *ptr );
-done:
-    NtClose( file );
-    return status;
+    FIXME( "%u, %p, %p\n", flags, buffer, count );
+    return STATUS_SUCCESS;
 }
 
 
@@ -1167,6 +1018,13 @@ done:
 void WINAPI RtlInitCodePageTable( USHORT *ptr, CPTABLEINFO *info )
 {
     USHORT hdr_size = ptr[0];
+
+    if (ptr[1] == CP_UTF8)
+    {
+        static const CPTABLEINFO utf8_cpinfo = { CP_UTF8, 4, '?', 0xfffd, '?', '?' };
+        *info = utf8_cpinfo;
+        return;
+    }
 
     info->CodePage             = ptr[1];
     info->MaximumCharacterSize = ptr[2];
@@ -1216,6 +1074,29 @@ void WINAPI RtlResetRtlTranslations( const NLSTABLEINFO *info )
     NlsMbCodePageTag    = info->AnsiTableInfo.DBCSCodePage;
     NlsMbOemCodePageTag = info->OemTableInfo.DBCSCodePage;
     nls_info = *info;
+}
+
+
+/**************************************************************************
+ *      RtlGetLocaleFileMappingAddress   (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlGetLocaleFileMappingAddress( void **ptr, LCID *lcid, LARGE_INTEGER *size )
+{
+    static void *cached_ptr;
+    static LCID cached_lcid;
+
+    if (!cached_ptr)
+    {
+        void *addr;
+        NTSTATUS status = NtInitializeNlsFiles( &addr, &cached_lcid, size );
+
+        if (status) return status;
+        if (InterlockedCompareExchangePointer( &cached_ptr, addr, NULL ))
+            NtUnmapViewOfSection( GetCurrentProcess(), addr );
+    }
+    *ptr = cached_ptr;
+    *lcid = cached_lcid;
+    return STATUS_SUCCESS;
 }
 
 
@@ -1631,7 +1512,7 @@ NTSTATUS WINAPI RtlUpcaseUnicodeToOemN( char *dst, DWORD dstlen, DWORD *reslen,
 /*********************************************************************
  *	towlower   (NTDLL.@)
  */
-WCHAR __cdecl NTDLL_towlower( WCHAR ch )
+WCHAR __cdecl towlower( WCHAR ch )
 {
     if (ch >= 0x100) return ch;
     return casemap( nls_info.LowerCaseTable, ch );
@@ -1641,10 +1522,72 @@ WCHAR __cdecl NTDLL_towlower( WCHAR ch )
 /*********************************************************************
  *           towupper    (NTDLL.@)
  */
-WCHAR __cdecl NTDLL_towupper( WCHAR ch )
+WCHAR __cdecl towupper( WCHAR ch )
 {
     if (nls_info.UpperCaseTable) return casemap( nls_info.UpperCaseTable, ch );
     return casemap_ascii( ch );
+}
+
+
+/******************************************************************
+ *      RtlIsValidLocaleName   (NTDLL.@)
+ */
+BOOLEAN WINAPI RtlIsValidLocaleName( const WCHAR *name, ULONG flags )
+{
+    const NLS_LOCALE_LCNAME_INDEX *entry = find_lcname_entry( name );
+
+    if (!entry) return FALSE;
+    /* reject neutral locale unless flag 2 is set */
+    if (!(flags & 2) && !get_locale_data( entry->idx )->inotneutral) return FALSE;
+    return TRUE;
+}
+
+
+/******************************************************************
+ *      RtlLcidToLocaleName   (NTDLL.@)
+ */
+NTSTATUS WINAPI RtlLcidToLocaleName( LCID lcid, UNICODE_STRING *str, ULONG flags, BOOLEAN alloc )
+{
+    const NLS_LOCALE_LCID_INDEX *entry;
+    const WCHAR *name;
+    ULONG len;
+
+    if (!str) return STATUS_INVALID_PARAMETER_2;
+
+    switch (lcid)
+    {
+    case LOCALE_USER_DEFAULT:
+        NtQueryDefaultLocale( TRUE, &lcid );
+        break;
+    case LOCALE_SYSTEM_DEFAULT:
+    case LOCALE_CUSTOM_DEFAULT:
+        NtQueryDefaultLocale( FALSE, &lcid );
+        break;
+    case LOCALE_CUSTOM_UI_DEFAULT:
+        return STATUS_UNSUCCESSFUL;
+    case LOCALE_CUSTOM_UNSPECIFIED:
+        return STATUS_INVALID_PARAMETER_1;
+    }
+
+    if (!(entry = find_lcid_entry( lcid ))) return STATUS_INVALID_PARAMETER_1;
+    /* reject neutral locale unless flag 2 is set */
+    if (!(flags & 2) && !get_locale_data( entry->idx )->inotneutral) return STATUS_INVALID_PARAMETER_1;
+
+    name = locale_strings + entry->name;
+    len = *name++;
+
+    if (alloc)
+    {
+        if (!(str->Buffer = RtlAllocateHeap( GetProcessHeap(), 0, (len + 1) * sizeof(WCHAR) )))
+            return STATUS_NO_MEMORY;
+        str->MaximumLength = (len + 1) * sizeof(WCHAR);
+    }
+    else if (str->MaximumLength < (len + 1) * sizeof(WCHAR)) return STATUS_BUFFER_TOO_SMALL;
+
+    wcscpy( str->Buffer, name );
+    str->Length = len * sizeof(WCHAR);
+    TRACE( "%04x -> %s\n", lcid, debugstr_us(str) );
+    return STATUS_SUCCESS;
 }
 
 
@@ -1653,109 +1596,12 @@ WCHAR __cdecl NTDLL_towupper( WCHAR ch )
  */
 NTSTATUS WINAPI RtlLocaleNameToLcid( const WCHAR *name, LCID *lcid, ULONG flags )
 {
-    /* locale name format is: lang[-script][-country][_modifier] */
+    const NLS_LOCALE_LCNAME_INDEX *entry = find_lcname_entry( name );
 
-    static const WCHAR sepW[] = {'-','_',0};
-
-    const IMAGE_RESOURCE_DIRECTORY *resdir;
-    const IMAGE_RESOURCE_DIRECTORY_ENTRY *et;
-    LDR_RESOURCE_INFO info;
-    WCHAR buf[LOCALE_NAME_MAX_LENGTH];
-    WCHAR lang[LOCALE_NAME_MAX_LENGTH]; /* language ("en") (note: buffer contains the other strings too) */
-    WCHAR *country = NULL; /* country ("US") */
-    WCHAR *script = NULL; /* script ("Latn") */
-    WCHAR *p;
-    int i;
-
-    if (!name) return STATUS_INVALID_PARAMETER_1;
-
-    if (!name[0])
-    {
-        *lcid = LANG_INVARIANT;
-        goto found;
-    }
-    if (wcslen( name ) >= LOCALE_NAME_MAX_LENGTH) return STATUS_INVALID_PARAMETER_1;
-    wcscpy( lang, name );
-
-    if ((p = wcspbrk( lang, sepW )) && *p == '-')
-    {
-        *p++ = 0;
-        country = p;
-        if ((p = wcspbrk( p, sepW )) && *p == '-')
-        {
-            *p++ = 0;
-            script = country;
-            country = p;
-            p = wcspbrk( p, sepW );
-        }
-        if (p) *p = 0;  /* FIXME: modifier is ignored */
-        /* second value can be script or country, check length to resolve the ambiguity */
-        if (!script && wcslen( country ) == 4)
-        {
-            script = country;
-            country = NULL;
-        }
-    }
-
-    info.Type = 6; /* RT_STRING */
-    info.Name = (LOCALE_SNAME >> 4) + 1;
-    if (LdrFindResourceDirectory_U( kernel32_handle, &info, 2, &resdir ))
-        return STATUS_INVALID_PARAMETER_1;
-
-    et = (const IMAGE_RESOURCE_DIRECTORY_ENTRY *)(resdir + 1);
-    for (i = 0; i < resdir->NumberOfNamedEntries + resdir->NumberOfIdEntries; i++)
-    {
-        LANGID id = et[i].u.Id;
-
-        if (PRIMARYLANGID(id) == LANG_NEUTRAL) continue;
-
-        if (!load_string( LOCALE_SNAME, id, buf, ARRAY_SIZE(buf) ) && !wcsicmp( name, buf ))
-        {
-            *lcid = MAKELCID( id, SORT_DEFAULT );  /* FIXME: handle sort order */
-            goto found;
-        }
-
-        if (load_string( LOCALE_SISO639LANGNAME, id, buf, ARRAY_SIZE(buf) ) || wcsicmp( lang, buf ))
-            continue;
-
-        if (script)
-        {
-            unsigned int len = wcslen( script );
-            if (load_string( LOCALE_SSCRIPTS, id, buf, ARRAY_SIZE(buf) )) continue;
-            p = buf;
-            while (*p)
-            {
-                if (!wcsnicmp( p, script, len ) && (!p[len] || p[len] == ';')) break;
-                if (!(p = wcschr( p, ';'))) break;
-                p++;
-            }
-            if (!p || !*p) continue;
-        }
-
-        if (!country && (flags & 2))
-        {
-            if (!script) id = MAKELANGID( PRIMARYLANGID(id), LANG_NEUTRAL );
-            switch (id)
-            {
-            case MAKELANGID( LANG_CHINESE, SUBLANG_NEUTRAL ):
-            case MAKELANGID( LANG_CHINESE, SUBLANG_CHINESE_SINGAPORE ):
-                *lcid = MAKELCID( 0x7804, SORT_DEFAULT );
-                break;
-            case MAKELANGID( LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL ):
-            case MAKELANGID( LANG_CHINESE, SUBLANG_CHINESE_MACAU ):
-            case MAKELANGID( LANG_CHINESE, SUBLANG_CHINESE_HONGKONG ):
-                *lcid = MAKELCID( 0x7c04, SORT_DEFAULT );
-                break;
-            default:
-                *lcid = MAKELANGID( PRIMARYLANGID(id), SUBLANG_NEUTRAL );
-                break;
-            }
-            goto found;
-        }
-    }
-    return STATUS_INVALID_PARAMETER_1;
-
-found:
+    if (!entry) return STATUS_INVALID_PARAMETER_1;
+    /* reject neutral locale unless flag 2 is set */
+    if (!(flags & 2) && !get_locale_data( entry->idx )->inotneutral) return STATUS_INVALID_PARAMETER_1;
+    *lcid = entry->id;
     TRACE( "%s -> %04x\n", debugstr_w(name), *lcid );
     return STATUS_SUCCESS;
 }
