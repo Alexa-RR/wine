@@ -1,9 +1,19 @@
 MODULE    = fsutil.exe
+IMPORTS   = user32
 
+<<<<<<< HEAD
 EXTRADLLFLAGS = -mconsole -municode -mno-cygwin
 IMPORTS   = user32
+=======
+EXTRADLLFLAGS = -mconsole -municode
+>>>>>>> master
 
 C_SRCS = \
 	main.c
 
+<<<<<<< HEAD
 RC_SRCS = fsutil.rc
+=======
+MC_SRCS = \
+	fsutil.mc
+>>>>>>> master

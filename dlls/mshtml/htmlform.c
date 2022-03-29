@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <assert.h>
 
 #define COBJMACROS
 
@@ -49,7 +48,7 @@ HRESULT return_nsform(nsresult nsres, nsIDOMHTMLFormElement *form, IHTMLFormElem
     HRESULT hres;
 
     if (NS_FAILED(nsres)) {
-        ERR("GetForm failed: %08x\n", nsres);
+        ERR("GetForm failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -84,14 +83,14 @@ static HRESULT htmlform_item(HTMLFormElement *This, int i, IDispatch **ret)
 
     nsres = nsIDOMHTMLFormElement_GetElements(This->nsform, &elements);
     if(NS_FAILED(nsres)) {
-        FIXME("GetElements failed: 0x%08x\n", nsres);
+        FIXME("GetElements failed: 0x%08lx\n", nsres);
         return E_FAIL;
     }
 
     nsres = nsIDOMHTMLCollection_Item(elements, i, &item);
     nsIDOMHTMLCollection_Release(elements);
     if(NS_FAILED(nsres)) {
-        FIXME("Item failed: 0x%08x\n", nsres);
+        FIXME("Item failed: 0x%08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -180,7 +179,7 @@ static HRESULT WINAPI HTMLFormElement_put_action(IHTMLFormElement *iface, BSTR v
     nsres = nsIDOMHTMLFormElement_SetAction(This->nsform, &action_str);
     nsAString_Finish(&action_str);
     if(NS_FAILED(nsres)) {
-        ERR("SetAction failed: %08x\n", nsres);
+        ERR("SetAction failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -203,7 +202,7 @@ static HRESULT WINAPI HTMLFormElement_get_action(IHTMLFormElement *iface, BSTR *
         nsAString_GetData(&action_str, &action);
         hres = nsuri_to_url(action, FALSE, p);
     }else {
-        ERR("GetAction failed: %08x\n", nsres);
+        ERR("GetAction failed: %08lx\n", nsres);
         hres = E_FAIL;
     }
 
@@ -227,19 +226,14 @@ static HRESULT WINAPI HTMLFormElement_get_dir(IHTMLFormElement *iface, BSTR *p)
 
 static HRESULT WINAPI HTMLFormElement_put_encoding(IHTMLFormElement *iface, BSTR v)
 {
-    static const WCHAR urlencodedW[] = {'a','p','p','l','i','c','a','t','i','o','n','/',
-        'x','-','w','w','w','-','f','o','r','m','-','u','r','l','e','n','c','o','d','e','d',0};
-    static const WCHAR dataW[] = {'m','u','l','t','i','p','a','r','t','/',
-        'f','o','r','m','-','d','a','t','a',0};
-    static const WCHAR plainW[] = {'t','e','x','t','/','p','l','a','i','n',0};
-
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
     nsAString encoding_str;
     nsresult nsres;
 
     TRACE("(%p)->(%s)\n", This, wine_dbgstr_w(v));
 
-    if(lstrcmpiW(v, urlencodedW) && lstrcmpiW(v, dataW) && lstrcmpiW(v, plainW)) {
+    if(lstrcmpiW(v, L"application/x-www-form-urlencoded") && lstrcmpiW(v, L"multipart/form-data")
+            && lstrcmpiW(v, L"text/plain")) {
         WARN("incorrect enctype\n");
         return E_INVALIDARG;
     }
@@ -268,16 +262,13 @@ static HRESULT WINAPI HTMLFormElement_get_encoding(IHTMLFormElement *iface, BSTR
 
 static HRESULT WINAPI HTMLFormElement_put_method(IHTMLFormElement *iface, BSTR v)
 {
-    static const WCHAR postW[] = {'P','O','S','T',0};
-    static const WCHAR getW[] = {'G','E','T',0};
-
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
     nsAString method_str;
     nsresult nsres;
 
     TRACE("(%p)->(%s)\n", This, wine_dbgstr_w(v));
 
-    if(lstrcmpiW(v, postW) && lstrcmpiW(v, getW)) {
+    if(lstrcmpiW(v, L"POST") && lstrcmpiW(v, L"GET")) {
         WARN("unrecognized method\n");
         return E_INVALIDARG;
     }
@@ -319,7 +310,7 @@ static HRESULT WINAPI HTMLFormElement_get_elements(IHTMLFormElement *iface, IDis
 
     nsres = nsIDOMHTMLFormElement_GetElements(This->nsform, &elements);
     if(NS_FAILED(nsres)) {
-        ERR("GetElements failed: %08x\n", nsres);
+        ERR("GetElements failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -342,7 +333,7 @@ static HRESULT WINAPI HTMLFormElement_put_target(IHTMLFormElement *iface, BSTR v
 
     nsAString_Finish(&str);
     if (NS_FAILED(nsres)) {
-        ERR("Set Target(%s) failed: %08x\n", wine_dbgstr_w(v), nsres);
+        ERR("Set Target(%s) failed: %08lx\n", wine_dbgstr_w(v), nsres);
         return E_FAIL;
     }
 
@@ -464,11 +455,9 @@ static HRESULT WINAPI HTMLFormElement_submit(IHTMLFormElement *iface)
     if(NS_SUCCEEDED(nsres)) {
         const PRUnichar *method;
 
-        static const PRUnichar postW[] = {'p','o','s','t',0};
-
         nsAString_GetData(&method_str, &method);
         TRACE("method is %s\n", debugstr_w(method));
-        is_post_submit = !wcsicmp(method, postW);
+        is_post_submit = !wcsicmp(method, L"post");
     }
     nsAString_Finish(&method_str);
 
@@ -480,7 +469,7 @@ static HRESULT WINAPI HTMLFormElement_submit(IHTMLFormElement *iface)
         nsAString_Finish(&target_str);
         IHTMLWindow2_Release(&window->base.IHTMLWindow2_iface);
         if(NS_FAILED(nsres)) {
-            ERR("Submit failed: %08x\n", nsres);
+            ERR("Submit failed: %08lx\n", nsres);
             return E_FAIL;
         }
 
@@ -495,7 +484,7 @@ static HRESULT WINAPI HTMLFormElement_submit(IHTMLFormElement *iface)
         nsAString_GetData(&action_uri_str, &action_uri);
         hres = create_uri(action_uri, 0, &uri);
     }else {
-        ERR("GetFormData failed: %08x\n", nsres);
+        ERR("GetFormData failed: %08lx\n", nsres);
         hres = E_FAIL;
     }
     nsAString_Finish(&action_uri_str);
@@ -523,7 +512,7 @@ static HRESULT WINAPI HTMLFormElement_reset(IHTMLFormElement *iface)
     TRACE("(%p)->()\n", This);
     nsres = nsIDOMHTMLFormElement_Reset(This->nsform);
     if (NS_FAILED(nsres)) {
-        ERR("Reset failed: %08x\n", nsres);
+        ERR("Reset failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -533,7 +522,7 @@ static HRESULT WINAPI HTMLFormElement_reset(IHTMLFormElement *iface)
 static HRESULT WINAPI HTMLFormElement_put_length(IHTMLFormElement *iface, LONG v)
 {
     HTMLFormElement *This = impl_from_IHTMLFormElement(iface);
-    FIXME("(%p)->(%d)\n", This, v);
+    FIXME("(%p)->(%ld)\n", This, v);
     return E_NOTIMPL;
 }
 
@@ -546,7 +535,7 @@ static HRESULT WINAPI HTMLFormElement_get_length(IHTMLFormElement *iface, LONG *
 
     nsres = nsIDOMHTMLFormElement_GetLength(This->nsform, p);
     if(NS_FAILED(nsres)) {
-        ERR("GetLength failed: %08x\n", nsres);
+        ERR("GetLength failed: %08lx\n", nsres);
         return E_FAIL;
     }
 
@@ -669,19 +658,17 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
     nsresult nsres;
     HRESULT hres = DISP_E_UNKNOWNNAME;
 
-    static const PRUnichar nameW[] = {'n','a','m','e',0};
-
-    TRACE("(%p)->(%s %x %p)\n", This, wine_dbgstr_w(name), grfdex, pid);
+    TRACE("(%p)->(%s %lx %p)\n", This, wine_dbgstr_w(name), grfdex, pid);
 
     nsres = nsIDOMHTMLFormElement_GetElements(This->nsform, &elements);
     if(NS_FAILED(nsres)) {
-        FIXME("GetElements failed: 0x%08x\n", nsres);
+        FIXME("GetElements failed: 0x%08lx\n", nsres);
         return E_FAIL;
     }
 
     nsres = nsIDOMHTMLCollection_GetLength(elements, &len);
     if(NS_FAILED(nsres)) {
-        FIXME("GetLength failed: 0x%08x\n", nsres);
+        FIXME("GetLength failed: 0x%08lx\n", nsres);
         nsIDOMHTMLCollection_Release(elements);
         return E_FAIL;
     }
@@ -708,7 +695,7 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
 
         nsres = nsIDOMHTMLCollection_Item(elements, i, &nsitem);
         if(NS_FAILED(nsres)) {
-            FIXME("Item failed: 0x%08x\n", nsres);
+            FIXME("Item failed: 0x%08lx\n", nsres);
             hres = E_FAIL;
             break;
         }
@@ -716,7 +703,7 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
         nsres = nsIDOMNode_QueryInterface(nsitem, &IID_nsIDOMElement, (void**)&elem);
         nsIDOMNode_Release(nsitem);
         if(NS_FAILED(nsres)) {
-            FIXME("Failed to get nsIDOMHTMLNode interface: 0x%08x\n", nsres);
+            FIXME("Failed to get nsIDOMHTMLNode interface: 0x%08lx\n", nsres);
             hres = E_FAIL;
             break;
         }
@@ -724,7 +711,7 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
         /* compare by id attr */
         nsres = nsIDOMElement_GetId(elem, &nsstr);
         if(NS_FAILED(nsres)) {
-            FIXME("GetId failed: 0x%08x\n", nsres);
+            FIXME("GetId failed: 0x%08lx\n", nsres);
             nsIDOMElement_Release(elem);
             hres = E_FAIL;
             break;
@@ -739,7 +726,7 @@ static HRESULT HTMLFormElement_get_dispid(HTMLDOMNode *iface,
         }
 
         /* compare by name attr */
-        nsres = get_elem_attr_value(elem, nameW, &name_str, &str);
+        nsres = get_elem_attr_value(elem, L"name", &name_str, &str);
         nsIDOMElement_Release(elem);
         if(NS_SUCCEEDED(nsres)) {
             if(!wcsicmp(str, name)) {
@@ -766,7 +753,7 @@ static HRESULT HTMLFormElement_invoke(HTMLDOMNode *iface,
     IDispatch *ret;
     HRESULT hres;
 
-    TRACE("(%p)->(%x %x %x %p %p %p %p)\n", This, id, lcid, flags, params, res, ei, caller);
+    TRACE("(%p)->(%lx %lx %x %p %p %p %p)\n", This, id, lcid, flags, params, res, ei, caller);
 
     hres = htmlform_item(This, id - MSHTML_DISPID_CUSTOM_MIN, &ret);
     if(FAILED(hres))
@@ -840,6 +827,7 @@ static const tid_t HTMLFormElement_iface_tids[] = {
 };
 
 static dispex_static_data_t HTMLFormElement_dispex = {
+    L"HTMLFormElement",
     NULL,
     DispHTMLFormElement_tid,
     HTMLFormElement_iface_tids,

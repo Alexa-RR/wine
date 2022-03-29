@@ -20,19 +20,15 @@
  */
 
 #include "config.h"
-#include "wine/port.h"
 
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef HAVE_SYS_TIME_H
-# include <sys/time.h>
-#endif
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
+#include <sys/time.h>
+#include <unistd.h>
+#include <dlfcn.h>
 #include <X11/cursorfont.h>
 #include <X11/Xlib.h>
 #ifdef HAVE_XKB
@@ -53,7 +49,6 @@
 #include "wine/server.h"
 #include "wine/unicode.h"
 #include "wine/debug.h"
-#include "wine/library.h"
 #include "wine/list.h"
 #include "wine/heap.h"
 
@@ -110,6 +105,15 @@ static CRITICAL_SECTION_DEBUG critsect_debug =
 };
 static CRITICAL_SECTION x11drv_section = { &critsect_debug, -1, 0, 0, 0, 0 };
 
+static CRITICAL_SECTION x11drv_error_section;
+static CRITICAL_SECTION_DEBUG x11drv_error_section_debug =
+{
+    0, 0, &x11drv_error_section,
+    { &x11drv_error_section_debug.ProcessLocksList, &x11drv_error_section_debug.ProcessLocksList },
+    0, 0, { (DWORD_PTR)(__FILE__ ": x11drv_error_section") }
+};
+static CRITICAL_SECTION x11drv_error_section = { &x11drv_error_section_debug, -1, 0, 0, 0, 0 };
+
 struct d3dkmt_vidpn_source
 {
     D3DKMT_VIDPNSOURCEOWNER_TYPE type;      /* VidPN source owner type */
@@ -131,6 +135,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
 {
     "CLIPBOARD",
     "COMPOUND_TEXT",
+    "EDID",
     "INCR",
     "MANAGER",
     "MULTIPLE",
@@ -182,6 +187,7 @@ static const char * const atom_names[NB_XATOMS - FIRST_XATOM] =
     "_NET_WM_WINDOW_TYPE_NORMAL",
     "_NET_WM_WINDOW_TYPE_UTILITY",
     "_NET_WORKAREA",
+    "_GTK_WORKAREAS_D0",
     "_XEMBED",
     "_XEMBED_INFO",
     "XdndAware",
@@ -260,6 +266,7 @@ static inline BOOL ignore_error( Display *display, XErrorEvent *event )
  */
 void X11DRV_expect_error( Display *display, x11drv_error_callback callback, void *arg )
 {
+    EnterCriticalSection( &x11drv_error_section );
     err_callback         = callback;
     err_callback_display = display;
     err_callback_arg     = arg;
@@ -276,8 +283,10 @@ void X11DRV_expect_error( Display *display, x11drv_error_callback callback, void
  */
 int X11DRV_check_error(void)
 {
+    int res = err_callback_result;
     err_callback = NULL;
-    return err_callback_result;
+    LeaveCriticalSection( &x11drv_error_section );
+    return res;
 }
 
 
@@ -468,7 +477,7 @@ static int xcomp_error_base;
 
 static void X11DRV_XComposite_Init(void)
 {
-    void *xcomposite_handle = wine_dlopen(SONAME_LIBXCOMPOSITE, RTLD_NOW, NULL, 0);
+    void *xcomposite_handle = dlopen(SONAME_LIBXCOMPOSITE, RTLD_NOW);
     if (!xcomposite_handle)
     {
         TRACE("Unable to open %s, XComposite disabled\n", SONAME_LIBXCOMPOSITE);
@@ -477,23 +486,22 @@ static void X11DRV_XComposite_Init(void)
     }
 
 #define LOAD_FUNCPTR(f) \
-    if((p##f = wine_dlsym(xcomposite_handle, #f, NULL, 0)) == NULL) \
-        goto sym_not_found;
-    LOAD_FUNCPTR(XCompositeQueryExtension)
-    LOAD_FUNCPTR(XCompositeQueryVersion)
-    LOAD_FUNCPTR(XCompositeVersion)
-    LOAD_FUNCPTR(XCompositeRedirectWindow)
-    LOAD_FUNCPTR(XCompositeRedirectSubwindows)
-    LOAD_FUNCPTR(XCompositeUnredirectWindow)
-    LOAD_FUNCPTR(XCompositeUnredirectSubwindows)
-    LOAD_FUNCPTR(XCompositeCreateRegionFromBorderClip)
-    LOAD_FUNCPTR(XCompositeNameWindowPixmap)
+    if((p##f = dlsym(xcomposite_handle, #f)) == NULL) goto sym_not_found
+    LOAD_FUNCPTR(XCompositeQueryExtension);
+    LOAD_FUNCPTR(XCompositeQueryVersion);
+    LOAD_FUNCPTR(XCompositeVersion);
+    LOAD_FUNCPTR(XCompositeRedirectWindow);
+    LOAD_FUNCPTR(XCompositeRedirectSubwindows);
+    LOAD_FUNCPTR(XCompositeUnredirectWindow);
+    LOAD_FUNCPTR(XCompositeUnredirectSubwindows);
+    LOAD_FUNCPTR(XCompositeCreateRegionFromBorderClip);
+    LOAD_FUNCPTR(XCompositeNameWindowPixmap);
 #undef LOAD_FUNCPTR
 
     if(!pXCompositeQueryExtension(gdi_display, &xcomp_event_base,
                                   &xcomp_error_base)) {
         TRACE("XComposite extension could not be queried; disabled\n");
-        wine_dlclose(xcomposite_handle, NULL, 0);
+        dlclose(xcomposite_handle);
         xcomposite_handle = NULL;
         usexcomposite = FALSE;
         return;
@@ -503,7 +511,7 @@ static void X11DRV_XComposite_Init(void)
 
 sym_not_found:
     TRACE("Unable to load function pointers from %s, XComposite disabled\n", SONAME_LIBXCOMPOSITE);
-    wine_dlclose(xcomposite_handle, NULL, 0);
+    dlclose(xcomposite_handle);
     xcomposite_handle = NULL;
     usexcomposite = FALSE;
 }
@@ -567,19 +575,18 @@ static void init_visuals( Display *display, int screen )
  */
 static BOOL process_attach(void)
 {
-    char error[1024];
     Display *display;
-    void *libx11 = wine_dlopen( SONAME_LIBX11, RTLD_NOW|RTLD_GLOBAL, error, sizeof(error) );
+    void *libx11 = dlopen( SONAME_LIBX11, RTLD_NOW|RTLD_GLOBAL );
 
     if (!libx11)
     {
-        ERR( "failed to load %s: %s\n", SONAME_LIBX11, error );
+        ERR( "failed to load %s: %s\n", SONAME_LIBX11, dlerror() );
         return FALSE;
     }
-    pXGetEventData = wine_dlsym( libx11, "XGetEventData", NULL, 0 );
-    pXFreeEventData = wine_dlsym( libx11, "XFreeEventData", NULL, 0 );
+    pXGetEventData = dlsym( libx11, "XGetEventData" );
+    pXFreeEventData = dlsym( libx11, "XFreeEventData" );
 #ifdef SONAME_LIBXEXT
-    wine_dlopen( SONAME_LIBXEXT, RTLD_NOW|RTLD_GLOBAL, NULL, 0 );
+    dlopen( SONAME_LIBXEXT, RTLD_NOW|RTLD_GLOBAL );
 #endif
 
     setup_options();
@@ -628,6 +635,7 @@ static BOOL process_attach(void)
     X11DRV_InitMouse( gdi_display );
     if (use_xim) use_xim = X11DRV_InitXIM( input_style );
 
+    init_user_driver();
     X11DRV_DisplayDevices_Init(FALSE);
     return TRUE;
 }
@@ -642,8 +650,12 @@ void CDECL X11DRV_ThreadDetach(void)
 
     if (data)
     {
+<<<<<<< HEAD
         if (GetWindowThreadProcessId( GetDesktopWindow(), NULL ) == GetCurrentThreadId())
             X11DRV_XInput2_Disable();
+=======
+        vulkan_thread_detach();
+>>>>>>> master
         if (data->xim) XCloseIM( data->xim );
         if (data->font_set) XFreeFontSet( data->display, data->font_set );
         XCloseDisplay( data->display );

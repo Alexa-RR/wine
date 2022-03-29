@@ -2,10 +2,14 @@ MODULE    = uxtheme.dll
 IMPORTLIB = uxtheme
 IMPORTS   = user32 gdi32 advapi32
 DELAYIMPORTS = msimg32
+<<<<<<< HEAD
 EXTRAINCL = $(GTK3_CFLAGS)
+=======
+>>>>>>> master
 
 C_SRCS = \
 	buffer.c \
+	dialog.c \
 	draw.c \
 	gtk-button.c \
 	gtk-combobox.c \
@@ -25,6 +29,7 @@ C_SRCS = \
 	metric.c \
 	msstyles.c \
 	property.c \
+	scrollbar.c \
 	stylemap.c \
 	system.c \
 	uxini.c

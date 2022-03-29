@@ -18,20 +18,23 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
 #include <stdio.h>
 #include <string.h>
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
+#include "windef.h"
+#include "winbase.h"
 #include "winerror.h"
-#include "wine/server.h"
+#include "winternl.h"
 #include "kernel_private.h"
 #include "wine/asm.h"
 #include "wine/debug.h"
 #include "wine/exception.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(debugstr);
+
+void *dummy = RtlUnwind;  /* force importing RtlUnwind from ntdll */
 
 static LONG WINAPI debug_exception_handler( EXCEPTION_POINTERS *eptr )
 {
@@ -72,8 +75,7 @@ void WINAPI DECLSPEC_HOTPATCH OutputDebugStringA( LPCSTR str )
     if (!mutex_inited)
     {
         /* first call to OutputDebugString, initialize mutex handle */
-        static const WCHAR mutexname[] = {'D','B','W','i','n','M','u','t','e','x',0};
-        HANDLE mutex = CreateMutexExW( NULL, mutexname, 0, SYNCHRONIZE );
+        HANDLE mutex = CreateMutexExW( NULL, L"DBWinMutex", 0, SYNCHRONIZE );
         if (mutex)
         {
             if (InterlockedCompareExchangePointer( &DBWinMutex, mutex, 0 ) != 0)
@@ -85,20 +87,17 @@ void WINAPI DECLSPEC_HOTPATCH OutputDebugStringA( LPCSTR str )
 
     if (DBWinMutex)
     {
-        static const WCHAR shmname[] = {'D','B','W','I','N','_','B','U','F','F','E','R',0};
-        static const WCHAR eventbuffername[] = {'D','B','W','I','N','_','B','U','F','F','E','R','_','R','E','A','D','Y',0};
-        static const WCHAR eventdataname[] = {'D','B','W','I','N','_','D','A','T','A','_','R','E','A','D','Y',0};
         HANDLE mapping;
 
-        mapping = OpenFileMappingW( FILE_MAP_WRITE, FALSE, shmname );
+        mapping = OpenFileMappingW( FILE_MAP_WRITE, FALSE, L"DBWIN_BUFFER" );
         if (mapping)
         {
             LPVOID buffer;
             HANDLE eventbuffer, eventdata;
 
             buffer = MapViewOfFile( mapping, FILE_MAP_WRITE, 0, 0, 0 );
-            eventbuffer = OpenEventW( SYNCHRONIZE, FALSE, eventbuffername );
-            eventdata = OpenEventW( EVENT_MODIFY_STATE, FALSE, eventdataname );
+            eventbuffer = OpenEventW( SYNCHRONIZE, FALSE, L"DBWIN_BUFFER_READY" );
+            eventdata = OpenEventW( EVENT_MODIFY_STATE, FALSE, L"DBWIN_DATA_READY" );
 
             if (buffer && eventbuffer && eventdata)
             {
@@ -150,13 +149,7 @@ void WINAPI DECLSPEC_HOTPATCH OutputDebugStringA( LPCSTR str )
  */
 BOOL WINAPI DebugBreakProcess(HANDLE process)
 {
-    NTSTATUS status;
-
-    TRACE("(%p)\n", process);
-
-    status = DbgUiIssueRemoteBreakin(process);
-    if (status) SetLastError(RtlNtStatusToDosError(status));
-    return !status;
+    return set_ntstatus( DbgUiIssueRemoteBreakin( process ));
 }
 
 
@@ -174,13 +167,9 @@ BOOL WINAPI DebugBreakProcess(HANDLE process)
  */
 BOOL WINAPI DebugSetProcessKillOnExit(BOOL kill)
 {
-    BOOL ret = FALSE;
+    ULONG flag = kill ? DEBUG_KILL_ON_CLOSE : 0;
 
-    SERVER_START_REQ( set_debugger_kill_on_exit )
-    {
-        req->kill_on_exit = kill;
-        ret = !wine_server_call_err( req );
-    }
-    SERVER_END_REQ;
-    return ret;
+    return set_ntstatus( NtSetInformationDebugObject( DbgUiGetThreadDebugObject(),
+                                                      DebugObjectKillProcessOnExitInformation,
+                                                      &flag, sizeof(flag), NULL ));
 }

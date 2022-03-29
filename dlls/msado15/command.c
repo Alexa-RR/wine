@@ -20,6 +20,7 @@
 #include "winbase.h"
 #define COBJMACROS
 #include "objbase.h"
+#include "msdasc.h"
 #include "msado15_backcompat.h"
 
 #include "wine/debug.h"
@@ -31,8 +32,11 @@ WINE_DEFAULT_DEBUG_CHANNEL(msado15);
 
 struct command
 {
-    _Command Command_iface;
-    LONG     ref;
+    _Command         Command_iface;
+    LONG             ref;
+    CommandTypeEnum  type;
+    BSTR             text;
+    _Connection     *connection;
 };
 
 static inline struct command *impl_from_Command( _Command *iface )
@@ -78,6 +82,8 @@ static ULONG WINAPI command_Release( _Command *iface )
     if (!ref)
     {
         TRACE( "destroying %p\n", command );
+        if (command->connection) _Connection_Release(command->connection);
+        heap_free( command->text );
         heap_free( command );
     }
     return ref;
@@ -85,29 +91,57 @@ static ULONG WINAPI command_Release( _Command *iface )
 
 static HRESULT WINAPI command_GetTypeInfoCount( _Command *iface, UINT *count )
 {
-    FIXME( "%p, %p\n", iface, count );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    TRACE( "%p, %p\n", command, count );
+    *count = 1;
+    return S_OK;
 }
 
 static HRESULT WINAPI command_GetTypeInfo( _Command *iface, UINT index, LCID lcid, ITypeInfo **info )
 {
-    FIXME( "%p, %u, %u, %p\n", iface, index, lcid, info );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    TRACE( "%p, %u, %lu, %p\n", command, index, lcid, info );
+    return get_typeinfo(Command_tid, info);
 }
 
 static HRESULT WINAPI command_GetIDsOfNames( _Command *iface, REFIID riid, LPOLESTR *names, UINT count,
                                              LCID lcid, DISPID *dispid )
 {
-    FIXME( "%p, %s, %p, %u, %u, %p\n", iface, debugstr_guid(riid), names, count, lcid, dispid );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %s, %p, %u, %lu, %p\n", command, debugstr_guid(riid), names, count, lcid, dispid );
+
+    hr = get_typeinfo(Command_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_GetIDsOfNames(typeinfo, names, count, dispid);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI command_Invoke( _Command *iface, DISPID member, REFIID riid, LCID lcid, WORD flags,
                                       DISPPARAMS *params, VARIANT *result, EXCEPINFO *excep_info, UINT *arg_err )
 {
-    FIXME( "%p, %d, %s, %d, %d, %p, %p, %p, %p\n", iface, member, debugstr_guid(riid), lcid, flags, params,
+    struct command *command = impl_from_Command( iface );
+    HRESULT hr;
+    ITypeInfo *typeinfo;
+
+    TRACE( "%p, %ld, %s, %ld, %d, %p, %p, %p, %p\n", command, member, debugstr_guid(riid), lcid, flags, params,
            result, excep_info, arg_err );
-    return E_NOTIMPL;
+
+    hr = get_typeinfo(Command_tid, &typeinfo);
+    if(SUCCEEDED(hr))
+    {
+        hr = ITypeInfo_Invoke(typeinfo, &command->Command_iface, member, flags, params,
+                               result, excep_info, arg_err);
+        ITypeInfo_Release(typeinfo);
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI command_get_Properties( _Command *iface, Properties **props )
@@ -118,14 +152,23 @@ static HRESULT WINAPI command_get_Properties( _Command *iface, Properties **prop
 
 static HRESULT WINAPI command_get_ActiveConnection( _Command *iface, _Connection **connection )
 {
-    FIXME( "%p, %p\n", iface, connection );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    TRACE( "%p, %p\n", iface, connection );
+
+    *connection = command->connection;
+    if (command->connection) _Connection_AddRef(command->connection);
+    return S_OK;
 }
 
 static HRESULT WINAPI command_putref_ActiveConnection( _Command *iface, _Connection *connection )
 {
-    FIXME( "%p, %p\n", iface, connection );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    TRACE( "%p, %p\n", iface, connection );
+
+    if (command->connection) _Connection_Release(command->connection);
+    command->connection = connection;
+    if (command->connection) _Connection_AddRef(command->connection);
+    return S_OK;
 }
 
 static HRESULT WINAPI command_put_ActiveConnection( _Command *iface, VARIANT connection )
@@ -136,14 +179,27 @@ static HRESULT WINAPI command_put_ActiveConnection( _Command *iface, VARIANT con
 
 static HRESULT WINAPI command_get_CommandText( _Command *iface, BSTR *text )
 {
-    FIXME( "%p, %p\n", iface, text );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    BSTR cmd_text = NULL;
+
+    TRACE( "%p, %p\n", command, text );
+
+    if (command->text && !(cmd_text = SysAllocString( command->text ))) return E_OUTOFMEMORY;
+    *text = cmd_text;
+    return S_OK;
 }
 
 static HRESULT WINAPI command_put_CommandText( _Command *iface, BSTR text )
 {
-    FIXME( "%p, %s\n", iface, debugstr_w(text) );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+    WCHAR *source = NULL;
+
+    TRACE( "%p, %s\n", command, debugstr_w( text ) );
+
+    if (text && !(source = strdupW( text ))) return E_OUTOFMEMORY;
+    heap_free( command->text );
+    command->text = source;
+    return S_OK;
 }
 
 static HRESULT WINAPI command_get_CommandTimeout( _Command *iface, LONG *timeout )
@@ -154,7 +210,7 @@ static HRESULT WINAPI command_get_CommandTimeout( _Command *iface, LONG *timeout
 
 static HRESULT WINAPI command_put_CommandTimeout( _Command *iface, LONG timeout )
 {
-    FIXME( "%p, %d\n", iface, timeout );
+    FIXME( "%p, %ld\n", iface, timeout );
     return E_NOTIMPL;
 }
 
@@ -173,15 +229,15 @@ static HRESULT WINAPI command_put_Prepared( _Command *iface, VARIANT_BOOL prepar
 static HRESULT WINAPI command_Execute( _Command *iface, VARIANT *affected, VARIANT *parameters,
                                        LONG options, _Recordset **recordset )
 {
-    FIXME( "%p, %p, %p, %d, %p\n", iface, affected, parameters, options, recordset );
+    FIXME( "%p, %p, %p, %ld, %p\n", iface, affected, parameters, options, recordset );
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI command_CreateParameter( _Command *iface, BSTR name, DataTypeEnum type,
-                                               ParameterDirectionEnum direction, LONG size, VARIANT value,
+                                               ParameterDirectionEnum direction, ADO_LONGPTR size, VARIANT value,
                                                _Parameter **parameter )
 {
-    FIXME( "%p, %s, %d, %d, %d, %p\n", iface, debugstr_w(name), type, direction, size, parameter );
+    FIXME( "%p, %s, %d, %d, %Id, %p\n", iface, debugstr_w(name), type, direction, size, parameter );
     return E_NOTIMPL;
 }
 
@@ -193,14 +249,34 @@ static HRESULT WINAPI command_get_Parameters( _Command *iface, Parameters **para
 
 static HRESULT WINAPI command_put_CommandType( _Command *iface, CommandTypeEnum type )
 {
-    FIXME( "%p, %d\n", iface, type );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+
+    TRACE( "%p, %d\n", iface, type );
+
+    switch (type)
+    {
+    case adCmdUnspecified:
+    case adCmdUnknown:
+    case adCmdText:
+    case adCmdTable:
+    case adCmdStoredProc:
+    case adCmdFile:
+    case adCmdTableDirect:
+        command->type = type;
+        return S_OK;
+    }
+
+    return MAKE_ADO_HRESULT( adErrInvalidArgument );
 }
 
 static HRESULT WINAPI command_get_CommandType( _Command *iface, CommandTypeEnum *type )
 {
-    FIXME( "%p, %p\n", iface, type );
-    return E_NOTIMPL;
+    struct command *command = impl_from_Command( iface );
+
+    TRACE( "%p, %p\n", iface, type );
+
+    *type = command->type;
+    return S_OK;
 }
 
 static HRESULT WINAPI command_get_Name(_Command *iface, BSTR *name)
@@ -305,6 +381,9 @@ HRESULT Command_create( void **obj )
 
     if (!(command = heap_alloc( sizeof(*command) ))) return E_OUTOFMEMORY;
     command->Command_iface.lpVtbl = &command_vtbl;
+    command->type = adCmdUnknown;
+    command->text = NULL;
+    command->connection = NULL;
     command->ref = 1;
 
     *obj = &command->Command_iface;

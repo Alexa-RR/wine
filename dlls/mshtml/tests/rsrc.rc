@@ -28,6 +28,9 @@ asyncscriptload.js HTML "asyncscriptload.js"
 /* @makedep: jstest.html */
 jstest.html HTML "jstest.html"
 
+/* @makedep: jstest.html */
+jstest-rtfile.html 2110 "jstest.html"
+
 /* @makedep: vbtest.html */
 vbtest.html HTML "vbtest.html"
 
@@ -69,9 +72,6 @@ blank2.html HTML "blank.html"
 
 /* @makedep: blank.html */
 123 HTML "blank.html"
-
-/* @makedep: test_tlb.tlb */
-1 TYPELIB test_tlb.tlb
 
 /* For res: protocol test: */
 

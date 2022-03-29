@@ -23,7 +23,6 @@
 #include "user_private.h"
 #include "wine/list.h"
 #include "wine/server.h"
-#include "wine/gdi_driver.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(win);
@@ -456,8 +455,12 @@ HWND16 WINAPI GetParent16( HWND16 hwnd )
  */
 BOOL16 WINAPI IsWindow16( HWND16 hwnd )
 {
+<<<<<<< HEAD
     STACK16FRAME *frame = MapSL( (SEGPTR)NtCurrentTeb()->SystemReserved1[0] );
     frame->es = USER_HeapSel;
+=======
+    CURRENT_STACK16->es = USER_HeapSel;
+>>>>>>> master
     /* don't use WIN_Handle32 here, we don't care about the full handle */
     return IsWindow( HWND_32(hwnd) );
 }
@@ -677,7 +680,7 @@ HDC16 WINAPI GetWindowDC16( HWND16 hwnd )
 INT16 WINAPI ReleaseDC16( HWND16 hwnd, HDC16 hdc )
 {
     INT16 ret = (INT16)ReleaseDC( WIN_Handle32(hwnd), HDC_32(hdc) );
-    SetHookFlags( HDC_32(hdc), DCHF_ENABLEDC );
+    NtUserCallOneParam( HandleToUlong( HDC_32(hdc) ), NtUserEnableDC );
     return ret;
 }
 

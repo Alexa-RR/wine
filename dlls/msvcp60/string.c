@@ -46,25 +46,21 @@ typedef struct {
 /* ?_Xran@std@@YAXXZ */
 void __cdecl _Xran(void)
 {
-    static const char msg[] = "invalid string position";
-
     TRACE("\n");
-    throw_exception(EXCEPTION_OUT_OF_RANGE, msg);
+    _Xout_of_range("invalid string position");
 }
 
 /* ?_Xlen@std@@YAXXZ */
 void __cdecl _Xlen(void)
 {
-    static const char msg[] = "string too long";
-
     TRACE("\n");
-    throw_exception(EXCEPTION_LENGTH_ERROR, msg);
+    _Xlength_error("string too long");
 }
 
 /* ?compare@?$char_traits@D@std@@SAHPBD0I@Z */
 /* ?compare@?$char_traits@D@std@@SAHPEBD0_K@Z */
 int CDECL MSVCP_char_traits_char_compare(
-        const char *s1, const char *s2, MSVCP_size_t count)
+        const char *s1, const char *s2, size_t count)
 {
     int ret = memcmp(s1, s2, count);
     return (ret>0 ? 1 : (ret<0 ? -1 : 0));
@@ -72,7 +68,7 @@ int CDECL MSVCP_char_traits_char_compare(
 
 /* ?length@?$char_traits@D@std@@SAIPBD@Z */
 /* ?length@?$char_traits@D@std@@SA_KPEBD@Z */
-MSVCP_size_t CDECL MSVCP_char_traits_char_length(const char *str)
+size_t CDECL MSVCP_char_traits_char_length(const char *str)
 {
     return strlen(str);
 }
@@ -80,7 +76,7 @@ MSVCP_size_t CDECL MSVCP_char_traits_char_length(const char *str)
 /* ?_Copy_s@?$char_traits@D@std@@SAPADPADIPBDI@Z */
 /* ?_Copy_s@?$char_traits@D@std@@SAPEADPEAD_KPEBD1@Z */
 char* CDECL MSVCP_char_traits_char__Copy_s(char *dest,
-        MSVCP_size_t size, const char *src, MSVCP_size_t count)
+        size_t size, const char *src, size_t count)
 {
     if(!dest || !src || size<count) {
         if(dest && size)
@@ -95,7 +91,7 @@ char* CDECL MSVCP_char_traits_char__Copy_s(char *dest,
 /* ?copy@?$char_traits@D@std@@SAPADPADPBDI@Z */
 /* ?copy@?$char_traits@D@std@@SAPEADPEADPEBD_K@Z */
 char* CDECL MSVCP_char_traits_char_copy(
-        char *dest, const char *src, MSVCP_size_t count)
+        char *dest, const char *src, size_t count)
 {
     return MSVCP_char_traits_char__Copy_s(dest, count, src, count);
 }
@@ -103,7 +99,7 @@ char* CDECL MSVCP_char_traits_char_copy(
 /* ?find@?$char_traits@D@std@@SAPBDPBDIABD@Z */
 /* ?find@?$char_traits@D@std@@SAPEBDPEBD_KAEBD@Z */
 const char * CDECL MSVCP_char_traits_char_find(
-        const char *str, MSVCP_size_t range, const char *c)
+        const char *str, size_t range, const char *c)
 {
     return memchr(str, *c, range);
 }
@@ -111,7 +107,7 @@ const char * CDECL MSVCP_char_traits_char_find(
 /* ?_Move_s@?$char_traits@D@std@@SAPADPADIPBDI@Z */
 /* ?_Move_s@?$char_traits@D@std@@SAPEADPEAD_KPEBD1@Z */
 char* CDECL MSVCP_char_traits_char__Move_s(char *dest,
-        MSVCP_size_t size, const char *src, MSVCP_size_t count)
+        size_t size, const char *src, size_t count)
 {
     if(!dest || !src || size<count) {
         if(dest && size)
@@ -126,14 +122,14 @@ char* CDECL MSVCP_char_traits_char__Move_s(char *dest,
 /* ?move@?$char_traits@D@std@@SAPADPADPBDI@Z */
 /* ?move@?$char_traits@D@std@@SAPEADPEADPEBD_K@Z */
 char* CDECL MSVCP_char_traits_char_move(
-        char *dest, const char *src, MSVCP_size_t count)
+        char *dest, const char *src, size_t count)
 {
     return MSVCP_char_traits_char__Move_s(dest, count, src, count);
 }
 
 /* ?assign@?$char_traits@D@std@@SAPADPADID@Z */
 /* ?assign@?$char_traits@D@std@@SAPEADPEAD_KD@Z */
-char* CDECL MSVCP_char_traits_char_assignn(char *str, MSVCP_size_t num, char c)
+char* CDECL MSVCP_char_traits_char_assignn(char *str, size_t num, char c)
 {
     return memset(str, c, num);
 }
@@ -141,9 +137,9 @@ char* CDECL MSVCP_char_traits_char_assignn(char *str, MSVCP_size_t num, char c)
 /* ?compare@?$char_traits@_W@std@@SAHPB_W0I@Z */
 /* ?compare@?$char_traits@_W@std@@SAHPEB_W0_K@Z */
 int CDECL MSVCP_char_traits_wchar_compare(const wchar_t *s1,
-        const wchar_t *s2, MSVCP_size_t count)
+        const wchar_t *s2, size_t count)
 {
-    MSVCP_size_t i;
+    size_t i;
     int ret = 0;
 
     for (i = 0; i < count && !ret; i++) ret = s1[i] - s2[i];
@@ -152,7 +148,7 @@ int CDECL MSVCP_char_traits_wchar_compare(const wchar_t *s1,
 
 /* ?length@?$char_traits@_W@std@@SAIPB_W@Z */
 /* ?length@?$char_traits@_W@std@@SA_KPEB_W@Z */
-MSVCP_size_t CDECL MSVCP_char_traits_wchar_length(const wchar_t *str)
+size_t CDECL MSVCP_char_traits_wchar_length(const wchar_t *str)
 {
     return wcslen((WCHAR*)str);
 }
@@ -160,7 +156,7 @@ MSVCP_size_t CDECL MSVCP_char_traits_wchar_length(const wchar_t *str)
 /* ?_Copy_s@?$char_traits@_W@std@@SAPA_WPA_WIPB_WI@Z */
 /* ?_Copy_s@?$char_traits@_W@std@@SAPEA_WPEA_W_KPEB_W1@Z */
 wchar_t* CDECL MSVCP_char_traits_wchar__Copy_s(wchar_t *dest,
-        MSVCP_size_t size, const wchar_t *src, MSVCP_size_t count)
+        size_t size, const wchar_t *src, size_t count)
 {
     if(!dest || !src || size<count) {
         if(dest && size)
@@ -175,7 +171,7 @@ wchar_t* CDECL MSVCP_char_traits_wchar__Copy_s(wchar_t *dest,
 /* ?copy@?$char_traits@_W@std@@SAPA_WPA_WPB_WI@Z */
 /* ?copy@?$char_traits@_W@std@@SAPEA_WPEA_WPEB_W_K@Z */
 wchar_t* CDECL MSVCP_char_traits_wchar_copy(wchar_t *dest,
-        const wchar_t *src, MSVCP_size_t count)
+        const wchar_t *src, size_t count)
 {
     return MSVCP_char_traits_wchar__Copy_s(dest, count, src, count);
 }
@@ -183,9 +179,9 @@ wchar_t* CDECL MSVCP_char_traits_wchar_copy(wchar_t *dest,
 /* ?find@?$char_traits@_W@std@@SAPB_WPB_WIAB_W@Z */
 /* ?find@?$char_traits@_W@std@@SAPEB_WPEB_W_KAEB_W@Z */
 const wchar_t* CDECL MSVCP_char_traits_wchar_find(
-        const wchar_t *str, MSVCP_size_t range, const wchar_t *c)
+        const wchar_t *str, size_t range, const wchar_t *c)
 {
-    MSVCP_size_t i=0;
+    size_t i=0;
 
     for(i=0; i<range; i++)
         if(str[i] == *c)
@@ -197,7 +193,7 @@ const wchar_t* CDECL MSVCP_char_traits_wchar_find(
 /* ?_Move_s@?$char_traits@_W@std@@SAPA_WPA_WIPB_WI@Z */
 /* ?_Move_s@?$char_traits@_W@std@@SAPEA_WPEA_W_KPEB_W1@Z */
 wchar_t* CDECL MSVCP_char_traits_wchar__Move_s(wchar_t *dest,
-        MSVCP_size_t size, const wchar_t *src, MSVCP_size_t count)
+        size_t size, const wchar_t *src, size_t count)
 {
     if(!dest || !src || size<count) {
         if(dest && size)
@@ -212,7 +208,7 @@ wchar_t* CDECL MSVCP_char_traits_wchar__Move_s(wchar_t *dest,
 /* ?move@?$char_traits@_W@std@@SAPA_WPA_WPB_WI@Z */
 /* ?move@?$char_traits@_W@std@@SAPEA_WPEA_WPEB_W_K@Z */
 wchar_t* CDECL MSVCP_char_traits_wchar_move(wchar_t *dest,
-        const wchar_t *src, MSVCP_size_t count)
+        const wchar_t *src, size_t count)
 {
     return MSVCP_char_traits_wchar__Move_s(dest, count, src, count);
 }
@@ -220,9 +216,9 @@ wchar_t* CDECL MSVCP_char_traits_wchar_move(wchar_t *dest,
 /* ?assign@?$char_traits@_W@std@@SAPA_WPA_WI_W@Z */
 /* ?assign@?$char_traits@_W@std@@SAPEA_WPEA_W_K_W@Z */
 wchar_t* CDECL MSVCP_char_traits_wchar_assignn(wchar_t *str,
-        MSVCP_size_t num, wchar_t c)
+        size_t num, wchar_t c)
 {
-    MSVCP_size_t i;
+    size_t i;
 
     for(i=0; i<num; i++)
         str[i] = c;
@@ -230,7 +226,7 @@ wchar_t* CDECL MSVCP_char_traits_wchar_assignn(wchar_t *str,
     return str;
 }
 
-static MSVCP_bool basic_string_char_inside(
+static bool basic_string_char_inside(
         basic_string_char *this, const char *ptr)
 {
     return ptr>=this->ptr && ptr<this->ptr+this->size;
@@ -238,7 +234,7 @@ static MSVCP_bool basic_string_char_inside(
 
 /* ?npos@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@2IB */
 /* ?npos@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@2_KB */
-const MSVCP_size_t MSVCP_basic_string_char_npos = -1;
+const size_t MSVCP_basic_string_char_npos = -1;
 
 /* ?_C@?1??_Nullstr@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAPBDXZ@4DB */
 /* ?_C@?1??_Nullstr@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAPEBDXZ@4DB */
@@ -263,7 +259,7 @@ unsigned char* __thiscall basic_string_char__Refcnt(basic_string_char *this, con
 /* ?_Eos@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AAEXI@Z */
 /* ?_Eos@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char__Eos, 8)
-void __thiscall basic_string_char__Eos(basic_string_char *this, MSVCP_size_t len)
+void __thiscall basic_string_char__Eos(basic_string_char *this, size_t len)
 {
     this->size = len;
     this->ptr[len] = 0;
@@ -281,7 +277,7 @@ void __thiscall MSVCP_basic_string_char_clear(basic_string_char *this)
 /* ?_Tidy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AAEX_N@Z */
 /* ?_Tidy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAAX_N@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char__Tidy, 8)
-void __thiscall basic_string_char__Tidy(basic_string_char *this, MSVCP_bool built)
+void __thiscall basic_string_char__Tidy(basic_string_char *this, bool built)
 {
     TRACE("(%p %d)\n", this, built);
 
@@ -297,7 +293,7 @@ void __thiscall basic_string_char__Tidy(basic_string_char *this, MSVCP_bool buil
 /* ?_Grow@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AAE_NI_N@Z */
 /* ?_Grow@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAA_N_K_N@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char__Grow, 12)
-MSVCP_bool __thiscall basic_string_char__Grow(basic_string_char *this, MSVCP_size_t new_size, MSVCP_bool trim)
+bool __thiscall basic_string_char__Grow(basic_string_char *this, size_t new_size, bool trim)
 {
     if(!new_size) {
         if(trim)
@@ -306,7 +302,7 @@ MSVCP_bool __thiscall basic_string_char__Grow(basic_string_char *this, MSVCP_siz
             basic_string_char__Eos(this, 0);
     } else if(this->res<new_size || trim ||
             (this->ptr && this->ptr[-1] && (unsigned char)this->ptr[-1]!=FROZEN)) {
-        MSVCP_size_t new_res = new_size, len = this->size;
+        size_t new_res = new_size, len = this->size;
         char *ptr;
 
         if(!trim && this->ptr && !this->ptr[-1]) {
@@ -345,7 +341,7 @@ MSVCP_bool __thiscall basic_string_char__Grow(basic_string_char *this, MSVCP_siz
 DEFINE_THISCALL_WRAPPER(basic_string_char__Split, 4)
 void __thiscall basic_string_char__Split(basic_string_char *this)
 {
-    MSVCP_size_t len;
+    size_t len;
     char *ptr;
 
     TRACE("(%p)\n", this);
@@ -377,9 +373,9 @@ void __thiscall basic_string_char__Freeze(basic_string_char *this)
 /* ?_Copy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AAEXI@Z */
 /* ?_Copy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char__Copy, 8)
-void __thiscall basic_string_char__Copy(basic_string_char *this, MSVCP_size_t copy_len)
+void __thiscall basic_string_char__Copy(basic_string_char *this, size_t copy_len)
 {
-    TRACE("%p %lu\n", this, copy_len);
+    TRACE("%p %Iu\n", this, copy_len);
 
     if(!basic_string_char__Grow(this, copy_len, TRUE))
         return;
@@ -389,9 +385,9 @@ void __thiscall basic_string_char__Copy(basic_string_char *this, MSVCP_size_t co
 /* ?_Psum@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAPEADPEAD_K@Z */
 /* ?_Psum@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAPBDPBDI@Z */
 /* ?_Psum@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAPEBDPEBD_K@Z */
-char* __cdecl basic_string_char__Psum(char *iter, MSVCP_size_t add)
+char* __cdecl basic_string_char__Psum(char *iter, size_t add)
 {
-    TRACE("(%p %lu)\n", iter, add);
+    TRACE("(%p %Iu)\n", iter, add);
     return iter ? iter+add : iter;
 }
 
@@ -399,9 +395,9 @@ char* __cdecl basic_string_char__Psum(char *iter, MSVCP_size_t add)
 /* ?erase@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_erase, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_erase(
-        basic_string_char *this, MSVCP_size_t pos, MSVCP_size_t len)
+        basic_string_char *this, size_t pos, size_t len)
 {
-    TRACE("%p %lu %lu\n", this, pos, len);
+    TRACE("%p %Iu %Iu\n", this, pos, len);
 
     if(pos > this->size)
         _Xran();
@@ -424,7 +420,7 @@ basic_string_char* __thiscall MSVCP_basic_string_char_erase(
 DEFINE_THISCALL_WRAPPER(basic_string_char_erase_beg, 8)
 char* __thiscall basic_string_char_erase_beg(basic_string_char *this, char *beg)
 {
-    MSVCP_size_t pos = beg-this->ptr;
+    size_t pos = beg-this->ptr;
     MSVCP_basic_string_char_erase(this, pos, 1);
     return this->ptr+pos;
 }
@@ -434,9 +430,9 @@ char* __thiscall basic_string_char_erase_beg(basic_string_char *this, char *beg)
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_assign_substr, 16)
 basic_string_char* __thiscall MSVCP_basic_string_char_assign_substr(
         basic_string_char *this, const basic_string_char *assign,
-        MSVCP_size_t pos, MSVCP_size_t len)
+        size_t pos, size_t len)
 {
-    TRACE("%p %p %lu %lu\n", this, assign, pos, len);
+    TRACE("%p %p %Iu %Iu\n", this, assign, pos, len);
 
     if(assign->size < pos)
         _Xran();
@@ -460,9 +456,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_assign_substr(
 /* ?assign@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_assign_cstr_len, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_assign_cstr_len(
-        basic_string_char *this, const char *str, MSVCP_size_t len)
+        basic_string_char *this, const char *str, size_t len)
 {
-    TRACE("%p %s %lu\n", this, debugstr_an(str, len), len);
+    TRACE("%p %s %Iu\n", this, debugstr_an(str, len), len);
 
     if(basic_string_char_inside(this, str))
         return MSVCP_basic_string_char_assign_substr(this, this, str-this->ptr, len);
@@ -511,9 +507,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_assign_ch(
 /* ?assign@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KD@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_assignn, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_assignn(
-        basic_string_char *this, MSVCP_size_t count, char ch)
+        basic_string_char *this, size_t count, char ch)
 {
-    TRACE("%p %ld %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     basic_string_char__Grow(this, count, FALSE);
     MSVCP_char_traits_char_assignn(this->ptr, count, ch);
@@ -534,9 +530,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_assign_ptr_ptr(
 /* ??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAA@PEBD_KAEBV?$allocator@D@1@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_ctor_cstr_len_alloc, 16)
 basic_string_char* __thiscall MSVCP_basic_string_char_ctor_cstr_len_alloc(
-        basic_string_char *this, const char *str, MSVCP_size_t len, const void *alloc)
+        basic_string_char *this, const char *str, size_t len, const void *alloc)
 {
-    TRACE("%p %s %ld\n", this, debugstr_an(str, len), len);
+    TRACE("%p %s %Iu\n", this, debugstr_an(str, len), len);
 
     basic_string_char__Tidy(this, FALSE);
     MSVCP_basic_string_char_assign_cstr_len(this, str, len);
@@ -547,7 +543,7 @@ basic_string_char* __thiscall MSVCP_basic_string_char_ctor_cstr_len_alloc(
 /* ??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAA@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_ctor_cstr_len, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_ctor_cstr_len(
-        basic_string_char *this, const char *str, MSVCP_size_t len)
+        basic_string_char *this, const char *str, size_t len)
 {
     return MSVCP_basic_string_char_ctor_cstr_len_alloc(this, str, len, NULL);
 }
@@ -557,9 +553,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_ctor_cstr_len(
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_ctor_substr_alloc, 20)
 basic_string_char* __thiscall MSVCP_basic_string_char_ctor_substr_alloc(
         basic_string_char *this, const basic_string_char *assign,
-        MSVCP_size_t pos, MSVCP_size_t len, const void *alloc)
+        size_t pos, size_t len, const void *alloc)
 {
-    TRACE("%p %p %lu %lu\n", this, assign, pos, len);
+    TRACE("%p %p %Iu %Iu\n", this, assign, pos, len);
 
     basic_string_char__Tidy(this, FALSE);
     MSVCP_basic_string_char_assign_substr(this, assign, pos, len);
@@ -592,9 +588,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_ctor_cstr(
 /* ??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAA@_KDAEBV?$allocator@D@1@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_ctor_ch_alloc, 16)
 basic_string_char* __thiscall MSVCP_basic_string_char_ctor_ch_alloc(basic_string_char *this,
-        MSVCP_size_t count, char ch, const void *alloc)
+        size_t count, char ch, const void *alloc)
 {
-    TRACE("%p %ld %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     basic_string_char__Tidy(this, FALSE);
     MSVCP_basic_string_char_assignn(this, count, ch);
@@ -650,12 +646,12 @@ void __thiscall MSVCP_basic_string_char_dtor(basic_string_char *this)
 /* ?compare@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAH_K0PEBD0@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_compare_substr_cstr_len, 20)
 int __thiscall MSVCP_basic_string_char_compare_substr_cstr_len(
-        const basic_string_char *this, MSVCP_size_t pos, MSVCP_size_t num,
-        const char *str, MSVCP_size_t count)
+        const basic_string_char *this, size_t pos, size_t num,
+        const char *str, size_t count)
 {
     int ans;
 
-    TRACE("%p %lu %lu %s %lu\n", this, pos, num, debugstr_an(str, count), count);
+    TRACE("%p %Iu %Iu %s %Iu\n", this, pos, num, debugstr_an(str, count), count);
 
     if(this->size < pos)
         _Xran();
@@ -689,10 +685,10 @@ int __thiscall MSVCP_basic_string_char_compare_cstr(
 /* ?compare@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAH_K0AEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_compare_substr_substr, 24)
 int __thiscall MSVCP_basic_string_char_compare_substr_substr(
-        const basic_string_char *this, MSVCP_size_t pos, MSVCP_size_t num,
-        const basic_string_char *compare, MSVCP_size_t off, MSVCP_size_t count)
+        const basic_string_char *this, size_t pos, size_t num,
+        const basic_string_char *compare, size_t off, size_t count)
 {
-    TRACE("%p %lu %lu %p %lu %lu\n", this, pos, num, compare, off, count);
+    TRACE("%p %Iu %Iu %p %Iu %Iu\n", this, pos, num, compare, off, count);
 
     if(compare->size < off)
         _Xran();
@@ -708,7 +704,7 @@ int __thiscall MSVCP_basic_string_char_compare_substr_substr(
 /* ?compare@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAH_K0AEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_compare_substr, 16)
 int __thiscall MSVCP_basic_string_char_compare_substr(
-        const basic_string_char *this, MSVCP_size_t pos, MSVCP_size_t num,
+        const basic_string_char *this, size_t pos, size_t num,
         const basic_string_char *compare)
 {
     return MSVCP_basic_string_char_compare_substr_cstr_len(this, pos, num,
@@ -729,7 +725,7 @@ int __thiscall MSVCP_basic_string_char_compare(
 /* ?compare@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAH_K0PEBD@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_compare_substr_cstr, 16)
 int __thiscall MSVCP_basic_string_char_compare_substr_cstr(const basic_string_char *this,
-        MSVCP_size_t pos, MSVCP_size_t num, const char *str)
+        size_t pos, size_t num, const char *str)
 {
     return MSVCP_basic_string_char_compare_substr_cstr_len(this, pos, num,
             str, MSVCP_char_traits_char_length(str));
@@ -739,7 +735,7 @@ int __thiscall MSVCP_basic_string_char_compare_substr_cstr(const basic_string_ch
 /* ??$?8DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??8std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??8std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_equal(
+bool __cdecl MSVCP_basic_string_char_equal(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) == 0;
@@ -749,7 +745,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_equal(
 /* ??$?8DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??8std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??8std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_equal_str_cstr(
+bool __cdecl MSVCP_basic_string_char_equal_str_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) == 0;
@@ -759,7 +755,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_equal_str_cstr(
 /* ??$?8DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??8std@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??8std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_equal_cstr_str(
+bool __cdecl MSVCP_basic_string_char_equal_cstr_str(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) == 0;
@@ -769,7 +765,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_equal_cstr_str(
 /* ??$?9DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??9std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??9std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal(
+bool __cdecl MSVCP_basic_string_char_not_equal(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) != 0;
@@ -779,7 +775,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal(
 /* ??$?9DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??9std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??9std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal_str_cstr(
+bool __cdecl MSVCP_basic_string_char_not_equal_str_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) != 0;
@@ -789,7 +785,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal_str_cstr(
 /* ??$?9DU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??9std@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??9std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal_cstr_str(
+bool __cdecl MSVCP_basic_string_char_not_equal_cstr_str(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) != 0;
@@ -799,7 +795,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_not_equal_cstr_str(
 /* ??$?MDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Mstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Mstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_lower(
+bool __cdecl MSVCP_basic_string_char_lower(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) < 0;
@@ -809,7 +805,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_lower(
 /* ??$?MDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??Mstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??Mstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_lower_bstr_cstr(
+bool __cdecl MSVCP_basic_string_char_lower_bstr_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) < 0;
@@ -819,7 +815,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_lower_bstr_cstr(
 /* ??$?MDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Mstd@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Mstd@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_lower_cstr_bstr(
+bool __cdecl MSVCP_basic_string_char_lower_cstr_bstr(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) > 0;
@@ -829,7 +825,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_lower_cstr_bstr(
 /* ??$?NDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Nstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Nstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_leq(
+bool __cdecl MSVCP_basic_string_char_leq(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) <= 0;
@@ -839,7 +835,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_leq(
 /* ??$?NDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??Nstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??Nstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_leq_bstr_cstr(
+bool __cdecl MSVCP_basic_string_char_leq_bstr_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) <= 0;
@@ -849,7 +845,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_leq_bstr_cstr(
 /* ??$?NDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Nstd@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Nstd@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_leq_cstr_bstr(
+bool __cdecl MSVCP_basic_string_char_leq_cstr_bstr(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) >= 0;
@@ -859,7 +855,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_leq_cstr_bstr(
 /* ??$?ODU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Ostd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Ostd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_greater(
+bool __cdecl MSVCP_basic_string_char_greater(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) > 0;
@@ -869,7 +865,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_greater(
 /* ??$?ODU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??Ostd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??Ostd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_greater_bstr_cstr(
+bool __cdecl MSVCP_basic_string_char_greater_bstr_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) > 0;
@@ -879,7 +875,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_greater_bstr_cstr(
 /* ??$?ODU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Ostd@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Ostd@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_greater_cstr_bstr(
+bool __cdecl MSVCP_basic_string_char_greater_cstr_bstr(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) < 0;
@@ -889,7 +885,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_greater_cstr_bstr(
 /* ??$?PDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Pstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
 /* ??Pstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_geq(
+bool __cdecl MSVCP_basic_string_char_geq(
         const basic_string_char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare(left, right) >= 0;
@@ -899,7 +895,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_geq(
 /* ??$?PDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
 /* ??Pstd@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PBD@Z */
 /* ??Pstd@@YA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@PEBD@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_geq_bstr_cstr(
+bool __cdecl MSVCP_basic_string_char_geq_bstr_cstr(
         const basic_string_char *left, const char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(left, right) >= 0;
@@ -909,7 +905,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_geq_bstr_cstr(
 /* ??$?PDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Pstd@@YA_NPBDABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
 /* ??Pstd@@YA_NPEBDAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_char_geq_cstr_bstr(
+bool __cdecl MSVCP_basic_string_char_geq_cstr_bstr(
         const char *left, const basic_string_char *right)
 {
     return MSVCP_basic_string_char_compare_cstr(right, left) <= 0;
@@ -918,12 +914,12 @@ MSVCP_bool __cdecl MSVCP_basic_string_char_geq_cstr_bstr(
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t pos, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_find_cstr_substr(
+        const basic_string_char *this, const char *find, size_t pos, size_t len)
 {
     const char *p, *end;
 
-    TRACE("%p %s %lu %lu\n", this, debugstr_an(find, len), pos, len);
+    TRACE("%p %s %Iu %Iu\n", this, debugstr_an(find, len), pos, len);
 
     if(len==0 && pos<=this->size)
         return pos;
@@ -946,8 +942,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_cstr_substr(
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_off(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_off(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_cstr_substr(this, find->ptr, off, find->size);
 }
@@ -955,8 +951,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_off(
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_char_find_ch(
+        const basic_string_char *this, char ch, size_t pos)
 {
     return MSVCP_basic_string_char_find_cstr_substr(this, &ch, pos, 1);
 }
@@ -964,8 +960,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_ch(
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?find@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_cstr_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_cstr_off(
-        const basic_string_char *this, const char *find, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_char_find_cstr_off(
+        const basic_string_char *this, const char *find, size_t pos)
 {
     return MSVCP_basic_string_char_find_cstr_substr(this, find, pos,
             MSVCP_char_traits_char_length(find));
@@ -974,12 +970,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_cstr_off(
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_rfind_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t pos, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_rfind_cstr_substr(
+        const basic_string_char *this, const char *find, size_t pos, size_t len)
 {
     const char *p, *end;
 
-    TRACE("%p %s %lu %lu\n", this, debugstr_an(find, len), pos, len);
+    TRACE("%p %s %Iu %Iu\n", this, debugstr_an(find, len), pos, len);
 
     if(len==0)
         return pos<this->size ? pos : this->size;
@@ -1001,8 +997,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_cstr_substr(
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_rfind_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_off(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_rfind_off(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_rfind_cstr_substr(this, find->ptr, off, find->size);
 }
@@ -1010,8 +1006,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_off(
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_rfind_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_char_rfind_ch(
+        const basic_string_char *this, char ch, size_t pos)
 {
     return MSVCP_basic_string_char_rfind_cstr_substr(this, &ch, pos, 1);
 }
@@ -1019,8 +1015,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_ch(
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?rfind@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_rfind_cstr_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_cstr_off(
-        const basic_string_char *this, const char *find, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_char_rfind_cstr_off(
+        const basic_string_char *this, const char *find, size_t pos)
 {
     return MSVCP_basic_string_char_rfind_cstr_substr(this, find, pos,
             MSVCP_char_traits_char_length(find));
@@ -1029,12 +1025,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_rfind_cstr_off(
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_not_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr_substr(
+        const basic_string_char *this, const char *find, size_t off, size_t len)
 {
     const char *p, *end;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(off<this->size) {
         end = this->ptr+this->size;
@@ -1049,8 +1045,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr_substr(
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_not_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_not_of(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_first_not_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -1059,8 +1055,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of(
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_not_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_not_of_ch(
+        const basic_string_char *this, char ch, size_t off)
 {
     return MSVCP_basic_string_char_find_first_not_of_cstr_substr(this, &ch, off, 1);
 }
@@ -1068,8 +1064,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_ch(
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?find_first_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_not_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr(
+        const basic_string_char *this, const char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_first_not_of_cstr_substr(
             this, find, off, MSVCP_char_traits_char_length(find));
@@ -1078,12 +1074,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_not_of_cstr(
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr_substr(
+        const basic_string_char *this, const char *find, size_t off, size_t len)
 {
     const char *p, *end;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && off<this->size) {
         end = this->ptr+this->size;
@@ -1098,8 +1094,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr_substr(
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_of(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_first_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -1108,8 +1104,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of(
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_of_ch(
+        const basic_string_char *this, char ch, size_t off)
 {
     return MSVCP_basic_string_char_find_first_of_cstr_substr(this, &ch, off, 1);
 }
@@ -1117,8 +1113,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_ch(
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?find_first_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_first_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr(
+        const basic_string_char *this, const char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_first_of_cstr_substr(
             this, find, off, MSVCP_char_traits_char_length(find));
@@ -1127,12 +1123,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_first_of_cstr(
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_not_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr_substr(
+        const basic_string_char *this, const char *find, size_t off, size_t len)
 {
     const char *p, *beg;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && this->size>0) {
         if(off >= this->size)
@@ -1150,8 +1146,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr_substr(
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_not_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_not_of(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_last_not_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -1160,8 +1156,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of(
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_not_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_not_of_ch(
+        const basic_string_char *this, char ch, size_t off)
 {
     return MSVCP_basic_string_char_find_last_not_of_cstr_substr(this, &ch, off, 1);
 }
@@ -1169,8 +1165,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_ch(
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?find_last_not_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_not_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr(
+        const basic_string_char *this, const char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_last_not_of_cstr_substr(
             this, find, off, MSVCP_char_traits_char_length(find));
@@ -1179,12 +1175,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_not_of_cstr(
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDII@Z */
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr_substr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr_substr(
+        const basic_string_char *this, const char *find, size_t off, size_t len)
 {
     const char *p, *beg;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && this->size>0) {
         if(off >= this->size)
@@ -1202,8 +1198,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr_substr(
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIABV12@I@Z */
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of(
-        const basic_string_char *this, const basic_string_char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_of(
+        const basic_string_char *this, const basic_string_char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_last_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -1212,8 +1208,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of(
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIDI@Z */
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_ch(
-        const basic_string_char *this, char ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_of_ch(
+        const basic_string_char *this, char ch, size_t off)
 {
     return MSVCP_basic_string_char_find_last_of_cstr_substr(this, &ch, off, 1);
 }
@@ -1221,8 +1217,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_ch(
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPBDI@Z */
 /* ?find_last_of@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_find_last_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr(
-        const basic_string_char *this, const char *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr(
+        const basic_string_char *this, const char *find, size_t off)
 {
     return MSVCP_basic_string_char_find_last_of_cstr_substr(
             this, find, off, MSVCP_char_traits_char_length(find));
@@ -1232,9 +1228,9 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_find_last_of_cstr(
 /* ?append@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@AEBV12@_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_append_substr, 16)
 basic_string_char* __thiscall MSVCP_basic_string_char_append_substr(basic_string_char *this,
-        const basic_string_char *append, MSVCP_size_t offset, MSVCP_size_t count)
+        const basic_string_char *append, size_t offset, size_t count)
 {
-    TRACE("%p %p %lu %lu\n", this, append, offset, count);
+    TRACE("%p %p %Iu %Iu\n", this, append, offset, count);
 
     if(append->size < offset)
         _Xran();
@@ -1259,9 +1255,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_append_substr(basic_string
 /* ?append@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_append_cstr_len, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_append_cstr_len(
-        basic_string_char *this, const char *append, MSVCP_size_t count)
+        basic_string_char *this, const char *append, size_t count)
 {
-    TRACE("%p %s %lu\n", this, debugstr_an(append, count), count);
+    TRACE("%p %s %Iu\n", this, debugstr_an(append, count), count);
 
     if(basic_string_char_inside(this, append))
         return MSVCP_basic_string_char_append_substr(this, this, append-this->ptr, count);
@@ -1282,9 +1278,9 @@ basic_string_char* __thiscall MSVCP_basic_string_char_append_cstr_len(
 /* ?append@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KD@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_append_len_ch, 12)
 basic_string_char* __thiscall MSVCP_basic_string_char_append_len_ch(
-        basic_string_char *this, MSVCP_size_t count, char ch)
+        basic_string_char *this, size_t count, char ch)
 {
-    TRACE("%p %lu %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     if(MSVCP_basic_string_char_npos-this->size <= count)
         _Xlen();
@@ -1412,9 +1408,9 @@ basic_string_char* __cdecl MSVCP_basic_string_char_concatenate_cstr_bstr(basic_s
 /* ??A?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_operator_at, 8)
 char* __thiscall MSVCP_basic_string_char_operator_at(
-        basic_string_char *this, MSVCP_size_t pos)
+        basic_string_char *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(!this->ptr || pos>this->size)
         return (char*)basic_string_char__Nullstr();
@@ -1427,9 +1423,9 @@ char* __thiscall MSVCP_basic_string_char_operator_at(
 /* ??A?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAAEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_operator_at_const, 8)
 const char* __thiscall MSVCP_basic_string_char_operator_at_const(
-        const basic_string_char *this, MSVCP_size_t pos)
+        const basic_string_char *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(!this->ptr)
         return basic_string_char__Nullstr();
@@ -1442,9 +1438,9 @@ const char* __thiscall MSVCP_basic_string_char_operator_at_const(
 /* ?at@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBAAEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_at, 8)
 char* __thiscall MSVCP_basic_string_char_at(
-        basic_string_char *this, MSVCP_size_t pos)
+        basic_string_char *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(this->size <= pos)
         _Xran();
@@ -1456,12 +1452,12 @@ char* __thiscall MSVCP_basic_string_char_at(
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0PEBD0@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_cstr_len, 20)
 basic_string_char* __thiscall basic_string_char_replace_cstr_len(basic_string_char *this,
-        MSVCP_size_t off, MSVCP_size_t len, const char *str, MSVCP_size_t str_len)
+        size_t off, size_t len, const char *str, size_t str_len)
 {
-    MSVCP_size_t inside_pos = -1;
+    size_t inside_pos = -1;
     char *ptr = this->ptr;
 
-    TRACE("%p %ld %ld %p %ld\n", this, off, len, str, str_len);
+    TRACE("%p %Iu %Iu %p %Iu\n", this, off, len, str, str_len);
 
     if(this->size < off)
         _Xran();
@@ -1486,7 +1482,7 @@ basic_string_char* __thiscall basic_string_char_replace_cstr_len(basic_string_ch
         memmove(ptr+off, ptr+inside_pos, str_len*sizeof(char));
         memmove(ptr+off+str_len, ptr+off+len, (this->size-off-len)*sizeof(char));
     } else {
-        MSVCP_size_t size;
+        size_t size;
 
         memmove(ptr+off+str_len, ptr+off+len, (this->size-off-len)*sizeof(char));
 
@@ -1511,8 +1507,8 @@ basic_string_char* __thiscall basic_string_char_replace_cstr_len(basic_string_ch
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV12@IIABV12@II@Z */
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0AEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_substr, 24)
-basic_string_char* __thiscall basic_string_char_replace_substr(basic_string_char *this, MSVCP_size_t off,
-        MSVCP_size_t len, const basic_string_char *str, MSVCP_size_t str_off, MSVCP_size_t str_len)
+basic_string_char* __thiscall basic_string_char_replace_substr(basic_string_char *this, size_t off,
+        size_t len, const basic_string_char *str, size_t str_off, size_t str_len)
 {
     if(str->size < str_off)
         _Xran();
@@ -1528,7 +1524,7 @@ basic_string_char* __thiscall basic_string_char_replace_substr(basic_string_char
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0AEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace, 16)
 basic_string_char* __thiscall basic_string_char_replace(basic_string_char *this,
-        MSVCP_size_t off, MSVCP_size_t len, const basic_string_char *str)
+        size_t off, size_t len, const basic_string_char *str)
 {
     return basic_string_char_replace_cstr_len(this, off, len,
             str->ptr, str->size);
@@ -1538,11 +1534,11 @@ basic_string_char* __thiscall basic_string_char_replace(basic_string_char *this,
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K00D@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_ch, 20)
 basic_string_char* __thiscall basic_string_char_replace_ch(basic_string_char *this,
-        MSVCP_size_t off, MSVCP_size_t len, MSVCP_size_t count, char ch)
+        size_t off, size_t len, size_t count, char ch)
 {
     char *ptr;
 
-    TRACE("%p %ld %ld %ld %c\n", this, off, len, count, ch);
+    TRACE("%p %Iu %Iu %Iu %c\n", this, off, len, count, ch);
 
     if(this->size < off)
         _Xran();
@@ -1568,7 +1564,7 @@ basic_string_char* __thiscall basic_string_char_replace_ch(basic_string_char *th
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0PEBD@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_cstr, 16)
 basic_string_char* __thiscall basic_string_char_replace_cstr(basic_string_char *this,
-        MSVCP_size_t off, MSVCP_size_t len, const char *str)
+        size_t off, size_t len, const char *str)
 {
     return basic_string_char_replace_cstr_len(this, off, len, str,
             MSVCP_char_traits_char_length(str));
@@ -1578,7 +1574,7 @@ basic_string_char* __thiscall basic_string_char_replace_cstr(basic_string_char *
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KAEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert, 12)
 basic_string_char* __thiscall basic_string_char_insert(basic_string_char *this,
-        MSVCP_size_t off, const basic_string_char *str)
+        size_t off, const basic_string_char *str)
 {
     return basic_string_char_replace(this, off, 0, str);
 }
@@ -1587,8 +1583,8 @@ basic_string_char* __thiscall basic_string_char_insert(basic_string_char *this,
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KAEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_substr, 20)
 basic_string_char* __thiscall basic_string_char_insert_substr(
-        basic_string_char *this, MSVCP_size_t off, const basic_string_char *str,
-        MSVCP_size_t str_off, MSVCP_size_t str_count)
+        basic_string_char *this, size_t off, const basic_string_char *str,
+        size_t str_off, size_t str_count)
 {
     return basic_string_char_replace_substr(this, off, 0, str, str_off, str_count);
 }
@@ -1597,7 +1593,7 @@ basic_string_char* __thiscall basic_string_char_insert_substr(
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KPEBD@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_cstr, 12)
 basic_string_char* __thiscall basic_string_char_insert_cstr(
-        basic_string_char *this, MSVCP_size_t off, const char *str)
+        basic_string_char *this, size_t off, const char *str)
 {
     return basic_string_char_replace_cstr(this, off, 0, str);
 }
@@ -1606,7 +1602,7 @@ basic_string_char* __thiscall basic_string_char_insert_cstr(
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_KPEBD0@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_cstr_len, 16)
 basic_string_char* __thiscall basic_string_char_insert_cstr_len(basic_string_char *this,
-        MSVCP_size_t off, const char *str, MSVCP_size_t str_len)
+        size_t off, const char *str, size_t str_len)
 {
     return basic_string_char_replace_cstr_len(this, off, 0, str, str_len);
 }
@@ -1615,7 +1611,7 @@ basic_string_char* __thiscall basic_string_char_insert_cstr_len(basic_string_cha
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@_K0D@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_chn, 16)
 basic_string_char* __thiscall basic_string_char_insert_chn(basic_string_char *this,
-        MSVCP_size_t off, MSVCP_size_t count, char ch)
+        size_t off, size_t count, char ch)
 {
     return basic_string_char_replace_ch(this, off, 0, count, ch);
 }
@@ -1624,9 +1620,9 @@ basic_string_char* __thiscall basic_string_char_insert_chn(basic_string_char *th
 /* ?resize@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAX_KD@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_resize_ch, 12)
 void __thiscall MSVCP_basic_string_char_resize_ch(
-        basic_string_char *this, MSVCP_size_t size, char ch)
+        basic_string_char *this, size_t size, char ch)
 {
-    TRACE("%p %lu %c\n", this, size, ch);
+    TRACE("%p %Iu %c\n", this, size, ch);
 
     if(size <= this->size)
         MSVCP_basic_string_char_erase(this, size, this->size);
@@ -1638,7 +1634,7 @@ void __thiscall MSVCP_basic_string_char_resize_ch(
 /* ?resize@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_resize, 8)
 void __thiscall MSVCP_basic_string_char_resize(
-        basic_string_char *this, MSVCP_size_t size)
+        basic_string_char *this, size_t size)
 {
     MSVCP_basic_string_char_resize_ch(this, size, '\0');
 }
@@ -1659,7 +1655,7 @@ const char* __thiscall MSVCP_basic_string_char_c_str(const basic_string_char *th
 /* ?length@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIXZ */
 /* ?length@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_length, 4)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_length(const basic_string_char *this)
+size_t __thiscall MSVCP_basic_string_char_length(const basic_string_char *this)
 {
     TRACE("%p\n", this);
     return this->size;
@@ -1668,7 +1664,7 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_length(const basic_string_char *
 /* ?max_size@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIXZ */
 /* ?max_size@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(basic_string_char_max_size, 4)
-MSVCP_size_t __thiscall basic_string_char_max_size(const basic_string_char *this)
+size_t __thiscall basic_string_char_max_size(const basic_string_char *this)
 {
     TRACE("%p\n", this);
     return MSVCP_allocator_char_max_size(NULL)-1;
@@ -1677,7 +1673,7 @@ MSVCP_size_t __thiscall basic_string_char_max_size(const basic_string_char *this
 /* ?capacity@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIXZ */
 /* ?capacity@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_capacity, 4)
-MSVCP_size_t __thiscall MSVCP_basic_string_char_capacity(basic_string_char *this)
+size_t __thiscall MSVCP_basic_string_char_capacity(basic_string_char *this)
 {
     TRACE("%p\n", this);
     return this->res;
@@ -1686,11 +1682,11 @@ MSVCP_size_t __thiscall MSVCP_basic_string_char_capacity(basic_string_char *this
 /* ?reserve@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEXI@Z */
 /* ?reserve@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_reserve, 8)
-void __thiscall MSVCP_basic_string_char_reserve(basic_string_char *this, MSVCP_size_t size)
+void __thiscall MSVCP_basic_string_char_reserve(basic_string_char *this, size_t size)
 {
-    MSVCP_size_t len;
+    size_t len;
 
-    TRACE("%p %ld\n", this, size);
+    TRACE("%p %Iu\n", this, size);
 
     len = this->size;
     if(len > size)
@@ -1703,7 +1699,7 @@ void __thiscall MSVCP_basic_string_char_reserve(basic_string_char *this, MSVCP_s
 /* ?empty@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBE_NXZ */
 /* ?empty@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_empty, 4)
-MSVCP_bool __thiscall MSVCP_basic_string_char_empty(basic_string_char *this)
+bool __thiscall MSVCP_basic_string_char_empty(basic_string_char *this)
 {
     TRACE("%p\n", this);
     return this->size == 0;
@@ -1726,9 +1722,9 @@ void __thiscall MSVCP_basic_string_char_swap(basic_string_char *this, basic_stri
 /* ?substr@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA?AV12@_K0@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_char_substr, 16)
 basic_string_char* __thiscall MSVCP_basic_string_char_substr(basic_string_char *this,
-        basic_string_char *ret, MSVCP_size_t off, MSVCP_size_t len)
+        basic_string_char *ret, size_t off, size_t len)
 {
-    TRACE("%p %lu %lu\n", this, off, len);
+    TRACE("%p %Iu %Iu\n", this, off, len);
 
     MSVCP_basic_string_char_ctor_substr_alloc(ret, this, off, len, NULL);
     return ret;
@@ -1737,10 +1733,10 @@ basic_string_char* __thiscall MSVCP_basic_string_char_substr(basic_string_char *
 /* ?copy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QBEIPADII@Z */
 /* ?copy@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEBA_KPEAD_K1@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_copy, 16)
-MSVCP_size_t __thiscall basic_string_char_copy(const basic_string_char *this,
-        char *dest, MSVCP_size_t count, MSVCP_size_t off)
+size_t __thiscall basic_string_char_copy(const basic_string_char *this,
+        char *dest, size_t count, size_t off)
 {
-    TRACE("%p %p %lu %lu\n", this, dest, count, off);
+    TRACE("%p %p %Iu %Iu\n", this, dest, count, off);
 
     if(off > this->size)
         _Xran();
@@ -1760,7 +1756,7 @@ allocator* __thiscall basic_string_char_get_allocator(const basic_string_char *t
     return ret;
 }
 
-static MSVCP_bool basic_string_wchar_inside(
+static bool basic_string_wchar_inside(
         basic_string_wchar *this, const wchar_t *ptr)
 {
     return ptr>=this->ptr && ptr<this->ptr+this->size;
@@ -1768,7 +1764,7 @@ static MSVCP_bool basic_string_wchar_inside(
 
 /* ?npos@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@2IB */
 /* ?npos@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@2_KB */
-const MSVCP_size_t MSVCP_basic_string_wchar_npos = -1;
+const size_t MSVCP_basic_string_wchar_npos = -1;
 
 /* ?_C@?1??_Nullstr@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAPBGXZ@4GB */
 /* ?_C@?1??_Nullstr@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAPEBGXZ@4GB */
@@ -1793,7 +1789,7 @@ unsigned short* __thiscall basic_string_wchar__Refcnt(basic_string_wchar *this, 
 /* ?_Eos@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AAEXI@Z */
 /* ?_Eos@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar__Eos, 8)
-void __thiscall basic_string_wchar__Eos(basic_string_wchar *this, MSVCP_size_t len)
+void __thiscall basic_string_wchar__Eos(basic_string_wchar *this, size_t len)
 {
     this->size = len;
     this->ptr[len] = 0;
@@ -1813,7 +1809,7 @@ void __thiscall MSVCP_basic_string_wchar_clear(basic_string_wchar *this)
 /* ?_Tidy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AAEX_N@Z */
 /* ?_Tidy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AEAAX_N@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar__Tidy, 8)
-void __thiscall basic_string_wchar__Tidy(basic_string_wchar *this, MSVCP_bool built)
+void __thiscall basic_string_wchar__Tidy(basic_string_wchar *this, bool built)
 {
     TRACE("(%p %d)\n", this, built);
 
@@ -1829,7 +1825,7 @@ void __thiscall basic_string_wchar__Tidy(basic_string_wchar *this, MSVCP_bool bu
 /* ?_Grow@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AAE_NI_N@Z */
 /* ?_Grow@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AEAA_N_K_N@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar__Grow, 12)
-MSVCP_bool __thiscall basic_string_wchar__Grow(basic_string_wchar *this, MSVCP_size_t new_size, MSVCP_bool trim)
+bool __thiscall basic_string_wchar__Grow(basic_string_wchar *this, size_t new_size, bool trim)
 {
     if(!new_size) {
         if(trim)
@@ -1838,7 +1834,7 @@ MSVCP_bool __thiscall basic_string_wchar__Grow(basic_string_wchar *this, MSVCP_s
             basic_string_wchar__Eos(this, 0);
     } else if(this->res<new_size || trim ||
             (this->ptr && this->ptr[-1] && (unsigned short)this->ptr[-1]!=FROZEN)) {
-        MSVCP_size_t new_res = new_size, len = this->size;
+        size_t new_res = new_size, len = this->size;
         wchar_t *ptr;
 
         if(!trim && this->ptr && !this->ptr[-1]) {
@@ -1877,7 +1873,7 @@ MSVCP_bool __thiscall basic_string_wchar__Grow(basic_string_wchar *this, MSVCP_s
 DEFINE_THISCALL_WRAPPER(basic_string_wchar__Split, 4)
 void __thiscall basic_string_wchar__Split(basic_string_wchar *this)
 {
-    MSVCP_size_t len;
+    size_t len;
     wchar_t *ptr;
 
     TRACE("(%p)\n", this);
@@ -1909,9 +1905,9 @@ void __thiscall basic_string_wchar__Freeze(basic_string_wchar *this)
 /* ?_Copy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AAEXI@Z */
 /* ?_Copy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@AEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar__Copy, 8)
-void __thiscall basic_string_wchar__Copy(basic_string_wchar *this, MSVCP_size_t copy_len)
+void __thiscall basic_string_wchar__Copy(basic_string_wchar *this, size_t copy_len)
 {
-    TRACE("%p %lu\n", this, copy_len);
+    TRACE("%p %Iu\n", this, copy_len);
 
     if(!basic_string_wchar__Grow(this, copy_len, TRUE))
         return;
@@ -1921,9 +1917,9 @@ void __thiscall basic_string_wchar__Copy(basic_string_wchar *this, MSVCP_size_t 
 /* ?_Psum@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAPEAGPEAG_K@Z */
 /* ?_Psum@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAPBGPBGI@Z */
 /* ?_Psum@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAPEBGPEBG_K@Z */
-wchar_t* __cdecl basic_string_wchar__Psum(wchar_t *iter, MSVCP_size_t add)
+wchar_t* __cdecl basic_string_wchar__Psum(wchar_t *iter, size_t add)
 {
-    TRACE("(%p %lu)\n", iter, add);
+    TRACE("(%p %Iu)\n", iter, add);
     return iter ? iter+add : iter;
 }
 
@@ -1931,9 +1927,9 @@ wchar_t* __cdecl basic_string_wchar__Psum(wchar_t *iter, MSVCP_size_t add)
 /* ?erase@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_erase, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_erase(
-        basic_string_wchar *this, MSVCP_size_t pos, MSVCP_size_t len)
+        basic_string_wchar *this, size_t pos, size_t len)
 {
-    TRACE("%p %lu %lu\n", this, pos, len);
+    TRACE("%p %Iu %Iu\n", this, pos, len);
 
     if(pos > this->size)
         _Xran();
@@ -1956,7 +1952,7 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_erase(
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_erase_beg, 8)
 wchar_t* __thiscall basic_string_wchar_erase_beg(basic_string_wchar *this, wchar_t *beg)
 {
-    MSVCP_size_t pos = beg-this->ptr;
+    size_t pos = beg-this->ptr;
     MSVCP_basic_string_wchar_erase(this, pos, 1);
     return this->ptr+pos;
 }
@@ -1966,9 +1962,9 @@ wchar_t* __thiscall basic_string_wchar_erase_beg(basic_string_wchar *this, wchar
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_assign_substr, 16)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assign_substr(
         basic_string_wchar *this, const basic_string_wchar *assign,
-        MSVCP_size_t pos, MSVCP_size_t len)
+        size_t pos, size_t len)
 {
-    TRACE("%p %p %lu %lu\n", this, assign, pos, len);
+    TRACE("%p %p %Iu %Iu\n", this, assign, pos, len);
 
     if(assign->size < pos)
         _Xran();
@@ -1993,9 +1989,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assign_substr(
 /* ?assign@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@PEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_assign_cstr_len, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assign_cstr_len(
-        basic_string_wchar *this, const wchar_t *str, MSVCP_size_t len)
+        basic_string_wchar *this, const wchar_t *str, size_t len)
 {
-    TRACE("%p %s %lu\n", this, debugstr_wn(str, len), len);
+    TRACE("%p %s %Iu\n", this, debugstr_wn(str, len), len);
 
     if(basic_string_wchar_inside(this, str))
         return MSVCP_basic_string_wchar_assign_substr(this, this, str-this->ptr, len);
@@ -2044,9 +2040,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assign_ch(
 /* ?assign@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KG@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_assignn, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assignn(
-        basic_string_wchar *this, MSVCP_size_t count, wchar_t ch)
+        basic_string_wchar *this, size_t count, wchar_t ch)
 {
-    TRACE("%p %ld %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     basic_string_wchar__Grow(this, count, FALSE);
     MSVCP_char_traits_wchar_assignn(this->ptr, count, ch);
@@ -2067,9 +2063,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_assign_ptr_ptr(
 /* ??0?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAA@PEBG_KAEBV?$allocator@G@1@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_ctor_cstr_len_alloc, 16)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_cstr_len_alloc(
-        basic_string_wchar *this, const wchar_t *str, MSVCP_size_t len, const void *alloc)
+        basic_string_wchar *this, const wchar_t *str, size_t len, const void *alloc)
 {
-    TRACE("%p %s %ld\n", this, debugstr_wn(str, len), len);
+    TRACE("%p %s %Iu\n", this, debugstr_wn(str, len), len);
 
     basic_string_wchar__Tidy(this, FALSE);
     MSVCP_basic_string_wchar_assign_cstr_len(this, str, len);
@@ -2082,7 +2078,7 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_cstr_len_alloc(
 /* ??0?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAA@PEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_ctor_cstr_len, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_cstr_len(
-        basic_string_wchar *this, const wchar_t *str, MSVCP_size_t len)
+        basic_string_wchar *this, const wchar_t *str, size_t len)
 {
     return MSVCP_basic_string_wchar_ctor_cstr_len_alloc(this, str, len, NULL);
 }
@@ -2092,9 +2088,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_cstr_len(
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_ctor_substr_alloc, 20)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_substr_alloc(
         basic_string_wchar *this, const basic_string_wchar *assign,
-        MSVCP_size_t pos, MSVCP_size_t len, const void *alloc)
+        size_t pos, size_t len, const void *alloc)
 {
-    TRACE("%p %p %lu %lu\n", this, assign, pos, len);
+    TRACE("%p %p %Iu %Iu\n", this, assign, pos, len);
 
     basic_string_wchar__Tidy(this, FALSE);
     MSVCP_basic_string_wchar_assign_substr(this, assign, pos, len);
@@ -2129,9 +2125,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_cstr(
 /* ??0?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAA@_KGAEBV?$allocator@G@1@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_ctor_ch_alloc, 16)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_ch_alloc(basic_string_wchar *this,
-        MSVCP_size_t count, wchar_t ch, const void *alloc)
+        size_t count, wchar_t ch, const void *alloc)
 {
-    TRACE("%p %ld %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     basic_string_wchar__Tidy(this, FALSE);
     MSVCP_basic_string_wchar_assignn(this, count, ch);
@@ -2163,8 +2159,8 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_ctor_alloc(
 
 /* ??0?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QAE@ABV01@@Z */
 /* ??0?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAA@AEBV01@@Z */
-DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_copy_ctor, 8)
-basic_string_wchar* __thiscall MSVCP_basic_string_wchar_copy_ctor(
+DEFINE_THISCALL_WRAPPER(basic_string_wchar_copy_ctor, 8)
+basic_string_wchar* __thiscall basic_string_wchar_copy_ctor(
         basic_string_wchar *this, const basic_string_wchar *copy)
 {
     TRACE("%p %p\n", this, copy);
@@ -2187,12 +2183,12 @@ void __thiscall MSVCP_basic_string_wchar_dtor(basic_string_wchar *this)
 /* ?compare@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAH_K0PEBG0@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_compare_substr_cstr_len, 20)
 int __thiscall MSVCP_basic_string_wchar_compare_substr_cstr_len(
-        const basic_string_wchar *this, MSVCP_size_t pos, MSVCP_size_t num,
-        const wchar_t *str, MSVCP_size_t count)
+        const basic_string_wchar *this, size_t pos, size_t num,
+        const wchar_t *str, size_t count)
 {
     int ans;
 
-    TRACE("%p %lu %lu %s %lu\n", this, pos, num, debugstr_wn(str, count), count);
+    TRACE("%p %Iu %Iu %s %Iu\n", this, pos, num, debugstr_wn(str, count), count);
 
     if(this->size < pos)
         _Xran();
@@ -2226,10 +2222,10 @@ int __thiscall MSVCP_basic_string_wchar_compare_cstr(
 /* ?compare@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAH_K0AEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_compare_substr_substr, 24)
 int __thiscall MSVCP_basic_string_wchar_compare_substr_substr(
-        const basic_string_wchar *this, MSVCP_size_t pos, MSVCP_size_t num,
-        const basic_string_wchar *compare, MSVCP_size_t off, MSVCP_size_t count)
+        const basic_string_wchar *this, size_t pos, size_t num,
+        const basic_string_wchar *compare, size_t off, size_t count)
 {
-    TRACE("%p %lu %lu %p %lu %lu\n", this, pos, num, compare, off, count);
+    TRACE("%p %Iu %Iu %p %Iu %Iu\n", this, pos, num, compare, off, count);
 
     if(compare->size < off)
         _Xran();
@@ -2245,7 +2241,7 @@ int __thiscall MSVCP_basic_string_wchar_compare_substr_substr(
 /* ?compare@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAH_K0AEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_compare_substr, 16)
 int __thiscall MSVCP_basic_string_wchar_compare_substr(
-        const basic_string_wchar *this, MSVCP_size_t pos, MSVCP_size_t num,
+        const basic_string_wchar *this, size_t pos, size_t num,
         const basic_string_wchar *compare)
 {
     return MSVCP_basic_string_wchar_compare_substr_cstr_len(this, pos, num,
@@ -2266,7 +2262,7 @@ int __thiscall MSVCP_basic_string_wchar_compare(
 /* ?compare@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAH_K0PEBG@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_compare_substr_cstr, 16)
 int __thiscall MSVCP_basic_string_wchar_compare_substr_cstr(const basic_string_wchar *this,
-        MSVCP_size_t pos, MSVCP_size_t num, const wchar_t *str)
+        size_t pos, size_t num, const wchar_t *str)
 {
     return MSVCP_basic_string_wchar_compare_substr_cstr_len(this, pos, num,
             str, MSVCP_char_traits_wchar_length(str));
@@ -2276,7 +2272,7 @@ int __thiscall MSVCP_basic_string_wchar_compare_substr_cstr(const basic_string_w
 /* ??$?8GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??8std@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??8std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal(
+bool __cdecl MSVCP_basic_string_wchar_equal(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) == 0;
@@ -2286,7 +2282,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal(
 /* ??$?8GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??8std@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??8std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal_str_cstr(
+bool __cdecl MSVCP_basic_string_wchar_equal_str_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) == 0;
@@ -2296,7 +2292,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal_str_cstr(
 /* ??$?8GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??8std@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??8std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal_cstr_str(
+bool __cdecl MSVCP_basic_string_wchar_equal_cstr_str(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) == 0;
@@ -2306,7 +2302,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_equal_cstr_str(
 /* ??$?9GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??9std@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??9std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal(
+bool __cdecl MSVCP_basic_string_wchar_not_equal(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) != 0;
@@ -2316,7 +2312,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal(
 /* ??$?9GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??9std@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??9std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal_str_cstr(
+bool __cdecl MSVCP_basic_string_wchar_not_equal_str_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) != 0;
@@ -2326,7 +2322,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal_str_cstr(
 /* ??$?9GU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??9std@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??9std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal_cstr_str(
+bool __cdecl MSVCP_basic_string_wchar_not_equal_cstr_str(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) != 0;
@@ -2336,7 +2332,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_not_equal_cstr_str(
 /* ??$?MGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Mstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Mstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower(
+bool __cdecl MSVCP_basic_string_wchar_lower(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) < 0;
@@ -2346,7 +2342,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower(
 /* ??$?MGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??Mstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??Mstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower_bstr_cstr(
+bool __cdecl MSVCP_basic_string_wchar_lower_bstr_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) < 0;
@@ -2356,7 +2352,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower_bstr_cstr(
 /* ??$?MGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Mstd@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Mstd@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower_cstr_bstr(
+bool __cdecl MSVCP_basic_string_wchar_lower_cstr_bstr(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) > 0;
@@ -2366,7 +2362,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_lower_cstr_bstr(
 /* ??$?NGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Nstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Nstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq(
+bool __cdecl MSVCP_basic_string_wchar_leq(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) <= 0;
@@ -2376,7 +2372,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq(
 /* ??$?NGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??Nstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??Nstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq_bstr_cstr(
+bool __cdecl MSVCP_basic_string_wchar_leq_bstr_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) <= 0;
@@ -2386,7 +2382,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq_bstr_cstr(
 /* ??$?NGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Nstd@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Nstd@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq_cstr_bstr(
+bool __cdecl MSVCP_basic_string_wchar_leq_cstr_bstr(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) >= 0;
@@ -2396,7 +2392,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_leq_cstr_bstr(
 /* ??$?OGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Ostd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Ostd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater(
+bool __cdecl MSVCP_basic_string_wchar_greater(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) > 0;
@@ -2406,7 +2402,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater(
 /* ??$?OGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??Ostd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??Ostd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater_bstr_cstr(
+bool __cdecl MSVCP_basic_string_wchar_greater_bstr_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) > 0;
@@ -2416,7 +2412,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater_bstr_cstr(
 /* ??$?OGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Ostd@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Ostd@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater_cstr_bstr(
+bool __cdecl MSVCP_basic_string_wchar_greater_cstr_bstr(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) < 0;
@@ -2426,7 +2422,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_greater_cstr_bstr(
 /* ??$?PGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Pstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
 /* ??Pstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@0@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq(
+bool __cdecl MSVCP_basic_string_wchar_geq(
         const basic_string_wchar *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare(left, right) >= 0;
@@ -2436,7 +2432,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq(
 /* ??$?PGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
 /* ??Pstd@@YA_NABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PBG@Z */
 /* ??Pstd@@YA_NAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@PEBG@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq_bstr_cstr(
+bool __cdecl MSVCP_basic_string_wchar_geq_bstr_cstr(
         const basic_string_wchar *left, const wchar_t *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(left, right) >= 0;
@@ -2446,7 +2442,7 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq_bstr_cstr(
 /* ??$?PGU?$char_traits@G@std@@V?$allocator@G@1@@std@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Pstd@@YA_NPBGABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
 /* ??Pstd@@YA_NPEBGAEBV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@0@@Z */
-MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq_cstr_bstr(
+bool __cdecl MSVCP_basic_string_wchar_geq_cstr_bstr(
         const wchar_t *left, const basic_string_wchar *right)
 {
     return MSVCP_basic_string_wchar_compare_cstr(right, left) <= 0;
@@ -2455,12 +2451,12 @@ MSVCP_bool __cdecl MSVCP_basic_string_wchar_geq_cstr_bstr(
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t pos, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_find_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t pos, size_t len)
 {
     const wchar_t *p, *end;
 
-    TRACE("%p %s %lu %lu\n", this, debugstr_wn(find, len), pos, len);
+    TRACE("%p %s %Iu %Iu\n", this, debugstr_wn(find, len), pos, len);
 
     if(len==0 && pos<=this->size)
         return pos;
@@ -2483,8 +2479,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_cstr_substr(
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_off(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_off(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_cstr_substr(this, find->ptr, off, find->size);
 }
@@ -2492,8 +2488,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_off(
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_wchar_find_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t pos)
 {
     return MSVCP_basic_string_wchar_find_cstr_substr(this, &ch, pos, 1);
 }
@@ -2501,8 +2497,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_ch(
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?find@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_cstr_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_cstr_off(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_wchar_find_cstr_off(
+        const basic_string_wchar *this, const wchar_t *find, size_t pos)
 {
     return MSVCP_basic_string_wchar_find_cstr_substr(this, find, pos,
             MSVCP_char_traits_wchar_length(find));
@@ -2511,12 +2507,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_cstr_off(
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_rfind_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t pos, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t pos, size_t len)
 {
     const wchar_t *p, *end;
 
-    TRACE("%p %s %lu %lu\n", this, debugstr_wn(find, len), pos, len);
+    TRACE("%p %s %Iu %Iu\n", this, debugstr_wn(find, len), pos, len);
 
     if(len==0)
         return pos<this->size ? pos : this->size;
@@ -2538,8 +2534,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_substr(
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_rfind_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_off(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_rfind_off(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_rfind_cstr_substr(this, find->ptr, off, find->size);
 }
@@ -2547,8 +2543,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_off(
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_rfind_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_wchar_rfind_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t pos)
 {
     return MSVCP_basic_string_wchar_rfind_cstr_substr(this, &ch, pos, 1);
 }
@@ -2556,8 +2552,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_ch(
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?rfind@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_rfind_cstr_off, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_off(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t pos)
+size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_off(
+        const basic_string_wchar *this, const wchar_t *find, size_t pos)
 {
     return MSVCP_basic_string_wchar_rfind_cstr_substr(this, find, pos,
             MSVCP_char_traits_wchar_length(find));
@@ -2566,12 +2562,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_rfind_cstr_off(
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_not_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off, size_t len)
 {
     const wchar_t *p, *end;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(off<this->size) {
         end = this->ptr+this->size;
@@ -2586,8 +2582,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_not_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -2596,8 +2592,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of(
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_not_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(this, &ch, off, 1);
 }
@@ -2605,8 +2601,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_ch(
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?find_first_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_not_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_not_of_cstr_substr(
             this, find, off, MSVCP_char_traits_wchar_length(find));
@@ -2615,12 +2611,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_not_of_cstr(
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off, size_t len)
 {
     const wchar_t *p, *end;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && off<this->size) {
         end = this->ptr+this->size;
@@ -2635,8 +2631,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr_substr(
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_of(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -2645,8 +2641,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of(
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_of_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_of_cstr_substr(this, &ch, off, 1);
 }
@@ -2654,8 +2650,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_ch(
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?find_first_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_first_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_first_of_cstr_substr(
             this, find, off, MSVCP_char_traits_wchar_length(find));
@@ -2664,12 +2660,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_first_of_cstr(
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_not_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off, size_t len)
 {
     const wchar_t *p, *beg;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && this->size>0) {
         if(off >= this->size)
@@ -2687,8 +2683,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_not_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -2697,8 +2693,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of(
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_not_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(this, &ch, off, 1);
 }
@@ -2706,8 +2702,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_ch(
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?find_last_not_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_not_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_not_of_cstr_substr(
             this, find, off, MSVCP_char_traits_wchar_length(find));
@@ -2716,12 +2712,12 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_not_of_cstr(
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGII@Z */
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_of_cstr_substr, 16)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr_substr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off, MSVCP_size_t len)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr_substr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off, size_t len)
 {
     const wchar_t *p, *beg;
 
-    TRACE("%p %p %lu %lu\n", this, find, off, len);
+    TRACE("%p %p %Iu %Iu\n", this, find, off, len);
 
     if(len>0 && this->size>0) {
         if(off >= this->size)
@@ -2739,8 +2735,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr_substr(
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIABV12@I@Z */
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KAEBV12@_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_of, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of(
-        const basic_string_wchar *this, const basic_string_wchar *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_of(
+        const basic_string_wchar *this, const basic_string_wchar *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_of_cstr_substr(this,
             find->ptr, off, find->size);
@@ -2749,8 +2745,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of(
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIGI@Z */
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_of_ch, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_ch(
-        const basic_string_wchar *this, wchar_t ch, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_of_ch(
+        const basic_string_wchar *this, wchar_t ch, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_of_cstr_substr(this, &ch, off, 1);
 }
@@ -2758,8 +2754,8 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_ch(
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPBGI@Z */
 /* ?find_last_of@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_find_last_of_cstr, 12)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr(
-        const basic_string_wchar *this, const wchar_t *find, MSVCP_size_t off)
+size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr(
+        const basic_string_wchar *this, const wchar_t *find, size_t off)
 {
     return MSVCP_basic_string_wchar_find_last_of_cstr_substr(
             this, find, off, MSVCP_char_traits_wchar_length(find));
@@ -2769,9 +2765,9 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_find_last_of_cstr(
 /* ?append@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@AEBV12@_K1@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_append_substr, 16)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_append_substr(basic_string_wchar *this,
-        const basic_string_wchar *append, MSVCP_size_t offset, MSVCP_size_t count)
+        const basic_string_wchar *append, size_t offset, size_t count)
 {
-    TRACE("%p %p %lu %lu\n", this, append, offset, count);
+    TRACE("%p %p %Iu %Iu\n", this, append, offset, count);
 
     if(append->size < offset)
         _Xran();
@@ -2796,9 +2792,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_append_substr(basic_stri
 /* ?append@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@PEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_append_cstr_len, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_append_cstr_len(
-        basic_string_wchar *this, const wchar_t *append, MSVCP_size_t count)
+        basic_string_wchar *this, const wchar_t *append, size_t count)
 {
-    TRACE("%p %s %lu\n", this, debugstr_wn(append, count), count);
+    TRACE("%p %s %Iu\n", this, debugstr_wn(append, count), count);
 
     if(basic_string_wchar_inside(this, append))
         return MSVCP_basic_string_wchar_append_substr(this, this, append-this->ptr, count);
@@ -2819,9 +2815,9 @@ basic_string_wchar* __thiscall MSVCP_basic_string_wchar_append_cstr_len(
 /* ?append@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KG@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_append_len_ch, 12)
 basic_string_wchar* __thiscall MSVCP_basic_string_wchar_append_len_ch(
-        basic_string_wchar *this, MSVCP_size_t count, wchar_t ch)
+        basic_string_wchar *this, size_t count, wchar_t ch)
 {
-    TRACE("%p %lu %c\n", this, count, ch);
+    TRACE("%p %Iu %c\n", this, count, ch);
 
     if(MSVCP_basic_string_wchar_npos-this->size <= count)
         _Xlen();
@@ -2884,7 +2880,7 @@ basic_string_wchar* __cdecl MSVCP_basic_string_wchar_concatenate(basic_string_wc
 {
     TRACE("%p %p\n", left, right);
 
-    MSVCP_basic_string_wchar_copy_ctor(ret, left);
+    basic_string_wchar_copy_ctor(ret, left);
     MSVCP_basic_string_wchar_append(ret, right);
     return ret;
 }
@@ -2898,7 +2894,7 @@ basic_string_wchar* __cdecl MSVCP_basic_string_wchar_concatenate_bstr_ch(basic_s
 {
     TRACE("%p %c\n", left, right);
 
-    MSVCP_basic_string_wchar_copy_ctor(ret, left);
+    basic_string_wchar_copy_ctor(ret, left);
     MSVCP_basic_string_wchar_append_ch(ret, right);
     return ret;
 }
@@ -2912,7 +2908,7 @@ basic_string_wchar* __cdecl MSVCP_basic_string_wchar_concatenate_bstr_cstr(basic
 {
     TRACE("%p %s\n", left, debugstr_w(right));
 
-    MSVCP_basic_string_wchar_copy_ctor(ret, left);
+    basic_string_wchar_copy_ctor(ret, left);
     MSVCP_basic_string_wchar_append_cstr(ret, right);
     return ret;
 }
@@ -2949,9 +2945,9 @@ basic_string_wchar* __cdecl MSVCP_basic_string_wchar_concatenate_cstr_bstr(basic
 /* ??A?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_operator_at, 8)
 wchar_t* __thiscall MSVCP_basic_string_wchar_operator_at(
-        basic_string_wchar *this, MSVCP_size_t pos)
+        basic_string_wchar *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(!this->ptr || pos>this->size)
         return (wchar_t*)basic_string_wchar__Nullstr();
@@ -2964,9 +2960,9 @@ wchar_t* __thiscall MSVCP_basic_string_wchar_operator_at(
 /* ??A?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAAEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_operator_at_const, 8)
 const wchar_t* __thiscall MSVCP_basic_string_wchar_operator_at_const(
-        const basic_string_wchar *this, MSVCP_size_t pos)
+        const basic_string_wchar *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(!this->ptr)
         return basic_string_wchar__Nullstr();
@@ -2979,9 +2975,9 @@ const wchar_t* __thiscall MSVCP_basic_string_wchar_operator_at_const(
 /* ?at@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBAAEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_at, 8)
 wchar_t* __thiscall MSVCP_basic_string_wchar_at(
-        basic_string_wchar *this, MSVCP_size_t pos)
+        basic_string_wchar *this, size_t pos)
 {
-    TRACE("%p %lu\n", this, pos);
+    TRACE("%p %Iu\n", this, pos);
 
     if(this->size <= pos)
         _Xran();
@@ -2993,12 +2989,12 @@ wchar_t* __thiscall MSVCP_basic_string_wchar_at(
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0PEBG0@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_cstr_len, 20)
 basic_string_wchar* __thiscall basic_string_wchar_replace_cstr_len(basic_string_wchar *this,
-        MSVCP_size_t off, MSVCP_size_t len, const wchar_t *str, MSVCP_size_t str_len)
+        size_t off, size_t len, const wchar_t *str, size_t str_len)
 {
-    MSVCP_size_t inside_pos = -1;
+    size_t inside_pos = -1;
     wchar_t *ptr = this->ptr;
 
-    TRACE("%p %ld %ld %p %ld\n", this, off, len, str, str_len);
+    TRACE("%p %Iu %Iu %p %Iu\n", this, off, len, str, str_len);
 
     if(this->size < off)
         _Xran();
@@ -3023,7 +3019,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_cstr_len(basic_string_
         memmove(ptr+off, ptr+inside_pos, str_len*sizeof(char));
         memmove(ptr+off+str_len, ptr+off+len, (this->size-off-len)*sizeof(char));
     } else {
-        MSVCP_size_t size;
+        size_t size;
 
         memmove(ptr+off+str_len, ptr+off+len, (this->size-off-len)*sizeof(char));
 
@@ -3048,8 +3044,8 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_cstr_len(basic_string_
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QAEAAV12@IIABV12@II@Z */
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0AEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_substr, 24)
-basic_string_wchar* __thiscall basic_string_wchar_replace_substr(basic_string_wchar *this, MSVCP_size_t off,
-        MSVCP_size_t len, const basic_string_wchar *str, MSVCP_size_t str_off, MSVCP_size_t str_len)
+basic_string_wchar* __thiscall basic_string_wchar_replace_substr(basic_string_wchar *this, size_t off,
+        size_t len, const basic_string_wchar *str, size_t str_off, size_t str_len)
 {
     if(str->size < str_off)
         _Xran();
@@ -3065,7 +3061,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_substr(basic_string_wc
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0AEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace, 16)
 basic_string_wchar* __thiscall basic_string_wchar_replace(basic_string_wchar *this,
-        MSVCP_size_t off, MSVCP_size_t len, const basic_string_wchar *str)
+        size_t off, size_t len, const basic_string_wchar *str)
 {
     return basic_string_wchar_replace_cstr_len(this, off, len,
             str->ptr, str->size);
@@ -3075,11 +3071,11 @@ basic_string_wchar* __thiscall basic_string_wchar_replace(basic_string_wchar *th
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K00G@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_ch, 20)
 basic_string_wchar* __thiscall basic_string_wchar_replace_ch(basic_string_wchar *this,
-        MSVCP_size_t off, MSVCP_size_t len, MSVCP_size_t count, wchar_t ch)
+        size_t off, size_t len, size_t count, wchar_t ch)
 {
     wchar_t *ptr;
 
-    TRACE("%p %ld %ld %ld %c\n", this, off, len, count, ch);
+    TRACE("%p %Iu %Iu %Iu %c\n", this, off, len, count, ch);
 
     if(this->size < off)
         _Xran();
@@ -3105,7 +3101,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_ch(basic_string_wchar 
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0PEBG@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_cstr, 16)
 basic_string_wchar* __thiscall basic_string_wchar_replace_cstr(basic_string_wchar *this,
-        MSVCP_size_t off, MSVCP_size_t len, const wchar_t *str)
+        size_t off, size_t len, const wchar_t *str)
 {
     return basic_string_wchar_replace_cstr_len(this, off, len, str,
             MSVCP_char_traits_wchar_length(str));
@@ -3115,7 +3111,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_cstr(basic_string_wcha
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KAEBV12@@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert, 12)
 basic_string_wchar* __thiscall basic_string_wchar_insert(basic_string_wchar *this,
-        MSVCP_size_t off, const basic_string_wchar *str)
+        size_t off, const basic_string_wchar *str)
 {
     return basic_string_wchar_replace(this, off, 0, str);
 }
@@ -3124,8 +3120,8 @@ basic_string_wchar* __thiscall basic_string_wchar_insert(basic_string_wchar *thi
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KAEBV12@00@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_substr, 20)
 basic_string_wchar* __thiscall basic_string_wchar_insert_substr(
-        basic_string_wchar *this, MSVCP_size_t off, const basic_string_wchar *str,
-        MSVCP_size_t str_off, MSVCP_size_t str_count)
+        basic_string_wchar *this, size_t off, const basic_string_wchar *str,
+        size_t str_off, size_t str_count)
 {
     return basic_string_wchar_replace_substr(this, off, 0, str, str_off, str_count);
 }
@@ -3134,7 +3130,7 @@ basic_string_wchar* __thiscall basic_string_wchar_insert_substr(
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KPEBG@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_cstr, 12)
 basic_string_wchar* __thiscall basic_string_wchar_insert_cstr(
-        basic_string_wchar *this, MSVCP_size_t off, const wchar_t *str)
+        basic_string_wchar *this, size_t off, const wchar_t *str)
 {
     return basic_string_wchar_replace_cstr(this, off, 0, str);
 }
@@ -3143,7 +3139,7 @@ basic_string_wchar* __thiscall basic_string_wchar_insert_cstr(
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_KPEBG0@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_cstr_len, 16)
 basic_string_wchar* __thiscall basic_string_wchar_insert_cstr_len(basic_string_wchar *this,
-        MSVCP_size_t off, const wchar_t *str, MSVCP_size_t str_len)
+        size_t off, const wchar_t *str, size_t str_len)
 {
     return basic_string_wchar_replace_cstr_len(this, off, 0, str, str_len);
 }
@@ -3152,7 +3148,7 @@ basic_string_wchar* __thiscall basic_string_wchar_insert_cstr_len(basic_string_w
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@_K0G@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_chn, 16)
 basic_string_wchar* __thiscall basic_string_wchar_insert_chn(basic_string_wchar *this,
-        MSVCP_size_t off, MSVCP_size_t count, wchar_t ch)
+        size_t off, size_t count, wchar_t ch)
 {
     return basic_string_wchar_replace_ch(this, off, 0, count, ch);
 }
@@ -3161,9 +3157,9 @@ basic_string_wchar* __thiscall basic_string_wchar_insert_chn(basic_string_wchar 
 /* ?resize@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAX_KG@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_resize_ch, 12)
 void __thiscall MSVCP_basic_string_wchar_resize_ch(
-        basic_string_wchar *this, MSVCP_size_t size, wchar_t ch)
+        basic_string_wchar *this, size_t size, wchar_t ch)
 {
-    TRACE("%p %lu %c\n", this, size, ch);
+    TRACE("%p %Iu %c\n", this, size, ch);
 
     if(size <= this->size)
         MSVCP_basic_string_wchar_erase(this, size, this->size);
@@ -3175,7 +3171,7 @@ void __thiscall MSVCP_basic_string_wchar_resize_ch(
 /* ?resize@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_resize, 8)
 void __thiscall MSVCP_basic_string_wchar_resize(
-        basic_string_wchar *this, MSVCP_size_t size)
+        basic_string_wchar *this, size_t size)
 {
     MSVCP_basic_string_wchar_resize_ch(this, size, '\0');
 }
@@ -3196,7 +3192,7 @@ const wchar_t* __thiscall MSVCP_basic_string_wchar_c_str(const basic_string_wcha
 /* ?length@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIXZ */
 /* ?length@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_length, 4)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_length(const basic_string_wchar *this)
+size_t __thiscall MSVCP_basic_string_wchar_length(const basic_string_wchar *this)
 {
     TRACE("%p\n", this);
     return this->size;
@@ -3205,7 +3201,7 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_length(const basic_string_wchar
 /* ?max_size@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIXZ */
 /* ?max_size@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_max_size, 4)
-MSVCP_size_t __thiscall basic_string_wchar_max_size(const basic_string_wchar *this)
+size_t __thiscall basic_string_wchar_max_size(const basic_string_wchar *this)
 {
     TRACE("%p\n", this);
     return MSVCP_allocator_wchar_max_size(NULL)-1;
@@ -3214,7 +3210,7 @@ MSVCP_size_t __thiscall basic_string_wchar_max_size(const basic_string_wchar *th
 /* ?capacity@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIXZ */
 /* ?capacity@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_capacity, 4)
-MSVCP_size_t __thiscall MSVCP_basic_string_wchar_capacity(basic_string_wchar *this)
+size_t __thiscall MSVCP_basic_string_wchar_capacity(basic_string_wchar *this)
 {
     TRACE("%p\n", this);
     return this->res;
@@ -3223,11 +3219,11 @@ MSVCP_size_t __thiscall MSVCP_basic_string_wchar_capacity(basic_string_wchar *th
 /* ?reserve@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QAEXI@Z */
 /* ?reserve@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAX_K@Z */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_reserve, 8)
-void __thiscall MSVCP_basic_string_wchar_reserve(basic_string_wchar *this, MSVCP_size_t size)
+void __thiscall MSVCP_basic_string_wchar_reserve(basic_string_wchar *this, size_t size)
 {
-    MSVCP_size_t len;
+    size_t len;
 
-    TRACE("%p %ld\n", this, size);
+    TRACE("%p %Iu\n", this, size);
 
     len = this->size;
     if(len > size)
@@ -3240,7 +3236,7 @@ void __thiscall MSVCP_basic_string_wchar_reserve(basic_string_wchar *this, MSVCP
 /* ?empty@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBE_NXZ */
 /* ?empty@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_NXZ */
 DEFINE_THISCALL_WRAPPER(MSVCP_basic_string_wchar_empty, 4)
-MSVCP_bool __thiscall MSVCP_basic_string_wchar_empty(basic_string_wchar *this)
+bool __thiscall MSVCP_basic_string_wchar_empty(basic_string_wchar *this)
 {
     TRACE("%p\n", this);
     return this->size == 0;
@@ -3263,9 +3259,9 @@ void __thiscall basic_string_wchar_swap(basic_string_wchar *this, basic_string_w
 /* ?substr@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA?AV12@_K0@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_substr, 16)
 basic_string_wchar* __thiscall basic_string_wchar_substr(basic_string_wchar *this,
-        basic_string_wchar *ret, MSVCP_size_t off, MSVCP_size_t len)
+        basic_string_wchar *ret, size_t off, size_t len)
 {
-    TRACE("%p %lu %lu\n", this, off, len);
+    TRACE("%p %Iu %Iu\n", this, off, len);
 
     MSVCP_basic_string_wchar_ctor_substr_alloc(ret, this, off, len, NULL);
     return ret;
@@ -3274,10 +3270,10 @@ basic_string_wchar* __thiscall basic_string_wchar_substr(basic_string_wchar *thi
 /* ?copy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QBEIPAGII@Z */
 /* ?copy@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEBA_KPEAG_K1@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_copy, 16)
-MSVCP_size_t __thiscall basic_string_wchar_copy(const basic_string_wchar *this,
-        wchar_t *dest, MSVCP_size_t count, MSVCP_size_t off)
+size_t __thiscall basic_string_wchar_copy(const basic_string_wchar *this,
+        wchar_t *dest, size_t count, size_t off)
 {
-    TRACE("%p %p %lu %lu\n", this, dest, count, off);
+    TRACE("%p %p %Iu %Iu\n", this, dest, count, off);
 
     if(off > this->size)
         _Xran();
@@ -3301,7 +3297,7 @@ allocator* __thiscall basic_string_wchar_get_allocator(const basic_string_wchar 
 
 /* ?_Pdif@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CAIPBD0@Z */
 /* ?_Pdif@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@CA_KPEBD0@Z */
-MSVCP_size_t __cdecl basic_string_char__Pdif(const char *i1, const char *i2)
+size_t __cdecl basic_string_char__Pdif(const char *i1, const char *i2)
 {
     TRACE("(%p %p)\n", i1, i2);
     return !i1 ? 0 : i1-i2;
@@ -3312,7 +3308,7 @@ MSVCP_size_t __cdecl basic_string_char__Pdif(const char *i1, const char *i2)
 DEFINE_THISCALL_WRAPPER(basic_string_char_erase_iter, 12)
 char* __thiscall basic_string_char_erase_iter(basic_string_char *this, char *beg, char *end)
 {
-    MSVCP_size_t pos = basic_string_char__Pdif(beg, this->ptr);
+    size_t pos = basic_string_char__Pdif(beg, this->ptr);
     MSVCP_basic_string_char_erase(this, pos, basic_string_char__Pdif(end, beg));
     return basic_string_char__Psum(this->ptr, pos);
 }
@@ -3341,7 +3337,7 @@ basic_string_char* __thiscall basic_string_char_replace_iter_bstr(basic_string_c
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@PEAD0_KD@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_iter_chn, 20)
 basic_string_char* __thiscall basic_string_char_replace_iter_chn(basic_string_char *this,
-        char *beg, char *end, MSVCP_size_t count, char ch)
+        char *beg, char *end, size_t count, char ch)
 {
     return basic_string_char_replace_ch(this, basic_string_char__Pdif(beg, this->ptr),
             basic_string_char__Pdif(end, beg), count, ch);
@@ -3361,7 +3357,7 @@ basic_string_char* __thiscall basic_string_char_replace_iter_cstr(basic_string_c
 /* ?replace@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAAEAV12@PEAD0PEBD_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_replace_iter_cstr_len, 20)
 basic_string_char* __thiscall basic_string_char_replace_iter_cstr_len(basic_string_char *this,
-        char *beg, char *end, const char *str, MSVCP_size_t len)
+        char *beg, char *end, const char *str, size_t len)
 {
     return basic_string_char_replace_cstr_len(this, basic_string_char__Pdif(beg, this->ptr),
             basic_string_char__Pdif(end, beg), str, len);
@@ -3371,7 +3367,7 @@ basic_string_char* __thiscall basic_string_char_replace_iter_cstr_len(basic_stri
 /* ?insert@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QEAAXPEAD_KD@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_iter_chn, 16)
 void __thiscall basic_string_char_insert_iter_chn(basic_string_char *this,
-        char *pos, MSVCP_size_t n, char ch)
+        char *pos, size_t n, char ch)
 {
     basic_string_char_insert_chn(this, basic_string_char__Pdif(pos, this->ptr), n, ch);
 }
@@ -3381,7 +3377,7 @@ void __thiscall basic_string_char_insert_iter_chn(basic_string_char *this,
 DEFINE_THISCALL_WRAPPER(basic_string_char_insert_iter_ch, 12)
 char* __thiscall basic_string_char_insert_iter_ch(basic_string_char *this, char *pos, char ch)
 {
-    MSVCP_size_t off = basic_string_char__Pdif(pos, this->ptr);
+    size_t off = basic_string_char__Pdif(pos, this->ptr);
     basic_string_char_insert_chn(this, off, 1, ch);
     return basic_string_char__Psum(this->ptr, off);
 }
@@ -3461,7 +3457,7 @@ void __thiscall basic_string_char_insert_iter(basic_string_char *this,
 
 /* ?_Pdif@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CAIPBG0@Z */
 /* ?_Pdif@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@CA_KPEBG0@Z */
-MSVCP_size_t __cdecl basic_string_wchar__Pdif(const wchar_t *i1, const wchar_t *i2)
+size_t __cdecl basic_string_wchar__Pdif(const wchar_t *i1, const wchar_t *i2)
 {
     TRACE("(%p %p)\n", i1, i2);
     return !i1 ? 0 : i1-i2;
@@ -3472,7 +3468,7 @@ MSVCP_size_t __cdecl basic_string_wchar__Pdif(const wchar_t *i1, const wchar_t *
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_erase_iter, 12)
 wchar_t* __thiscall basic_string_wchar_erase_iter(basic_string_wchar *this, wchar_t *beg, wchar_t *end)
 {
-    MSVCP_size_t pos = basic_string_wchar__Pdif(beg, this->ptr);
+    size_t pos = basic_string_wchar__Pdif(beg, this->ptr);
     MSVCP_basic_string_wchar_erase(this, pos, basic_string_wchar__Pdif(end, beg));
     return basic_string_wchar__Psum(this->ptr, pos);
 }
@@ -3514,7 +3510,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_iter_bstr(basic_string
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@PEAG0_KG@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_iter_chn, 20)
 basic_string_wchar* __thiscall basic_string_wchar_replace_iter_chn(basic_string_wchar *this,
-        wchar_t *beg, wchar_t *end, MSVCP_size_t count, wchar_t ch)
+        wchar_t *beg, wchar_t *end, size_t count, wchar_t ch)
 {
     return basic_string_wchar_replace_ch(this, basic_string_wchar__Pdif(beg, this->ptr),
             basic_string_wchar__Pdif(end, beg), count, ch);
@@ -3534,7 +3530,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_iter_cstr(basic_string
 /* ?replace@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAAEAV12@PEAG0PEBG_K@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_replace_iter_cstr_len, 20)
 basic_string_wchar* __thiscall basic_string_wchar_replace_iter_cstr_len(basic_string_wchar *this,
-        wchar_t *beg, wchar_t *end, const wchar_t *str, MSVCP_size_t len)
+        wchar_t *beg, wchar_t *end, const wchar_t *str, size_t len)
 {
     return basic_string_wchar_replace_cstr_len(this, basic_string_wchar__Pdif(beg, this->ptr),
             basic_string_wchar__Pdif(end, beg), str, len);
@@ -3544,7 +3540,7 @@ basic_string_wchar* __thiscall basic_string_wchar_replace_iter_cstr_len(basic_st
 /* ?insert@?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@QEAAXPEAG_KG@Z */
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_iter_chn, 16)
 void __thiscall basic_string_wchar_insert_iter_chn(basic_string_wchar *this,
-        wchar_t *pos, MSVCP_size_t n, wchar_t ch)
+        wchar_t *pos, size_t n, wchar_t ch)
 {
     basic_string_wchar_insert_chn(this, basic_string_wchar__Pdif(pos, this->ptr), n, ch);
 }
@@ -3554,7 +3550,7 @@ void __thiscall basic_string_wchar_insert_iter_chn(basic_string_wchar *this,
 DEFINE_THISCALL_WRAPPER(basic_string_wchar_insert_iter_ch, 12)
 wchar_t* __thiscall basic_string_wchar_insert_iter_ch(basic_string_wchar *this, wchar_t *pos, wchar_t ch)
 {
-    MSVCP_size_t off = basic_string_wchar__Pdif(pos, this->ptr);
+    size_t off = basic_string_wchar__Pdif(pos, this->ptr);
     basic_string_wchar_insert_chn(this, off, 1, ch);
     return basic_string_wchar__Psum(this->ptr, off);
 }

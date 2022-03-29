@@ -1,7 +1,16 @@
+EXTRADEFS = -DWINE_NO_LONG_TYPES
 MODULE    = winepulse.drv
+<<<<<<< HEAD
 IMPORTS   = dxguid uuid winmm user32 advapi32 ole32 version
 EXTRALIBS = $(PULSE_LIBS) $(PTHREAD_LIBS)
+=======
+UNIXLIB   = winepulse.so
+IMPORTS   = dxguid uuid winmm user32 advapi32 ole32 version
+EXTRALIBS = $(PULSE_LIBS) $(PTHREAD_LIBS) -lm
+>>>>>>> master
 EXTRAINCL = $(PULSE_CFLAGS)
 
 C_SRCS = \
-	mmdevdrv.c
+	mmdevdrv.c \
+	mult.c \
+	pulse.c

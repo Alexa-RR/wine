@@ -566,7 +566,7 @@ static void __cdecl test_invalid_parameter_handler(const wchar_t *expression,
     ok(function == NULL, "function is not NULL\n");
     ok(file == NULL, "file is not NULL\n");
     ok(line == 0, "line = %u\n", line);
-    ok(arg == 0, "arg = %lx\n", (UINT_PTR)arg);
+    ok(arg == 0, "arg = %Ix\n", arg);
     invalid_parameter++;
 }
 
@@ -1922,9 +1922,9 @@ static void test_istream_tellg(void)
             call_func2_ptr_fpos(p_basic_istream_char_seekg_fpos, &ss.base.base1, spos);
         rpos = call_func2(p_basic_istream_char_tellg, &ss.base.base1, &tpos);
 
-        ok(tests[i].telloff_ss == tpos.off, "wrong offset, expected = %ld found = %ld\n", tests[i].telloff_ss, tpos.off);
+        ok(tests[i].telloff_ss == tpos.off, "wrong offset, expected = %Id found = %Id\n", tests[i].telloff_ss, tpos.off);
         if (tests[i].telloff_ss != -1 && spos.off != -1) /* check if tell == seek but only if not hit EOF */
-            ok(spos.off == tpos.off, "tell doesn't match seek, seek = %ld tell = %ld\n", spos.off, tpos.off);
+            ok(spos.off == tpos.off, "tell doesn't match seek, seek = %Id tell = %Id\n", spos.off, tpos.off);
         ok(rpos == &tpos, "wrong return fpos, expected = %p found = %p\n", rpos, &tpos);
         ok(tpos.pos == 0, "wrong position, expected = 0 found = %s\n", wine_dbgstr_longlong(tpos.pos));
         ok(tpos.state == 0, "wrong state, expected = 0 found = %d\n", tpos.state);
@@ -1953,9 +1953,9 @@ static void test_istream_tellg(void)
             call_func2_ptr_fpos(p_basic_istream_wchar_seekg_fpos, &wss.base.base1, spos);
         rpos = call_func2(p_basic_istream_wchar_tellg, &wss.base.base1, &tpos);
 
-        ok(tests[i].telloff_ss == tpos.off, "wrong offset, expected = %ld found = %ld\n", tests[i].telloff_ss, tpos.off);
+        ok(tests[i].telloff_ss == tpos.off, "wrong offset, expected = %Id found = %Id\n", tests[i].telloff_ss, tpos.off);
         if (tests[i].telloff_ss != -1 && spos.off != -1) /* check if tell == seek but only if not hit EOF */
-            ok(spos.off == tpos.off, "tell doesn't match seek, seek = %ld tell = %ld\n", spos.off, tpos.off);
+            ok(spos.off == tpos.off, "tell doesn't match seek, seek = %Id tell = %Id\n", spos.off, tpos.off);
         ok(rpos == &tpos, "wrong return fpos, expected = %p found = %p\n", rpos, &tpos);
         ok(tpos.pos == 0, "wrong position, expected = 0 found = %s\n", wine_dbgstr_longlong(tpos.pos));
         ok(tpos.state == 0, "wrong state, expected = 0 found = %d\n", tpos.state);
@@ -1969,7 +1969,7 @@ static void test_istream_tellg(void)
 
         /* filebuf */
         file = fopen(testfile, "wt");
-        fprintf(file, tests[i].str);
+        fprintf(file, "%s", tests[i].str);
         fclose(file);
 
         /* fstream<char> version */
@@ -1990,7 +1990,7 @@ static void test_istream_tellg(void)
         ok(tests[i].tellpos == tpos.pos, "wrong filepos, expected = %s found = %s\n",
             wine_dbgstr_longlong(tests[i].tellpos), wine_dbgstr_longlong(tpos.pos));
         ok(rpos == &tpos, "wrong return fpos, expected = %p found = %p\n", rpos, &tpos);
-        ok(tpos.off == tests[i].telloff_fs, "wrong offset, expected %ld found %ld\n", tests[i].telloff_fs, tpos.off);
+        ok(tpos.off == tests[i].telloff_fs, "wrong offset, expected %Id found %Id\n", tests[i].telloff_fs, tpos.off);
         ok(tpos.state == 0, "wrong state, expected = 0 found = %d\n", tpos.state);
 
         call_func1(p_basic_fstream_char_vbase_dtor, &fs);
@@ -2013,7 +2013,7 @@ static void test_istream_tellg(void)
         ok(tests[i].tellpos == tpos.pos, "wrong filepos, expected = %s found = %s\n",
             wine_dbgstr_longlong(tests[i].tellpos), wine_dbgstr_longlong(tpos.pos));
         ok(rpos == &tpos, "wrong return fpos, expected = %p found = %p\n", rpos, &tpos);
-        ok(tpos.off == tests[i].telloff_fs, "wrong offset, expected %ld found %ld\n", tests[i].telloff_fs, tpos.off);
+        ok(tpos.off == tests[i].telloff_fs, "wrong offset, expected %Id found %Id\n", tests[i].telloff_fs, tpos.off);
         ok(tpos.state == 0, "wrong state, expected = 0 found = %d\n", tpos.state);
 
         call_func1(p_basic_fstream_wchar_vbase_dtor, &wfs);
@@ -2111,8 +2111,6 @@ static void test_istream_getline(void)
 
 static void test_ostream_print_ushort(void)
 {
-    static const wchar_t str65[] = { '6','5',0 };
-
     basic_stringstream_wchar wss;
     basic_string_wchar pwstr;
     const wchar_t *wstr;
@@ -2122,7 +2120,7 @@ static void test_ostream_print_ushort(void)
 
     call_func2(p_basic_stringstream_wchar_str_get, &wss, &pwstr);
     wstr = call_func1(p_basic_string_wchar_cstr, &pwstr);
-    ok(!lstrcmpW(str65, wstr), "wstr = %s\n", wine_dbgstr_w(wstr));
+    ok(!lstrcmpW(L"65", wstr), "wstr = %s\n", wine_dbgstr_w(wstr));
 
     call_func1(p_basic_string_wchar_dtor, &pwstr);
     call_func1(p_basic_stringstream_wchar_vbase_dtor, &wss);
@@ -2130,8 +2128,6 @@ static void test_ostream_print_ushort(void)
 
 static void test_ostream_print_float(void)
 {
-    static const char float_str[] = "3.14159";
-
     basic_stringstream_char ss;
     basic_string_char pstr;
     const char *str;
@@ -2142,7 +2138,7 @@ static void test_ostream_print_float(void)
     call_func2_ptr_flt(p_basic_ostream_char_print_float, &ss.base.base2, val);
     call_func2(p_basic_stringstream_char_str_get, &ss, &pstr);
     str = call_func1(p_basic_string_char_cstr, &pstr);
-    ok(!strcmp(float_str, str), "str = %s\n", str);
+    ok(!strcmp("3.14159", str), "str = %s\n", str);
 
     call_func1(p_basic_string_char_dtor, &pstr);
     call_func1(p_basic_stringstream_char_vbase_dtor, &ss);
@@ -2150,8 +2146,6 @@ static void test_ostream_print_float(void)
 
 static void test_ostream_print_double(void)
 {
-    static const char double_str[] = "3.14159";
-
     basic_stringstream_char ss;
     basic_string_char pstr;
     const char *str;
@@ -2162,7 +2156,7 @@ static void test_ostream_print_double(void)
     call_func2_ptr_dbl(p_basic_ostream_char_print_double, &ss.base.base2, val);
     call_func2(p_basic_stringstream_char_str_get, &ss, &pstr);
     str = call_func1(p_basic_string_char_cstr, &pstr);
-    ok(!strcmp(double_str, str), "str = %s\n", str);
+    ok(!strcmp("3.14159", str), "str = %s\n", str);
 
     call_func1(p_basic_string_char_dtor, &pstr);
     call_func1(p_basic_stringstream_char_vbase_dtor, &ss);
@@ -2170,8 +2164,6 @@ static void test_ostream_print_double(void)
 
 static void test_ostream_wchar_print_double(void)
 {
-    static const wchar_t double_str[] = { '3', '.', '1', '4', '1', '5', '9', 0 };
-
     basic_stringstream_wchar wss;
     basic_string_wchar pwstr;
     const wchar_t *wstr;
@@ -2184,7 +2176,7 @@ static void test_ostream_wchar_print_double(void)
     call_func2(p_basic_stringstream_wchar_str_get, &wss, &pwstr);
     wstr = call_func1(p_basic_string_wchar_cstr, &pwstr);
 
-    ok(!lstrcmpW(double_str, wstr), "wstr = %s\n", wine_dbgstr_w(wstr));
+    ok(!lstrcmpW(L"3.14159", wstr), "wstr = %s\n", wine_dbgstr_w(wstr));
     call_func1(p_basic_string_wchar_dtor, &pwstr);
     call_func1(p_basic_stringstream_wchar_vbase_dtor, &wss);
 }

@@ -211,26 +211,6 @@ static BOOL parse_rundll(context_t * cx)
 }
 
 /*****************************************************
- *      DllMain
- */
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-{
-    TRACE("(%p, %d, %p)\n",hinstDLL, fdwReason, lpvReserved);
-
-    switch(fdwReason)
-    {
-        case DLL_WINE_PREATTACH:
-            return FALSE;           /* prefer native version */
-
-        case DLL_PROCESS_ATTACH:
-            DisableThreadLibraryCalls( hinstDLL );
-            break;
-    }
-    return TRUE;
-}
-
-
-/*****************************************************
  *  PrintUIEntryW                [printui.@]
  *  Commandline-Interface for using printui.dll with rundll32.exe
  *
@@ -240,7 +220,7 @@ void WINAPI PrintUIEntryW(HWND hWnd, HINSTANCE hInst, LPCWSTR pCommand, DWORD nC
     context_t cx;
     BOOL  res = FALSE;
 
-    TRACE("(%p, %p, %s, 0x%x)\n", hWnd, hInst, debugstr_w(pCommand), nCmdShow);
+    TRACE("(%p, %p, %s, 0x%lx)\n", hWnd, hInst, debugstr_w(pCommand), nCmdShow);
 
     memset(&cx, 0, sizeof(context_t));
     cx.hWnd = hWnd;

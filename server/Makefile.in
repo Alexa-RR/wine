@@ -35,7 +35,6 @@ C_SRCS = \
 	semaphore.c \
 	serial.c \
 	signal.c \
-	snapshot.c \
 	sock.c \
 	symlink.c \
 	thread.c \
@@ -52,4 +51,6 @@ MANPAGES = \
 	wineserver.fr.UTF-8.man.in \
 	wineserver.man.in
 
-EXTRALIBS = $(LDEXECFLAGS) $(POLL_LIBS) $(RT_LIBS) $(INOTIFY_LIBS)
+EXTRALIBS = $(LDEXECFLAGS) $(RT_LIBS) $(INOTIFY_LIBS) $(PROCSTAT_LIBS)
+
+unicode_EXTRADEFS = -DNLSDIR="\"${nlsdir}\"" -DBIN_TO_NLSDIR=\"`${MAKEDEP} -R ${bindir} ${nlsdir}`\"

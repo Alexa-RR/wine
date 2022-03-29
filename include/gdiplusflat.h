@@ -220,6 +220,9 @@ GpStatus WINGDIPAPI GdipEnumerateMetafileDestRectI(GpGraphics*,GDIPCONST GpMetaf
 GpStatus WINGDIPAPI GdipEnumerateMetafileSrcRectDestPoints(GpGraphics*,
     GDIPCONST GpMetafile*,GDIPCONST GpPointF*,INT,GDIPCONST GpRectF*,Unit,
     EnumerateMetafileProc,VOID*,GDIPCONST GpImageAttributes*);
+GpStatus WINGDIPAPI GdipEnumerateMetafileSrcRectDestRect( GpGraphics*, GDIPCONST GpMetafile*,
+    GDIPCONST GpRectF* , GDIPCONST GpRectF*, Unit, EnumerateMetafileProc, VOID*,
+    GDIPCONST GpImageAttributes*);
 GpStatus WINGDIPAPI GdipFillClosedCurve2(GpGraphics*,GpBrush*,GDIPCONST GpPointF*,INT,
     REAL,GpFillMode);
 GpStatus WINGDIPAPI GdipFillClosedCurve2I(GpGraphics*,GpBrush*,GDIPCONST GpPoint*,INT,
@@ -258,6 +261,7 @@ GpStatus WINGDIPAPI GdipGetNearestColor(GpGraphics*,ARGB*);
 GpStatus WINGDIPAPI GdipGetPageScale(GpGraphics*,REAL*);
 GpStatus WINGDIPAPI GdipGetPageUnit(GpGraphics*,GpUnit*);
 GpStatus WINGDIPAPI GdipGetPixelOffsetMode(GpGraphics*,PixelOffsetMode*);
+GpStatus WINGDIPAPI GdipGetRenderingOrigin(GpGraphics*,INT*,INT*);
 GpStatus WINGDIPAPI GdipGetSmoothingMode(GpGraphics*,SmoothingMode*);
 GpStatus WINGDIPAPI GdipGetTextContrast(GpGraphics*,UINT*);
 GpStatus WINGDIPAPI GdipGetTextRenderingHint(GpGraphics*,TextRenderingHint*);
@@ -545,6 +549,7 @@ GpStatus WINGDIPAPI GdipCreateMetafileFromWmfFile(GDIPCONST WCHAR*, GDIPCONST Wm
     GpMetafile**);
 GpStatus WINGDIPAPI GdipCreateMetafileFromFile(GDIPCONST WCHAR*,GpMetafile**);
 GpStatus WINGDIPAPI GdipCreateMetafileFromStream(IStream*,GpMetafile**);
+GpStatus WINGDIPAPI GdipGetMetafileDownLevelRasterizationLimit(GDIPCONST GpMetafile*,UINT*);
 GpStatus WINGDIPAPI GdipGetHemfFromMetafile(GpMetafile*,HENHMETAFILE*);
 GpStatus WINGDIPAPI GdipPlayMetafileRecord(GDIPCONST GpMetafile*,EmfPlusRecordType,UINT,UINT,GDIPCONST BYTE*);
 GpStatus WINGDIPAPI GdipSetMetafileDownLevelRasterizationLimit(GpMetafile*,UINT);

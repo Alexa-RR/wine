@@ -18,14 +18,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
@@ -40,283 +39,24 @@
 #include "winerror.h"
 
 #include "initguid.h"
+#include "d3dkmdt.h"
 #include "devguid.h"
 #include "setupapi.h"
 #include "controls.h"
-#include "win.h"
 #include "user_private.h"
-#include "wine/gdi_driver.h"
-#include "wine/unicode.h"
 #include "wine/asm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(system);
 
-/* System parameter indexes */
-enum spi_index
-{
-    SPI_SETWORKAREA_IDX,
-    SPI_INDEX_COUNT
-};
 
-/**
- * Names of the registry subkeys of HKEY_CURRENT_USER key and value names
- * for the system parameters.
- */
-
-/* the various registry keys that are used to store parameters */
-enum parameter_key
-{
-    COLORS_KEY,
-    DESKTOP_KEY,
-    KEYBOARD_KEY,
-    MOUSE_KEY,
-    METRICS_KEY,
-    SOUND_KEY,
-    VERSION_KEY,
-    SHOWSOUNDS_KEY,
-    KEYBOARDPREF_KEY,
-    SCREENREADER_KEY,
-    AUDIODESC_KEY,
-    NB_PARAM_KEYS
-};
-
-static const WCHAR COLORS_REGKEY[] =   {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','C','o','l','o','r','s',0};
-static const WCHAR DESKTOP_REGKEY[] =  {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','D','e','s','k','t','o','p',0};
-static const WCHAR KEYBOARD_REGKEY[] = {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','K','e','y','b','o','a','r','d',0};
-static const WCHAR MOUSE_REGKEY[] =    {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','M','o','u','s','e',0};
-static const WCHAR METRICS_REGKEY[] =  {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','D','e','s','k','t','o','p','\\',
-                                        'W','i','n','d','o','w','M','e','t','r','i','c','s',0};
-static const WCHAR SOUND_REGKEY[]=     {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\','S','o','u','n','d',0};
-static const WCHAR VERSION_REGKEY[] =  {'S','o','f','t','w','a','r','e','\\',
-                                        'M','i','c','r','o','s','o','f','t','\\',
-                                        'W','i','n','d','o','w','s',' ','N','T','\\',
-                                        'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
-                                        'W','i','n','d','o','w','s',0};
-static const WCHAR SHOWSOUNDS_REGKEY[] =   {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
-                                            'A','c','c','e','s','s','i','b','i','l','i','t','y','\\',
-                                            'S','h','o','w','S','o','u','n','d','s',0};
-static const WCHAR KEYBOARDPREF_REGKEY[] = {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
-                                            'A','c','c','e','s','s','i','b','i','l','i','t','y','\\',
-                                            'K','e','y','b','o','a','r','d',' ','P','r','e','f','e','r','e','n','c','e',0};
-static const WCHAR SCREENREADER_REGKEY[] = {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
-                                            'A','c','c','e','s','s','i','b','i','l','i','t','y','\\',
-                                            'B','l','i','n','d',' ','A','c','c','e','s','s',0};
-static const WCHAR AUDIODESC_REGKEY[] = {'C','o','n','t','r','o','l',' ','P','a','n','e','l','\\',
-                                            'A','c','c','e','s','s','i','b','i','l','i','t','y','\\',
-                                            'A','u','d','i','o','D','e','s','c','r','i','p','t','i','o','n',0};
-
-static const WCHAR *parameter_key_names[NB_PARAM_KEYS] =
-{
-    COLORS_REGKEY,
-    DESKTOP_REGKEY,
-    KEYBOARD_REGKEY,
-    MOUSE_REGKEY,
-    METRICS_REGKEY,
-    SOUND_REGKEY,
-    VERSION_REGKEY,
-    SHOWSOUNDS_REGKEY,
-    KEYBOARDPREF_REGKEY,
-    SCREENREADER_REGKEY,
-    AUDIODESC_REGKEY,
-};
-
-/* parameter key values; the first char is actually an enum parameter_key to specify the key */
-static const WCHAR BEEP_VALNAME[]=                     {SOUND_KEY,'B','e','e','p',0};
-static const WCHAR MOUSETHRESHOLD1_VALNAME[]=          {MOUSE_KEY,'M','o','u','s','e','T','h','r','e','s','h','o','l','d','1',0};
-static const WCHAR MOUSETHRESHOLD2_VALNAME[]=          {MOUSE_KEY,'M','o','u','s','e','T','h','r','e','s','h','o','l','d','2',0};
-static const WCHAR MOUSEACCELERATION_VALNAME[]=        {MOUSE_KEY,'M','o','u','s','e','S','p','e','e','d',0};
-static const WCHAR BORDER_VALNAME[]=                   {METRICS_KEY,'B','o','r','d','e','r','W','i','d','t','h',0};
-static const WCHAR KEYBOARDSPEED_VALNAME[]=            {KEYBOARD_KEY,'K','e','y','b','o','a','r','d','S','p','e','e','d',0};
-static const WCHAR ICONHORIZONTALSPACING_VALNAME[]=    {METRICS_KEY,'I','c','o','n','S','p','a','c','i','n','g',0};
-static const WCHAR SCREENSAVETIMEOUT_VALNAME[]=        {DESKTOP_KEY,'S','c','r','e','e','n','S','a','v','e','T','i','m','e','O','u','t',0};
-static const WCHAR SCREENSAVEACTIVE_VALNAME[]=         {DESKTOP_KEY,'S','c','r','e','e','n','S','a','v','e','A','c','t','i','v','e',0};
-static const WCHAR GRIDGRANULARITY_VALNAME[]=          {DESKTOP_KEY,'G','r','i','d','G','r','a','n','u','l','a','r','i','t','y',0};
-static const WCHAR KEYBOARDDELAY_VALNAME[]=            {KEYBOARD_KEY,'K','e','y','b','o','a','r','d','D','e','l','a','y',0};
-static const WCHAR ICONVERTICALSPACING_VALNAME[]=      {METRICS_KEY,'I','c','o','n','V','e','r','t','i','c','a','l','S','p','a','c','i','n','g',0};
-static const WCHAR ICONTITLEWRAP_VALNAME[]=            {DESKTOP_KEY,'I','c','o','n','T','i','t','l','e','W','r','a','p',0};
-static const WCHAR ICONTITLEWRAP_MIRROR[]=             {METRICS_KEY,'I','c','o','n','T','i','t','l','e','W','r','a','p',0};
-static const WCHAR ICONTITLELOGFONT_VALNAME[]=         {METRICS_KEY,'I','c','o','n','F','o','n','t',0};
-static const WCHAR MENUDROPALIGNMENT_VALNAME[]=        {DESKTOP_KEY,'M','e','n','u','D','r','o','p','A','l','i','g','n','m','e','n','t',0};
-static const WCHAR MENUDROPALIGNMENT_MIRROR[]=         {VERSION_KEY,'M','e','n','u','D','r','o','p','A','l','i','g','n','m','e','n','t',0};
-static const WCHAR MOUSETRAILS_VALNAME[]=              {MOUSE_KEY,'M','o','u','s','e','T','r','a','i','l','s',0};
-static const WCHAR SNAPTODEFBUTTON_VALNAME[]=          {MOUSE_KEY,'S','n','a','p','T','o','D','e','f','a','u','l','t','B','u','t','t','o','n',0};
-static const WCHAR DOUBLECLKWIDTH_VALNAME[]=           {MOUSE_KEY,'D','o','u','b','l','e','C','l','i','c','k','W','i','d','t','h',0};
-static const WCHAR DOUBLECLKWIDTH_MIRROR[]=            {DESKTOP_KEY,'D','o','u','b','l','e','C','l','i','c','k','W','i','d','t','h',0};
-static const WCHAR DOUBLECLKHEIGHT_VALNAME[]=          {MOUSE_KEY,'D','o','u','b','l','e','C','l','i','c','k','H','e','i','g','h','t',0};
-static const WCHAR DOUBLECLKHEIGHT_MIRROR[]=           {DESKTOP_KEY,'D','o','u','b','l','e','C','l','i','c','k','H','e','i','g','h','t',0};
-static const WCHAR DOUBLECLICKTIME_VALNAME[]=          {MOUSE_KEY,'D','o','u','b','l','e','C','l','i','c','k','S','p','e','e','d',0};
-static const WCHAR MOUSEBUTTONSWAP_VALNAME[]=          {MOUSE_KEY,'S','w','a','p','M','o','u','s','e','B','u','t','t','o','n','s',0};
-static const WCHAR DRAGFULLWINDOWS_VALNAME[]=          {DESKTOP_KEY,'D','r','a','g','F','u','l','l','W','i','n','d','o','w','s',0};
-static const WCHAR SHOWSOUNDS_VALNAME[]=               {SHOWSOUNDS_KEY,'O','n',0};
-static const WCHAR KEYBOARDPREF_VALNAME[]=             {KEYBOARDPREF_KEY,'O','n',0};
-static const WCHAR SCREENREADER_VALNAME[]=             {SCREENREADER_KEY,'O','n',0};
-static const WCHAR DESKWALLPAPER_VALNAME[]=            {DESKTOP_KEY,'W','a','l','l','p','a','p','e','r',0};
-static const WCHAR DESKPATTERN_VALNAME[]=              {DESKTOP_KEY,'P','a','t','t','e','r','n',0};
-static const WCHAR FONTSMOOTHING_VALNAME[]=            {DESKTOP_KEY,'F','o','n','t','S','m','o','o','t','h','i','n','g',0};
-static const WCHAR DRAGWIDTH_VALNAME[]=                {DESKTOP_KEY,'D','r','a','g','W','i','d','t','h',0};
-static const WCHAR DRAGHEIGHT_VALNAME[]=               {DESKTOP_KEY,'D','r','a','g','H','e','i','g','h','t',0};
-static const WCHAR DPISCALINGVER_VALNAME[]=            {DESKTOP_KEY,'D','p','i','S','c','a','l','i','n','g','V','e','r',0};
-static const WCHAR LOGPIXELS_VALNAME[]=                {DESKTOP_KEY,'L','o','g','P','i','x','e','l','s',0};
-static const WCHAR LOWPOWERACTIVE_VALNAME[]=           {DESKTOP_KEY,'L','o','w','P','o','w','e','r','A','c','t','i','v','e',0};
-static const WCHAR POWEROFFACTIVE_VALNAME[]=           {DESKTOP_KEY,'P','o','w','e','r','O','f','f','A','c','t','i','v','e',0};
-static const WCHAR USERPREFERENCESMASK_VALNAME[]=      {DESKTOP_KEY,'U','s','e','r','P','r','e','f','e','r','e','n','c','e','s','M','a','s','k',0};
-static const WCHAR MOUSEHOVERWIDTH_VALNAME[]=          {MOUSE_KEY,'M','o','u','s','e','H','o','v','e','r','W','i','d','t','h',0};
-static const WCHAR MOUSEHOVERHEIGHT_VALNAME[]=         {MOUSE_KEY,'M','o','u','s','e','H','o','v','e','r','H','e','i','g','h','t',0};
-static const WCHAR MOUSEHOVERTIME_VALNAME[]=           {MOUSE_KEY,'M','o','u','s','e','H','o','v','e','r','T','i','m','e',0};
-static const WCHAR WHEELSCROLLCHARS_VALNAME[]=         {DESKTOP_KEY,'W','h','e','e','l','S','c','r','o','l','l','C','h','a','r','s',0};
-static const WCHAR WHEELSCROLLLINES_VALNAME[]=         {DESKTOP_KEY,'W','h','e','e','l','S','c','r','o','l','l','L','i','n','e','s',0};
-static const WCHAR ACTIVEWINDOWTRACKING_VALNAME[]=     {MOUSE_KEY,'A','c','t','i','v','e','W','i','n','d','o','w','T','r','a','c','k','i','n','g',0};
-static const WCHAR MENUSHOWDELAY_VALNAME[]=            {DESKTOP_KEY,'M','e','n','u','S','h','o','w','D','e','l','a','y',0};
-static const WCHAR BLOCKSENDINPUTRESETS_VALNAME[]=     {DESKTOP_KEY,'B','l','o','c','k','S','e','n','d','I','n','p','u','t','R','e','s','e','t','s',0};
-static const WCHAR FOREGROUNDLOCKTIMEOUT_VALNAME[]=    {DESKTOP_KEY,'F','o','r','e','g','r','o','u','n','d','L','o','c','k','T','i','m','e','o','u','t',0};
-static const WCHAR ACTIVEWNDTRKTIMEOUT_VALNAME[]=      {DESKTOP_KEY,'A','c','t','i','v','e','W','n','d','T','r','a','c','k','T','i','m','e','o','u','t',0};
-static const WCHAR FOREGROUNDFLASHCOUNT_VALNAME[]=     {DESKTOP_KEY,'F','o','r','e','g','r','o','u','n','d','F','l','a','s','h','C','o','u','n','t',0};
-static const WCHAR CARETWIDTH_VALNAME[]=               {DESKTOP_KEY,'C','a','r','e','t','W','i','d','t','h',0};
-static const WCHAR MOUSECLICKLOCKTIME_VALNAME[]=       {DESKTOP_KEY,'C','l','i','c','k','L','o','c','k','T','i','m','e',0};
-static const WCHAR MOUSESPEED_VALNAME[]=               {MOUSE_KEY,'M','o','u','s','e','S','e','n','s','i','t','i','v','i','t','y',0};
-static const WCHAR FONTSMOOTHINGTYPE_VALNAME[]=        {DESKTOP_KEY,'F','o','n','t','S','m','o','o','t','h','i','n','g','T','y','p','e',0};
-static const WCHAR FONTSMOOTHINGCONTRAST_VALNAME[]=    {DESKTOP_KEY,'F','o','n','t','S','m','o','o','t','h','i','n','g','G','a','m','m','a',0};
-static const WCHAR FONTSMOOTHINGORIENTATION_VALNAME[]= {DESKTOP_KEY,'F','o','n','t','S','m','o','o','t','h','i','n','g','O','r','i','e','n','t','a','t','i','o','n',0};
-static const WCHAR FOCUSBORDERWIDTH_VALNAME[]=         {DESKTOP_KEY,'F','o','c','u','s','B','o','r','d','e','r','W','i','d','t','h',0};
-static const WCHAR FOCUSBORDERHEIGHT_VALNAME[]=        {DESKTOP_KEY,'F','o','c','u','s','B','o','r','d','e','r','H','e','i','g','h','t',0};
-static const WCHAR SCROLLWIDTH_VALNAME[]=              {METRICS_KEY,'S','c','r','o','l','l','W','i','d','t','h',0};
-static const WCHAR SCROLLHEIGHT_VALNAME[]=             {METRICS_KEY,'S','c','r','o','l','l','H','e','i','g','h','t',0};
-static const WCHAR CAPTIONWIDTH_VALNAME[]=             {METRICS_KEY,'C','a','p','t','i','o','n','W','i','d','t','h',0};
-static const WCHAR CAPTIONHEIGHT_VALNAME[]=            {METRICS_KEY,'C','a','p','t','i','o','n','H','e','i','g','h','t',0};
-static const WCHAR SMCAPTIONWIDTH_VALNAME[]=           {METRICS_KEY,'S','m','C','a','p','t','i','o','n','W','i','d','t','h',0};
-static const WCHAR SMCAPTIONHEIGHT_VALNAME[]=          {METRICS_KEY,'S','m','C','a','p','t','i','o','n','H','e','i','g','h','t',0};
-static const WCHAR MENUWIDTH_VALNAME[]=                {METRICS_KEY,'M','e','n','u','W','i','d','t','h',0};
-static const WCHAR MENUHEIGHT_VALNAME[]=               {METRICS_KEY,'M','e','n','u','H','e','i','g','h','t',0};
-static const WCHAR PADDEDBORDERWIDTH_VALNAME[]=        {METRICS_KEY,'P','a','d','d','e','d','B','o','r','d','e','r','W','i','d','t','h',0};
-static const WCHAR CAPTIONLOGFONT_VALNAME[]=           {METRICS_KEY,'C','a','p','t','i','o','n','F','o','n','t',0};
-static const WCHAR SMCAPTIONLOGFONT_VALNAME[]=         {METRICS_KEY,'S','m','C','a','p','t','i','o','n','F','o','n','t',0};
-static const WCHAR MENULOGFONT_VALNAME[]=              {METRICS_KEY,'M','e','n','u','F','o','n','t',0};
-static const WCHAR MESSAGELOGFONT_VALNAME[]=           {METRICS_KEY,'M','e','s','s','a','g','e','F','o','n','t',0};
-static const WCHAR STATUSLOGFONT_VALNAME[]=            {METRICS_KEY,'S','t','a','t','u','s','F','o','n','t',0};
-static const WCHAR MINWIDTH_VALNAME[] =                {METRICS_KEY,'M','i','n','W','i','d','t','h',0};
-static const WCHAR MINHORZGAP_VALNAME[] =              {METRICS_KEY,'M','i','n','H','o','r','z','G','a','p',0};
-static const WCHAR MINVERTGAP_VALNAME[] =              {METRICS_KEY,'M','i','n','V','e','r','t','G','a','p',0};
-static const WCHAR MINARRANGE_VALNAME[] =              {METRICS_KEY,'M','i','n','A','r','r','a','n','g','e',0};
-static const WCHAR COLOR_SCROLLBAR_VALNAME[] =         {COLORS_KEY,'S','c','r','o','l','l','b','a','r',0};
-static const WCHAR COLOR_BACKGROUND_VALNAME[] =        {COLORS_KEY,'B','a','c','k','g','r','o','u','n','d',0};
-static const WCHAR COLOR_ACTIVECAPTION_VALNAME[] =     {COLORS_KEY,'A','c','t','i','v','e','T','i','t','l','e',0};
-static const WCHAR COLOR_INACTIVECAPTION_VALNAME[] =   {COLORS_KEY,'I','n','a','c','t','i','v','e','T','i','t','l','e',0};
-static const WCHAR COLOR_MENU_VALNAME[] =              {COLORS_KEY,'M','e','n','u',0};
-static const WCHAR COLOR_WINDOW_VALNAME[] =            {COLORS_KEY,'W','i','n','d','o','w',0};
-static const WCHAR COLOR_WINDOWFRAME_VALNAME[] =       {COLORS_KEY,'W','i','n','d','o','w','F','r','a','m','e',0};
-static const WCHAR COLOR_MENUTEXT_VALNAME[] =          {COLORS_KEY,'M','e','n','u','T','e','x','t',0};
-static const WCHAR COLOR_WINDOWTEXT_VALNAME[] =        {COLORS_KEY,'W','i','n','d','o','w','T','e','x','t',0};
-static const WCHAR COLOR_CAPTIONTEXT_VALNAME[] =       {COLORS_KEY,'T','i','t','l','e','T','e','x','t',0};
-static const WCHAR COLOR_ACTIVEBORDER_VALNAME[] =      {COLORS_KEY,'A','c','t','i','v','e','B','o','r','d','e','r',0};
-static const WCHAR COLOR_INACTIVEBORDER_VALNAME[] =    {COLORS_KEY,'I','n','a','c','t','i','v','e','B','o','r','d','e','r',0};
-static const WCHAR COLOR_APPWORKSPACE_VALNAME[] =      {COLORS_KEY,'A','p','p','W','o','r','k','S','p','a','c','e',0};
-static const WCHAR COLOR_HIGHLIGHT_VALNAME[] =         {COLORS_KEY,'H','i','l','i','g','h','t',0};
-static const WCHAR COLOR_HIGHLIGHTTEXT_VALNAME[] =     {COLORS_KEY,'H','i','l','i','g','h','t','T','e','x','t',0};
-static const WCHAR COLOR_BTNFACE_VALNAME[] =           {COLORS_KEY,'B','u','t','t','o','n','F','a','c','e',0};
-static const WCHAR COLOR_BTNSHADOW_VALNAME[] =         {COLORS_KEY,'B','u','t','t','o','n','S','h','a','d','o','w',0};
-static const WCHAR COLOR_GRAYTEXT_VALNAME[] =          {COLORS_KEY,'G','r','a','y','T','e','x','t',0};
-static const WCHAR COLOR_BTNTEXT_VALNAME[] =           {COLORS_KEY,'B','u','t','t','o','n','T','e','x','t',0};
-static const WCHAR COLOR_INACTIVECAPTIONTEXT_VALNAME[] = {COLORS_KEY,'I','n','a','c','t','i','v','e','T','i','t','l','e','T','e','x','t',0};
-static const WCHAR COLOR_BTNHIGHLIGHT_VALNAME[] =      {COLORS_KEY,'B','u','t','t','o','n','H','i','l','i','g','h','t',0};
-static const WCHAR COLOR_3DDKSHADOW_VALNAME[] =        {COLORS_KEY,'B','u','t','t','o','n','D','k','S','h','a','d','o','w',0};
-static const WCHAR COLOR_3DLIGHT_VALNAME[] =           {COLORS_KEY,'B','u','t','t','o','n','L','i','g','h','t',0};
-static const WCHAR COLOR_INFOTEXT_VALNAME[] =          {COLORS_KEY,'I','n','f','o','T','e','x','t',0};
-static const WCHAR COLOR_INFOBK_VALNAME[] =            {COLORS_KEY,'I','n','f','o','W','i','n','d','o','w',0};
-static const WCHAR COLOR_ALTERNATEBTNFACE_VALNAME[] =  {COLORS_KEY,'B','u','t','t','o','n','A','l','t','e','r','n','a','t','e','F','a','c','e',0};
-static const WCHAR COLOR_HOTLIGHT_VALNAME[] =          {COLORS_KEY,'H','o','t','T','r','a','c','k','i','n','g','C','o','l','o','r',0};
-static const WCHAR COLOR_GRADIENTACTIVECAPTION_VALNAME[] = {COLORS_KEY,'G','r','a','d','i','e','n','t','A','c','t','i','v','e','T','i','t','l','e',0};
-static const WCHAR COLOR_GRADIENTINACTIVECAPTION_VALNAME[] = {COLORS_KEY,'G','r','a','d','i','e','n','t','I','n','a','c','t','i','v','e','T','i','t','l','e',0};
-static const WCHAR COLOR_MENUHILIGHT_VALNAME[] =       {COLORS_KEY,'M','e','n','u','H','i','l','i','g','h','t',0};
-static const WCHAR COLOR_MENUBAR_VALNAME[] =           {COLORS_KEY,'M','e','n','u','B','a','r',0};
-static const WCHAR AUDIODESC_LOCALE_VALNAME[] =        {AUDIODESC_KEY,'L','o','c','a','l','e',0};
-static const WCHAR AUDIODESC_ON_VALNAME[] =            {AUDIODESC_KEY,'O','n',0};
-
-/* FIXME - real value */
-static const WCHAR SCREENSAVERRUNNING_VALNAME[]=  {DESKTOP_KEY,'W','I','N','E','_','S','c','r','e','e','n','S','a','v','e','r','R','u','n','n','i','n','g',0};
-
-static const WCHAR WINE_CURRENT_USER_REGKEY[] = {'S','o','f','t','w','a','r','e','\\',
-                                                 'W','i','n','e',0};
-
-/* volatile registry branch under WINE_CURRENT_USER_REGKEY for temporary values storage */
-static const WCHAR WINE_CURRENT_USER_REGKEY_TEMP_PARAMS[] = {'T','e','m','p','o','r','a','r','y',' ',
-                                                             'S','y','s','t','e','m',' ',
-                                                             'P','a','r','a','m','e','t','e','r','s',0};
-
-static const WCHAR Yes[] =   {'Y','e','s',0};
-static const WCHAR No[] =    {'N','o',0};
-static const WCHAR CSu[] =   {'%','u',0};
-static const WCHAR CSd[] =   {'%','d',0};
-static const WCHAR CSrgb[] = {'%','u',' ','%','u',' ','%','u',0};
+DEFINE_DEVPROPKEY(DEVPROPKEY_MONITOR_GPU_LUID, 0xca085853, 0x16ce, 0x48aa, 0xb1, 0x14, 0xde, 0x9c, 0x72, 0x33, 0x42, 0x23, 1);
+DEFINE_DEVPROPKEY(DEVPROPKEY_MONITOR_OUTPUT_ID, 0xca085853, 0x16ce, 0x48aa, 0xb1, 0x14, 0xde, 0x9c, 0x72, 0x33, 0x42, 0x23, 2);
 
 /* Wine specific monitor properties */
 DEFINE_DEVPROPKEY(WINE_DEVPROPKEY_MONITOR_STATEFLAGS, 0x233a9ef3, 0xafc4, 0x4abd, 0xb5, 0x64, 0xc3, 0x2f, 0x21, 0xf1, 0x53, 0x5b, 2);
-DEFINE_DEVPROPKEY(WINE_DEVPROPKEY_MONITOR_RCMONITOR, 0x233a9ef3, 0xafc4, 0x4abd, 0xb5, 0x64, 0xc3, 0x2f, 0x21, 0xf1, 0x53, 0x5b, 3);
-DEFINE_DEVPROPKEY(WINE_DEVPROPKEY_MONITOR_RCWORK, 0x233a9ef3, 0xafc4, 0x4abd, 0xb5, 0x64, 0xc3, 0x2f, 0x21, 0xf1, 0x53, 0x5b, 4);
 DEFINE_DEVPROPKEY(WINE_DEVPROPKEY_MONITOR_ADAPTERNAME, 0x233a9ef3, 0xafc4, 0x4abd, 0xb5, 0x64, 0xc3, 0x2f, 0x21, 0xf1, 0x53, 0x5b, 5);
 
-#define NULLDRV_DEFAULT_HMONITOR ((HMONITOR)(UINT_PTR)(0x10000 + 1))
-
-/* Strings for monitor functions */
-static const WCHAR DEFAULT_ADAPTER_NAME[] = {'\\','\\','.','\\','D','I','S','P','L','A','Y','1',0};
-static const WCHAR DEFAULT_MONITOR_NAME[] = {'\\','\\','.','\\',
-                                             'D','I','S','P','L','A','Y','1','\\',
-                                             'M','o','n','i','t','o','r','0',0};
-static const WCHAR DEFAULT_ADAPTER_STRING[] = {'W','i','n','e',' ','A','d','a','p','t','e','r',0};
-static const WCHAR DEFAULT_MONITOR_STRING[] = {'G','e','n','e','r','i','c',' ','N','o','n','-','P','n','P',' ','M','o','n','i','t','o','r',0};
-static const WCHAR DEFAULT_ADAPTER_ID[] = {'P','C','I','\\',
-                                           'V','E','N','_','0','0','0','0','&',
-                                           'D','E','V','_','0','0','0','0','&',
-                                           'S','U','B','S','Y','S','_','0','0','0','0','0','0','0','0','&',
-                                           'R','E','V','_','0','0',0};
-static const WCHAR DEFAULT_MONITOR_ID[] = {'M','O','N','I','T','O','R','\\',
-                                           'D','e','f','a','u','l','t','_','M','o','n','i','t','o','r','\\',
-                                           '{','4','d','3','6','e','9','6','e','-','e','3','2','5','-','1','1','c','e','-',
-                                           'b','f','c','1','-','0','8','0','0','2','b','e','1','0','3','1','8','}',
-                                           '\\','0','0','0','0',0};
-static const WCHAR DEFAULT_MONITOR_INTERFACE_ID[] = {'\\','\\','\?','\\',
-                                                     'D','I','S','P','L','A','Y','#','D','e','f','a','u','l','t','_','M','o','n','i','t','o','r','#',
-                                                     '4','&','1','7','f','0','f','f','5','4','&','0','&','U','I','D','0','#',
-                                                     '{','e','6','f','0','7','b','5','f','-','e','e','9','7','-','4','a','9','0','-',
-                                                     'b','0','7','6','-','3','3','f','5','7','b','f','4','e','a','a','7','}',0};
-static const WCHAR BACKSLASH[] = {'\\',0};
-static const WCHAR DRIVER_DESC[] = {'D','r','i','v','e','r','D','e','s','c',0};
-static const WCHAR STATE_FLAGS[] = {'S','t','a','t','e','F','l','a','g','s',0};
-static const WCHAR GPU_ID[] = {'G','P','U','I','D',0};
-static const WCHAR DISPLAY[] = {'D','I','S','P','L','A','Y',0};
-static const WCHAR ADAPTER_PREFIX[] = {'\\','\\','.','\\','D','I','S','P','L','A','Y'};
-static const WCHAR MONITOR_ID_VALUE_FMT[] = {'M','o','n','i','t','o','r','I','D','%','d',0};
-static const WCHAR VIDEO_KEY[] = {'H','A','R','D','W','A','R','E','\\',
-                                  'D','E','V','I','C','E','M','A','P','\\',
-                                  'V','I','D','E','O','\\',0};
-static const WCHAR NT_CLASS[] = {'\\','R','e','g','i','s','t','r','y','\\',
-                                 'M','a','c','h','i','n','e','\\',
-                                 'S','y','s','t','e','m','\\',
-                                 'C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t','\\',
-                                 'C','o','n','t','r','o','l','\\',
-                                 'C','l','a','s','s','\\',0};
-static const WCHAR ADAPTER_FMT[] = {'\\','\\','.','\\','D','I','S','P','L','A','Y','%','d',0};
-static const WCHAR MONITOR_FMT[] = {'\\','\\','.','\\',
-                                    'D','I','S','P','L','A','Y','%','d','\\',
-                                    'M','o','n','i','t','o','r','%','d',0};
-static const WCHAR VIDEO_VALUE_FMT[] = {'\\','D','e','v','i','c','e','\\',
-                                        'V','i','d','e','o','%','d',0};
-static const WCHAR MONITOR_INTERFACE_PREFIX[] = {'\\','\\','\?','\\',0};
-static const WCHAR GUID_DEVINTERFACE_MONITOR[] = {'#','{','e','6','f','0','7','b','5','f','-','e','e','9','7','-',
-                                                  '4','a','9','0','-','b','0','7','6','-','3','3','f','5','7','b','f','4','e','a','a','7','}',0};
-
-/* Cached monitor information */
-static MONITORINFOEXW *monitors;
-static UINT monitor_count;
-static FILETIME last_query_monitors_time;
-static CRITICAL_SECTION monitors_section;
-static CRITICAL_SECTION_DEBUG monitors_critsect_debug =
-{
-    0, 0, &monitors_section,
-    { &monitors_critsect_debug.ProcessLocksList, &monitors_critsect_debug.ProcessLocksList },
-      0, 0, { (DWORD_PTR)(__FILE__ ": monitors_section") }
-};
-static CRITICAL_SECTION monitors_section = { &monitors_critsect_debug, -1 , 0, 0, 0, 0 };
 
 static HDC display_dc;
 static CRITICAL_SECTION display_dc_section;
@@ -329,118 +69,8 @@ static CRITICAL_SECTION_DEBUG critsect_debug =
 static CRITICAL_SECTION display_dc_section = { &critsect_debug, -1 ,0, 0, 0, 0 };
 
 
-/* Indicators whether system parameter value is loaded */
-static char spi_loaded[SPI_INDEX_COUNT];
-
-static BOOL notify_change = TRUE;
-
 /* System parameters storage */
-static RECT work_area;
 static UINT system_dpi;
-static DPI_AWARENESS dpi_awareness;
-static DPI_AWARENESS default_awareness = DPI_AWARENESS_UNAWARE;
-
-static HKEY volatile_base_key;
-static HKEY video_key;
-
-union sysparam_all_entry;
-
-struct sysparam_entry
-{
-    BOOL       (*get)( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi );
-    BOOL       (*set)( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags );
-    BOOL       (*init)( union sysparam_all_entry *entry );
-    const WCHAR *regval;
-    const WCHAR *mirror;
-    BOOL         loaded;
-};
-
-struct sysparam_uint_entry
-{
-    struct sysparam_entry hdr;
-    UINT                  val;
-};
-
-struct sysparam_bool_entry
-{
-    struct sysparam_entry hdr;
-    BOOL                  val;
-};
-
-struct sysparam_dword_entry
-{
-    struct sysparam_entry hdr;
-    DWORD                 val;
-};
-
-struct sysparam_rgb_entry
-{
-    struct sysparam_entry hdr;
-    COLORREF              val;
-    HBRUSH                brush;
-    HPEN                  pen;
-};
-
-struct sysparam_binary_entry
-{
-    struct sysparam_entry hdr;
-    void                 *ptr;
-    size_t                size;
-};
-
-struct sysparam_path_entry
-{
-    struct sysparam_entry hdr;
-    WCHAR                 path[MAX_PATH];
-};
-
-struct sysparam_font_entry
-{
-    struct sysparam_entry hdr;
-    UINT                  weight;
-    LOGFONTW              val;
-    WCHAR                 fullname[LF_FACESIZE];
-};
-
-struct sysparam_pref_entry
-{
-    struct sysparam_entry hdr;
-    struct sysparam_binary_entry *parent;
-    UINT                  offset;
-    UINT                  mask;
-};
-
-union sysparam_all_entry
-{
-    struct sysparam_entry        hdr;
-    struct sysparam_uint_entry   uint;
-    struct sysparam_bool_entry   bool;
-    struct sysparam_dword_entry  dword;
-    struct sysparam_rgb_entry    rgb;
-    struct sysparam_binary_entry bin;
-    struct sysparam_path_entry   path;
-    struct sysparam_font_entry   font;
-    struct sysparam_pref_entry   pref;
-};
-
-static void SYSPARAMS_LogFont16To32W( const LOGFONT16 *font16, LPLOGFONTW font32 )
-{
-    font32->lfHeight = font16->lfHeight;
-    font32->lfWidth = font16->lfWidth;
-    font32->lfEscapement = font16->lfEscapement;
-    font32->lfOrientation = font16->lfOrientation;
-    font32->lfWeight = font16->lfWeight;
-    font32->lfItalic = font16->lfItalic;
-    font32->lfUnderline = font16->lfUnderline;
-    font32->lfStrikeOut = font16->lfStrikeOut;
-    font32->lfCharSet = font16->lfCharSet;
-    font32->lfOutPrecision = font16->lfOutPrecision;
-    font32->lfClipPrecision = font16->lfClipPrecision;
-    font32->lfQuality = font16->lfQuality;
-    font32->lfPitchAndFamily = font16->lfPitchAndFamily;
-    MultiByteToWideChar( CP_ACP, 0, font16->lfFaceName, -1, font32->lfFaceName, LF_FACESIZE );
-    font32->lfFaceName[LF_FACESIZE-1] = 0;
-}
 
 static void SYSPARAMS_LogFont32WTo32A( const LOGFONTW* font32W, LPLOGFONTA font32A )
 {
@@ -533,204 +163,58 @@ static void SYSPARAMS_NonClientMetrics32ATo32W( const NONCLIENTMETRICSA* lpnm32A
 
 /* Helper functions to retrieve monitors info */
 
-struct monitor_info
+static BOOL CALLBACK get_virtual_screen_proc( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
 {
-    int count;
-    RECT primary_rect;
-    RECT virtual_rect;
-};
+    RECT *virtual_rect = (RECT *)lp;
 
-static BOOL CALLBACK monitor_info_proc( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
-{
-    MONITORINFO mi;
-    struct monitor_info *info = (struct monitor_info *)lp;
-    info->count++;
-    UnionRect( &info->virtual_rect, &info->virtual_rect, rect );
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfoW( monitor, &mi ) && (mi.dwFlags & MONITORINFOF_PRIMARY))
-        info->primary_rect = mi.rcMonitor;
+    UnionRect( virtual_rect, virtual_rect, rect );
     return TRUE;
-}
-
-static void get_monitors_info( struct monitor_info *info )
-{
-    info->count = 0;
-    SetRectEmpty( &info->primary_rect );
-    SetRectEmpty( &info->virtual_rect );
-    EnumDisplayMonitors( 0, NULL, monitor_info_proc, (LPARAM)info );
 }
 
 RECT get_virtual_screen_rect(void)
 {
-    struct monitor_info info;
-    get_monitors_info( &info );
-    return info.virtual_rect;
+    RECT rect = {0};
+
+    NtUserEnumDisplayMonitors( 0, NULL, get_virtual_screen_proc, (LPARAM)&rect );
+    return rect;
 }
 
-static BOOL get_primary_adapter(WCHAR *name)
+static BOOL CALLBACK get_primary_monitor_proc( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
 {
-    DISPLAY_DEVICEW dd;
-    DWORD i;
+    RECT *primary_rect = (RECT *)lp;
 
-    dd.cb = sizeof(dd);
-    for (i = 0; EnumDisplayDevicesW(NULL, i, &dd, 0); ++i)
+    if (!rect->top && !rect->left && rect->right && rect->bottom)
     {
-        if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
-        {
-            lstrcpyW(name, dd.DeviceName);
-            return TRUE;
-        }
+        *primary_rect = *rect;
+        return FALSE;
     }
 
-    return FALSE;
-}
-
-/* get text metrics and/or "average" char width of the specified logfont 
- * for the specified dc */
-static void get_text_metr_size( HDC hdc, LOGFONTW *plf, TEXTMETRICW * ptm, UINT *psz)
-{
-    HFONT hfont, hfontsav;
-    TEXTMETRICW tm;
-    if( !ptm) ptm = &tm;
-    hfont = CreateFontIndirectW( plf);
-    if( !hfont || ( hfontsav = SelectObject( hdc, hfont)) == NULL ) {
-        ptm->tmHeight = -1;
-        if( psz) *psz = 10;
-        if( hfont) DeleteObject( hfont);
-        return;
-    }
-    GetTextMetricsW( hdc, ptm);
-    if( psz)
-        if( !(*psz = GdiGetCharDimensions( hdc, ptm, NULL)))
-            *psz = 10;
-    SelectObject( hdc, hfontsav);
-    DeleteObject( hfont);
-}
-
-/***********************************************************************
- *           SYSPARAMS_NotifyChange
- *
- * Sends notification about system parameter update.
- */
-static void SYSPARAMS_NotifyChange( UINT uiAction, UINT fWinIni )
-{
-    static const WCHAR emptyW[1];
-
-    if (notify_change)
-    {
-        if (fWinIni & SPIF_UPDATEINIFILE)
-        {
-            if (fWinIni & (SPIF_SENDWININICHANGE | SPIF_SENDCHANGE))
-                SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE,
-                                    uiAction, (LPARAM) emptyW,
-                                    SMTO_ABORTIFHUNG, 2000, NULL );
-        }
-        else
-        {
-            /* FIXME notify other wine processes with internal message */
-        }
-    }
-}
-
-/* retrieve the cached base keys for a given entry */
-static BOOL get_base_keys( enum parameter_key index, HKEY *base_key, HKEY *volatile_key )
-{
-    static HKEY base_keys[NB_PARAM_KEYS];
-    static HKEY volatile_keys[NB_PARAM_KEYS];
-    HKEY key;
-
-    if (!base_keys[index] && base_key)
-    {
-        if (RegCreateKeyW( HKEY_CURRENT_USER, parameter_key_names[index], &key )) return FALSE;
-        if (InterlockedCompareExchangePointer( (void **)&base_keys[index], key, 0 ))
-            RegCloseKey( key );
-    }
-    if (!volatile_keys[index] && volatile_key)
-    {
-        if (RegCreateKeyExW( volatile_base_key, parameter_key_names[index],
-                             0, 0, REG_OPTION_VOLATILE, KEY_ALL_ACCESS, NULL, &key, 0 )) return FALSE;
-        if (InterlockedCompareExchangePointer( (void **)&volatile_keys[index], key, 0 ))
-            RegCloseKey( key );
-    }
-    if (base_key) *base_key = base_keys[index];
-    if (volatile_key) *volatile_key = volatile_keys[index];
     return TRUE;
 }
 
-/* load a value to a registry entry */
-static DWORD load_entry( struct sysparam_entry *entry, void *data, DWORD size )
+RECT get_primary_monitor_rect(void)
 {
-    DWORD type, count;
-    HKEY base_key, volatile_key;
+    RECT rect = {0};
 
-    if (!get_base_keys( entry->regval[0], &base_key, &volatile_key )) return FALSE;
-
-    count = size;
-    if (RegQueryValueExW( volatile_key, entry->regval + 1, NULL, &type, data, &count ))
-    {
-        count = size;
-        if (RegQueryValueExW( base_key, entry->regval + 1, NULL, &type, data, &count )) count = 0;
-    }
-    /* make sure strings are null-terminated */
-    if (size && count == size && type == REG_SZ) ((WCHAR *)data)[count / sizeof(WCHAR) - 1] = 0;
-    entry->loaded = TRUE;
-    return count;
-}
-
-/* save a value to a registry entry */
-static BOOL save_entry( const struct sysparam_entry *entry, const void *data, DWORD size,
-                        DWORD type, UINT flags )
-{
-    HKEY base_key, volatile_key;
-
-    if (flags & SPIF_UPDATEINIFILE)
-    {
-        if (!get_base_keys( entry->regval[0], &base_key, &volatile_key )) return FALSE;
-        if (RegSetValueExW( base_key, entry->regval + 1, 0, type, data, size )) return FALSE;
-        RegDeleteValueW( volatile_key, entry->regval + 1 );
-
-        if (entry->mirror && get_base_keys( entry->mirror[0], &base_key, NULL ))
-            RegSetValueExW( base_key, entry->mirror + 1, 0, type, data, size );
-    }
-    else
-    {
-        if (!get_base_keys( entry->regval[0], NULL, &volatile_key )) return FALSE;
-        if (RegSetValueExW( volatile_key, entry->regval + 1, 0, type, data, size )) return FALSE;
-    }
-    return TRUE;
-}
-
-/* save a string value to a registry entry */
-static BOOL save_entry_string( const struct sysparam_entry *entry, const WCHAR *str, UINT flags )
-{
-    return save_entry( entry, str, (strlenW(str) + 1) * sizeof(WCHAR), REG_SZ, flags );
-}
-
-/* initialize an entry in the registry if missing */
-static BOOL init_entry( struct sysparam_entry *entry, const void *data, DWORD size, DWORD type )
-{
-    HKEY base_key;
-
-    if (!get_base_keys( entry->regval[0], &base_key, NULL )) return FALSE;
-    if (!RegQueryValueExW( base_key, entry->regval + 1, NULL, NULL, NULL, NULL )) return TRUE;
-    if (RegSetValueExW( base_key, entry->regval + 1, 0, type, data, size )) return FALSE;
-    if (entry->mirror && get_base_keys( entry->mirror[0], &base_key, NULL ))
-        RegSetValueExW( base_key, entry->mirror + 1, 0, type, data, size );
-    entry->loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a string value in the registry if missing */
-static BOOL init_entry_string( struct sysparam_entry *entry, const WCHAR *str )
-{
-    return init_entry( entry, str, (strlenW(str) + 1) * sizeof(WCHAR), REG_SZ );
+    NtUserEnumDisplayMonitors( 0, NULL, get_primary_monitor_proc, (LPARAM)&rect );
+    return rect;
 }
 
 HDC get_display_dc(void)
 {
-    static const WCHAR DISPLAY[] = {'D','I','S','P','L','A','Y',0};
     EnterCriticalSection( &display_dc_section );
-    if (!display_dc) display_dc = CreateDCW( DISPLAY, NULL, NULL, NULL );
+    if (!display_dc)
+    {
+        HDC dc;
+
+        LeaveCriticalSection( &display_dc_section );
+        dc = CreateDCW( L"DISPLAY", NULL, NULL, NULL );
+        EnterCriticalSection( &display_dc_section );
+        if (display_dc)
+            DeleteDC(dc);
+        else
+            display_dc = dc;
+    }
     return display_dc;
 }
 
@@ -741,8 +225,7 @@ void release_display_dc( HDC hdc )
 
 static HANDLE get_display_device_init_mutex( void )
 {
-    static const WCHAR init_mutexW[] = {'d','i','s','p','l','a','y','_','d','e','v','i','c','e','_','i','n','i','t',0};
-    HANDLE mutex = CreateMutexW( NULL, FALSE, init_mutexW );
+    HANDLE mutex = CreateMutexW( NULL, FALSE, L"display_device_init" );
 
     WaitForSingleObject( mutex, INFINITE );
     return mutex;
@@ -755,7 +238,7 @@ static void release_display_device_init_mutex( HANDLE mutex )
 }
 
 /* Wait until graphics driver is loaded by explorer */
-static void wait_graphics_driver_ready(void)
+void wait_graphics_driver_ready(void)
 {
     static BOOL ready = FALSE;
 
@@ -766,833 +249,12 @@ static void wait_graphics_driver_ready(void)
     }
 }
 
-/* map value from system dpi to standard 96 dpi for storing in the registry */
-static int map_from_system_dpi( int val )
-{
-    return MulDiv( val, USER_DEFAULT_SCREEN_DPI, GetDpiForSystem() );
-}
-
-/* map value from 96 dpi to system or custom dpi */
-static int map_to_dpi( int val, UINT dpi )
-{
-    if (!dpi) dpi = GetDpiForSystem();
-    return MulDiv( val, dpi, USER_DEFAULT_SCREEN_DPI );
-}
-
-static INT CALLBACK real_fontname_proc(const LOGFONTW *lf, const TEXTMETRICW *ntm, DWORD type, LPARAM lparam)
-{
-    const ENUMLOGFONTW *elf = (const ENUMLOGFONTW *)lf;
-    WCHAR *fullname = (WCHAR *)lparam;
-
-    lstrcpynW( fullname, elf->elfFullName, LF_FACESIZE );
-    return 0;
-}
-
-static void get_real_fontname( LOGFONTW *lf, WCHAR fullname[LF_FACESIZE] )
-{
-    HDC hdc = get_display_dc();
-    strcpyW( fullname, lf->lfFaceName );
-    EnumFontFamiliesExW( hdc, lf, real_fontname_proc, (LPARAM)fullname, 0 );
-    release_display_dc( hdc );
-}
-
-/* adjust some of the raw values found in the registry */
-static void normalize_nonclientmetrics( NONCLIENTMETRICSW *pncm)
-{
-    TEXTMETRICW tm;
-    HDC hdc = get_display_dc();
-
-    if( pncm->iBorderWidth < 1) pncm->iBorderWidth = 1;
-    if( pncm->iCaptionWidth < 8) pncm->iCaptionWidth = 8;
-    if( pncm->iScrollWidth < 8) pncm->iScrollWidth = 8;
-    if( pncm->iScrollHeight < 8) pncm->iScrollHeight = 8;
-
-    /* adjust some heights to the corresponding font */
-    get_text_metr_size( hdc, &pncm->lfMenuFont, &tm, NULL);
-    pncm->iMenuHeight = max( pncm->iMenuHeight, 2 + tm.tmHeight + tm.tmExternalLeading );
-    get_text_metr_size( hdc, &pncm->lfCaptionFont, &tm, NULL);
-    pncm->iCaptionHeight = max( pncm->iCaptionHeight, 2 + tm.tmHeight);
-    get_text_metr_size( hdc, &pncm->lfSmCaptionFont, &tm, NULL);
-    pncm->iSmCaptionHeight = max( pncm->iSmCaptionHeight, 2 + tm.tmHeight);
-    release_display_dc( hdc );
-}
-
-static BOOL CALLBACK enum_monitors( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
-{
-    MONITORINFO mi;
-
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfoW( monitor, &mi ) && (mi.dwFlags & MONITORINFOF_PRIMARY))
-    {
-        LPRECT work = (LPRECT)lp;
-        *work = mi.rcWork;
-        return FALSE;
-    }
-    return TRUE;
-}
-
-/* load a uint parameter from the registry */
-static BOOL get_uint_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buf[32];
-
-        if (load_entry( &entry->hdr, buf, sizeof(buf) )) entry->uint.val = atoiW( buf );
-    }
-    *(UINT *)ptr_param = entry->uint.val;
-    return TRUE;
-}
-
-/* set a uint parameter in the registry */
-static BOOL set_uint_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSu, int_param );
-    if (!save_entry_string( &entry->hdr, buf, flags )) return FALSE;
-    entry->uint.val = int_param;
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a uint parameter */
-static BOOL init_uint_entry( union sysparam_all_entry *entry )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSu, entry->uint.val );
-    return init_entry_string( &entry->hdr, buf );
-}
-
-/* set an int parameter in the registry */
-static BOOL set_int_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSd, int_param );
-    if (!save_entry_string( &entry->hdr, buf, flags )) return FALSE;
-    entry->uint.val = int_param;
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize an int parameter */
-static BOOL init_int_entry( union sysparam_all_entry *entry )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSd, entry->uint.val );
-    return init_entry_string( &entry->hdr, buf );
-}
-
-/* load a twips parameter from the registry */
-static BOOL get_twips_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    int val;
-
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buf[32];
-
-        if (load_entry( &entry->hdr, buf, sizeof(buf) )) entry->uint.val = atoiW( buf );
-    }
-
-    /* Dimensions are quoted as being "twips" values if negative and pixels if positive.
-     * One inch is 1440 twips.
-     * See for example
-     *       Technical Reference to the Windows 2000 Registry ->
-     *       HKEY_CURRENT_USER -> Control Panel -> Desktop -> WindowMetrics
-     */
-    val = entry->uint.val;
-    if (val < 0)
-        val = MulDiv( -val, dpi, 1440 );
-    else
-        val = map_to_dpi( val, dpi );
-
-    *(int *)ptr_param = val;
-    return TRUE;
-}
-
-/* set a twips parameter in the registry */
-static BOOL set_twips_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    int val = int_param;
-    if (val > 0) val = map_from_system_dpi( val );
-    return set_int_entry( entry, val, ptr_param, flags );
-}
-
-/* load a bool parameter from the registry */
-static BOOL get_bool_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buf[32];
-
-        if (load_entry( &entry->hdr, buf, sizeof(buf) )) entry->bool.val = atoiW( buf ) != 0;
-    }
-    *(UINT *)ptr_param = entry->bool.val;
-    return TRUE;
-}
-
-/* set a bool parameter in the registry */
-static BOOL set_bool_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSu, int_param != 0 );
-    if (!save_entry_string( &entry->hdr, buf, flags )) return FALSE;
-    entry->bool.val = int_param != 0;
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a bool parameter */
-static BOOL init_bool_entry( union sysparam_all_entry *entry )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSu, entry->bool.val != 0 );
-    return init_entry_string( &entry->hdr, buf );
-}
-
-/* load a bool parameter using Yes/No strings from the registry */
-static BOOL get_yesno_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buf[32];
-
-        if (load_entry( &entry->hdr, buf, sizeof(buf) )) entry->bool.val = !lstrcmpiW( Yes, buf );
-    }
-    *(UINT *)ptr_param = entry->bool.val;
-    return TRUE;
-}
-
-/* set a bool parameter using Yes/No strings from the registry */
-static BOOL set_yesno_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    const WCHAR *str = int_param ? Yes : No;
-
-    if (!save_entry_string( &entry->hdr, str, flags )) return FALSE;
-    entry->bool.val = int_param != 0;
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a bool parameter using Yes/No strings */
-static BOOL init_yesno_entry( union sysparam_all_entry *entry )
-{
-    return init_entry_string( &entry->hdr, entry->bool.val ? Yes : No );
-}
-
-/* load a dword (binary) parameter from the registry */
-static BOOL get_dword_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        DWORD val;
-        if (load_entry( &entry->hdr, &val, sizeof(val) ) == sizeof(DWORD)) entry->dword.val = val;
-    }
-    *(DWORD *)ptr_param = entry->dword.val;
-    return TRUE;
-}
-
-/* set a dword (binary) parameter in the registry */
-static BOOL set_dword_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    DWORD val = PtrToUlong( ptr_param );
-
-    if (!save_entry( &entry->hdr, &val, sizeof(val), REG_DWORD, flags )) return FALSE;
-    entry->dword.val = val;
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a dword parameter */
-static BOOL init_dword_entry( union sysparam_all_entry *entry )
-{
-    return init_entry( &entry->hdr, &entry->dword.val, sizeof(entry->dword.val), REG_DWORD );
-}
-
-/* load an RGB parameter from the registry */
-static BOOL get_rgb_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buf[32];
-
-        if (load_entry( &entry->hdr, buf, sizeof(buf) ))
-        {
-            DWORD r, g, b;
-            WCHAR *end, *str = buf;
-
-            r = strtoulW( str, &end, 10 );
-            if (end == str || !*end) goto done;
-            str = end + 1;
-            g = strtoulW( str, &end, 10 );
-            if (end == str || !*end) goto done;
-            str = end + 1;
-            b = strtoulW( str, &end, 10 );
-            if (end == str) goto done;
-            if (r > 255 || g > 255 || b > 255) goto done;
-            entry->rgb.val = RGB( r, g, b );
-        }
-    }
-done:
-    *(COLORREF *)ptr_param = entry->rgb.val;
-    return TRUE;
-}
-
-/* set an RGB parameter in the registry */
-static BOOL set_rgb_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    WCHAR buf[32];
-    HBRUSH brush;
-    HPEN pen;
-
-    wsprintfW( buf, CSrgb, GetRValue(int_param), GetGValue(int_param), GetBValue(int_param) );
-    if (!save_entry_string( &entry->hdr, buf, flags )) return FALSE;
-    entry->rgb.val = int_param;
-    entry->hdr.loaded = TRUE;
-    if ((brush = InterlockedExchangePointer( (void **)&entry->rgb.brush, 0 )))
-    {
-        __wine_make_gdi_object_system( brush, FALSE );
-        DeleteObject( brush );
-    }
-    if ((pen = InterlockedExchangePointer( (void **)&entry->rgb.pen, 0 )))
-    {
-        __wine_make_gdi_object_system( pen, FALSE );
-        DeleteObject( pen );
-    }
-    return TRUE;
-}
-
-/* initialize an RGB parameter */
-static BOOL init_rgb_entry( union sysparam_all_entry *entry )
-{
-    WCHAR buf[32];
-
-    wsprintfW( buf, CSrgb, GetRValue(entry->rgb.val), GetGValue(entry->rgb.val), GetBValue(entry->rgb.val) );
-    return init_entry_string( &entry->hdr, buf );
-}
-
-/* load a font (binary) parameter from the registry */
-static BOOL get_font_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    LOGFONTW font;
-
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        switch (load_entry( &entry->hdr, &font, sizeof(font) ))
-        {
-        case sizeof(font):
-            if (font.lfHeight > 0) /* positive height value means points ( inch/72 ) */
-                font.lfHeight = -MulDiv( font.lfHeight, USER_DEFAULT_SCREEN_DPI, 72 );
-            entry->font.val = font;
-            break;
-        case sizeof(LOGFONT16): /* win9x-winME format */
-            SYSPARAMS_LogFont16To32W( (LOGFONT16 *)&font, &entry->font.val );
-            if (entry->font.val.lfHeight > 0)
-                entry->font.val.lfHeight = -MulDiv( entry->font.val.lfHeight, USER_DEFAULT_SCREEN_DPI, 72 );
-            break;
-        default:
-            WARN( "Unknown format in key %s value %s\n",
-                  debugstr_w( parameter_key_names[entry->hdr.regval[0]] ),
-                  debugstr_w( entry->hdr.regval + 1 ));
-            /* fall through */
-        case 0: /* use the default GUI font */
-            GetObjectW( GetStockObject( DEFAULT_GUI_FONT ), sizeof(font), &font );
-            font.lfHeight = map_from_system_dpi( font.lfHeight );
-            font.lfWeight = entry->font.weight;
-            entry->font.val = font;
-            break;
-        }
-        get_real_fontname( &entry->font.val, entry->font.fullname );
-        entry->hdr.loaded = TRUE;
-    }
-    font = entry->font.val;
-    font.lfHeight = map_to_dpi( font.lfHeight, dpi );
-    strcpyW( font.lfFaceName, entry->font.fullname );
-    *(LOGFONTW *)ptr_param = font;
-    return TRUE;
-}
-
-/* set a font (binary) parameter in the registry */
-static BOOL set_font_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    LOGFONTW font;
-    WCHAR *ptr;
-
-    memcpy( &font, ptr_param, sizeof(font) );
-    /* zero pad the end of lfFaceName so we don't save uninitialised data */
-    ptr = memchrW( font.lfFaceName, 0, LF_FACESIZE );
-    if (ptr) memset( ptr, 0, (font.lfFaceName + LF_FACESIZE - ptr) * sizeof(WCHAR) );
-    if (font.lfHeight < 0) font.lfHeight = map_from_system_dpi( font.lfHeight );
-
-    if (!save_entry( &entry->hdr, &font, sizeof(font), REG_BINARY, flags )) return FALSE;
-    entry->font.val = font;
-    get_real_fontname( &entry->font.val, entry->font.fullname );
-    entry->hdr.loaded = TRUE;
-    return TRUE;
-}
-
-/* initialize a font (binary) parameter */
-static BOOL init_font_entry( union sysparam_all_entry *entry )
-{
-    GetObjectW( GetStockObject( DEFAULT_GUI_FONT ), sizeof(entry->font.val), &entry->font.val );
-    entry->font.val.lfHeight = map_from_system_dpi( entry->font.val.lfHeight );
-    entry->font.val.lfWeight = entry->font.weight;
-    get_real_fontname( &entry->font.val, entry->font.fullname );
-    return init_entry( &entry->hdr, &entry->font.val, sizeof(entry->font.val), REG_BINARY );
-}
-
-/* get a path parameter in the registry */
-static BOOL get_path_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        WCHAR buffer[MAX_PATH];
-
-        if (load_entry( &entry->hdr, buffer, sizeof(buffer) ))
-            lstrcpynW( entry->path.path, buffer, MAX_PATH );
-    }
-    lstrcpynW( ptr_param, entry->path.path, int_param );
-    return TRUE;
-}
-
-/* set a path parameter in the registry */
-static BOOL set_path_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    WCHAR buffer[MAX_PATH];
-    BOOL ret;
-
-    lstrcpynW( buffer, ptr_param, MAX_PATH );
-    ret = save_entry_string( &entry->hdr, buffer, flags );
-    if (ret)
-    {
-        strcpyW( entry->path.path, buffer );
-        entry->hdr.loaded = TRUE;
-    }
-    return ret;
-}
-
-/* initialize a path parameter */
-static BOOL init_path_entry( union sysparam_all_entry *entry )
-{
-    return init_entry_string( &entry->hdr, entry->path.path );
-}
-
-/* get a binary parameter in the registry */
-static BOOL get_binary_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    if (!ptr_param) return FALSE;
-
-    if (!entry->hdr.loaded)
-    {
-        void *buffer = HeapAlloc( GetProcessHeap(), 0, entry->bin.size );
-        DWORD len = load_entry( &entry->hdr, buffer, entry->bin.size );
-
-        if (len)
-        {
-            memcpy( entry->bin.ptr, buffer, entry->bin.size );
-            memset( (char *)entry->bin.ptr + len, 0, entry->bin.size - len );
-        }
-        HeapFree( GetProcessHeap(), 0, buffer );
-    }
-    memcpy( ptr_param, entry->bin.ptr, min( int_param, entry->bin.size ) );
-    return TRUE;
-}
-
-/* set a binary parameter in the registry */
-static BOOL set_binary_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    BOOL ret;
-    void *buffer = HeapAlloc( GetProcessHeap(), 0, entry->bin.size );
-
-    memcpy( buffer, entry->bin.ptr, entry->bin.size );
-    memcpy( buffer, ptr_param, min( int_param, entry->bin.size ));
-    ret = save_entry( &entry->hdr, buffer, entry->bin.size, REG_BINARY, flags );
-    if (ret)
-    {
-        memcpy( entry->bin.ptr, buffer, entry->bin.size );
-        entry->hdr.loaded = TRUE;
-    }
-    HeapFree( GetProcessHeap(), 0, buffer );
-    return ret;
-}
-
-/* initialize a binary parameter */
-static BOOL init_binary_entry( union sysparam_all_entry *entry )
-{
-    return init_entry( &entry->hdr, entry->bin.ptr, entry->bin.size, REG_BINARY );
-}
-
-/* get a user pref parameter in the registry */
-static BOOL get_userpref_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT dpi )
-{
-    union sysparam_all_entry *parent_entry = (union sysparam_all_entry *)entry->pref.parent;
-    BYTE prefs[8];
-
-    if (!ptr_param) return FALSE;
-
-    if (!parent_entry->hdr.get( parent_entry, sizeof(prefs), prefs, dpi )) return FALSE;
-    *(BOOL *)ptr_param = (prefs[entry->pref.offset] & entry->pref.mask) != 0;
-    return TRUE;
-}
-
-/* set a user pref parameter in the registry */
-static BOOL set_userpref_entry( union sysparam_all_entry *entry, UINT int_param, void *ptr_param, UINT flags )
-{
-    union sysparam_all_entry *parent_entry = (union sysparam_all_entry *)entry->pref.parent;
-    BYTE prefs[8];
-
-    parent_entry->hdr.loaded = FALSE;  /* force loading it again */
-    if (!parent_entry->hdr.get( parent_entry, sizeof(prefs), prefs, GetDpiForSystem() )) return FALSE;
-
-    if (PtrToUlong( ptr_param )) prefs[entry->pref.offset] |= entry->pref.mask;
-    else prefs[entry->pref.offset] &= ~entry->pref.mask;
-
-    return parent_entry->hdr.set( parent_entry, sizeof(prefs), prefs, flags );
-}
-
-static BOOL get_entry_dpi( void *ptr, UINT int_param, void *ptr_param, UINT dpi )
-{
-    union sysparam_all_entry *entry = ptr;
-    return entry->hdr.get( entry, int_param, ptr_param, dpi );
-}
-
-static BOOL get_entry( void *ptr, UINT int_param, void *ptr_param )
-{
-    return get_entry_dpi( ptr, int_param, ptr_param, GetDpiForSystem() );
-}
-
-static BOOL set_entry( void *ptr, UINT int_param, void *ptr_param, UINT flags )
-{
-    union sysparam_all_entry *entry = ptr;
-    return entry->hdr.set( entry, int_param, ptr_param, flags );
-}
-
-#define UINT_ENTRY(name,val) \
-    struct sysparam_uint_entry entry_##name = { { get_uint_entry, set_uint_entry, init_uint_entry, \
-                                                  name ##_VALNAME }, (val) }
-
-#define UINT_ENTRY_MIRROR(name,val) \
-    struct sysparam_uint_entry entry_##name = { { get_uint_entry, set_uint_entry, init_uint_entry, \
-                                                  name ##_VALNAME, name ##_MIRROR }, (val) }
-
-#define INT_ENTRY(name,val) \
-    struct sysparam_uint_entry entry_##name = { { get_uint_entry, set_int_entry, init_int_entry, \
-                                                  name ##_VALNAME }, (val) }
-
-#define BOOL_ENTRY(name,val) \
-    struct sysparam_bool_entry entry_##name = { { get_bool_entry, set_bool_entry, init_bool_entry, \
-                                                  name ##_VALNAME }, (val) }
-
-#define BOOL_ENTRY_MIRROR(name,val) \
-    struct sysparam_bool_entry entry_##name = { { get_bool_entry, set_bool_entry, init_bool_entry, \
-                                                  name ##_VALNAME, name ##_MIRROR }, (val) }
-
-#define YESNO_ENTRY(name,val) \
-    struct sysparam_bool_entry entry_##name = { { get_yesno_entry, set_yesno_entry, init_yesno_entry, \
-                                                  name ##_VALNAME }, (val) }
-
-#define TWIPS_ENTRY(name,val) \
-    struct sysparam_uint_entry entry_##name = { { get_twips_entry, set_twips_entry, init_int_entry, \
-                                                  name ##_VALNAME }, (val) }
-
-#define DWORD_ENTRY(name,val) \
-    struct sysparam_dword_entry entry_##name = { { get_dword_entry, set_dword_entry, init_dword_entry, \
-                                                   name ##_VALNAME }, (val) }
-
-#define BINARY_ENTRY(name,data) \
-    struct sysparam_binary_entry entry_##name = { { get_binary_entry, set_binary_entry, init_binary_entry, \
-                                                    name ##_VALNAME }, data, sizeof(data) }
-
-#define PATH_ENTRY(name) \
-    struct sysparam_path_entry entry_##name = { { get_path_entry, set_path_entry, init_path_entry, \
-                                                  name ##_VALNAME } }
-
-#define FONT_ENTRY(name,weight) \
-    struct sysparam_font_entry entry_##name = { { get_font_entry, set_font_entry, init_font_entry, \
-                                                  name ##_VALNAME }, (weight) }
-
-#define USERPREF_ENTRY(name,offset,mask) \
-    struct sysparam_pref_entry entry_##name = { { get_userpref_entry, set_userpref_entry }, \
-                                                &entry_USERPREFERENCESMASK, (offset), (mask) }
-
-static UINT_ENTRY( DRAGWIDTH, 4 );
-static UINT_ENTRY( DRAGHEIGHT, 4 );
-static UINT_ENTRY( DOUBLECLICKTIME, 500 );
-static UINT_ENTRY( FONTSMOOTHING, 2 );
-static UINT_ENTRY( GRIDGRANULARITY, 0 );
-static UINT_ENTRY( KEYBOARDDELAY, 1 );
-static UINT_ENTRY( KEYBOARDSPEED, 31 );
-static UINT_ENTRY( MENUSHOWDELAY, 400 );
-static UINT_ENTRY( MINARRANGE, ARW_HIDE );
-static UINT_ENTRY( MINHORZGAP, 0 );
-static UINT_ENTRY( MINVERTGAP, 0 );
-static UINT_ENTRY( MINWIDTH, 154 );
-static UINT_ENTRY( MOUSEHOVERHEIGHT, 4 );
-static UINT_ENTRY( MOUSEHOVERTIME, 400 );
-static UINT_ENTRY( MOUSEHOVERWIDTH, 4 );
-static UINT_ENTRY( MOUSESPEED, 10 );
-static UINT_ENTRY( MOUSETRAILS, 0 );
-static UINT_ENTRY( SCREENSAVETIMEOUT, 300 );
-static UINT_ENTRY( WHEELSCROLLCHARS, 3 );
-static UINT_ENTRY( WHEELSCROLLLINES, 3 );
-static UINT_ENTRY_MIRROR( DOUBLECLKHEIGHT, 4 );
-static UINT_ENTRY_MIRROR( DOUBLECLKWIDTH, 4 );
-static UINT_ENTRY_MIRROR( MENUDROPALIGNMENT, 0 );
-
-static INT_ENTRY( MOUSETHRESHOLD1, 6 );
-static INT_ENTRY( MOUSETHRESHOLD2, 10 );
-static INT_ENTRY( MOUSEACCELERATION, 1 );
-
-static BOOL_ENTRY( BLOCKSENDINPUTRESETS, FALSE );
-static BOOL_ENTRY( DRAGFULLWINDOWS, FALSE );
-static BOOL_ENTRY( KEYBOARDPREF, TRUE );
-static BOOL_ENTRY( LOWPOWERACTIVE, FALSE );
-static BOOL_ENTRY( MOUSEBUTTONSWAP, FALSE );
-static BOOL_ENTRY( POWEROFFACTIVE, FALSE );
-static BOOL_ENTRY( SCREENREADER, FALSE );
-static BOOL_ENTRY( SCREENSAVEACTIVE, TRUE );
-static BOOL_ENTRY( SCREENSAVERRUNNING, FALSE );
-static BOOL_ENTRY( SHOWSOUNDS, FALSE );
-static BOOL_ENTRY( SNAPTODEFBUTTON, FALSE );
-static BOOL_ENTRY_MIRROR( ICONTITLEWRAP, TRUE );
-static BOOL_ENTRY( AUDIODESC_ON, FALSE);
-
-static YESNO_ENTRY( BEEP, TRUE );
-
-static TWIPS_ENTRY( BORDER, -15 );
-static TWIPS_ENTRY( CAPTIONHEIGHT, -270 );
-static TWIPS_ENTRY( CAPTIONWIDTH, -270 );
-static TWIPS_ENTRY( ICONHORIZONTALSPACING, -1125 );
-static TWIPS_ENTRY( ICONVERTICALSPACING, -1125 );
-static TWIPS_ENTRY( MENUHEIGHT, -270 );
-static TWIPS_ENTRY( MENUWIDTH, -270 );
-static TWIPS_ENTRY( PADDEDBORDERWIDTH, 0 );
-static TWIPS_ENTRY( SCROLLHEIGHT, -240 );
-static TWIPS_ENTRY( SCROLLWIDTH, -240 );
-static TWIPS_ENTRY( SMCAPTIONHEIGHT, -225 );
-static TWIPS_ENTRY( SMCAPTIONWIDTH, -225 );
-
-static DWORD_ENTRY( ACTIVEWINDOWTRACKING, 0 );
-static DWORD_ENTRY( ACTIVEWNDTRKTIMEOUT, 0 );
-static DWORD_ENTRY( CARETWIDTH, 1 );
-static DWORD_ENTRY( DPISCALINGVER, 0 );
-static DWORD_ENTRY( FOCUSBORDERHEIGHT, 1 );
-static DWORD_ENTRY( FOCUSBORDERWIDTH, 1 );
-static DWORD_ENTRY( FONTSMOOTHINGCONTRAST, 0 );
-static DWORD_ENTRY( FONTSMOOTHINGORIENTATION, FE_FONTSMOOTHINGORIENTATIONRGB );
-static DWORD_ENTRY( FONTSMOOTHINGTYPE, FE_FONTSMOOTHINGSTANDARD );
-static DWORD_ENTRY( FOREGROUNDFLASHCOUNT, 3 );
-static DWORD_ENTRY( FOREGROUNDLOCKTIMEOUT, 0 );
-static DWORD_ENTRY( LOGPIXELS, 0 );
-static DWORD_ENTRY( MOUSECLICKLOCKTIME, 1200 );
-static DWORD_ENTRY( AUDIODESC_LOCALE, 0 );
-
-static PATH_ENTRY( DESKPATTERN );
-static PATH_ENTRY( DESKWALLPAPER );
-
-static BYTE user_prefs[8] = { 0x30, 0x00, 0x00, 0x80, 0x10, 0x00, 0x00, 0x00 };
-static BINARY_ENTRY( USERPREFERENCESMASK, user_prefs );
-
-static FONT_ENTRY( CAPTIONLOGFONT, FW_BOLD );
-static FONT_ENTRY( ICONTITLELOGFONT, FW_NORMAL );
-static FONT_ENTRY( MENULOGFONT, FW_NORMAL );
-static FONT_ENTRY( MESSAGELOGFONT, FW_NORMAL );
-static FONT_ENTRY( SMCAPTIONLOGFONT, FW_NORMAL );
-static FONT_ENTRY( STATUSLOGFONT, FW_NORMAL );
-
-static USERPREF_ENTRY( MENUANIMATION,            0, 0x02 );
-static USERPREF_ENTRY( COMBOBOXANIMATION,        0, 0x04 );
-static USERPREF_ENTRY( LISTBOXSMOOTHSCROLLING,   0, 0x08 );
-static USERPREF_ENTRY( GRADIENTCAPTIONS,         0, 0x10 );
-static USERPREF_ENTRY( KEYBOARDCUES,             0, 0x20 );
-static USERPREF_ENTRY( ACTIVEWNDTRKZORDER,       0, 0x40 );
-static USERPREF_ENTRY( HOTTRACKING,              0, 0x80 );
-static USERPREF_ENTRY( MENUFADE,                 1, 0x02 );
-static USERPREF_ENTRY( SELECTIONFADE,            1, 0x04 );
-static USERPREF_ENTRY( TOOLTIPANIMATION,         1, 0x08 );
-static USERPREF_ENTRY( TOOLTIPFADE,              1, 0x10 );
-static USERPREF_ENTRY( CURSORSHADOW,             1, 0x20 );
-static USERPREF_ENTRY( MOUSESONAR,               1, 0x40 );
-static USERPREF_ENTRY( MOUSECLICKLOCK,           1, 0x80 );
-static USERPREF_ENTRY( MOUSEVANISH,              2, 0x01 );
-static USERPREF_ENTRY( FLATMENU,                 2, 0x02 );
-static USERPREF_ENTRY( DROPSHADOW,               2, 0x04 );
-static USERPREF_ENTRY( UIEFFECTS,                3, 0x80 );
-static USERPREF_ENTRY( DISABLEOVERLAPPEDCONTENT, 4, 0x01 );
-static USERPREF_ENTRY( CLIENTAREAANIMATION,      4, 0x02 );
-static USERPREF_ENTRY( CLEARTYPE,                4, 0x10 );
-static USERPREF_ENTRY( SPEECHRECOGNITION,        4, 0x20 );
-
-static struct sysparam_rgb_entry system_colors[] =
-{
-#define RGB_ENTRY(name,val) { { get_rgb_entry, set_rgb_entry, init_rgb_entry, name ##_VALNAME }, (val) }
-    RGB_ENTRY( COLOR_SCROLLBAR, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_BACKGROUND, RGB(58, 110, 165) ),
-    RGB_ENTRY( COLOR_ACTIVECAPTION, RGB(10, 36, 106) ),
-    RGB_ENTRY( COLOR_INACTIVECAPTION, RGB(128, 128, 128) ),
-    RGB_ENTRY( COLOR_MENU, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_WINDOW, RGB(255, 255, 255) ),
-    RGB_ENTRY( COLOR_WINDOWFRAME, RGB(0, 0, 0) ),
-    RGB_ENTRY( COLOR_MENUTEXT, RGB(0, 0, 0) ),
-    RGB_ENTRY( COLOR_WINDOWTEXT, RGB(0, 0, 0) ),
-    RGB_ENTRY( COLOR_CAPTIONTEXT, RGB(255, 255, 255) ),
-    RGB_ENTRY( COLOR_ACTIVEBORDER, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_INACTIVEBORDER, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_APPWORKSPACE, RGB(128, 128, 128) ),
-    RGB_ENTRY( COLOR_HIGHLIGHT, RGB(10, 36, 106) ),
-    RGB_ENTRY( COLOR_HIGHLIGHTTEXT, RGB(255, 255, 255) ),
-    RGB_ENTRY( COLOR_BTNFACE, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_BTNSHADOW, RGB(128, 128, 128) ),
-    RGB_ENTRY( COLOR_GRAYTEXT, RGB(128, 128, 128) ),
-    RGB_ENTRY( COLOR_BTNTEXT, RGB(0, 0, 0) ),
-    RGB_ENTRY( COLOR_INACTIVECAPTIONTEXT, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_BTNHIGHLIGHT, RGB(255, 255, 255) ),
-    RGB_ENTRY( COLOR_3DDKSHADOW, RGB(64, 64, 64) ),
-    RGB_ENTRY( COLOR_3DLIGHT, RGB(212, 208, 200) ),
-    RGB_ENTRY( COLOR_INFOTEXT, RGB(0, 0, 0) ),
-    RGB_ENTRY( COLOR_INFOBK, RGB(255, 255, 225) ),
-    RGB_ENTRY( COLOR_ALTERNATEBTNFACE, RGB(181, 181, 181) ),
-    RGB_ENTRY( COLOR_HOTLIGHT, RGB(0, 0, 200) ),
-    RGB_ENTRY( COLOR_GRADIENTACTIVECAPTION, RGB(166, 202, 240) ),
-    RGB_ENTRY( COLOR_GRADIENTINACTIVECAPTION, RGB(192, 192, 192) ),
-    RGB_ENTRY( COLOR_MENUHILIGHT, RGB(10, 36, 106) ),
-    RGB_ENTRY( COLOR_MENUBAR, RGB(212, 208, 200) )
-#undef RGB_ENTRY
-};
-
-/* entries that are initialized by default in the registry */
-static union sysparam_all_entry * const default_entries[] =
-{
-    (union sysparam_all_entry *)&entry_ACTIVEWINDOWTRACKING,
-    (union sysparam_all_entry *)&entry_ACTIVEWNDTRKTIMEOUT,
-    (union sysparam_all_entry *)&entry_BEEP,
-    (union sysparam_all_entry *)&entry_BLOCKSENDINPUTRESETS,
-    (union sysparam_all_entry *)&entry_BORDER,
-    (union sysparam_all_entry *)&entry_CAPTIONHEIGHT,
-    (union sysparam_all_entry *)&entry_CAPTIONWIDTH,
-    (union sysparam_all_entry *)&entry_CARETWIDTH,
-    (union sysparam_all_entry *)&entry_DESKWALLPAPER,
-    (union sysparam_all_entry *)&entry_DOUBLECLICKTIME,
-    (union sysparam_all_entry *)&entry_DOUBLECLKHEIGHT,
-    (union sysparam_all_entry *)&entry_DOUBLECLKWIDTH,
-    (union sysparam_all_entry *)&entry_DRAGFULLWINDOWS,
-    (union sysparam_all_entry *)&entry_DRAGHEIGHT,
-    (union sysparam_all_entry *)&entry_DRAGWIDTH,
-    (union sysparam_all_entry *)&entry_FOCUSBORDERHEIGHT,
-    (union sysparam_all_entry *)&entry_FOCUSBORDERWIDTH,
-    (union sysparam_all_entry *)&entry_FONTSMOOTHING,
-    (union sysparam_all_entry *)&entry_FONTSMOOTHINGCONTRAST,
-    (union sysparam_all_entry *)&entry_FONTSMOOTHINGORIENTATION,
-    (union sysparam_all_entry *)&entry_FONTSMOOTHINGTYPE,
-    (union sysparam_all_entry *)&entry_FOREGROUNDFLASHCOUNT,
-    (union sysparam_all_entry *)&entry_FOREGROUNDLOCKTIMEOUT,
-    (union sysparam_all_entry *)&entry_ICONHORIZONTALSPACING,
-    (union sysparam_all_entry *)&entry_ICONTITLEWRAP,
-    (union sysparam_all_entry *)&entry_ICONVERTICALSPACING,
-    (union sysparam_all_entry *)&entry_KEYBOARDDELAY,
-    (union sysparam_all_entry *)&entry_KEYBOARDPREF,
-    (union sysparam_all_entry *)&entry_KEYBOARDSPEED,
-    (union sysparam_all_entry *)&entry_LOWPOWERACTIVE,
-    (union sysparam_all_entry *)&entry_MENUHEIGHT,
-    (union sysparam_all_entry *)&entry_MENUSHOWDELAY,
-    (union sysparam_all_entry *)&entry_MENUWIDTH,
-    (union sysparam_all_entry *)&entry_MOUSEACCELERATION,
-    (union sysparam_all_entry *)&entry_MOUSEBUTTONSWAP,
-    (union sysparam_all_entry *)&entry_MOUSECLICKLOCKTIME,
-    (union sysparam_all_entry *)&entry_MOUSEHOVERHEIGHT,
-    (union sysparam_all_entry *)&entry_MOUSEHOVERTIME,
-    (union sysparam_all_entry *)&entry_MOUSEHOVERWIDTH,
-    (union sysparam_all_entry *)&entry_MOUSESPEED,
-    (union sysparam_all_entry *)&entry_MOUSETHRESHOLD1,
-    (union sysparam_all_entry *)&entry_MOUSETHRESHOLD2,
-    (union sysparam_all_entry *)&entry_PADDEDBORDERWIDTH,
-    (union sysparam_all_entry *)&entry_SCREENREADER,
-    (union sysparam_all_entry *)&entry_SCROLLHEIGHT,
-    (union sysparam_all_entry *)&entry_SCROLLWIDTH,
-    (union sysparam_all_entry *)&entry_SHOWSOUNDS,
-    (union sysparam_all_entry *)&entry_SMCAPTIONHEIGHT,
-    (union sysparam_all_entry *)&entry_SMCAPTIONWIDTH,
-    (union sysparam_all_entry *)&entry_SNAPTODEFBUTTON,
-    (union sysparam_all_entry *)&entry_USERPREFERENCESMASK,
-    (union sysparam_all_entry *)&entry_WHEELSCROLLCHARS,
-    (union sysparam_all_entry *)&entry_WHEELSCROLLLINES,
-    (union sysparam_all_entry *)&entry_AUDIODESC_LOCALE,
-    (union sysparam_all_entry *)&entry_AUDIODESC_ON,
-};
-
 /***********************************************************************
  *           SYSPARAMS_Init
  */
 void SYSPARAMS_Init(void)
 {
-    static const WCHAR def_key_name[] = {'S','o','f','t','w','a','r','e','\\','F','o','n','t','s',0};
-    static const WCHAR def_value_name[] = {'L','o','g','P','i','x','e','l','s',0};
-    HKEY key;
-    DWORD i, dispos, dpi_scaling;
-
-    /* this one must be non-volatile */
-    if (RegCreateKeyW( HKEY_CURRENT_USER, WINE_CURRENT_USER_REGKEY, &key ))
-    {
-        ERR("Can't create wine registry branch\n");
-        return;
-    }
-
-    /* @@ Wine registry key: HKCU\Software\Wine\Temporary System Parameters */
-    if (RegCreateKeyExW( key, WINE_CURRENT_USER_REGKEY_TEMP_PARAMS, 0, 0,
-                         REG_OPTION_VOLATILE, KEY_ALL_ACCESS, 0, &volatile_base_key, &dispos ))
-        ERR("Can't create non-permanent wine registry branch\n");
-
-    RegCloseKey( key );
-
-    get_dword_entry( (union sysparam_all_entry *)&entry_LOGPIXELS, 0, &system_dpi, 0 );
-    if (!system_dpi)  /* check fallback key */
-    {
-        if (!RegOpenKeyW( HKEY_CURRENT_CONFIG, def_key_name, &key ))
-        {
-            DWORD type, size = sizeof(system_dpi);
-            if (RegQueryValueExW( key, def_value_name, NULL, &type, (void *)&system_dpi, &size ) ||
-                type != REG_DWORD)
-                system_dpi = 0;
-            RegCloseKey( key );
-        }
-    }
-    if (!system_dpi) system_dpi = USER_DEFAULT_SCREEN_DPI;
-
-    /* FIXME: what do the DpiScalingVer flags mean? */
-    get_dword_entry( (union sysparam_all_entry *)&entry_DPISCALINGVER, 0, &dpi_scaling, 0 );
-    if (!dpi_scaling)
-    {
-        default_awareness = DPI_AWARENESS_PER_MONITOR_AWARE;
-        dpi_awareness = 0x10 | default_awareness;
-    }
-
-    if (volatile_base_key && dispos == REG_CREATED_NEW_KEY)  /* first process, initialize entries */
-    {
-        for (i = 0; i < ARRAY_SIZE( default_entries ); i++)
-            default_entries[i]->hdr.init( default_entries[i] );
-    }
+    system_dpi = NtUserGetSystemDpiForProcess( NULL );
 }
 
 static BOOL update_desktop_wallpaper(void)
@@ -1603,10 +265,11 @@ static BOOL update_desktop_wallpaper(void)
     {
         WCHAR wallpaper[MAX_PATH], pattern[256];
 
-        entry_DESKWALLPAPER.hdr.loaded = entry_DESKPATTERN.hdr.loaded = FALSE;
-        if (get_entry( &entry_DESKWALLPAPER, MAX_PATH, wallpaper ) &&
-            get_entry( &entry_DESKPATTERN, 256, pattern ))
+        if (NtUserSystemParametersInfo( SPI_GETDESKWALLPAPER, ARRAYSIZE(wallpaper), wallpaper, 0 ) &&
+            NtUserCallOneParam( (ULONG_PTR)pattern, NtUserGetDeskPattern ))
+        {
             update_wallpaper( wallpaper, pattern );
+        }
     }
     else SendMessageW( GetDesktopWindow(), WM_SETTINGCHANGE, SPI_SETDESKWALLPAPER, 0 );
     return TRUE;
@@ -1614,909 +277,26 @@ static BOOL update_desktop_wallpaper(void)
 
 
 /***********************************************************************
- *		SystemParametersInfoForDpi  (USER32.@)
+ *	        SystemParametersInfoForDpi (USER32.@)
  */
 BOOL WINAPI SystemParametersInfoForDpi( UINT action, UINT val, PVOID ptr, UINT winini, UINT dpi )
 {
-    BOOL ret = FALSE;
-
-    switch (action)
-    {
-    case SPI_GETICONTITLELOGFONT:
-        ret = get_entry_dpi( &entry_ICONTITLELOGFONT, val, ptr, dpi );
-        break;
-    case SPI_GETNONCLIENTMETRICS:
-    {
-        NONCLIENTMETRICSW *ncm = ptr;
-
-        if (!ncm) break;
-        ret = get_entry_dpi( &entry_BORDER, 0, &ncm->iBorderWidth, dpi ) &&
-              get_entry_dpi( &entry_SCROLLWIDTH, 0, &ncm->iScrollWidth, dpi ) &&
-              get_entry_dpi( &entry_SCROLLHEIGHT, 0, &ncm->iScrollHeight, dpi ) &&
-              get_entry_dpi( &entry_CAPTIONWIDTH, 0, &ncm->iCaptionWidth, dpi ) &&
-              get_entry_dpi( &entry_CAPTIONHEIGHT, 0, &ncm->iCaptionHeight, dpi ) &&
-              get_entry_dpi( &entry_CAPTIONLOGFONT, 0, &ncm->lfCaptionFont, dpi ) &&
-              get_entry_dpi( &entry_SMCAPTIONWIDTH, 0, &ncm->iSmCaptionWidth, dpi ) &&
-              get_entry_dpi( &entry_SMCAPTIONHEIGHT, 0, &ncm->iSmCaptionHeight, dpi ) &&
-              get_entry_dpi( &entry_SMCAPTIONLOGFONT, 0, &ncm->lfSmCaptionFont, dpi ) &&
-              get_entry_dpi( &entry_MENUWIDTH, 0, &ncm->iMenuWidth, dpi ) &&
-              get_entry_dpi( &entry_MENUHEIGHT, 0, &ncm->iMenuHeight, dpi ) &&
-              get_entry_dpi( &entry_MENULOGFONT, 0, &ncm->lfMenuFont, dpi ) &&
-              get_entry_dpi( &entry_STATUSLOGFONT, 0, &ncm->lfStatusFont, dpi ) &&
-              get_entry_dpi( &entry_MESSAGELOGFONT, 0, &ncm->lfMessageFont, dpi );
-        if (ret && ncm->cbSize == sizeof(NONCLIENTMETRICSW))
-            ret = get_entry_dpi( &entry_PADDEDBORDERWIDTH, 0, &ncm->iPaddedBorderWidth, dpi );
-        normalize_nonclientmetrics( ncm );
-        break;
-    }
-    case SPI_GETICONMETRICS:
-    {
-	ICONMETRICSW *im = ptr;
-	if (im && im->cbSize == sizeof(*im))
-            ret = get_entry_dpi( &entry_ICONHORIZONTALSPACING, 0, &im->iHorzSpacing, dpi ) &&
-                  get_entry_dpi( &entry_ICONVERTICALSPACING, 0, &im->iVertSpacing, dpi ) &&
-                  get_entry_dpi( &entry_ICONTITLEWRAP, 0, &im->iTitleWrap, dpi ) &&
-                  get_entry_dpi( &entry_ICONTITLELOGFONT, 0, &im->lfFont, dpi );
-	break;
-    }
-    default:
-        SetLastError( ERROR_INVALID_PARAMETER );
-        break;
-    }
+    BOOL ret = NtUserSystemParametersInfoForDpi( action, val, ptr, winini, dpi );
+    if (ret && (action == SPI_SETDESKWALLPAPER || action == SPI_SETDESKPATTERN))
+        ret = update_desktop_wallpaper();
     return ret;
 }
 
 
 /***********************************************************************
  *		SystemParametersInfoW (USER32.@)
- *
- *     Each system parameter has flag which shows whether the parameter
- * is loaded or not. Parameters, stored directly in SysParametersInfo are
- * loaded from registry only when they are requested and the flag is
- * "false", after the loading the flag is set to "true". On interprocess
- * notification of the parameter change the corresponding parameter flag is
- * set to "false". The parameter value will be reloaded when it is requested
- * the next time.
- *     Parameters, backed by or depend on GetSystemMetrics are processed
- * differently. These parameters are always loaded. They are reloaded right
- * away on interprocess change notification. We can't do lazy loading because
- * we don't want to complicate GetSystemMetrics.
- *     Parameters, backed by X settings are read from corresponding setting.
- * On the parameter change request the setting is changed. Interprocess change
- * notifications are ignored.
- *     When parameter value is updated the changed value is stored in permanent
- * registry branch if saving is requested. Otherwise it is stored
- * in temporary branch
- *
- * Some SPI values can also be stored as Twips values in the registry,
- * don't forget the conversion!
  */
-BOOL WINAPI SystemParametersInfoW( UINT uiAction, UINT uiParam,
-				   PVOID pvParam, UINT fWinIni )
+BOOL WINAPI SystemParametersInfoW( UINT action, UINT val, void *ptr, UINT winini )
 {
-#define WINE_SPI_FIXME(x) \
-    case x: \
-        { \
-            static BOOL warn = TRUE; \
-            if (warn) \
-            { \
-                warn = FALSE; \
-                FIXME( "Unimplemented action: %u (%s)\n", x, #x ); \
-            } \
-        } \
-        SetLastError( ERROR_INVALID_SPI_VALUE ); \
-        ret = FALSE; \
-        break
-#define WINE_SPI_WARN(x) \
-    case x: \
-        WARN( "Ignored action: %u (%s)\n", x, #x ); \
-        ret = TRUE; \
-        break
-
-    BOOL ret = USER_Driver->pSystemParametersInfo( uiAction, uiParam, pvParam, fWinIni );
-    unsigned spi_idx = 0;
-
-    if (!ret) switch (uiAction)
-    {
-    case SPI_GETBEEP:
-        ret = get_entry( &entry_BEEP, uiParam, pvParam );
-        break;
-    case SPI_SETBEEP:
-        ret = set_entry( &entry_BEEP, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSE:
-        ret = get_entry( &entry_MOUSETHRESHOLD1, uiParam, (INT *)pvParam ) &&
-              get_entry( &entry_MOUSETHRESHOLD2, uiParam, (INT *)pvParam + 1 ) &&
-              get_entry( &entry_MOUSEACCELERATION, uiParam, (INT *)pvParam + 2 );
-        break;
-    case SPI_SETMOUSE:
-        ret = set_entry( &entry_MOUSETHRESHOLD1, ((INT *)pvParam)[0], pvParam, fWinIni ) &&
-              set_entry( &entry_MOUSETHRESHOLD2, ((INT *)pvParam)[1], pvParam, fWinIni ) &&
-              set_entry( &entry_MOUSEACCELERATION, ((INT *)pvParam)[2], pvParam, fWinIni );
-        break;
-    case SPI_GETBORDER:
-        ret = get_entry( &entry_BORDER, uiParam, pvParam );
-        if (*(INT*)pvParam < 1) *(INT*)pvParam = 1;
-        break;
-    case SPI_SETBORDER:
-        ret = set_entry( &entry_BORDER, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETKEYBOARDSPEED:
-        ret = get_entry( &entry_KEYBOARDSPEED, uiParam, pvParam );
-        break;
-    case SPI_SETKEYBOARDSPEED:
-        if (uiParam > 31) uiParam = 31;
-        ret = set_entry( &entry_KEYBOARDSPEED, uiParam, pvParam, fWinIni );
-        break;
-
-    /* not implemented in Windows */
-    WINE_SPI_WARN(SPI_LANGDRIVER);              /*     12 */
-
-    case SPI_ICONHORIZONTALSPACING:
-        if (pvParam != NULL)
-            ret = get_entry( &entry_ICONHORIZONTALSPACING, uiParam, pvParam );
-        else
-        {
-            int min_val = map_to_dpi( 32, GetDpiForSystem() );
-            ret = set_entry( &entry_ICONHORIZONTALSPACING, max( min_val, uiParam ), pvParam, fWinIni );
-        }
-        break;
-    case SPI_GETSCREENSAVETIMEOUT:
-        ret = get_entry( &entry_SCREENSAVETIMEOUT, uiParam, pvParam );
-        break;
-    case SPI_SETSCREENSAVETIMEOUT:
-        ret = set_entry( &entry_SCREENSAVETIMEOUT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETSCREENSAVEACTIVE:
-        ret = get_entry( &entry_SCREENSAVEACTIVE, uiParam, pvParam );
-        break;
-    case SPI_SETSCREENSAVEACTIVE:
-        ret = set_entry( &entry_SCREENSAVEACTIVE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETGRIDGRANULARITY:
-        ret = get_entry( &entry_GRIDGRANULARITY, uiParam, pvParam );
-        break;
-    case SPI_SETGRIDGRANULARITY:
-        ret = set_entry( &entry_GRIDGRANULARITY, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETDESKWALLPAPER:
-        if (!pvParam || set_entry( &entry_DESKWALLPAPER, uiParam, pvParam, fWinIni ))
-            ret = update_desktop_wallpaper();
-        break;
-    case SPI_SETDESKPATTERN:
-        if (!pvParam || set_entry( &entry_DESKPATTERN, uiParam, pvParam, fWinIni ))
-            ret = update_desktop_wallpaper();
-        break;
-    case SPI_GETKEYBOARDDELAY:
-        ret = get_entry( &entry_KEYBOARDDELAY, uiParam, pvParam );
-        break;
-    case SPI_SETKEYBOARDDELAY:
-        ret = set_entry( &entry_KEYBOARDDELAY, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_ICONVERTICALSPACING:
-        if (pvParam != NULL)
-            ret = get_entry( &entry_ICONVERTICALSPACING, uiParam, pvParam );
-        else
-        {
-            int min_val = map_to_dpi( 32, GetDpiForSystem() );
-            ret = set_entry( &entry_ICONVERTICALSPACING, max( min_val, uiParam ), pvParam, fWinIni );
-        }
-        break;
-    case SPI_GETICONTITLEWRAP:
-        ret = get_entry( &entry_ICONTITLEWRAP, uiParam, pvParam );
-        break;
-    case SPI_SETICONTITLEWRAP:
-        ret = set_entry( &entry_ICONTITLEWRAP, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMENUDROPALIGNMENT:
-        ret = get_entry( &entry_MENUDROPALIGNMENT, uiParam, pvParam );
-        break;
-    case SPI_SETMENUDROPALIGNMENT:
-        ret = set_entry( &entry_MENUDROPALIGNMENT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETDOUBLECLKWIDTH:
-        ret = set_entry( &entry_DOUBLECLKWIDTH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETDOUBLECLKHEIGHT:
-        ret = set_entry( &entry_DOUBLECLKHEIGHT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETICONTITLELOGFONT:
-        ret = get_entry( &entry_ICONTITLELOGFONT, uiParam, pvParam );
-        break;
-    case SPI_SETDOUBLECLICKTIME:
-        ret = set_entry( &entry_DOUBLECLICKTIME, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETMOUSEBUTTONSWAP:
-        ret = set_entry( &entry_MOUSEBUTTONSWAP, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETICONTITLELOGFONT:
-        ret = set_entry( &entry_ICONTITLELOGFONT, uiParam, pvParam, fWinIni );
-        break;
-
-    case SPI_GETFASTTASKSWITCH:			/*     35 */
-        if (!pvParam) return FALSE;
-        *(BOOL *)pvParam = TRUE;
-        ret = TRUE;
-        break;
-
-    case SPI_SETFASTTASKSWITCH:                 /*     36 */
-        /* the action is disabled */
-        ret = FALSE;
-        break;
-
-    case SPI_SETDRAGFULLWINDOWS:
-        ret = set_entry( &entry_DRAGFULLWINDOWS, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETDRAGFULLWINDOWS:
-        ret = get_entry( &entry_DRAGFULLWINDOWS, uiParam, pvParam );
-        break;
-    case SPI_GETNONCLIENTMETRICS:
-    {
-        LPNONCLIENTMETRICSW lpnm = pvParam;
-        int padded_border;
-
-        if (!pvParam) return FALSE;
-
-        ret = get_entry( &entry_BORDER, 0, &lpnm->iBorderWidth ) &&
-              get_entry( &entry_PADDEDBORDERWIDTH, 0, &padded_border ) &&
-              get_entry( &entry_SCROLLWIDTH, 0, &lpnm->iScrollWidth ) &&
-              get_entry( &entry_SCROLLHEIGHT, 0, &lpnm->iScrollHeight ) &&
-              get_entry( &entry_CAPTIONWIDTH, 0, &lpnm->iCaptionWidth ) &&
-              get_entry( &entry_CAPTIONHEIGHT, 0, &lpnm->iCaptionHeight ) &&
-              get_entry( &entry_CAPTIONLOGFONT, 0, &lpnm->lfCaptionFont ) &&
-              get_entry( &entry_SMCAPTIONWIDTH, 0, &lpnm->iSmCaptionWidth ) &&
-              get_entry( &entry_SMCAPTIONHEIGHT, 0, &lpnm->iSmCaptionHeight ) &&
-              get_entry( &entry_SMCAPTIONLOGFONT, 0, &lpnm->lfSmCaptionFont ) &&
-              get_entry( &entry_MENUWIDTH, 0, &lpnm->iMenuWidth ) &&
-              get_entry( &entry_MENUHEIGHT, 0, &lpnm->iMenuHeight ) &&
-              get_entry( &entry_MENULOGFONT, 0, &lpnm->lfMenuFont ) &&
-              get_entry( &entry_STATUSLOGFONT, 0, &lpnm->lfStatusFont ) &&
-              get_entry( &entry_MESSAGELOGFONT, 0, &lpnm->lfMessageFont );
-        if (ret)
-        {
-            lpnm->iBorderWidth += padded_border;
-            if (lpnm->cbSize == sizeof(NONCLIENTMETRICSW)) lpnm->iPaddedBorderWidth = 0;
-        }
-        normalize_nonclientmetrics( lpnm );
-        break;
-    }
-    case SPI_SETNONCLIENTMETRICS:
-    {
-        LPNONCLIENTMETRICSW lpnm = pvParam;
-        int padded_border;
-
-        if (lpnm && (lpnm->cbSize == sizeof(NONCLIENTMETRICSW) ||
-                     lpnm->cbSize == FIELD_OFFSET(NONCLIENTMETRICSW, iPaddedBorderWidth)))
-        {
-            get_entry( &entry_PADDEDBORDERWIDTH, 0, &padded_border );
-
-            ret = set_entry( &entry_BORDER, lpnm->iBorderWidth - padded_border, NULL, fWinIni ) &&
-                  set_entry( &entry_SCROLLWIDTH, lpnm->iScrollWidth, NULL, fWinIni ) &&
-                  set_entry( &entry_SCROLLHEIGHT, lpnm->iScrollHeight, NULL, fWinIni ) &&
-                  set_entry( &entry_CAPTIONWIDTH, lpnm->iCaptionWidth, NULL, fWinIni ) &&
-                  set_entry( &entry_CAPTIONHEIGHT, lpnm->iCaptionHeight, NULL, fWinIni ) &&
-                  set_entry( &entry_SMCAPTIONWIDTH, lpnm->iSmCaptionWidth, NULL, fWinIni ) &&
-                  set_entry( &entry_SMCAPTIONHEIGHT, lpnm->iSmCaptionHeight, NULL, fWinIni ) &&
-                  set_entry( &entry_MENUWIDTH, lpnm->iMenuWidth, NULL, fWinIni ) &&
-                  set_entry( &entry_MENUHEIGHT, lpnm->iMenuHeight, NULL, fWinIni ) &&
-                  set_entry( &entry_MENULOGFONT, 0, &lpnm->lfMenuFont, fWinIni ) &&
-                  set_entry( &entry_CAPTIONLOGFONT, 0, &lpnm->lfCaptionFont, fWinIni ) &&
-                  set_entry( &entry_SMCAPTIONLOGFONT, 0, &lpnm->lfSmCaptionFont, fWinIni ) &&
-                  set_entry( &entry_STATUSLOGFONT, 0, &lpnm->lfStatusFont, fWinIni ) &&
-                  set_entry( &entry_MESSAGELOGFONT, 0, &lpnm->lfMessageFont, fWinIni );
-        }
-        break;
-    }
-    case SPI_GETMINIMIZEDMETRICS:
-    {
-        MINIMIZEDMETRICS * lpMm = pvParam;
-        if (lpMm && lpMm->cbSize == sizeof(*lpMm)) {
-            ret = get_entry( &entry_MINWIDTH, 0, &lpMm->iWidth ) &&
-                  get_entry( &entry_MINHORZGAP, 0, &lpMm->iHorzGap ) &&
-                  get_entry( &entry_MINVERTGAP, 0, &lpMm->iVertGap ) &&
-                  get_entry( &entry_MINARRANGE, 0, &lpMm->iArrange );
-            lpMm->iWidth = max( 0, lpMm->iWidth );
-            lpMm->iHorzGap = max( 0, lpMm->iHorzGap );
-            lpMm->iVertGap = max( 0, lpMm->iVertGap );
-            lpMm->iArrange &= 0x0f;
-        }
-        break;
-    }
-    case SPI_SETMINIMIZEDMETRICS:
-    {
-        MINIMIZEDMETRICS * lpMm = pvParam;
-        if (lpMm && lpMm->cbSize == sizeof(*lpMm))
-            ret = set_entry( &entry_MINWIDTH, max( 0, lpMm->iWidth ), NULL, fWinIni ) &&
-                  set_entry( &entry_MINHORZGAP, max( 0, lpMm->iHorzGap ), NULL, fWinIni ) &&
-                  set_entry( &entry_MINVERTGAP, max( 0, lpMm->iVertGap ), NULL, fWinIni ) &&
-                  set_entry( &entry_MINARRANGE, lpMm->iArrange & 0x0f, NULL, fWinIni );
-        break;
-    }
-    case SPI_GETICONMETRICS:
-    {
-	LPICONMETRICSW lpIcon = pvParam;
-	if(lpIcon && lpIcon->cbSize == sizeof(*lpIcon))
-	{
-            ret = get_entry( &entry_ICONHORIZONTALSPACING, 0, &lpIcon->iHorzSpacing ) &&
-                  get_entry( &entry_ICONVERTICALSPACING, 0, &lpIcon->iVertSpacing ) &&
-                  get_entry( &entry_ICONTITLEWRAP, 0, &lpIcon->iTitleWrap ) &&
-                  get_entry( &entry_ICONTITLELOGFONT, 0, &lpIcon->lfFont );
-	}
-	break;
-    }
-    case SPI_SETICONMETRICS:
-    {
-        LPICONMETRICSW lpIcon = pvParam;
-        if (lpIcon && lpIcon->cbSize == sizeof(*lpIcon))
-            ret = set_entry( &entry_ICONVERTICALSPACING, max(32,lpIcon->iVertSpacing), NULL, fWinIni ) &&
-                  set_entry( &entry_ICONHORIZONTALSPACING, max(32,lpIcon->iHorzSpacing), NULL, fWinIni ) &&
-                  set_entry( &entry_ICONTITLEWRAP, lpIcon->iTitleWrap, NULL, fWinIni ) &&
-                  set_entry( &entry_ICONTITLELOGFONT, 0, &lpIcon->lfFont, fWinIni );
-        break;
-    }
-
-    case SPI_SETWORKAREA:                       /*     47  WINVER >= 0x400 */
-    {
-        if (!pvParam) return FALSE;
-
-        spi_idx = SPI_SETWORKAREA_IDX;
-        work_area = *(RECT*)pvParam;
-        spi_loaded[spi_idx] = TRUE;
-        ret = TRUE;
-        break;
-    }
-
-    case SPI_GETWORKAREA:                       /*     48  WINVER >= 0x400 */
-    {
-        if (!pvParam) return FALSE;
-
-        spi_idx = SPI_SETWORKAREA_IDX;
-        if (!spi_loaded[spi_idx])
-        {
-            SetRect( &work_area, 0, 0,
-                     GetSystemMetrics( SM_CXSCREEN ),
-                     GetSystemMetrics( SM_CYSCREEN ) );
-            EnumDisplayMonitors( 0, NULL, enum_monitors, (LPARAM)&work_area );
-            spi_loaded[spi_idx] = TRUE;
-        }
-        *(RECT*)pvParam = work_area;
-        ret = TRUE;
-        TRACE("work area %s\n", wine_dbgstr_rect( &work_area ));
-        break;
-    }
-
-    WINE_SPI_FIXME(SPI_SETPENWINDOWS);		/*     49  WINVER >= 0x400 */
-
-    case SPI_GETFILTERKEYS:                     /*     50 */
-    {
-        LPFILTERKEYS lpFilterKeys = pvParam;
-        WARN("SPI_GETFILTERKEYS not fully implemented\n");
-        if (lpFilterKeys && lpFilterKeys->cbSize == sizeof(FILTERKEYS))
-        {
-            /* Indicate that no FilterKeys feature available */
-            lpFilterKeys->dwFlags = 0;
-            lpFilterKeys->iWaitMSec = 0;
-            lpFilterKeys->iDelayMSec = 0;
-            lpFilterKeys->iRepeatMSec = 0;
-            lpFilterKeys->iBounceMSec = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETFILTERKEYS);		/*     51 */
-
-    case SPI_GETTOGGLEKEYS:                     /*     52 */
-    {
-        LPTOGGLEKEYS lpToggleKeys = pvParam;
-        WARN("SPI_GETTOGGLEKEYS not fully implemented\n");
-        if (lpToggleKeys && lpToggleKeys->cbSize == sizeof(TOGGLEKEYS))
-        {
-            /* Indicate that no ToggleKeys feature available */
-            lpToggleKeys->dwFlags = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETTOGGLEKEYS);		/*     53 */
-
-    case SPI_GETMOUSEKEYS:                      /*     54 */
-    {
-        LPMOUSEKEYS lpMouseKeys = pvParam;
-        WARN("SPI_GETMOUSEKEYS not fully implemented\n");
-        if (lpMouseKeys && lpMouseKeys->cbSize == sizeof(MOUSEKEYS))
-        {
-            /* Indicate that no MouseKeys feature available */
-            lpMouseKeys->dwFlags = 0;
-            lpMouseKeys->iMaxSpeed = 360;
-            lpMouseKeys->iTimeToMaxSpeed = 1000;
-            lpMouseKeys->iCtrlSpeed = 0;
-            lpMouseKeys->dwReserved1 = 0;
-            lpMouseKeys->dwReserved2 = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETMOUSEKEYS);		/*     55 */
-
-    case SPI_GETSHOWSOUNDS:
-        ret = get_entry( &entry_SHOWSOUNDS, uiParam, pvParam );
-        break;
-    case SPI_SETSHOWSOUNDS:
-        ret = set_entry( &entry_SHOWSOUNDS, uiParam, pvParam, fWinIni );
-        break;
-
-    case SPI_GETSTICKYKEYS:                     /*     58 */
-    {
-        LPSTICKYKEYS lpStickyKeys = pvParam;
-        WARN("SPI_GETSTICKYKEYS not fully implemented\n");
-        if (lpStickyKeys && lpStickyKeys->cbSize == sizeof(STICKYKEYS))
-        {
-            /* Indicate that no StickyKeys feature available */
-            lpStickyKeys->dwFlags = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETSTICKYKEYS);		/*     59 */
-
-    case SPI_GETACCESSTIMEOUT:                  /*     60 */
-    {
-        LPACCESSTIMEOUT lpAccessTimeout = pvParam;
-        WARN("SPI_GETACCESSTIMEOUT not fully implemented\n");
-        if (lpAccessTimeout && lpAccessTimeout->cbSize == sizeof(ACCESSTIMEOUT))
-        {
-            /* Indicate that no accessibility features timeout is available */
-            lpAccessTimeout->dwFlags = 0;
-            lpAccessTimeout->iTimeOutMSec = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETACCESSTIMEOUT);	/*     61 */
-
-    case SPI_GETSERIALKEYS:                     /*     62  WINVER >= 0x400 */
-    {
-        LPSERIALKEYSW lpSerialKeysW = pvParam;
-        WARN("SPI_GETSERIALKEYS not fully implemented\n");
-        if (lpSerialKeysW && lpSerialKeysW->cbSize == sizeof(SERIALKEYSW))
-        {
-            /* Indicate that no SerialKeys feature available */
-            lpSerialKeysW->dwFlags = 0;
-            lpSerialKeysW->lpszActivePort = NULL;
-            lpSerialKeysW->lpszPort = NULL;
-            lpSerialKeysW->iBaudRate = 0;
-            lpSerialKeysW->iPortState = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETSERIALKEYS);		/*     63  WINVER >= 0x400 */
-
-    case SPI_GETSOUNDSENTRY:                    /*     64 */
-    {
-        LPSOUNDSENTRYW lpSoundSentryW = pvParam;
-        WARN("SPI_GETSOUNDSENTRY not fully implemented\n");
-        if (lpSoundSentryW && lpSoundSentryW->cbSize == sizeof(SOUNDSENTRYW))
-        {
-            /* Indicate that no SoundSentry feature available */
-            lpSoundSentryW->dwFlags = 0;
-            lpSoundSentryW->iFSTextEffect = 0;
-            lpSoundSentryW->iFSTextEffectMSec = 0;
-            lpSoundSentryW->iFSTextEffectColorBits = 0;
-            lpSoundSentryW->iFSGrafEffect = 0;
-            lpSoundSentryW->iFSGrafEffectMSec = 0;
-            lpSoundSentryW->iFSGrafEffectColor = 0;
-            lpSoundSentryW->iWindowsEffect = 0;
-            lpSoundSentryW->iWindowsEffectMSec = 0;
-            lpSoundSentryW->lpszWindowsEffectDLL = 0;
-            lpSoundSentryW->iWindowsEffectOrdinal = 0;
-            ret = TRUE;
-        }
-        break;
-    }
-    WINE_SPI_FIXME(SPI_SETSOUNDSENTRY);		/*     65 */
-
-    case SPI_GETHIGHCONTRAST:			/*     66  WINVER >= 0x400 */
-    {
-        LPHIGHCONTRASTW lpHighContrastW = pvParam;
-	WARN("SPI_GETHIGHCONTRAST not fully implemented\n");
-	if (lpHighContrastW && lpHighContrastW->cbSize == sizeof(HIGHCONTRASTW))
-	{
-	    /* Indicate that no high contrast feature available */
-	    lpHighContrastW->dwFlags = 0;
-	    lpHighContrastW->lpszDefaultScheme = NULL;
-            ret = TRUE;
-	}
-	break;
-    }
-    WINE_SPI_FIXME(SPI_SETHIGHCONTRAST);	/*     67  WINVER >= 0x400 */
-
-    case SPI_GETKEYBOARDPREF:
-        ret = get_entry( &entry_KEYBOARDPREF, uiParam, pvParam );
-        break;
-    case SPI_SETKEYBOARDPREF:
-        ret = set_entry( &entry_KEYBOARDPREF, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETSCREENREADER:
-        ret = get_entry( &entry_SCREENREADER, uiParam, pvParam );
-        break;
-    case SPI_SETSCREENREADER:
-        ret = set_entry( &entry_SCREENREADER, uiParam, pvParam, fWinIni );
-        break;
-
-    case SPI_GETANIMATION:			/*     72  WINVER >= 0x400 */
-    {
-        LPANIMATIONINFO lpAnimInfo = pvParam;
-
-	/* Tell it "disabled" */
-	if (lpAnimInfo && lpAnimInfo->cbSize == sizeof(ANIMATIONINFO))
-        {
-	    lpAnimInfo->iMinAnimate = 0; /* Minimize and restore animation is disabled (nonzero == enabled) */
-            ret = TRUE;
-        }
-	break;
-    }
-    WINE_SPI_WARN(SPI_SETANIMATION);		/*     73  WINVER >= 0x400 */
-
-    case SPI_GETFONTSMOOTHING:
-        ret = get_entry( &entry_FONTSMOOTHING, uiParam, pvParam );
-        if (ret) *(UINT *)pvParam = (*(UINT *)pvParam != 0);
-        break;
-    case SPI_SETFONTSMOOTHING:
-        uiParam = uiParam ? 2 : 0; /* Win NT4/2k/XP behavior */
-        ret = set_entry( &entry_FONTSMOOTHING, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETDRAGWIDTH:
-        ret = set_entry( &entry_DRAGWIDTH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETDRAGHEIGHT:
-        ret = set_entry( &entry_DRAGHEIGHT, uiParam, pvParam, fWinIni );
-        break;
-
-    WINE_SPI_FIXME(SPI_SETHANDHELD);		/*     78  WINVER >= 0x400 */
-
-    WINE_SPI_FIXME(SPI_GETLOWPOWERTIMEOUT);	/*     79  WINVER >= 0x400 */
-    WINE_SPI_FIXME(SPI_GETPOWEROFFTIMEOUT);	/*     80  WINVER >= 0x400 */
-    WINE_SPI_FIXME(SPI_SETLOWPOWERTIMEOUT);	/*     81  WINVER >= 0x400 */
-    WINE_SPI_FIXME(SPI_SETPOWEROFFTIMEOUT);	/*     82  WINVER >= 0x400 */
-
-    case SPI_GETLOWPOWERACTIVE:
-        ret = get_entry( &entry_LOWPOWERACTIVE, uiParam, pvParam );
-        break;
-    case SPI_SETLOWPOWERACTIVE:
-        ret = set_entry( &entry_LOWPOWERACTIVE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETPOWEROFFACTIVE:
-        ret = get_entry( &entry_POWEROFFACTIVE, uiParam, pvParam );
-        break;
-    case SPI_SETPOWEROFFACTIVE:
-        ret = set_entry( &entry_POWEROFFACTIVE, uiParam, pvParam, fWinIni );
-        break;
-
-    WINE_SPI_FIXME(SPI_SETCURSORS);		/*     87  WINVER >= 0x400 */
-    WINE_SPI_FIXME(SPI_SETICONS);		/*     88  WINVER >= 0x400 */
-
-    case SPI_GETDEFAULTINPUTLANG: 	/*     89  WINVER >= 0x400 */
-        ret = GetKeyboardLayout(0) != 0;
-        break;
-
-    WINE_SPI_FIXME(SPI_SETDEFAULTINPUTLANG);	/*     90  WINVER >= 0x400 */
-
-    WINE_SPI_FIXME(SPI_SETLANGTOGGLE);		/*     91  WINVER >= 0x400 */
-
-    case SPI_GETWINDOWSEXTENSION:		/*     92  WINVER >= 0x400 */
-	WARN("pretend no support for Win9x Plus! for now.\n");
-	ret = FALSE; /* yes, this is the result value */
-	break;
-    case SPI_SETMOUSETRAILS:
-        ret = set_entry( &entry_MOUSETRAILS, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSETRAILS:
-        ret = get_entry( &entry_MOUSETRAILS, uiParam, pvParam );
-        break;
-    case SPI_GETSNAPTODEFBUTTON:
-        ret = get_entry( &entry_SNAPTODEFBUTTON, uiParam, pvParam );
-        break;
-    case SPI_SETSNAPTODEFBUTTON:
-        ret = set_entry( &entry_SNAPTODEFBUTTON, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETSCREENSAVERRUNNING:
-        ret = set_entry( &entry_SCREENSAVERRUNNING, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSEHOVERWIDTH:
-        ret = get_entry( &entry_MOUSEHOVERWIDTH, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSEHOVERWIDTH:
-        ret = set_entry( &entry_MOUSEHOVERWIDTH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSEHOVERHEIGHT:
-        ret = get_entry( &entry_MOUSEHOVERHEIGHT, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSEHOVERHEIGHT:
-        ret = set_entry( &entry_MOUSEHOVERHEIGHT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSEHOVERTIME:
-        ret = get_entry( &entry_MOUSEHOVERTIME, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSEHOVERTIME:
-        ret = set_entry( &entry_MOUSEHOVERTIME, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETWHEELSCROLLLINES:
-        ret = get_entry( &entry_WHEELSCROLLLINES, uiParam, pvParam );
-        break;
-    case SPI_SETWHEELSCROLLLINES:
-        ret = set_entry( &entry_WHEELSCROLLLINES, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMENUSHOWDELAY:
-        ret = get_entry( &entry_MENUSHOWDELAY, uiParam, pvParam );
-        break;
-    case SPI_SETMENUSHOWDELAY:
-        ret = set_entry( &entry_MENUSHOWDELAY, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETWHEELSCROLLCHARS:
-        ret = get_entry( &entry_WHEELSCROLLCHARS, uiParam, pvParam );
-        break;
-    case SPI_SETWHEELSCROLLCHARS:
-        ret = set_entry( &entry_WHEELSCROLLCHARS, uiParam, pvParam, fWinIni );
-        break;
-
-    WINE_SPI_FIXME(SPI_GETSHOWIMEUI);		/*    110  _WIN32_WINNT >= 0x400 || _WIN32_WINDOW > 0x400 */
-    WINE_SPI_FIXME(SPI_SETSHOWIMEUI);		/*    111  _WIN32_WINNT >= 0x400 || _WIN32_WINDOW > 0x400 */
-
-    case SPI_GETMOUSESPEED:
-        ret = get_entry( &entry_MOUSESPEED, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSESPEED:
-        ret = set_entry( &entry_MOUSESPEED, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETSCREENSAVERRUNNING:
-        ret = get_entry( &entry_SCREENSAVERRUNNING, uiParam, pvParam );
-        break;
-    case SPI_GETDESKWALLPAPER:
-        ret = get_entry( &entry_DESKWALLPAPER, uiParam, pvParam );
-        break;
-    case SPI_GETACTIVEWINDOWTRACKING:
-        ret = get_entry( &entry_ACTIVEWINDOWTRACKING, uiParam, pvParam );
-        break;
-    case SPI_SETACTIVEWINDOWTRACKING:
-        ret = set_entry( &entry_ACTIVEWINDOWTRACKING, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMENUANIMATION:
-        ret = get_entry( &entry_MENUANIMATION, uiParam, pvParam );
-        break;
-    case SPI_SETMENUANIMATION:
-        ret = set_entry( &entry_MENUANIMATION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETCOMBOBOXANIMATION:
-        ret = get_entry( &entry_COMBOBOXANIMATION, uiParam, pvParam );
-        break;
-    case SPI_SETCOMBOBOXANIMATION:
-        ret = set_entry( &entry_COMBOBOXANIMATION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETLISTBOXSMOOTHSCROLLING:
-        ret = get_entry( &entry_LISTBOXSMOOTHSCROLLING, uiParam, pvParam );
-        break;
-    case SPI_SETLISTBOXSMOOTHSCROLLING:
-        ret = set_entry( &entry_LISTBOXSMOOTHSCROLLING, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETGRADIENTCAPTIONS:
-        ret = get_entry( &entry_GRADIENTCAPTIONS, uiParam, pvParam );
-        break;
-    case SPI_SETGRADIENTCAPTIONS:
-        ret = set_entry( &entry_GRADIENTCAPTIONS, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETKEYBOARDCUES:
-        ret = get_entry( &entry_KEYBOARDCUES, uiParam, pvParam );
-        break;
-    case SPI_SETKEYBOARDCUES:
-        ret = set_entry( &entry_KEYBOARDCUES, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETACTIVEWNDTRKZORDER:
-        ret = get_entry( &entry_ACTIVEWNDTRKZORDER, uiParam, pvParam );
-        break;
-    case SPI_SETACTIVEWNDTRKZORDER:
-        ret = set_entry( &entry_ACTIVEWNDTRKZORDER, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETHOTTRACKING:
-        ret = get_entry( &entry_HOTTRACKING, uiParam, pvParam );
-        break;
-    case SPI_SETHOTTRACKING:
-        ret = set_entry( &entry_HOTTRACKING, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMENUFADE:
-        ret = get_entry( &entry_MENUFADE, uiParam, pvParam );
-        break;
-    case SPI_SETMENUFADE:
-        ret = set_entry( &entry_MENUFADE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETSELECTIONFADE:
-        ret = get_entry( &entry_SELECTIONFADE, uiParam, pvParam );
-        break;
-    case SPI_SETSELECTIONFADE:
-        ret = set_entry( &entry_SELECTIONFADE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETTOOLTIPANIMATION:
-        ret = get_entry( &entry_TOOLTIPANIMATION, uiParam, pvParam );
-        break;
-    case SPI_SETTOOLTIPANIMATION:
-        ret = set_entry( &entry_TOOLTIPANIMATION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETTOOLTIPFADE:
-        ret = get_entry( &entry_TOOLTIPFADE, uiParam, pvParam );
-        break;
-    case SPI_SETTOOLTIPFADE:
-        ret = set_entry( &entry_TOOLTIPFADE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETCURSORSHADOW:
-        ret = get_entry( &entry_CURSORSHADOW, uiParam, pvParam );
-        break;
-    case SPI_SETCURSORSHADOW:
-        ret = set_entry( &entry_CURSORSHADOW, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSESONAR:
-        ret = get_entry( &entry_MOUSESONAR, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSESONAR:
-        ret = set_entry( &entry_MOUSESONAR, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSECLICKLOCK:
-        ret = get_entry( &entry_MOUSECLICKLOCK, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSECLICKLOCK:
-        ret = set_entry( &entry_MOUSECLICKLOCK, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSEVANISH:
-        ret = get_entry( &entry_MOUSEVANISH, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSEVANISH:
-        ret = set_entry( &entry_MOUSEVANISH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFLATMENU:
-        ret = get_entry( &entry_FLATMENU, uiParam, pvParam );
-        break;
-    case SPI_SETFLATMENU:
-        ret = set_entry( &entry_FLATMENU, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETDROPSHADOW:
-        ret = get_entry( &entry_DROPSHADOW, uiParam, pvParam );
-        break;
-    case SPI_SETDROPSHADOW:
-        ret = set_entry( &entry_DROPSHADOW, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETBLOCKSENDINPUTRESETS:
-        ret = get_entry( &entry_BLOCKSENDINPUTRESETS, uiParam, pvParam );
-        break;
-    case SPI_SETBLOCKSENDINPUTRESETS:
-        ret = set_entry( &entry_BLOCKSENDINPUTRESETS, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETUIEFFECTS:
-        ret = get_entry( &entry_UIEFFECTS, uiParam, pvParam );
-        break;
-    case SPI_SETUIEFFECTS:
-        /* FIXME: this probably should mask other UI effect values when unset */
-        ret = set_entry( &entry_UIEFFECTS, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETDISABLEOVERLAPPEDCONTENT:
-        ret = get_entry( &entry_DISABLEOVERLAPPEDCONTENT, uiParam, pvParam );
-        break;
-    case SPI_SETDISABLEOVERLAPPEDCONTENT:
-        ret = set_entry( &entry_DISABLEOVERLAPPEDCONTENT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETCLIENTAREAANIMATION:
-        ret = get_entry( &entry_CLIENTAREAANIMATION, uiParam, pvParam );
-        break;
-    case SPI_SETCLIENTAREAANIMATION:
-        ret = set_entry( &entry_CLIENTAREAANIMATION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETCLEARTYPE:
-        ret = get_entry( &entry_CLEARTYPE, uiParam, pvParam );
-        break;
-    case SPI_SETCLEARTYPE:
-        ret = set_entry( &entry_CLEARTYPE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETSPEECHRECOGNITION:
-        ret = get_entry( &entry_SPEECHRECOGNITION, uiParam, pvParam );
-        break;
-    case SPI_SETSPEECHRECOGNITION:
-        ret = set_entry( &entry_SPEECHRECOGNITION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFOREGROUNDLOCKTIMEOUT:
-        ret = get_entry( &entry_FOREGROUNDLOCKTIMEOUT, uiParam, pvParam );
-        break;
-    case SPI_SETFOREGROUNDLOCKTIMEOUT:
-        /* FIXME: this should check that the calling thread
-         * is able to change the foreground window */
-        ret = set_entry( &entry_FOREGROUNDLOCKTIMEOUT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETACTIVEWNDTRKTIMEOUT:
-        ret = get_entry( &entry_ACTIVEWNDTRKTIMEOUT, uiParam, pvParam );
-        break;
-    case SPI_SETACTIVEWNDTRKTIMEOUT:
-        ret = get_entry( &entry_ACTIVEWNDTRKTIMEOUT, uiParam, pvParam );
-        break;
-    case SPI_GETFOREGROUNDFLASHCOUNT:
-        ret = get_entry( &entry_FOREGROUNDFLASHCOUNT, uiParam, pvParam );
-        break;
-    case SPI_SETFOREGROUNDFLASHCOUNT:
-        ret = set_entry( &entry_FOREGROUNDFLASHCOUNT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETCARETWIDTH:
-        ret = get_entry( &entry_CARETWIDTH, uiParam, pvParam );
-        break;
-    case SPI_SETCARETWIDTH:
-        ret = set_entry( &entry_CARETWIDTH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETMOUSECLICKLOCKTIME:
-        ret = get_entry( &entry_MOUSECLICKLOCKTIME, uiParam, pvParam );
-        break;
-    case SPI_SETMOUSECLICKLOCKTIME:
-        ret = set_entry( &entry_MOUSECLICKLOCKTIME, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFONTSMOOTHINGTYPE:
-        ret = get_entry( &entry_FONTSMOOTHINGTYPE, uiParam, pvParam );
-        break;
-    case SPI_SETFONTSMOOTHINGTYPE:
-        ret = set_entry( &entry_FONTSMOOTHINGTYPE, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFONTSMOOTHINGCONTRAST:
-        ret = get_entry( &entry_FONTSMOOTHINGCONTRAST, uiParam, pvParam );
-        break;
-    case SPI_SETFONTSMOOTHINGCONTRAST:
-        ret = set_entry( &entry_FONTSMOOTHINGCONTRAST, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFOCUSBORDERWIDTH:
-        ret = get_entry( &entry_FOCUSBORDERWIDTH, uiParam, pvParam );
-        break;
-    case SPI_GETFOCUSBORDERHEIGHT:
-        ret = get_entry( &entry_FOCUSBORDERHEIGHT, uiParam, pvParam );
-        break;
-    case SPI_SETFOCUSBORDERWIDTH:
-        ret = set_entry( &entry_FOCUSBORDERWIDTH, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_SETFOCUSBORDERHEIGHT:
-        ret = set_entry( &entry_FOCUSBORDERHEIGHT, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETFONTSMOOTHINGORIENTATION:
-        ret = get_entry( &entry_FONTSMOOTHINGORIENTATION, uiParam, pvParam );
-        break;
-    case SPI_SETFONTSMOOTHINGORIENTATION:
-        ret = set_entry( &entry_FONTSMOOTHINGORIENTATION, uiParam, pvParam, fWinIni );
-        break;
-    case SPI_GETAUDIODESCRIPTION:
-    {
-        AUDIODESCRIPTION *audio = pvParam;
-        if (audio && audio->cbSize == sizeof(AUDIODESCRIPTION) && uiParam == sizeof(AUDIODESCRIPTION) )
-        {
-            ret = get_entry( &entry_AUDIODESC_ON, 0, &audio->Enabled ) &&
-                  get_entry( &entry_AUDIODESC_LOCALE, 0, &audio->Locale );
-        }
-        break;
-    }
-    case SPI_SETAUDIODESCRIPTION:
-    {
-        AUDIODESCRIPTION *audio = pvParam;
-        if (audio && audio->cbSize == sizeof(AUDIODESCRIPTION) && uiParam == sizeof(AUDIODESCRIPTION) )
-        {
-            ret = set_entry( &entry_AUDIODESC_ON, 0, &audio->Enabled, fWinIni) &&
-                  set_entry( &entry_AUDIODESC_LOCALE, 0, &audio->Locale, fWinIni );
-        }
-        break;
-    }
-    default:
-	FIXME( "Unknown action: %u\n", uiAction );
-	SetLastError( ERROR_INVALID_SPI_VALUE );
-	ret = FALSE;
-	break;
-    }
-
-    if (ret)
-        SYSPARAMS_NotifyChange( uiAction, fWinIni );
-    TRACE("(%u, %u, %p, %u) ret %d\n",
-            uiAction, uiParam, pvParam, fWinIni, ret);
+    BOOL ret = NtUserSystemParametersInfo( action, val, ptr, winini );
+    if (ret && (action == SPI_SETDESKWALLPAPER || action == SPI_SETDESKPATTERN))
+        ret = update_desktop_wallpaper();
     return ret;
-
-#undef WINE_SPI_FIXME
-#undef WINE_SPI_WARN
 }
 
 
@@ -2707,6 +487,7 @@ static DWORD get_config_key_dword(HKEY defkey, HKEY appkey, const char *name, DW
  */
 INT WINAPI GetSystemMetrics( INT index )
 {
+<<<<<<< HEAD
     struct monitor_info info;
     NONCLIENTMETRICSW ncm;
     MINIMIZEDMETRICS mm;
@@ -2965,6 +746,9 @@ INT WINAPI GetSystemMetrics( INT index )
     default:
         return 0;
     }
+=======
+    return NtUserCallOneParam( index, NtUserGetSystemMetrics );
+>>>>>>> master
 }
 
 
@@ -2973,99 +757,7 @@ INT WINAPI GetSystemMetrics( INT index )
  */
 INT WINAPI GetSystemMetricsForDpi( INT index, UINT dpi )
 {
-    NONCLIENTMETRICSW ncm;
-    ICONMETRICSW im;
-    UINT ret;
-    HDC hdc;
-
-    /* some metrics are dynamic */
-    switch (index)
-    {
-    case SM_CXVSCROLL:
-    case SM_CYHSCROLL:
-        get_entry_dpi( &entry_SCROLLWIDTH, 0, &ret, dpi );
-        return max( ret, 8 );
-    case SM_CYCAPTION:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iCaptionHeight + 1;
-    case SM_CYVTHUMB:
-    case SM_CXHTHUMB:
-    case SM_CYVSCROLL:
-    case SM_CXHSCROLL:
-        get_entry_dpi( &entry_SCROLLHEIGHT, 0, &ret, dpi );
-        return max( ret, 8 );
-    case SM_CXICON:
-    case SM_CYICON:
-        return map_to_dpi( 32, dpi );
-    case SM_CXCURSOR:
-    case SM_CYCURSOR:
-        ret = map_to_dpi( 32, dpi );
-        if (ret >= 64) return 64;
-        if (ret >= 48) return 48;
-        return 32;
-    case SM_CYMENU:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iMenuHeight + 1;
-    case SM_CXSIZE:
-        get_entry_dpi( &entry_CAPTIONWIDTH, 0, &ret, dpi );
-        return max( ret, 8 );
-    case SM_CYSIZE:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iCaptionHeight;
-    case SM_CXFRAME:
-        get_entry_dpi( &entry_BORDER, 0, &ret, dpi );
-        ret = max( ret, 1 );
-        return GetSystemMetricsForDpi( SM_CXDLGFRAME, dpi ) + ret;
-    case SM_CYFRAME:
-        get_entry_dpi( &entry_BORDER, 0, &ret, dpi );
-        ret = max( ret, 1 );
-        return GetSystemMetricsForDpi( SM_CYDLGFRAME, dpi ) + ret;
-    case SM_CXICONSPACING:
-        im.cbSize = sizeof(im);
-        SystemParametersInfoForDpi( SPI_GETICONMETRICS, sizeof(im), &im, 0, dpi );
-        return im.iHorzSpacing;
-    case SM_CYICONSPACING:
-        im.cbSize = sizeof(im);
-        SystemParametersInfoForDpi( SPI_GETICONMETRICS, sizeof(im), &im, 0, dpi );
-        return im.iVertSpacing;
-    case SM_CXSMICON:
-    case SM_CYSMICON:
-        return map_to_dpi( 16, dpi ) & ~1;
-    case SM_CYSMCAPTION:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iSmCaptionHeight + 1;
-    case SM_CXSMSIZE:
-        get_entry_dpi( &entry_SMCAPTIONWIDTH, 0, &ret, dpi );
-        return ret;
-    case SM_CYSMSIZE:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iSmCaptionHeight;
-    case SM_CXMENUSIZE:
-        get_entry_dpi( &entry_MENUWIDTH, 0, &ret, dpi );
-        return ret;
-    case SM_CYMENUSIZE:
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        return ncm.iMenuHeight;
-    case SM_CXMENUCHECK:
-    case SM_CYMENUCHECK:
-    {
-        TEXTMETRICW tm;
-        ncm.cbSize = sizeof(ncm);
-        SystemParametersInfoForDpi( SPI_GETNONCLIENTMETRICS, 0, &ncm, 0, dpi );
-        hdc = get_display_dc();
-        get_text_metr_size( hdc, &ncm.lfMenuFont, &tm, NULL);
-        release_display_dc( hdc );
-        return tm.tmHeight <= 0 ? 13 : ((tm.tmHeight + tm.tmExternalLeading - 1) | 1);
-    }
-    default:
-        return GetSystemMetrics( index );
-    }
+    return NtUserCallTwoParam( index, dpi, NtUserGetSystemMetricsForDpi );
 }
 
 
@@ -3093,53 +785,12 @@ BOOL WINAPI SetDoubleClickTime( UINT interval )
 }
 
 
-/**********************************************************************
- *		GetDoubleClickTime (USER32.@)
- */
-UINT WINAPI GetDoubleClickTime(void)
-{
-    UINT time = 0;
-
-    get_entry( &entry_DOUBLECLICKTIME, 0, &time );
-    if (!time) time = 500;
-    return time;
-}
-
-
 /*************************************************************************
  *		GetSysColor (USER32.@)
  */
-COLORREF WINAPI DECLSPEC_HOTPATCH GetSysColor( INT nIndex )
+COLORREF WINAPI DECLSPEC_HOTPATCH GetSysColor( INT index )
 {
-    COLORREF ret = 0;
-
-    if (nIndex >= 0 && nIndex < ARRAY_SIZE( system_colors ))
-        get_entry( &system_colors[nIndex], 0, &ret );
-    return ret;
-}
-
-
-/*************************************************************************
- *		SetSysColors (USER32.@)
- */
-BOOL WINAPI SetSysColors( INT count, const INT *colors, const COLORREF *values )
-{
-    int i;
-
-    if (IS_INTRESOURCE(colors)) return FALSE; /* stupid app passes a color instead of an array */
-
-    for (i = 0; i < count; i++)
-        if (colors[i] >= 0 && colors[i] <= ARRAY_SIZE( system_colors ))
-            set_entry( &system_colors[colors[i]], values[i], 0, 0 );
-
-    /* Send WM_SYSCOLORCHANGE message to all windows */
-
-    SendMessageTimeoutW( HWND_BROADCAST, WM_SYSCOLORCHANGE, 0, 0, SMTO_ABORTIFHUNG, 2000, NULL );
-
-    /* Repaint affected portions of all visible windows */
-
-    RedrawWindow( 0, NULL, 0, RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW | RDW_ALLCHILDREN );
-    return TRUE;
+    return NtUserCallOneParam( index, NtUserGetSysColor );
 }
 
 
@@ -3158,19 +809,7 @@ DWORD_PTR WINAPI SetSysColorsTemp( const COLORREF *pPens, const HBRUSH *pBrushes
  */
 HBRUSH WINAPI DECLSPEC_HOTPATCH GetSysColorBrush( INT index )
 {
-    if (index < 0 || index >= ARRAY_SIZE( system_colors )) return 0;
-
-    if (!system_colors[index].brush)
-    {
-        HBRUSH brush = CreateSolidBrush( GetSysColor( index ));
-        __wine_make_gdi_object_system( brush, TRUE );
-        if (InterlockedCompareExchangePointer( (void **)&system_colors[index].brush, brush, 0 ))
-        {
-            __wine_make_gdi_object_system( brush, FALSE );
-            DeleteObject( brush );
-        }
-    }
-    return system_colors[index].brush;
+    return UlongToHandle( NtUserCallOneParam( index, NtUserGetSysColorBrush ));
 }
 
 
@@ -3179,20 +818,7 @@ HBRUSH WINAPI DECLSPEC_HOTPATCH GetSysColorBrush( INT index )
  */
 HPEN SYSCOLOR_GetPen( INT index )
 {
-    /* We can assert here, because this function is internal to Wine */
-    assert (0 <= index && index < ARRAY_SIZE( system_colors ));
-
-    if (!system_colors[index].pen)
-    {
-        HPEN pen = CreatePen( PS_SOLID, 1, GetSysColor( index ));
-        __wine_make_gdi_object_system( pen, TRUE );
-        if (InterlockedCompareExchangePointer( (void **)&system_colors[index].pen, pen, 0 ))
-        {
-            __wine_make_gdi_object_system( pen, FALSE );
-            DeleteObject( pen );
-        }
-    }
-    return system_colors[index].pen;
+    return UlongToHandle( NtUserCallOneParam( index, NtUserGetSysColorPen ));
 }
 
 
@@ -3201,22 +827,7 @@ HPEN SYSCOLOR_GetPen( INT index )
  */
 HBRUSH SYSCOLOR_Get55AABrush(void)
 {
-    static const WORD pattern[] = { 0x5555, 0xaaaa, 0x5555, 0xaaaa, 0x5555, 0xaaaa, 0x5555, 0xaaaa };
-    static HBRUSH brush_55aa;
-
-    if (!brush_55aa)
-    {
-        HBITMAP bitmap = CreateBitmap( 8, 8, 1, 1, pattern );
-        HBRUSH brush = CreatePatternBrush( bitmap );
-        DeleteObject( bitmap );
-        __wine_make_gdi_object_system( brush, TRUE );
-        if (InterlockedCompareExchangePointer( (void **)&brush_55aa, brush, 0 ))
-        {
-            __wine_make_gdi_object_system( brush, FALSE );
-            DeleteObject( brush );
-        }
-    }
-    return brush_55aa;
+    return UlongToHandle( NtUserCallOneParam( COLOR_55AA_BRUSH, NtUserGetSysColorBrush ));
 }
 
 /***********************************************************************
@@ -3275,74 +886,6 @@ LONG WINAPI ChangeDisplaySettingsExA( LPCSTR devname, LPDEVMODEA devmode, HWND h
     return ret;
 }
 
-#define _X_FIELD(prefix, bits)                            \
-    if ((fields) & prefix##_##bits)                       \
-    {                                                     \
-        p += sprintf(p, "%s%s", first ? "" : ",", #bits); \
-        first = FALSE;                                    \
-    }
-
-static const CHAR *_CDS_flags(DWORD fields)
-{
-    BOOL first = TRUE;
-    CHAR buf[128];
-    CHAR *p = buf;
-
-    _X_FIELD(CDS, UPDATEREGISTRY)
-    _X_FIELD(CDS, TEST)
-    _X_FIELD(CDS, FULLSCREEN)
-    _X_FIELD(CDS, GLOBAL)
-    _X_FIELD(CDS, SET_PRIMARY)
-    _X_FIELD(CDS, VIDEOPARAMETERS)
-    _X_FIELD(CDS, ENABLE_UNSAFE_MODES)
-    _X_FIELD(CDS, DISABLE_UNSAFE_MODES)
-    _X_FIELD(CDS, RESET)
-    _X_FIELD(CDS, RESET_EX)
-    _X_FIELD(CDS, NORESET)
-
-    *p = 0;
-    return wine_dbg_sprintf("%s", buf);
-}
-
-static const CHAR *_DM_fields(DWORD fields)
-{
-    BOOL first = TRUE;
-    CHAR buf[128];
-    CHAR *p = buf;
-
-    _X_FIELD(DM, BITSPERPEL)
-    _X_FIELD(DM, PELSWIDTH)
-    _X_FIELD(DM, PELSHEIGHT)
-    _X_FIELD(DM, DISPLAYFLAGS)
-    _X_FIELD(DM, DISPLAYFREQUENCY)
-    _X_FIELD(DM, POSITION)
-    _X_FIELD(DM, DISPLAYORIENTATION)
-
-    *p = 0;
-    return wine_dbg_sprintf("%s", buf);
-}
-
-#undef _X_FIELD
-
-static void trace_devmode(const DEVMODEW *devmode)
-{
-    TRACE("dmFields=%s ", _DM_fields(devmode->dmFields));
-    if (devmode->dmFields & DM_BITSPERPEL)
-        TRACE("dmBitsPerPel=%u ", devmode->dmBitsPerPel);
-    if (devmode->dmFields & DM_PELSWIDTH)
-        TRACE("dmPelsWidth=%u ", devmode->dmPelsWidth);
-    if (devmode->dmFields & DM_PELSHEIGHT)
-        TRACE("dmPelsHeight=%u ", devmode->dmPelsHeight);
-    if (devmode->dmFields & DM_DISPLAYFREQUENCY)
-        TRACE("dmDisplayFrequency=%u ", devmode->dmDisplayFrequency);
-    if (devmode->dmFields & DM_POSITION)
-        TRACE("dmPosition=(%d,%d) ", devmode->u1.s2.dmPosition.x, devmode->u1.s2.dmPosition.y);
-    if (devmode->dmFields & DM_DISPLAYFLAGS)
-        TRACE("dmDisplayFlags=%#x ", devmode->u2.dmDisplayFlags);
-    if (devmode->dmFields & DM_DISPLAYORIENTATION)
-        TRACE("dmDisplayOrientation=%u ", devmode->u1.s2.dmDisplayOrientation);
-    TRACE("\n");
-}
 
 /***********************************************************************
  *		ChangeDisplaySettingsExW (USER32.@)
@@ -3350,66 +893,11 @@ static void trace_devmode(const DEVMODEW *devmode)
 LONG WINAPI ChangeDisplaySettingsExW( LPCWSTR devname, LPDEVMODEW devmode, HWND hwnd,
                                       DWORD flags, LPVOID lparam )
 {
-    WCHAR primary_adapter[CCHDEVICENAME];
-    BOOL def_mode = TRUE;
-    DEVMODEW dm;
-
-    TRACE("%s %p %p %#x %p\n", debugstr_w(devname), devmode, hwnd, flags, lparam);
-    TRACE("flags=%s\n", _CDS_flags(flags));
-
-    if (!devname && devmode)
-    {
-        if (!get_primary_adapter(primary_adapter))
-            return DISP_CHANGE_FAILED;
-
-        devname = primary_adapter;
-    }
-
-    if (devmode)
-    {
-        trace_devmode(devmode);
-
-        if (devmode->dmSize < FIELD_OFFSET(DEVMODEW, dmICMMethod))
-            return DISP_CHANGE_BADMODE;
-
-        if (((devmode->dmFields & DM_BITSPERPEL) && devmode->dmBitsPerPel) ||
-            ((devmode->dmFields & DM_PELSWIDTH) && devmode->dmPelsWidth) ||
-            ((devmode->dmFields & DM_PELSHEIGHT) && devmode->dmPelsHeight) ||
-            ((devmode->dmFields & DM_DISPLAYFREQUENCY) && devmode->dmDisplayFrequency))
-                def_mode = FALSE;
-    }
-
-    if (def_mode)
-    {
-        dm.dmSize = sizeof(dm);
-        if (!EnumDisplaySettingsExW(devname, ENUM_REGISTRY_SETTINGS, &dm, 0))
-        {
-            ERR("Default mode not found!\n");
-            return DISP_CHANGE_BADMODE;
-        }
-
-        TRACE("Return to original display mode\n");
-        devmode = &dm;
-    }
-
-    if ((devmode->dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT)) != (DM_PELSWIDTH | DM_PELSHEIGHT))
-    {
-        WARN("devmode doesn't specify the resolution: %#x\n", devmode->dmFields);
-        return DISP_CHANGE_BADMODE;
-    }
-
-    return USER_Driver->pChangeDisplaySettingsEx(devname, devmode, hwnd, flags, lparam);
+    UNICODE_STRING str;
+    RtlInitUnicodeString( &str, devname );
+    return NtUserChangeDisplaySettings( &str, devmode, hwnd, flags, lparam );
 }
 
-
-/***********************************************************************
- *              DisplayConfigGetDeviceInfo (USER32.@)
- */
-LONG WINAPI DisplayConfigGetDeviceInfo(DISPLAYCONFIG_DEVICE_INFO_HEADER *packet)
-{
-    FIXME("stub: %p\n", packet);
-    return ERROR_NOT_SUPPORTED;
-}
 
 /***********************************************************************
  *		EnumDisplaySettingsW (USER32.@)
@@ -3446,6 +934,8 @@ BOOL WINAPI EnumDisplaySettingsExA(LPCSTR lpszDeviceName, DWORD iModeNum,
     if (lpszDeviceName) RtlCreateUnicodeStringFromAsciiz(&nameW, lpszDeviceName);
     else nameW.Buffer = NULL;
 
+    memset(&devmodeW, 0, sizeof(devmodeW));
+    devmodeW.dmSize = sizeof(devmodeW);
     ret = EnumDisplaySettingsExW(nameW.Buffer,iModeNum,&devmodeW,dwFlags);
     if (ret)
     {
@@ -3473,26 +963,15 @@ BOOL WINAPI EnumDisplaySettingsExA(LPCSTR lpszDeviceName, DWORD iModeNum,
 
 
 /***********************************************************************
- *		EnumDisplaySettingsExW (USER32.@)
+ *             EnumDisplaySettingsExW (USER32.@)
  */
-BOOL WINAPI EnumDisplaySettingsExW(LPCWSTR lpszDeviceName, DWORD iModeNum,
-                                   LPDEVMODEW lpDevMode, DWORD dwFlags)
+BOOL WINAPI EnumDisplaySettingsExW( const WCHAR *device, DWORD mode,
+                                    DEVMODEW *dev_mode, DWORD flags )
 {
-    WCHAR primary_adapter[CCHDEVICENAME];
-
-    TRACE("%s %u %p %#x\n", wine_dbgstr_w(lpszDeviceName), iModeNum, lpDevMode, dwFlags);
-
-    if (!lpszDeviceName)
-    {
-        if (!get_primary_adapter(primary_adapter))
-            return FALSE;
-
-        lpszDeviceName = primary_adapter;
-    }
-
-    return USER_Driver->pEnumDisplaySettingsEx(lpszDeviceName, iModeNum, lpDevMode, dwFlags);
+    UNICODE_STRING str;
+    RtlInitUnicodeString( &str, device );
+    return NtUserEnumDisplaySettings( &str, mode, dev_mode, flags );
 }
-
 
 /**********************************************************************
  *              get_monitor_dpi
@@ -3614,19 +1093,31 @@ RECT rect_thread_to_win_dpi( HWND hwnd, RECT rect )
  */
 BOOL WINAPI SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 {
-    DPI_AWARENESS val = GetAwarenessFromDpiAwarenessContext( context );
+    ULONG awareness;
 
-    if (val == DPI_AWARENESS_INVALID)
+    switch (GetAwarenessFromDpiAwarenessContext( context ))
     {
+    case DPI_AWARENESS_UNAWARE:
+        awareness = NTUSER_DPI_UNAWARE;
+        break;
+    case DPI_AWARENESS_SYSTEM_AWARE:
+        awareness = NTUSER_DPI_SYSTEM_AWARE;
+        break;
+    case DPI_AWARENESS_PER_MONITOR_AWARE:
+        awareness = context == DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+            ? NTUSER_DPI_PER_MONITOR_AWARE_V2 : NTUSER_DPI_PER_MONITOR_AWARE;
+        break;
+    default:
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
-    val |= 0x10;  /* avoid 0 value */
-    if (InterlockedCompareExchange( &dpi_awareness, val, 0 ))
+
+    if (!NtUserSetProcessDpiAwarenessContext( awareness, 0 ))
     {
         SetLastError( ERROR_ACCESS_DENIED );
         return FALSE;
     }
+
     TRACE( "set to %p\n", context );
     return TRUE;
 }
@@ -3636,12 +1127,7 @@ BOOL WINAPI SetProcessDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
  */
 BOOL WINAPI GetProcessDpiAwarenessInternal( HANDLE process, DPI_AWARENESS *awareness )
 {
-    if (process && process != GetCurrentProcess())
-    {
-        WARN( "not supported on other process %p\n", process );
-        *awareness = DPI_AWARENESS_UNAWARE;
-    }
-    else *awareness = dpi_awareness & 3;
+    *awareness = NtUserGetProcessDpiAwarenessContext( process ) & 3;
     return TRUE;
 }
 
@@ -3709,7 +1195,7 @@ BOOL WINAPI IsValidDpiAwarenessContext( DPI_AWARENESS_CONTEXT context )
 BOOL WINAPI SetProcessDPIAware(void)
 {
     TRACE("\n");
-    InterlockedCompareExchange( &dpi_awareness, 0x11, 0 );
+    NtUserSetProcessDpiAwarenessContext( NTUSER_DPI_SYSTEM_AWARE, 0 );
     return TRUE;
 }
 
@@ -3740,30 +1226,6 @@ UINT WINAPI GetDpiForSystem(void)
     return system_dpi;
 }
 
-/***********************************************************************
- *              GetDpiForMonitorInternal   (USER32.@)
- */
-BOOL WINAPI GetDpiForMonitorInternal( HMONITOR monitor, UINT type, UINT *x, UINT *y )
-{
-    if (type > 2)
-    {
-        SetLastError( ERROR_BAD_ARGUMENTS );
-        return FALSE;
-    }
-    if (!x || !y)
-    {
-        SetLastError( ERROR_INVALID_ADDRESS );
-        return FALSE;
-    }
-    switch (GetAwarenessFromDpiAwarenessContext( GetThreadDpiAwarenessContext() ))
-    {
-    case DPI_AWARENESS_UNAWARE:      *x = *y = USER_DEFAULT_SCREEN_DPI; break;
-    case DPI_AWARENESS_SYSTEM_AWARE: *x = *y = system_dpi; break;
-    default:                         *x = *y = get_monitor_dpi( monitor ); break;
-    }
-    return TRUE;
-}
-
 /**********************************************************************
  *              GetThreadDpiAwarenessContext   (USER32.@)
  */
@@ -3772,8 +1234,7 @@ DPI_AWARENESS_CONTEXT WINAPI GetThreadDpiAwarenessContext(void)
     struct user_thread_info *info = get_user_thread_info();
 
     if (info->dpi_awareness) return ULongToHandle( info->dpi_awareness );
-    if (dpi_awareness) return ULongToHandle( dpi_awareness );
-    return ULongToHandle( 0x10 | default_awareness );
+    return UlongToHandle( (NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) & 3 ) | 0x10 );
 }
 
 /**********************************************************************
@@ -3791,9 +1252,8 @@ DPI_AWARENESS_CONTEXT WINAPI SetThreadDpiAwarenessContext( DPI_AWARENESS_CONTEXT
     }
     if (!(prev = info->dpi_awareness))
     {
-        prev = dpi_awareness;
-        if (!prev) prev = 0x10 | DPI_AWARENESS_UNAWARE;
-        prev |= 0x80000000;  /* restore to process default */
+        prev = NtUserGetProcessDpiAwarenessContext( GetCurrentProcess() ) & 3;
+        prev |= 0x80000010;  /* restore to process default */
     }
     if (((ULONG_PTR)context & ~(ULONG_PTR)0x13) == 0x80000000) info->dpi_awareness = 0;
     else info->dpi_awareness = val | 0x10;
@@ -3833,89 +1293,12 @@ BOOL WINAPI PhysicalToLogicalPointForPerMonitorDPI( HWND hwnd, POINT *pt )
     return ret;
 }
 
-struct monitor_enum_info
-{
-    RECT     rect;
-    UINT     max_area;
-    UINT     min_distance;
-    HMONITOR primary;
-    HMONITOR nearest;
-    HMONITOR ret;
-};
-
-/* helper callback for MonitorFromRect */
-static BOOL CALLBACK monitor_enum( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
-{
-    struct monitor_enum_info *info = (struct monitor_enum_info *)lp;
-    RECT intersect;
-
-    if (IntersectRect( &intersect, rect, &info->rect ))
-    {
-        /* check for larger intersecting area */
-        UINT area = (intersect.right - intersect.left) * (intersect.bottom - intersect.top);
-        if (area > info->max_area)
-        {
-            info->max_area = area;
-            info->ret = monitor;
-        }
-    }
-    else if (!info->max_area)  /* if not intersecting, check for min distance */
-    {
-        UINT distance;
-        UINT x, y;
-
-        if (info->rect.right <= rect->left) x = rect->left - info->rect.right;
-        else if (rect->right <= info->rect.left) x = info->rect.left - rect->right;
-        else x = 0;
-        if (info->rect.bottom <= rect->top) y = rect->top - info->rect.bottom;
-        else if (rect->bottom <= info->rect.top) y = info->rect.top - rect->bottom;
-        else y = 0;
-        distance = x * x + y * y;
-        if (distance < info->min_distance)
-        {
-            info->min_distance = distance;
-            info->nearest = monitor;
-        }
-    }
-    if (!info->primary)
-    {
-        MONITORINFO mon_info;
-        mon_info.cbSize = sizeof(mon_info);
-        GetMonitorInfoW( monitor, &mon_info );
-        if (mon_info.dwFlags & MONITORINFOF_PRIMARY) info->primary = monitor;
-    }
-    return TRUE;
-}
-
 /***********************************************************************
  *		MonitorFromRect (USER32.@)
  */
 HMONITOR WINAPI MonitorFromRect( const RECT *rect, DWORD flags )
 {
-    struct monitor_enum_info info;
-
-    info.rect         = *rect;
-    info.max_area     = 0;
-    info.min_distance = ~0u;
-    info.primary      = 0;
-    info.nearest      = 0;
-    info.ret          = 0;
-
-    if (IsRectEmpty(&info.rect))
-    {
-        info.rect.right = info.rect.left + 1;
-        info.rect.bottom = info.rect.top + 1;
-    }
-
-    if (!EnumDisplayMonitors( 0, NULL, monitor_enum, (LPARAM)&info )) return 0;
-    if (!info.ret)
-    {
-        if (flags & MONITOR_DEFAULTTOPRIMARY) info.ret = info.primary;
-        else if (flags & MONITOR_DEFAULTTONEAREST) info.ret = info.nearest;
-    }
-
-    TRACE( "%s flags %x returning %p\n", wine_dbgstr_rect(rect), flags, info.ret );
-    return info.ret;
+    return UlongToHandle( NtUserCallTwoParam( (LONG_PTR)rect, flags, NtUserMonitorFromRect ));
 }
 
 /***********************************************************************
@@ -3932,155 +1315,9 @@ HMONITOR WINAPI MonitorFromPoint( POINT pt, DWORD flags )
 /***********************************************************************
  *		MonitorFromWindow (USER32.@)
  */
-HMONITOR WINAPI MonitorFromWindow(HWND hWnd, DWORD dwFlags)
+HMONITOR WINAPI MonitorFromWindow( HWND hwnd, DWORD flags )
 {
-    RECT rect;
-    WINDOWPLACEMENT wp;
-
-    TRACE("(%p, 0x%08x)\n", hWnd, dwFlags);
-
-    wp.length = sizeof(wp);
-    if (IsIconic(hWnd) && GetWindowPlacement(hWnd, &wp))
-        return MonitorFromRect( &wp.rcNormalPosition, dwFlags );
-
-    if (GetWindowRect( hWnd, &rect ))
-        return MonitorFromRect( &rect, dwFlags );
-
-    if (!(dwFlags & (MONITOR_DEFAULTTOPRIMARY|MONITOR_DEFAULTTONEAREST))) return 0;
-    /* retrieve the primary */
-    SetRect( &rect, 0, 0, 1, 1 );
-    return MonitorFromRect( &rect, dwFlags );
-}
-
-/* Return FALSE on failure and TRUE on success */
-static BOOL update_monitor_cache(void)
-{
-    SP_DEVINFO_DATA device_data = {sizeof(device_data)};
-    HDEVINFO devinfo = INVALID_HANDLE_VALUE;
-    MONITORINFOEXW *monitor_array;
-    FILETIME filetime = {0};
-    DWORD device_count = 0;
-    HANDLE mutex = NULL;
-    DWORD state_flags;
-    BOOL ret = FALSE;
-    BOOL mirrored_slave;
-    DWORD i = 0, j;
-    DWORD type;
-
-    /* Update monitor cache from SetupAPI if it's outdated */
-    if (!video_key && RegOpenKeyW( HKEY_LOCAL_MACHINE, VIDEO_KEY, &video_key ))
-        return FALSE;
-    if (RegQueryInfoKeyW( video_key, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, &filetime ))
-        return FALSE;
-    if (CompareFileTime( &filetime, &last_query_monitors_time ) < 1)
-        return TRUE;
-
-    mutex = get_display_device_init_mutex();
-    EnterCriticalSection( &monitors_section );
-    devinfo = SetupDiGetClassDevsW( &GUID_DEVCLASS_MONITOR, DISPLAY, NULL, DIGCF_PRESENT );
-
-    while (SetupDiEnumDeviceInfo( devinfo, i++, &device_data ))
-    {
-        /* Inactive monitors don't get enumerated */
-        if (!SetupDiGetDevicePropertyW( devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_STATEFLAGS, &type,
-                                        (BYTE *)&state_flags, sizeof(DWORD), NULL, 0 ))
-            goto fail;
-        if (state_flags & DISPLAY_DEVICE_ACTIVE)
-            device_count++;
-    }
-
-    if (device_count && monitor_count < device_count)
-    {
-        monitor_array = heap_alloc( device_count * sizeof(*monitor_array) );
-        if (!monitor_array)
-            goto fail;
-        heap_free( monitors );
-        monitors = monitor_array;
-    }
-
-    for (i = 0, monitor_count = 0; SetupDiEnumDeviceInfo( devinfo, i, &device_data ); i++)
-    {
-        if (!SetupDiGetDevicePropertyW( devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_STATEFLAGS, &type,
-                                        (BYTE *)&state_flags, sizeof(DWORD), NULL, 0 ))
-            goto fail;
-        if (!(state_flags & DISPLAY_DEVICE_ACTIVE))
-            continue;
-        if (!SetupDiGetDevicePropertyW( devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_RCMONITOR, &type,
-                                        (BYTE *)&monitors[monitor_count].rcMonitor, sizeof(RECT), NULL, 0 ))
-            goto fail;
-
-        /* Mirrored slave monitors also don't get enumerated */
-        mirrored_slave = FALSE;
-        for (j = 0; j < monitor_count; j++)
-        {
-            if (EqualRect(&monitors[j].rcMonitor, &monitors[monitor_count].rcMonitor))
-            {
-                mirrored_slave = TRUE;
-                break;
-            }
-        }
-        if (mirrored_slave)
-            continue;
-
-        if (!SetupDiGetDevicePropertyW( devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_RCWORK, &type,
-                                        (BYTE *)&monitors[monitor_count].rcWork, sizeof(RECT), NULL, 0 ))
-            goto fail;
-        if (!SetupDiGetDevicePropertyW( devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_ADAPTERNAME, &type,
-                                        (BYTE *)monitors[monitor_count].szDevice, CCHDEVICENAME * sizeof(WCHAR), NULL, 0))
-            goto fail;
-        monitors[monitor_count].dwFlags =
-            !lstrcmpW( DEFAULT_ADAPTER_NAME, monitors[monitor_count].szDevice ) ? MONITORINFOF_PRIMARY : 0;
-
-        monitor_count++;
-    }
-
-    last_query_monitors_time = filetime;
-    ret = TRUE;
-fail:
-    SetupDiDestroyDeviceInfoList( devinfo );
-    LeaveCriticalSection( &monitors_section );
-    release_display_device_init_mutex( mutex );
-    return ret;
-}
-
-BOOL CDECL nulldrv_GetMonitorInfo( HMONITOR handle, MONITORINFO *info )
-{
-    UINT index = (UINT_PTR)handle - 1;
-
-    TRACE("(%p, %p)\n", handle, info);
-
-    /* Fallback to report one monitor */
-    if (handle == NULLDRV_DEFAULT_HMONITOR)
-    {
-        RECT default_rect = {0, 0, 640, 480};
-        info->rcMonitor = default_rect;
-        info->rcWork = default_rect;
-        info->dwFlags = MONITORINFOF_PRIMARY;
-        if (info->cbSize >= sizeof(MONITORINFOEXW))
-            lstrcpyW( ((MONITORINFOEXW *)info)->szDevice, DEFAULT_ADAPTER_NAME );
-        return TRUE;
-    }
-
-    if (!update_monitor_cache())
-        return FALSE;
-
-    EnterCriticalSection( &monitors_section );
-    if (index < monitor_count)
-    {
-        info->rcMonitor = monitors[index].rcMonitor;
-        info->rcWork = monitors[index].rcWork;
-        info->dwFlags = monitors[index].dwFlags;
-        if (info->cbSize >= sizeof(MONITORINFOEXW))
-            lstrcpyW( ((MONITORINFOEXW *)info)->szDevice, monitors[index].szDevice );
-        LeaveCriticalSection( &monitors_section );
-        return TRUE;
-    }
-    else
-    {
-        LeaveCriticalSection( &monitors_section );
-        SetLastError( ERROR_INVALID_MONITOR_HANDLE );
-        return FALSE;
-    }
+    return UlongToHandle( NtUserCallHwndParam(  hwnd, flags, NtUserMonitorFromWindow ));
 }
 
 /***********************************************************************
@@ -4112,41 +1349,14 @@ BOOL WINAPI GetMonitorInfoA( HMONITOR monitor, LPMONITORINFO info )
  */
 BOOL WINAPI GetMonitorInfoW( HMONITOR monitor, LPMONITORINFO info )
 {
-    BOOL ret;
-    UINT dpi_from, dpi_to;
-
-    if (info->cbSize != sizeof(MONITORINFOEXW) && info->cbSize != sizeof(MONITORINFO)) return FALSE;
-
-    ret = USER_Driver->pGetMonitorInfo( monitor, info );
-    if (ret)
-    {
-        if ((dpi_to = get_thread_dpi()))
-        {
-            dpi_from = get_monitor_dpi( monitor );
-            info->rcMonitor = map_dpi_rect( info->rcMonitor, dpi_from, dpi_to );
-            info->rcWork = map_dpi_rect( info->rcWork, dpi_from, dpi_to );
-        }
-        TRACE( "flags %04x, monitor %s, work %s\n", info->dwFlags,
-               wine_dbgstr_rect(&info->rcMonitor), wine_dbgstr_rect(&info->rcWork));
-    }
-    return ret;
+    return NtUserCallTwoParam( HandleToUlong(monitor), (ULONG_PTR)info, NtUserGetMonitorInfo );
 }
-
-struct enum_mon_data
-{
-    MONITORENUMPROC proc;
-    LPARAM lparam;
-    HDC hdc;
-    POINT origin;
-    RECT limit;
-};
 
 #ifdef __i386__
 /* Some apps pass a non-stdcall callback to EnumDisplayMonitors,
  * so we need a small assembly wrapper to call it.
- * MJ's Help Diagnostic expects that %ecx contains the address to the rect.
  */
-extern BOOL enum_mon_callback_wrapper( HMONITOR monitor, LPRECT rect, struct enum_mon_data *data );
+extern BOOL enum_mon_callback_wrapper( void *proc, HMONITOR monitor, HDC hdc, RECT *rect, LPARAM lparam );
 __ASM_GLOBAL_FUNC( enum_mon_callback_wrapper,
     "pushl %ebp\n\t"
     __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
@@ -4154,85 +1364,28 @@ __ASM_GLOBAL_FUNC( enum_mon_callback_wrapper,
     "movl %esp,%ebp\n\t"
     __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")
     "subl $8,%esp\n\t"
-    "movl 16(%ebp),%eax\n\t"    /* data */
-    "movl 12(%ebp),%ecx\n\t"    /* rect */
-    "pushl 4(%eax)\n\t"         /* data->lparam */
-    "pushl %ecx\n\t"            /* rect */
-    "pushl 8(%eax)\n\t"         /* data->hdc */
-    "pushl 8(%ebp)\n\t"         /* monitor */
-    "call *(%eax)\n\t"          /* data->proc */
+    "pushl 24(%ebp)\n\t"        /* lparam */
+    /* MJ's Help Diagnostic expects that %ecx contains the address to the rect. */
+    "movl 20(%ebp),%ecx\n\t"    /* rect */
+    "pushl %ecx\n\t"
+    "pushl 16(%ebp)\n\t"        /* hdc */
+    "pushl 12(%ebp)\n\t"        /* monitor */
+    "movl 8(%ebp),%eax\n"       /* proc */
+    "call *%eax\n\t"
     "leave\n\t"
     __ASM_CFI(".cfi_def_cfa %esp,4\n\t")
     __ASM_CFI(".cfi_same_value %ebp\n\t")
     "ret" )
 #endif /* __i386__ */
 
-static BOOL CALLBACK enum_mon_callback( HMONITOR monitor, HDC hdc, LPRECT rect, LPARAM lp )
+BOOL WINAPI User32CallEnumDisplayMonitor( struct enum_display_monitor_params *params, ULONG size )
 {
-    struct enum_mon_data *data = (struct enum_mon_data *)lp;
-    RECT monrect = map_dpi_rect( *rect, get_monitor_dpi( monitor ), get_thread_dpi() );
-
-    OffsetRect( &monrect, -data->origin.x, -data->origin.y );
-    if (!IntersectRect( &monrect, &monrect, &data->limit )) return TRUE;
 #ifdef __i386__
-    return enum_mon_callback_wrapper( monitor, &monrect, data );
+    return enum_mon_callback_wrapper( params->proc, params->monitor, params->hdc,
+                                      &params->rect, params->lparam );
 #else
-    return data->proc( monitor, data->hdc, &monrect, data->lparam );
+    return params->proc( params->monitor, params->hdc, &params->rect, params->lparam );
 #endif
-}
-
-BOOL CDECL nulldrv_EnumDisplayMonitors( HDC hdc, RECT *rect, MONITORENUMPROC proc, LPARAM lp )
-{
-    RECT default_rect = {0, 0, 640, 480};
-    DWORD i;
-
-    TRACE("(%p, %p, %p, 0x%lx)\n", hdc, rect, proc, lp);
-
-    if (update_monitor_cache())
-    {
-        EnterCriticalSection( &monitors_section );
-        for (i = 0; i < monitor_count; i++)
-        {
-            if (!proc( (HMONITOR)(UINT_PTR)(i + 1), hdc, &monitors[i].rcMonitor, lp ))
-            {
-                LeaveCriticalSection( &monitors_section );
-                return FALSE;
-            }
-        }
-        LeaveCriticalSection( &monitors_section );
-        return TRUE;
-    }
-
-    /* Fallback to report one monitor if using SetupAPI failed */
-    if (!proc( NULLDRV_DEFAULT_HMONITOR, hdc, &default_rect, lp ))
-        return FALSE;
-    return TRUE;
-}
-
-/***********************************************************************
- *		EnumDisplayMonitors (USER32.@)
- */
-BOOL WINAPI EnumDisplayMonitors( HDC hdc, LPRECT rect, MONITORENUMPROC proc, LPARAM lp )
-{
-    struct enum_mon_data data;
-
-    data.proc = proc;
-    data.lparam = lp;
-    data.hdc = hdc;
-
-    if (hdc)
-    {
-        if (!GetDCOrgEx( hdc, &data.origin )) return FALSE;
-        if (GetClipBox( hdc, &data.limit ) == ERROR) return FALSE;
-    }
-    else
-    {
-        data.origin.x = data.origin.y = 0;
-        data.limit.left = data.limit.top = INT_MIN;
-        data.limit.right = data.limit.bottom = INT_MAX;
-    }
-    if (rect && !IntersectRect( &data.limit, &data.limit, rect )) return TRUE;
-    return USER_Driver->pEnumDisplayMonitors( 0, NULL, enum_mon_callback, (LPARAM)&data );
 }
 
 /***********************************************************************
@@ -4273,216 +1426,9 @@ BOOL WINAPI EnumDisplayDevicesA( LPCSTR device, DWORD index, DISPLAY_DEVICEA *in
  */
 BOOL WINAPI EnumDisplayDevicesW( LPCWSTR device, DWORD index, DISPLAY_DEVICEW *info, DWORD flags )
 {
-    SP_DEVINFO_DATA device_data = {sizeof(device_data)};
-    HDEVINFO set = INVALID_HANDLE_VALUE;
-    WCHAR key_nameW[MAX_PATH];
-    WCHAR instanceW[MAX_PATH];
-    WCHAR bufferW[1024];
-    LONG adapter_index;
-    WCHAR *next_charW;
-    HANDLE mutex;
-    DWORD size;
-    DWORD type;
-    HKEY hkey;
-    BOOL ret = FALSE;
-
-    TRACE("%s %d %p %#x\n", debugstr_w( device ), index, info, flags);
-
-    wait_graphics_driver_ready();
-    mutex = get_display_device_init_mutex();
-
-    /* Find adapter */
-    if (!device)
-    {
-        sprintfW( key_nameW, VIDEO_VALUE_FMT, index );
-        size = sizeof(bufferW);
-        if (RegGetValueW( HKEY_LOCAL_MACHINE, VIDEO_KEY, key_nameW, RRF_RT_REG_SZ, NULL, bufferW, &size ))
-            goto done;
-
-        /* DeviceKey */
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceKey) + sizeof(info->DeviceKey))
-            lstrcpyW( info->DeviceKey, bufferW );
-
-        /* DeviceName */
-        sprintfW( info->DeviceName, ADAPTER_FMT, index + 1 );
-
-        /* Strip \Registry\Machine\ */
-        lstrcpyW( key_nameW, bufferW + 18 );
-
-        /* DeviceString */
-        size = sizeof(info->DeviceString);
-        if (RegGetValueW( HKEY_LOCAL_MACHINE, key_nameW, DRIVER_DESC, RRF_RT_REG_SZ, NULL,
-                          info->DeviceString, &size ))
-            goto done;
-
-        /* StateFlags */
-        size = sizeof(info->StateFlags);
-        if (RegGetValueW( HKEY_CURRENT_CONFIG, key_nameW, STATE_FLAGS, RRF_RT_REG_DWORD, NULL,
-                          &info->StateFlags, &size ))
-            goto done;
-
-        /* DeviceID */
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceID) + sizeof(info->DeviceID))
-        {
-            if (flags & EDD_GET_DEVICE_INTERFACE_NAME)
-                info->DeviceID[0] = 0;
-            else
-            {
-                size = sizeof(bufferW);
-                if (RegGetValueW( HKEY_CURRENT_CONFIG, key_nameW, GPU_ID, RRF_RT_REG_SZ | RRF_ZEROONFAILURE, NULL,
-                                  bufferW, &size ))
-                    goto done;
-                set = SetupDiCreateDeviceInfoList( &GUID_DEVCLASS_DISPLAY, NULL );
-                if (!SetupDiOpenDeviceInfoW( set, bufferW, NULL, 0, &device_data )
-                    || !SetupDiGetDeviceRegistryPropertyW( set, &device_data, SPDRP_HARDWAREID, NULL, (BYTE *)bufferW,
-                                                           sizeof(bufferW), NULL ))
-                    goto done;
-                lstrcpyW( info->DeviceID, bufferW );
-            }
-        }
-    }
-    /* Find monitor */
-    else
-    {
-        /* Check adapter name */
-        if (strncmpiW( device, ADAPTER_PREFIX, ARRAY_SIZE(ADAPTER_PREFIX) ))
-            goto done;
-
-        adapter_index = strtolW( device + ARRAY_SIZE(ADAPTER_PREFIX), NULL, 10 );
-        sprintfW( key_nameW, VIDEO_VALUE_FMT, adapter_index - 1 );
-
-        size = sizeof(bufferW);
-        if (RegGetValueW( HKEY_LOCAL_MACHINE, VIDEO_KEY, key_nameW, RRF_RT_REG_SZ, NULL, bufferW, &size ))
-            goto done;
-
-        /* DeviceName */
-        sprintfW( info->DeviceName, MONITOR_FMT, adapter_index, index );
-
-        /* Get monitor instance */
-        /* Strip \Registry\Machine\ first */
-        lstrcpyW( key_nameW, bufferW + 18 );
-        sprintfW( bufferW, MONITOR_ID_VALUE_FMT, index );
-
-        size = sizeof(instanceW);
-        if (RegGetValueW( HKEY_CURRENT_CONFIG, key_nameW, bufferW, RRF_RT_REG_SZ, NULL, instanceW, &size ))
-            goto done;
-
-        set = SetupDiCreateDeviceInfoList( &GUID_DEVCLASS_MONITOR, NULL );
-        if (!SetupDiOpenDeviceInfoW( set, instanceW, NULL, 0, &device_data ))
-            goto done;
-
-        /* StateFlags */
-        if (!SetupDiGetDevicePropertyW( set, &device_data, &WINE_DEVPROPKEY_MONITOR_STATEFLAGS, &type,
-                                        (BYTE *)&info->StateFlags, sizeof(info->StateFlags), NULL, 0 ))
-            goto done;
-
-        /* DeviceString */
-        if (!SetupDiGetDeviceRegistryPropertyW( set, &device_data, SPDRP_DEVICEDESC, NULL,
-                                                (BYTE *)info->DeviceString,
-                                                sizeof(info->DeviceString), NULL ))
-            goto done;
-
-        /* DeviceKey */
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceKey) + sizeof(info->DeviceKey))
-        {
-            if (!SetupDiGetDeviceRegistryPropertyW( set, &device_data, SPDRP_DRIVER, NULL, (BYTE *)bufferW,
-                                                    sizeof(bufferW), NULL ))
-                goto done;
-
-            lstrcpyW( info->DeviceKey, NT_CLASS );
-            lstrcatW( info->DeviceKey, bufferW );
-        }
-
-        /* DeviceID */
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceID) + sizeof(info->DeviceID))
-        {
-            if (flags & EDD_GET_DEVICE_INTERFACE_NAME)
-            {
-                lstrcpyW( info->DeviceID, MONITOR_INTERFACE_PREFIX );
-                lstrcatW( info->DeviceID, instanceW );
-                lstrcatW( info->DeviceID, GUID_DEVINTERFACE_MONITOR );
-                /* Replace '\\' with '#' after prefix */
-                for (next_charW = info->DeviceID + strlenW( MONITOR_INTERFACE_PREFIX ); *next_charW;
-                     next_charW++)
-                {
-                    if (*next_charW == '\\')
-                        *next_charW = '#';
-                }
-            }
-            else
-            {
-                if (!SetupDiGetDeviceRegistryPropertyW( set, &device_data, SPDRP_HARDWAREID, NULL, (BYTE *)bufferW,
-                                                        sizeof(bufferW), NULL ))
-                    goto done;
-
-                lstrcpyW( info->DeviceID, bufferW );
-                lstrcatW( info->DeviceID, BACKSLASH );
-
-                if (!SetupDiGetDeviceRegistryPropertyW( set, &device_data, SPDRP_DRIVER, NULL, (BYTE *)bufferW,
-                                                        sizeof(bufferW), NULL ))
-                    goto done;
-
-                lstrcatW( info->DeviceID, bufferW );
-            }
-        }
-    }
-
-    ret = TRUE;
-done:
-    release_display_device_init_mutex( mutex );
-    SetupDiDestroyDeviceInfoList( set );
-    if (ret)
-        return ret;
-
-    /* Fallback to report at least one adapter and monitor, if user driver didn't initialize display device registry */
-    if (index)
-        return FALSE;
-
-    /* If user driver did initialize the registry, then exit */
-    if (!RegOpenKeyW( HKEY_LOCAL_MACHINE, VIDEO_KEY, &hkey ))
-    {
-        RegCloseKey( hkey );
-        return FALSE;
-    }
-    WARN("Reporting fallback display devices\n");
-
-    /* Adapter */
-    if (!device)
-    {
-        memcpy( info->DeviceName, DEFAULT_ADAPTER_NAME, sizeof(DEFAULT_ADAPTER_NAME) );
-        memcpy( info->DeviceString, DEFAULT_ADAPTER_STRING, sizeof(DEFAULT_ADAPTER_STRING) );
-        info->StateFlags =
-            DISPLAY_DEVICE_ATTACHED_TO_DESKTOP | DISPLAY_DEVICE_PRIMARY_DEVICE | DISPLAY_DEVICE_VGA_COMPATIBLE;
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceID) + sizeof(info->DeviceID))
-        {
-            if (flags & EDD_GET_DEVICE_INTERFACE_NAME)
-                info->DeviceID[0] = 0;
-            else
-                memcpy( info->DeviceID, DEFAULT_ADAPTER_ID, sizeof(DEFAULT_ADAPTER_ID) );
-        }
-    }
-    /* Monitor */
-    else
-    {
-        if (lstrcmpiW( DEFAULT_ADAPTER_NAME, device ))
-            return FALSE;
-
-        memcpy( info->DeviceName, DEFAULT_MONITOR_NAME, sizeof(DEFAULT_MONITOR_NAME) );
-        memcpy( info->DeviceString, DEFAULT_MONITOR_STRING, sizeof(DEFAULT_MONITOR_STRING) );
-        info->StateFlags = DISPLAY_DEVICE_ACTIVE | DISPLAY_DEVICE_ATTACHED;
-        if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceID) + sizeof(info->DeviceID))
-        {
-            if (flags & EDD_GET_DEVICE_INTERFACE_NAME)
-                memcpy( info->DeviceID, DEFAULT_MONITOR_INTERFACE_ID, sizeof(DEFAULT_MONITOR_INTERFACE_ID) );
-            else
-                memcpy( info->DeviceID, DEFAULT_MONITOR_ID, sizeof(DEFAULT_MONITOR_ID) );
-        }
-    }
-
-    if (info->cb >= offsetof(DISPLAY_DEVICEW, DeviceKey) + sizeof(info->DeviceKey))
-        info->DeviceKey[0] = 0;
-
-    return TRUE;
+    UNICODE_STRING str;
+    RtlInitUnicodeString( &str, device );
+    return NT_SUCCESS(NtUserEnumDisplayDevices( &str, index, info, flags ));
 }
 
 /**********************************************************************
@@ -4527,7 +1473,15 @@ BOOL WINAPI GetPhysicalCursorPos( POINT *point )
  */
 BOOL WINAPI SetPhysicalCursorPos( INT x, INT y )
 {
-    return SetCursorPos( x, y );
+    return NtUserSetCursorPos( x, y );
+}
+
+/***********************************************************************
+ *		WindowFromPhysicalPoint (USER32.@)
+ */
+HWND WINAPI WindowFromPhysicalPoint( POINT pt )
+{
+    return WindowFromPoint( pt );
 }
 
 /***********************************************************************
@@ -4544,4 +1498,379 @@ BOOL WINAPI LogicalToPhysicalPoint( HWND hwnd, POINT *point )
 BOOL WINAPI PhysicalToLogicalPoint( HWND hwnd, POINT *point )
 {
     return TRUE;
+}
+
+static DISPLAYCONFIG_ROTATION get_dc_rotation(const DEVMODEW *devmode)
+{
+    if (devmode->dmFields & DM_DISPLAYORIENTATION)
+        return devmode->u1.s2.dmDisplayOrientation + 1;
+    else
+        return DISPLAYCONFIG_ROTATION_IDENTITY;
+}
+
+static DISPLAYCONFIG_SCANLINE_ORDERING get_dc_scanline_ordering(const DEVMODEW *devmode)
+{
+    if (!(devmode->dmFields & DM_DISPLAYFLAGS))
+        return DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED;
+    else if (devmode->u2.dmDisplayFlags & DM_INTERLACED)
+        return DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED;
+    else
+        return DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE;
+}
+
+static DISPLAYCONFIG_PIXELFORMAT get_dc_pixelformat(DWORD dmBitsPerPel)
+{
+    if ((dmBitsPerPel == 8) || (dmBitsPerPel == 16) ||
+        (dmBitsPerPel == 24) || (dmBitsPerPel == 32))
+        return dmBitsPerPel / 8;
+    else
+        return DISPLAYCONFIG_PIXELFORMAT_NONGDI;
+}
+
+static void set_mode_target_info(DISPLAYCONFIG_MODE_INFO *info, const LUID *gpu_luid, UINT32 target_id,
+                                 UINT32 flags, const DEVMODEW *devmode)
+{
+    DISPLAYCONFIG_TARGET_MODE *mode = &(info->u.targetMode);
+
+    info->infoType = DISPLAYCONFIG_MODE_INFO_TYPE_TARGET;
+    info->adapterId = *gpu_luid;
+    info->id = target_id;
+
+    /* FIXME: Populate pixelRate/hSyncFreq/totalSize with real data */
+    mode->targetVideoSignalInfo.pixelRate = devmode->dmDisplayFrequency * devmode->dmPelsWidth * devmode->dmPelsHeight;
+    mode->targetVideoSignalInfo.hSyncFreq.Numerator = devmode->dmDisplayFrequency * devmode->dmPelsWidth;
+    mode->targetVideoSignalInfo.hSyncFreq.Denominator = 1;
+    mode->targetVideoSignalInfo.vSyncFreq.Numerator = devmode->dmDisplayFrequency;
+    mode->targetVideoSignalInfo.vSyncFreq.Denominator = 1;
+    mode->targetVideoSignalInfo.activeSize.cx = devmode->dmPelsWidth;
+    mode->targetVideoSignalInfo.activeSize.cy = devmode->dmPelsHeight;
+    if (flags & QDC_DATABASE_CURRENT)
+    {
+        mode->targetVideoSignalInfo.totalSize.cx = 0;
+        mode->targetVideoSignalInfo.totalSize.cy = 0;
+    }
+    else
+    {
+        mode->targetVideoSignalInfo.totalSize.cx = devmode->dmPelsWidth;
+        mode->targetVideoSignalInfo.totalSize.cy = devmode->dmPelsHeight;
+    }
+    mode->targetVideoSignalInfo.u.videoStandard = D3DKMDT_VSS_OTHER;
+    mode->targetVideoSignalInfo.scanLineOrdering = get_dc_scanline_ordering(devmode);
+}
+
+static void set_path_target_info(DISPLAYCONFIG_PATH_TARGET_INFO *info, const LUID *gpu_luid,
+                                 UINT32 target_id, UINT32 mode_index, const DEVMODEW *devmode)
+{
+    info->adapterId = *gpu_luid;
+    info->id = target_id;
+    info->u.modeInfoIdx = mode_index;
+    info->outputTechnology = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL;
+    info->rotation = get_dc_rotation(devmode);
+    info->scaling = DISPLAYCONFIG_SCALING_IDENTITY;
+    info->refreshRate.Numerator = devmode->dmDisplayFrequency;
+    info->refreshRate.Denominator = 1;
+    info->scanLineOrdering = get_dc_scanline_ordering(devmode);
+    info->targetAvailable = TRUE;
+    info->statusFlags = DISPLAYCONFIG_TARGET_IN_USE;
+}
+
+static void set_mode_source_info(DISPLAYCONFIG_MODE_INFO *info, const LUID *gpu_luid,
+                                 UINT32 source_id, const DEVMODEW *devmode)
+{
+    DISPLAYCONFIG_SOURCE_MODE *mode = &(info->u.sourceMode);
+
+    info->infoType = DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE;
+    info->adapterId = *gpu_luid;
+    info->id = source_id;
+
+    mode->width = devmode->dmPelsWidth;
+    mode->height = devmode->dmPelsHeight;
+    mode->pixelFormat = get_dc_pixelformat(devmode->dmBitsPerPel);
+    if (devmode->dmFields & DM_POSITION)
+    {
+        mode->position = devmode->u1.s2.dmPosition;
+    }
+    else
+    {
+        mode->position.x = 0;
+        mode->position.y = 0;
+    }
+}
+
+static void set_path_source_info(DISPLAYCONFIG_PATH_SOURCE_INFO *info, const LUID *gpu_luid,
+                                 UINT32 source_id, UINT32 mode_index)
+{
+    info->adapterId = *gpu_luid;
+    info->id = source_id;
+    info->u.modeInfoIdx = mode_index;
+    info->statusFlags = DISPLAYCONFIG_SOURCE_IN_USE;
+}
+
+static BOOL source_mode_exists(const DISPLAYCONFIG_MODE_INFO *modeinfo, UINT32 num_modes,
+                               UINT32 source_id, UINT32 *found_mode_index)
+{
+    UINT32 i;
+
+    for (i = 0; i < num_modes; i++)
+    {
+        if (modeinfo[i].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE &&
+            modeinfo[i].id == source_id)
+        {
+            *found_mode_index = i;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/***********************************************************************
+ *              QueryDisplayConfig (USER32.@)
+ */
+LONG WINAPI QueryDisplayConfig(UINT32 flags, UINT32 *numpathelements, DISPLAYCONFIG_PATH_INFO *pathinfo,
+                               UINT32 *numinfoelements, DISPLAYCONFIG_MODE_INFO *modeinfo,
+                               DISPLAYCONFIG_TOPOLOGY_ID *topologyid)
+{
+    LONG adapter_index, ret;
+    HANDLE mutex;
+    HDEVINFO devinfo;
+    SP_DEVINFO_DATA device_data = {sizeof(device_data)};
+    DWORD monitor_index = 0, state_flags, type;
+    UINT32 output_id, source_mode_index, path_index = 0, mode_index = 0;
+    LUID gpu_luid;
+    WCHAR device_name[CCHDEVICENAME];
+    DEVMODEW devmode;
+
+    FIXME("(%08x %p %p %p %p %p): semi-stub\n", flags, numpathelements, pathinfo, numinfoelements, modeinfo, topologyid);
+
+    if (!numpathelements || !numinfoelements)
+        return ERROR_INVALID_PARAMETER;
+
+    if (!*numpathelements || !*numinfoelements)
+        return ERROR_INVALID_PARAMETER;
+
+    if (flags != QDC_ALL_PATHS &&
+        flags != QDC_ONLY_ACTIVE_PATHS &&
+        flags != QDC_DATABASE_CURRENT)
+        return ERROR_INVALID_PARAMETER;
+
+    if (((flags == QDC_DATABASE_CURRENT) && !topologyid) ||
+        ((flags != QDC_DATABASE_CURRENT) && topologyid))
+        return ERROR_INVALID_PARAMETER;
+
+    if (flags != QDC_ONLY_ACTIVE_PATHS)
+        FIXME("only returning active paths\n");
+
+    if (topologyid)
+    {
+        FIXME("setting toplogyid to DISPLAYCONFIG_TOPOLOGY_INTERNAL\n");
+        *topologyid = DISPLAYCONFIG_TOPOLOGY_INTERNAL;
+    }
+
+    wait_graphics_driver_ready();
+    mutex = get_display_device_init_mutex();
+
+    /* Iterate through "targets"/monitors.
+     * Each target corresponds to a path, and each path corresponds to one or two unique modes.
+     */
+    devinfo = SetupDiGetClassDevsW(&GUID_DEVCLASS_MONITOR, L"DISPLAY", NULL, DIGCF_PRESENT);
+    if (devinfo == INVALID_HANDLE_VALUE)
+    {
+        ret = ERROR_GEN_FAILURE;
+        goto done;
+    }
+
+    ret = ERROR_GEN_FAILURE;
+    while (SetupDiEnumDeviceInfo(devinfo, monitor_index++, &device_data))
+    {
+        /* Only count active monitors */
+        if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_STATEFLAGS,
+                                       &type, (BYTE *)&state_flags, sizeof(state_flags), NULL, 0))
+            goto done;
+        if (!(state_flags & DISPLAY_DEVICE_ACTIVE))
+            continue;
+
+        if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &DEVPROPKEY_MONITOR_GPU_LUID,
+                                       &type, (BYTE *)&gpu_luid, sizeof(gpu_luid), NULL, 0))
+            goto done;
+
+        if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &DEVPROPKEY_MONITOR_OUTPUT_ID,
+                                       &type, (BYTE *)&output_id, sizeof(output_id), NULL, 0))
+            goto done;
+
+        if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_ADAPTERNAME,
+                                       &type, (BYTE *)device_name, sizeof(device_name), NULL, 0))
+            goto done;
+
+        memset(&devmode, 0, sizeof(devmode));
+        devmode.dmSize = sizeof(devmode);
+        if (!EnumDisplaySettingsW(device_name, ENUM_CURRENT_SETTINGS, &devmode))
+            goto done;
+
+        /* Extract the adapter index from device_name to use as the source ID */
+        adapter_index = wcstol(device_name + lstrlenW(L"\\\\.\\DISPLAY"), NULL, 10);
+        adapter_index--;
+
+        if (path_index == *numpathelements || mode_index == *numinfoelements)
+        {
+            ret = ERROR_INSUFFICIENT_BUFFER;
+            goto done;
+        }
+
+        pathinfo[path_index].flags = DISPLAYCONFIG_PATH_ACTIVE;
+        set_mode_target_info(&modeinfo[mode_index], &gpu_luid, output_id, flags, &devmode);
+        set_path_target_info(&(pathinfo[path_index].targetInfo), &gpu_luid, output_id, mode_index, &devmode);
+
+        mode_index++;
+        if (mode_index == *numinfoelements)
+        {
+            ret = ERROR_INSUFFICIENT_BUFFER;
+            goto done;
+        }
+
+        /* Multiple targets can be driven by the same source, ensure a mode
+         * hasn't already been added for this source.
+         */
+        if (!source_mode_exists(modeinfo, mode_index, adapter_index, &source_mode_index))
+        {
+            set_mode_source_info(&modeinfo[mode_index], &gpu_luid, adapter_index, &devmode);
+            source_mode_index = mode_index;
+            mode_index++;
+        }
+        set_path_source_info(&(pathinfo[path_index].sourceInfo), &gpu_luid, adapter_index, source_mode_index);
+        path_index++;
+    }
+
+    *numpathelements = path_index;
+    *numinfoelements = mode_index;
+    ret = ERROR_SUCCESS;
+
+done:
+    SetupDiDestroyDeviceInfoList(devinfo);
+    release_display_device_init_mutex(mutex);
+    return ret;
+}
+
+/***********************************************************************
+ *              DisplayConfigGetDeviceInfo (USER32.@)
+ */
+LONG WINAPI DisplayConfigGetDeviceInfo(DISPLAYCONFIG_DEVICE_INFO_HEADER *packet)
+{
+    LONG ret = ERROR_GEN_FAILURE;
+    HANDLE mutex;
+    HDEVINFO devinfo;
+    SP_DEVINFO_DATA device_data = {sizeof(device_data)};
+    DWORD index = 0, type;
+    LUID gpu_luid;
+
+    TRACE("(%p)\n", packet);
+
+    if (!packet || packet->size < sizeof(*packet))
+        return ERROR_GEN_FAILURE;
+    wait_graphics_driver_ready();
+
+    switch (packet->type)
+    {
+    case DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME:
+    {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME *source_name = (DISPLAYCONFIG_SOURCE_DEVICE_NAME *)packet;
+        WCHAR device_name[CCHDEVICENAME];
+        LONG source_id;
+
+        TRACE("DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME\n");
+
+        if (packet->size < sizeof(*source_name))
+            return ERROR_INVALID_PARAMETER;
+
+        mutex = get_display_device_init_mutex();
+        devinfo = SetupDiGetClassDevsW(&GUID_DEVCLASS_MONITOR, L"DISPLAY", NULL, DIGCF_PRESENT);
+        if (devinfo == INVALID_HANDLE_VALUE)
+        {
+            release_display_device_init_mutex(mutex);
+            return ret;
+        }
+
+        while (SetupDiEnumDeviceInfo(devinfo, index++, &device_data))
+        {
+            if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &DEVPROPKEY_MONITOR_GPU_LUID,
+                                           &type, (BYTE *)&gpu_luid, sizeof(gpu_luid), NULL, 0))
+                continue;
+
+            if ((source_name->header.adapterId.LowPart != gpu_luid.LowPart) ||
+                (source_name->header.adapterId.HighPart != gpu_luid.HighPart))
+                continue;
+
+            /* QueryDisplayConfig() derives the source ID from the adapter name. */
+            if (!SetupDiGetDevicePropertyW(devinfo, &device_data, &WINE_DEVPROPKEY_MONITOR_ADAPTERNAME,
+                                           &type, (BYTE *)device_name, sizeof(device_name), NULL, 0))
+                continue;
+
+            source_id = wcstol(device_name + lstrlenW(L"\\\\.\\DISPLAY"), NULL, 10);
+            source_id--;
+            if (source_name->header.id != source_id)
+                continue;
+
+            lstrcpyW(source_name->viewGdiDeviceName, device_name);
+            ret = ERROR_SUCCESS;
+            break;
+        }
+        SetupDiDestroyDeviceInfoList(devinfo);
+        release_display_device_init_mutex(mutex);
+        return ret;
+    }
+    case DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME:
+    {
+        DISPLAYCONFIG_TARGET_DEVICE_NAME *target_name = (DISPLAYCONFIG_TARGET_DEVICE_NAME *)packet;
+
+        FIXME("DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME: stub\n");
+
+        if (packet->size < sizeof(*target_name))
+            return ERROR_INVALID_PARAMETER;
+
+        return ERROR_NOT_SUPPORTED;
+    }
+    case DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE:
+    {
+        DISPLAYCONFIG_TARGET_PREFERRED_MODE *preferred_mode = (DISPLAYCONFIG_TARGET_PREFERRED_MODE *)packet;
+
+        FIXME("DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE: stub\n");
+
+        if (packet->size < sizeof(*preferred_mode))
+            return ERROR_INVALID_PARAMETER;
+
+        return ERROR_NOT_SUPPORTED;
+    }
+    case DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME:
+    {
+        DISPLAYCONFIG_ADAPTER_NAME *adapter_name = (DISPLAYCONFIG_ADAPTER_NAME *)packet;
+
+        FIXME("DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME: stub\n");
+
+        if (packet->size < sizeof(*adapter_name))
+            return ERROR_INVALID_PARAMETER;
+
+        return ERROR_NOT_SUPPORTED;
+    }
+    case DISPLAYCONFIG_DEVICE_INFO_SET_TARGET_PERSISTENCE:
+    case DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_BASE_TYPE:
+    case DISPLAYCONFIG_DEVICE_INFO_GET_SUPPORT_VIRTUAL_RESOLUTION:
+    case DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION:
+    case DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO:
+    case DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE:
+    case DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL:
+    default:
+        FIXME("Unimplemented packet type: %u\n", packet->type);
+        return ERROR_INVALID_PARAMETER;
+    }
+}
+
+/***********************************************************************
+ *              SetDisplayConfig (USER32.@)
+ */
+LONG WINAPI SetDisplayConfig(UINT32 path_info_count, DISPLAYCONFIG_PATH_INFO *path_info, UINT32 mode_info_count,
+        DISPLAYCONFIG_MODE_INFO *mode_info, UINT32 flags)
+{
+    FIXME("path_info_count %u, path_info %p, mode_info_count %u, mode_info %p, flags %#x stub.\n",
+            path_info_count, path_info, mode_info_count, mode_info, flags);
+
+    return ERROR_SUCCESS;
 }

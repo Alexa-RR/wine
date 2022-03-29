@@ -37,6 +37,11 @@ static inline IDirectMusicLyricsTrack *impl_from_IDirectMusicTrack8(IDirectMusic
     return CONTAINING_RECORD(iface, IDirectMusicLyricsTrack, IDirectMusicTrack8_iface);
 }
 
+static inline IDirectMusicLyricsTrack *impl_from_IPersistStream(IPersistStream *iface)
+{
+    return CONTAINING_RECORD(iface, IDirectMusicLyricsTrack, dmobj.IPersistStream_iface);
+}
+
 static HRESULT WINAPI lyrics_track_QueryInterface(IDirectMusicTrack8 *iface, REFIID riid,
         void **ret_iface)
 {
@@ -65,7 +70,7 @@ static ULONG WINAPI lyrics_track_AddRef(IDirectMusicTrack8 *iface)
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -75,7 +80,7 @@ static ULONG WINAPI lyrics_track_Release(IDirectMusicTrack8 *iface)
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if (!ref) {
         HeapFree(GetProcessHeap(), 0, This);
@@ -97,7 +102,7 @@ static HRESULT WINAPI lyrics_track_InitPlay(IDirectMusicTrack8 *iface,
         void **ppStateData, DWORD dwVirtualTrack8ID, DWORD dwFlags)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %p, %p, %p, %d, %d): stub\n", This, pSegmentState, pPerformance, ppStateData, dwVirtualTrack8ID, dwFlags);
+	FIXME("(%p, %p, %p, %p, %ld, %ld): stub\n", This, pSegmentState, pPerformance, ppStateData, dwVirtualTrack8ID, dwFlags);
 	return S_OK;
 }
 
@@ -113,7 +118,7 @@ static HRESULT WINAPI lyrics_track_Play(IDirectMusicTrack8 *iface, void *pStateD
         IDirectMusicPerformance *pPerf, IDirectMusicSegmentState *pSegSt, DWORD dwVirtualID)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %p, %d, %d, %d, %d, %p, %p, %d): stub\n", This, pStateData, mtStart, mtEnd, mtOffset, dwFlags, pPerf, pSegSt, dwVirtualID);
+	FIXME("(%p, %p, %ld, %ld, %ld, %ld, %p, %p, %ld): stub\n", This, pStateData, mtStart, mtEnd, mtOffset, dwFlags, pPerf, pSegSt, dwVirtualID);
 	return S_OK;
 }
 
@@ -122,7 +127,7 @@ static HRESULT WINAPI lyrics_track_GetParam(IDirectMusicTrack8 *iface, REFGUID t
 {
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
 
-    TRACE("(%p, %s, %d, %p, %p): not supported\n", This, debugstr_dmguid(type), time, next, param);
+    TRACE("(%p, %s, %ld, %p, %p): not supported\n", This, debugstr_dmguid(type), time, next, param);
     return DMUS_E_GET_UNSUPPORTED;
 }
 
@@ -131,7 +136,7 @@ static HRESULT WINAPI lyrics_track_SetParam(IDirectMusicTrack8 *iface, REFGUID t
 {
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
 
-    TRACE("(%p, %s, %d, %p): not supported\n", This, debugstr_dmguid(type), time, param);
+    TRACE("(%p, %s, %ld, %p): not supported\n", This, debugstr_dmguid(type), time, param);
     return DMUS_E_SET_UNSUPPORTED;
 }
 
@@ -164,7 +169,7 @@ static HRESULT WINAPI lyrics_track_Clone(IDirectMusicTrack8 *iface, MUSIC_TIME m
         MUSIC_TIME mtEnd, IDirectMusicTrack **ppTrack)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %d, %d, %p): stub\n", This, mtStart, mtEnd, ppTrack);
+	FIXME("(%p, %ld, %ld, %p): stub\n", This, mtStart, mtEnd, ppTrack);
 	return S_OK;
 }
 
@@ -173,7 +178,7 @@ static HRESULT WINAPI lyrics_track_PlayEx(IDirectMusicTrack8 *iface, void *pStat
         IDirectMusicPerformance *pPerf, IDirectMusicSegmentState *pSegSt, DWORD dwVirtualID)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %p, 0x%s, 0x%s, 0x%s, %d, %p, %p, %d): stub\n", This, pStateData, wine_dbgstr_longlong(rtStart),
+	FIXME("(%p, %p, 0x%s, 0x%s, 0x%s, %ld, %p, %p, %ld): stub\n", This, pStateData, wine_dbgstr_longlong(rtStart),
 	    wine_dbgstr_longlong(rtEnd), wine_dbgstr_longlong(rtOffset), dwFlags, pPerf, pSegSt, dwVirtualID);
 	return S_OK;
 }
@@ -183,7 +188,7 @@ static HRESULT WINAPI lyrics_track_GetParamEx(IDirectMusicTrack8 *iface, REFGUID
         DWORD dwFlags)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %s, 0x%s, %p, %p, %p, %d): stub\n", This, debugstr_dmguid(rguidType),
+	FIXME("(%p, %s, 0x%s, %p, %p, %p, %ld): stub\n", This, debugstr_dmguid(rguidType),
 	    wine_dbgstr_longlong(rtTime), prtNext, pParam, pStateData, dwFlags);
 	return S_OK;
 }
@@ -192,7 +197,7 @@ static HRESULT WINAPI lyrics_track_SetParamEx(IDirectMusicTrack8 *iface, REFGUID
         REFERENCE_TIME rtTime, void *pParam, void *pStateData, DWORD dwFlags)
 {
         IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-	FIXME("(%p, %s, 0x%s, %p, %p, %d): stub\n", This, debugstr_dmguid(rguidType),
+	FIXME("(%p, %s, 0x%s, %p, %p, %ld): stub\n", This, debugstr_dmguid(rguidType),
 	    wine_dbgstr_longlong(rtTime), pParam, pStateData, dwFlags);
 	return S_OK;
 }
@@ -202,7 +207,7 @@ static HRESULT WINAPI lyrics_track_Compose(IDirectMusicTrack8 *iface, IUnknown *
 {
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
 
-    TRACE("(%p, %p, %d, %p): method not implemented\n", This, context, trackgroup, track);
+    TRACE("(%p, %p, %ld, %p): method not implemented\n", This, context, trackgroup, track);
     return E_NOTIMPL;
 }
 
@@ -210,7 +215,7 @@ static HRESULT WINAPI lyrics_track_Join(IDirectMusicTrack8 *iface, IDirectMusicT
         MUSIC_TIME join, IUnknown *context, DWORD trackgroup, IDirectMusicTrack **resulttrack)
 {
     IDirectMusicLyricsTrack *This = impl_from_IDirectMusicTrack8(iface);
-    TRACE("(%p, %p, %d, %p, %d, %p): method not implemented\n", This, newtrack, join, context,
+    TRACE("(%p, %p, %ld, %p, %ld, %p): method not implemented\n", This, newtrack, join, context,
             trackgroup, resulttrack);
     return E_NOTIMPL;
 }
@@ -236,10 +241,94 @@ static const IDirectMusicTrack8Vtbl dmtrack8_vtbl = {
     lyrics_track_Join
 };
 
+static HRESULT parse_lyrics_track_events(IDirectMusicLyricsTrack *This, IStream *stream,
+                struct chunk_entry *lyric)
+{
+    struct chunk_entry chunk = {.parent = lyric};
+    HRESULT hr;
+    DMUS_IO_LYRICSTRACK_EVENTHEADER header;
+    WCHAR name[256];
+
+    TRACE("Parsing segment form in %p: %s\n", stream, debugstr_chunk(lyric));
+
+    while ((hr = stream_next_chunk(stream, &chunk)) == S_OK) {
+        if (chunk.id == FOURCC_LIST && chunk.type == DMUS_FOURCC_LYRICSTRACKEVENT_LIST) {
+            struct chunk_entry child = {.parent = &chunk};
+
+            if (FAILED(hr = stream_next_chunk(stream, &child)))
+                return  hr;
+
+            if (child.id != DMUS_FOURCC_LYRICSTRACKEVENTHEADER_CHUNK)
+                return DMUS_E_UNSUPPORTED_STREAM;
+
+            if (FAILED(hr = stream_chunk_get_data(stream, &child, &header, child.size))) {
+                WARN("Failed to read data of %s\n", debugstr_chunk(&child));
+                return hr;
+            }
+
+            TRACE("Found DMUS_IO_LYRICSTRACK_EVENTHEADER\n");
+            TRACE("  - dwFlags %#lx\n", header.dwFlags);
+            TRACE("  - dwTimingFlags %#lx\n", header.dwTimingFlags);
+            TRACE("  - lTimeLogical %ld\n", header.lTimeLogical);
+            TRACE("  - lTimePhysical %ld\n", header.lTimePhysical);
+
+            if (FAILED(hr = stream_next_chunk(stream, &child)))
+                return  hr;
+
+            if (child.id != DMUS_FOURCC_LYRICSTRACKEVENTTEXT_CHUNK)
+                return DMUS_E_UNSUPPORTED_STREAM;
+
+            if (FAILED(hr = stream_chunk_get_data(stream, &child, &name, child.size))) {
+                WARN("Failed to read data of %s\n", debugstr_chunk(&child));
+                return hr;
+            }
+
+            TRACE("Found DMUS_FOURCC_LYRICSTRACKEVENTTEXT_CHUNK\n");
+            TRACE("  - name %s\n", debugstr_w(name));
+        }
+    }
+
+    return SUCCEEDED(hr) ? S_OK : hr;
+}
+
+static HRESULT parse_lyricstrack_list(IDirectMusicLyricsTrack *This, IStream *stream, struct chunk_entry *lyric)
+{
+    HRESULT hr;
+    struct chunk_entry chunk = {.parent = lyric};
+
+    TRACE("Parsing segment form in %p: %s\n", stream, debugstr_chunk(lyric));
+
+    if (FAILED(hr = stream_next_chunk(stream, &chunk)))
+        return hr;
+
+    if (chunk.id == FOURCC_LIST && chunk.type == DMUS_FOURCC_LYRICSTRACKEVENTS_LIST)
+        hr = parse_lyrics_track_events(This, stream, &chunk);
+    else
+        hr = DMUS_E_UNSUPPORTED_STREAM;
+
+    return SUCCEEDED(hr) ? S_OK : hr;
+}
+
 static HRESULT WINAPI lyrics_IPersistStream_Load(IPersistStream *iface, IStream *stream)
 {
-	FIXME(": Loading not implemented yet\n");
-	return S_OK;
+    IDirectMusicLyricsTrack *This = impl_from_IPersistStream(iface);
+    HRESULT hr;
+    struct chunk_entry chunk = {0};
+
+    TRACE("%p, %p\n", This, stream);
+
+    if (!stream)
+        return E_POINTER;
+
+    if ((hr = stream_get_chunk(stream, &chunk)) != S_OK)
+        return hr;
+
+    if (chunk.id == FOURCC_LIST && chunk.type == DMUS_FOURCC_LYRICSTRACK_LIST)
+        hr = parse_lyricstrack_list(This, stream, &chunk);
+    else
+        hr = DMUS_E_UNSUPPORTED_STREAM;
+
+    return hr;
 }
 
 static const IPersistStreamVtbl persiststream_vtbl = {

@@ -18,16 +18,13 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <stdarg.h>
 #include <string.h>
 
 #include "windef.h"
 #include "winbase.h"
-#include "winuser.h"
-#include "wine/unicode.h"
+#include "winnls.h"
+#include "ntuser.h"
 #include "wine/server.h"
 
 /* size of buffer needed to store an atom string */
@@ -129,17 +126,7 @@ HANDLE WINAPI GetPropA( HWND hwnd, LPCSTR str )
  */
 HANDLE WINAPI GetPropW( HWND hwnd, LPCWSTR str )
 {
-    ULONG_PTR ret = 0;
-
-    SERVER_START_REQ( get_window_property )
-    {
-        req->window = wine_server_user_handle( hwnd );
-        if (IS_INTRESOURCE(str)) req->atom = LOWORD(str);
-        else wine_server_add_data( req, str, strlenW(str) * sizeof(WCHAR) );
-        if (!wine_server_call_err( req )) ret = reply->data;
-    }
-    SERVER_END_REQ;
-    return (HANDLE)ret;
+    return NtUserGetProp( hwnd, str );
 }
 
 
@@ -161,18 +148,7 @@ BOOL WINAPI SetPropA( HWND hwnd, LPCSTR str, HANDLE handle )
  */
 BOOL WINAPI SetPropW( HWND hwnd, LPCWSTR str, HANDLE handle )
 {
-    BOOL ret;
-
-    SERVER_START_REQ( set_window_property )
-    {
-        req->window = wine_server_user_handle( hwnd );
-        req->data   = (ULONG_PTR)handle;
-        if (IS_INTRESOURCE(str)) req->atom = LOWORD(str);
-        else wine_server_add_data( req, str, strlenW(str) * sizeof(WCHAR) );
-        ret = !wine_server_call_err( req );
-    }
-    SERVER_END_REQ;
-    return ret;
+    return NtUserSetProp( hwnd, str, handle );
 }
 
 
@@ -194,18 +170,7 @@ HANDLE WINAPI RemovePropA( HWND hwnd, LPCSTR str )
  */
 HANDLE WINAPI RemovePropW( HWND hwnd, LPCWSTR str )
 {
-    ULONG_PTR ret = 0;
-
-    SERVER_START_REQ( remove_window_property )
-    {
-        req->window = wine_server_user_handle( hwnd );
-        if (IS_INTRESOURCE(str)) req->atom = LOWORD(str);
-        else wine_server_add_data( req, str, strlenW(str) * sizeof(WCHAR) );
-        if (!wine_server_call_err( req )) ret = reply->data;
-    }
-    SERVER_END_REQ;
-
-    return (HANDLE)ret;
+    return NtUserRemoveProp( hwnd, str );
 }
 
 

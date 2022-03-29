@@ -33,8 +33,10 @@
 
 /* make it use a definition from string.h */
 #undef strncpy
+#undef wcsncpy
 #include "winbase.h"
 #include "winnls.h"
+#include "winuser.h"
 
 static char *buf_to_string(const unsigned char *bin, int len, int nr)
 {
@@ -114,6 +116,10 @@ static int (__cdecl *p__mbccpy_s)(unsigned char*, size_t, int*, const unsigned c
 static int (__cdecl *p__memicmp)(const char*, const char*, size_t);
 static int (__cdecl *p__memicmp_l)(const char*, const char*, size_t, _locale_t);
 static size_t (__cdecl *p___strncnt)(const char*, size_t);
+static unsigned int (__cdecl *p_mbsnextc_l)(const unsigned char*, _locale_t);
+static int (__cdecl *p_mbscmp_l)(const unsigned char*, const unsigned char*, _locale_t);
+
+int CDECL __STRINGTOLD(_LDOUBLE*, char**, const char*, int);
 
 #define SETNOFAIL(x,y) x = (void*)GetProcAddress(hMsvcrt,y)
 #define SET(x,y) SETNOFAIL(x,y); ok(x != NULL, "Export '%s' not found\n", y)
@@ -348,6 +354,11 @@ static void test_mbcp(void)
     expect_eq(_mbsnextc(mbstring), 0xb0b1, int, "%x");
     expect_eq(_mbsnextc(&mbstring[2]), 0xb220, int, "%x");  /* lead + invalid tail */
     expect_eq(_mbsnextc(&mbstring[3]), 0x20, int, "%x");    /* single char */
+
+    if (!p_mbsnextc_l)
+        win_skip("_mbsnextc_l tests\n");
+    else
+        expect_eq(p_mbsnextc_l(mbstring, NULL), 0xb0b1, int, "%x");
 
     /* _mbclen/_mbslen */
     expect_eq(_mbclen(mbstring), 2, int, "%d");
@@ -1093,7 +1104,7 @@ static void test__mbscpy_s(void)
 
 static void test_wcscpy_s(void)
 {
-    static const WCHAR szLongText[] = { 'T','h','i','s','A','L','o','n','g','s','t','r','i','n','g',0 };
+    static const WCHAR szLongText[] = L"ThisALongstring";
     static WCHAR szDest[18];
     static WCHAR szDestShort[8];
     int ret;
@@ -1199,11 +1210,8 @@ static void test_wcscpy_s(void)
 
 static void test__wcsupr_s(void)
 {
-    static const WCHAR mixedString[] = {'M', 'i', 'X', 'e', 'D', 'l', 'o', 'w',
-                                        'e', 'r', 'U', 'P', 'P', 'E', 'R', 0};
-    static const WCHAR expectedString[] = {'M', 'I', 'X', 'E', 'D', 'L', 'O',
-                                           'W', 'E', 'R', 'U', 'P', 'P', 'E',
-                                           'R', 0};
+    static const WCHAR mixedString[] = L"MiXeDlowerUPPER";
+    static const WCHAR expectedString[] = L"MIXEDLOWERUPPER";
     WCHAR testBuffer[2*ARRAY_SIZE(mixedString)];
     int ret;
 
@@ -1286,11 +1294,8 @@ static void test__wcsupr_s(void)
 
 static void test__wcslwr_s(void)
 {
-    static const WCHAR mixedString[] = {'M', 'i', 'X', 'e', 'D', 'l', 'o', 'w',
-                                        'e', 'r', 'U', 'P', 'P', 'E', 'R', 0};
-    static const WCHAR expectedString[] = {'m', 'i', 'x', 'e', 'd', 'l', 'o',
-                                           'w', 'e', 'r', 'u', 'p', 'p', 'e',
-                                           'r', 0};
+    static const WCHAR mixedString[] = L"MiXeDlowerUPPER";
+    static const WCHAR expectedString[] = L"mixedlowerupper";
     WCHAR buffer[2*ARRAY_SIZE(mixedString)];
     int ret;
 
@@ -1680,6 +1685,14 @@ static void test_strtok(void)
                 "third call string (%p) \'%s\' return %p\n",
                 teststr, testcases_strtok[i].string, strret);
     }
+
+    strcpy( teststr, "test a=b" );
+    strret = strtok( teststr, " " );
+    ok( strret == teststr, "strret = %p, expected %p\n", strret, teststr );
+    strret = strtok( NULL, "ab=" );
+    ok( !strret, "strret = %p, expected NULL\n", strret );
+    strret = strtok( NULL, "=" );
+    ok( !strret, "strret = %p, expected NULL\n", strret );
 }
 
 static void test_strtol(void)
@@ -1694,58 +1707,58 @@ static void test_strtol(void)
     /* errno is modified on W2K8+ */
     errno = EBADF;
     l = strtol("-1234", &e, 0);
-    ok(l==-1234, "wrong value %d\n", l);
+    ok(l==-1234, "wrong value %ld\n", l);
     ok(errno == EBADF || broken(errno == 0), "wrong errno %d\n", errno);
     errno = EBADF;
     ul = strtoul("1234", &e, 0);
-    ok(ul==1234, "wrong value %u\n", ul);
+    ok(ul==1234, "wrong value %lu\n", ul);
     ok(errno == EBADF || broken(errno == 0), "wrong errno %d\n", errno);
 
     errno = EBADF;
     l = strtol("2147483647L", &e, 0);
-    ok(l==2147483647, "wrong value %d\n", l);
+    ok(l==2147483647, "wrong value %ld\n", l);
     ok(errno == EBADF || broken(errno == 0), "wrong errno %d\n", errno);
     errno = EBADF;
     l = strtol("-2147483648L", &e, 0);
-    ok(l==-2147483647L - 1, "wrong value %d\n", l);
+    ok(l==-2147483647L - 1, "wrong value %ld\n", l);
     ok(errno == EBADF || broken(errno == 0), "wrong errno %d\n", errno);
     errno = EBADF;
     ul = strtoul("4294967295UL", &e, 0);
-    ok(ul==4294967295ul, "wrong value %u\n", ul);
+    ok(ul==4294967295ul, "wrong value %lu\n", ul);
     ok(errno == EBADF || broken(errno == 0), "wrong errno %d\n", errno);
 
     errno = 0;
     l = strtol("9223372036854775807L", &e, 0);
-    ok(l==2147483647, "wrong value %d\n", l);
+    ok(l==2147483647, "wrong value %ld\n", l);
     ok(errno == ERANGE, "wrong errno %d\n", errno);
     errno = 0;
     ul = strtoul("9223372036854775807L", &e, 0);
-    ok(ul==4294967295ul, "wrong value %u\n", ul);
+    ok(ul==4294967295ul, "wrong value %lu\n", ul);
     ok(errno == ERANGE, "wrong errno %d\n", errno);
 
     errno = 0;
     ul = strtoul("-2", NULL, 0);
-    ok(ul == -2, "wrong value %u\n", ul);
+    ok(ul == -2, "wrong value %lu\n", ul);
     ok(errno == 0, "wrong errno %d\n", errno);
 
     errno = 0;
     ul = strtoul("-4294967294", NULL, 0);
-    ok(ul == 2, "wrong value %u\n", ul);
+    ok(ul == 2, "wrong value %lu\n", ul);
     ok(errno == 0, "wrong errno %d\n", errno);
 
     errno = 0;
     ul = strtoul("-4294967295", NULL, 0);
-    ok(ul==1, "wrong value %u\n", ul);
+    ok(ul==1, "wrong value %lu\n", ul);
     ok(errno == 0, "wrong errno %d\n", errno);
 
     errno = 0;
     ul = strtoul("-4294967296", NULL, 0);
-    ok(ul == 1, "wrong value %u\n", ul);
+    ok(ul == 1, "wrong value %lu\n", ul);
     ok(errno == ERANGE, "wrong errno %d\n", errno);
 
     errno = 0;
     l = strtol(neg, &e, 0);
-    ok(l == 0, "wrong value %d\n", l);
+    ok(l == 0, "wrong value %ld\n", l);
     ok(errno == 0, "wrong errno %d\n", errno);
     ok(e == neg, "e = %p, neg = %p\n", e, neg);
 }
@@ -1934,48 +1947,56 @@ static inline BOOL compare_double(double f, double g, unsigned int ulps)
 
 static void test__strtod(void)
 {
-    const char double1[] = "12.1";
-    const char double2[] = "-13.721";
-    const char double3[] = "INF";
-    const char double4[] = ".21e12";
-    const char double5[] = "214353e-3";
-    const char double6[] = "NAN";
+    static const struct {
+        const char *str;
+        int len;
+        double ret;
+        int err;
+    } tests[] = {
+        { "12.1", 4, 12.1 },
+        { "-13.721", 7, -13.721 },
+        { "INF", 0, 0 },
+        { ".21e12", 6, 210000000000.0 },
+        { "214353e-3", 9, 214.353 },
+        { "NAN", 0, 0 },
+        { "12.1d2", 6, 12.1e2 },
+        { "  d10", 0, 0 },
+        { "0.1", 3, 0.1 },
+        { "-0.1", 4, -0.1 },
+        { "0.1281832188491894198128921", 27, 0.1281832188491894198128921 },
+        { "0.82181281288121", 16, 0.82181281288121 },
+        { "21921922352523587651128218821", 29, 21921922352523587651128218821.0 },
+        { "0.1d238", 7, 0.1e238 },
+        { "0.1D-4736", 9, 0, ERANGE },
+        { "3.4028234663852887e38", 21, FLT_MAX },
+        { "1.1754943508222875e-38", 22, FLT_MIN },
+        { "1.7976931348623158e+308", 23, DBL_MAX },
+        { "1.7976931348623159e+308", 23, INFINITY, ERANGE },
+        { "2.2250738585072014e-308", 23, DBL_MIN },
+        { "-1.7976931348623158e+308", 24, -DBL_MAX },
+        { "-1.7976931348623159e+308", 24, -INFINITY, ERANGE },
+        { "00", 2, 0 },
+        { "00.", 3, 0 },
+        { ".00", 3, 0 },
+        { "-0.", 3, 0 },
+        { "0e13", 4, 0 },
+    };
     const char overflow[] = "1d9999999999999999999";
-    const char white_chars[] = "  d10";
 
     char *end;
     double d;
+    int i;
 
-    d = strtod(double1, &end);
-    ok(d == 12.1, "d = %.16e\n", d);
-    ok(end == double1+4, "incorrect end (%d)\n", (int)(end-double1));
-
-    d = strtod(double2, &end);
-    ok(d == -13.721, "d = %.16e\n", d);
-    ok(end == double2+7, "incorrect end (%d)\n", (int)(end-double2));
-
-    d = strtod(double3, &end);
-    ok(d == 0, "d = %.16e\n", d);
-    ok(end == double3, "incorrect end (%d)\n", (int)(end-double3));
-
-    d = strtod(double4, &end);
-    ok(d == 210000000000.0, "d = %.16e\n", d);
-    ok(end == double4+6, "incorrect end (%d)\n", (int)(end-double4));
-
-    d = strtod(double5, &end);
-    ok(d == 214.353, "d = %.16e\n", d);
-    ok(end == double5+9, "incorrect end (%d)\n", (int)(end-double5));
-
-    d = strtod(double6, &end);
-    ok(d == 0, "d = %.16e\n", d);
-    ok(end == double6, "incorrect end (%d)\n", (int)(end-double6));
-
-    d = strtod("12.1d2", NULL);
-    ok(d == 12.1e2, "d = %.16e\n", d);
-
-    d = strtod(white_chars, &end);
-    ok(d == 0, "d = %.16e\n", d);
-    ok(end == white_chars, "incorrect end (%d)\n", (int)(end-white_chars));
+    for (i=0; i<ARRAY_SIZE(tests); i++)
+    {
+        errno = 0xdeadbeef;
+        d = strtod(tests[i].str, &end);
+        ok(d == tests[i].ret, "%d) d = %.16e\n", i, d);
+        ok(end == tests[i].str + tests[i].len, "%d) len = %d\n",
+                i, (int)(end - tests[i].str));
+        ok(errno == tests[i].err || (!tests[i].err && errno == 0xdeadbeef) /* <= 2003 */,
+                "%d) errno = %d\n", i, errno);
+    }
 
     if (!p__strtod_l)
         win_skip("_strtod_l not found\n");
@@ -2013,22 +2034,6 @@ static void test__strtod(void)
 
     setlocale(LC_ALL, "C");
 
-    /* Precision tests */
-    d = strtod("0.1", NULL);
-    ok(d == 0.1, "d = %.16e\n", d);
-    d = strtod("-0.1", NULL);
-    ok(d == -0.1, "d = %.16e\n", d);
-    d = strtod("0.1281832188491894198128921", NULL);
-    ok(d == 0.1281832188491894198128921, "d = %.16e\n", d);
-    d = strtod("0.82181281288121", NULL);
-    ok(d == 0.82181281288121, "d = %.16e\n", d);
-    d = strtod("21921922352523587651128218821", NULL);
-    ok(d == 21921922352523587651128218821.0, "d = %.16e\n", d);
-    d = strtod("0.1d238", NULL);
-    ok(d == 0.1e238, "d = %.16e\n", d);
-    d = strtod("0.1D-4736", NULL);
-    ok(d == 0.0, "d = %.16e\n", d);
-
     errno = 0xdeadbeef;
     strtod(overflow, &end);
     ok(errno == ERANGE, "errno = %x\n", errno);
@@ -2037,22 +2042,14 @@ static void test__strtod(void)
     errno = 0xdeadbeef;
     strtod("-1d309", NULL);
     ok(errno == ERANGE, "errno = %x\n", errno);
-
-    d = strtod("3.4028234663852887e38", NULL);
-    ok(d <= FLT_MAX, "d = %e\n", d);
-
-    d = strtod("1.7976931348623158e+308", NULL);
-    ok(d == DBL_MAX, "d = %le\n", d);
 }
 
 static void test_mbstowcs(void)
 {
-    static const wchar_t wSimple[] = { 't','e','x','t',0 };
-    static const wchar_t wHiragana[] = { 0x3042,0x3043,0 };
-    static const wchar_t wEmpty[] = { 0 };
+    static const wchar_t wSimple[] = L"text";
+    static const wchar_t wHiragana[] = L"\x3042\x3043";
     static const char mSimple[] = "text";
     static const char mHiragana[] = { 0x82,0xa0,0x82,0xa1,0 };
-    static const char mEmpty[] = { 0 };
 
     const wchar_t *pwstr;
     wchar_t wOut[6];
@@ -2081,12 +2078,12 @@ static void test_mbstowcs(void)
     ok(!memcmp(wOut, wSimple, 4*sizeof(wchar_t)), "wOut = %s\n", wine_dbgstr_w(wOut));
     ok(wOut[4] == '!', "wOut[4] != \'!\'\n");
 
-    ret = mbstowcs(NULL, mEmpty, 1);
+    ret = mbstowcs(NULL, "", 1);
     ok(ret == 0, "mbstowcs did not return 0, got %d\n", (int)ret);
 
-    ret = mbstowcs(wOut, mEmpty, 1);
+    ret = mbstowcs(wOut, "", 1);
     ok(ret == 0, "mbstowcs did not return 0, got %d\n", (int)ret);
-    ok(!memcmp(wOut, wEmpty, sizeof(wEmpty)), "wOut = %s\n", wine_dbgstr_w(wOut));
+    ok(!wOut[0], "wOut = %s\n", wine_dbgstr_w(wOut));
 
     ret = wcstombs(NULL, wSimple, 0);
     ok(ret == 4, "wcstombs did not return 4\n");
@@ -2099,12 +2096,28 @@ static void test_mbstowcs(void)
     ok(ret == 2, "wcstombs did not return 2\n");
     ok(!memcmp(mOut, mSimple, 5*sizeof(char)), "mOut = %s\n", mOut);
 
-    ret = wcstombs(NULL, wEmpty, 1);
+    ret = wcstombs(NULL, L"", 1);
     ok(ret == 0, "wcstombs did not return 0, got %d\n", (int)ret);
 
-    ret = wcstombs(mOut, wEmpty, 1);
+    ret = wcstombs(mOut, L"", 1);
     ok(ret == 0, "wcstombs did not return 0, got %d\n", (int)ret);
-    ok(!memcmp(mOut, mEmpty, sizeof(mEmpty)), "mOut = %s\n", mOut);
+    ok(!mOut[0], "mOut = %s\n", mOut);
+
+    if(pwcsrtombs) {
+        pwstr = wSimple;
+        err = -3;
+        ret = pwcsrtombs(mOut, &pwstr, 4, &err);
+        ok(ret == 4, "wcsrtombs did not return 4\n");
+        ok(err == 0, "err = %d\n", err);
+        ok(pwstr == wSimple+4, "pwstr = %p (wszSimple = %p)\n", pwstr, wSimple);
+        ok(!memcmp(mOut, mSimple, ret), "mOut = %s\n", mOut);
+
+        pwstr = wSimple;
+        ret = pwcsrtombs(mOut, &pwstr, 5, NULL);
+        ok(ret == 4, "wcsrtombs did not return 4\n");
+        ok(pwstr == NULL, "pwstr != NULL\n");
+        ok(!memcmp(mOut, mSimple, sizeof(mSimple)), "mOut = %s\n", mOut);
+    }
 
     if(!setlocale(LC_ALL, "Japanese_Japan.932")) {
         win_skip("Japanese_Japan.932 locale not available\n");
@@ -2115,17 +2128,22 @@ static void test_mbstowcs(void)
     ok(ret == 2, "mbstowcs did not return 2\n");
     ok(!memcmp(wOut, wHiragana, sizeof(wHiragana)), "wOut = %s\n", wine_dbgstr_w(wOut));
 
-    ret = mbstowcs(wOut, mEmpty, 6);
+    ret = mbstowcs(wOut, "", 6);
     ok(ret == 0, "mbstowcs did not return 0, got %d\n", (int)ret);
-    ok(!memcmp(wOut, wEmpty, sizeof(wEmpty)), "wOut = %s\n", wine_dbgstr_w(wOut));
+    ok(!wOut[0], "wOut = %s\n", wine_dbgstr_w(wOut));
+
+    errno = 0xdeadbeef;
+    ret = mbstowcs(wOut, mHiragana+1, 5);
+    ok(ret == -1, "mbstowcs did not return -1\n");
+    ok(errno == EILSEQ, "errno = %d\n", errno);
 
     ret = wcstombs(mOut, wHiragana, 6);
     ok(ret == 4, "wcstombs did not return 4\n");
     ok(!memcmp(mOut, mHiragana, sizeof(mHiragana)), "mOut = %s\n", mOut);
 
-    ret = wcstombs(mOut, wEmpty, 6);
+    ret = wcstombs(mOut, L"", 6);
     ok(ret == 0, "wcstombs did not return 0, got %d\n", (int)ret);
-    ok(!memcmp(mOut, mEmpty, sizeof(mEmpty)), "mOut = %s\n", mOut);
+    ok(!mOut[0], "mOut = %s\n", mOut);
 
     if(!pmbstowcs_s || !pwcstombs_s) {
         setlocale(LC_ALL, "C");
@@ -2148,10 +2166,10 @@ static void test_mbstowcs(void)
     ok(ret == 3, "mbstowcs_s did not return 3\n");
     ok(!memcmp(wOut, wHiragana, sizeof(wHiragana)), "wOut = %s\n", wine_dbgstr_w(wOut));
 
-    err = pmbstowcs_s(&ret, wOut, 6, mEmpty, _TRUNCATE);
+    err = pmbstowcs_s(&ret, wOut, 6, "", _TRUNCATE);
     ok(err == 0, "err = %d\n", err);
     ok(ret == 1, "mbstowcs_s did not return 1, got %d\n", (int)ret);
-    ok(!memcmp(wOut, wEmpty, sizeof(wEmpty)), "wOut = %s\n", wine_dbgstr_w(wOut));
+    ok(!wOut[0], "wOut = %s\n", wine_dbgstr_w(wOut));
 
     err = pmbstowcs_s(&ret, NULL, 0, mHiragana, 1);
     ok(err == 0, "err = %d\n", err);
@@ -2167,10 +2185,10 @@ static void test_mbstowcs(void)
     ok(ret == 5, "wcstombs_s did not return 5\n");
     ok(!memcmp(mOut, mHiragana, sizeof(mHiragana)), "mOut = %s\n", mOut);
 
-    err = pwcstombs_s(&ret, mOut, 6, wEmpty, _TRUNCATE);
+    err = pwcstombs_s(&ret, mOut, 6, L"", _TRUNCATE);
     ok(err == 0, "err = %d\n", err);
     ok(ret == 1, "wcstombs_s did not return 1, got %d\n", (int)ret);
-    ok(!memcmp(mOut, mEmpty, sizeof(mEmpty)), "mOut = %s\n", mOut);
+    ok(!mOut[0], "mOut = %s\n", mOut);
 
     err = pwcstombs_s(&ret, NULL, 0, wHiragana, 1);
     ok(err == 0, "err = %d\n", err);
@@ -2331,7 +2349,7 @@ static void test__wcstombs_s_l(void)
         memset(out, 0xcc, sizeof(out));
         err = p_wcstombs_s_l(&ret, tests[i].str ? out : NULL, tests[i].len,
                              tests[i].wstr, tests[i].wlen, locale);
-        ok(ret == tests[i].ret, "%d: expected ret %d, got %d for '%s' in locale %s\n", i, tests[i].ret, ret,
+        ok(ret == tests[i].ret, "%d: expected ret %Id, got %Id for '%s' in locale %s\n", i, tests[i].ret, ret,
             wine_dbgstr_w(tests[i].wstr), tests[i].locale);
         ok(err == tests[i].err, "%d: expected err %d, got %d for '%s' in locale %s\n", i, tests[i].err, err,
             wine_dbgstr_w(tests[i].wstr), tests[i].locale);
@@ -2537,7 +2555,6 @@ static void test__strlwr_s(void)
 
 static void test_wcsncat_s(void)
 {
-    static wchar_t abcW[] = {'a','b','c',0};
     int ret;
     wchar_t dst[4];
     wchar_t src[4];
@@ -2548,7 +2565,7 @@ static void test_wcsncat_s(void)
         return;
     }
 
-    memcpy(src, abcW, sizeof(abcW));
+    wcscpy(src, L"abc");
     dst[0] = 0;
     ret = p_wcsncat_s(NULL, 4, src, 4);
     ok(ret == EINVAL, "err = %d\n", ret);
@@ -2568,7 +2585,7 @@ static void test_wcsncat_s(void)
     ok(ret == STRUNCATE, "err = %d\n", ret);
     ok(dst[0] == 'a' && dst[1] == 0, "dst is %s\n", wine_dbgstr_w(dst));
 
-    memcpy(dst, abcW, sizeof(abcW));
+    wcscpy(dst, L"abc");
     dst[3] = 'd';
     ret = p_wcsncat_s(dst, 4, src, 4);
     ok(ret == EINVAL, "err = %d\n", ret);
@@ -3626,7 +3643,7 @@ static void test__strnset_s(void)
 
 static void test__wcsnset_s(void)
 {
-    wchar_t text[] = { 't','e','x','t',0 };
+    wchar_t text[] = L"text";
     int r;
 
     if(!p__wcsnset_s) {
@@ -3726,6 +3743,15 @@ static void test__mbscmp(void)
 
     ret = _mbscmp(b, a);
     ok(ret == 1, "got %d\n", ret);
+
+    if (!p_mbscmp_l)
+    {
+        win_skip("_mbscmp_l tests\n");
+        return;
+    }
+
+    ret = p_mbscmp_l(a, b, NULL);
+    ok(ret == -1, "got %d\n", ret);
 }
 
 static void test__ismbclx(void)
@@ -4231,6 +4257,226 @@ static void test_iswdigit(void)
     }
 }
 
+static void test_wcscmp(void)
+{
+    int r;
+
+    r = wcscmp(L"a", L"z");
+    ok(r == -1, "wcscmp returned %d\n", r);
+
+    r = wcscmp(L"z", L"a");
+    ok(r == 1, "wcscmp returned %d\n", r);
+
+    r = wcscmp(L"f", L"f");
+    ok(!r, "wcscmp returned %d\n", r);
+}
+
+static const char* debugstr_ldouble(_LDOUBLE *v)
+{
+    static char buf[2 * ARRAY_SIZE(v->ld) + 1];
+    int i;
+
+    for(i=0; i<ARRAY_SIZE(v->ld); i++)
+    {
+        buf[2*i] = v->ld[i] / 16 + '0';
+        if(buf[2*i] > '9') buf[2*i] -= 10 + '0' - 'a';
+        buf[2*i+1] = v->ld[i] % 16 + '0';
+        if(buf[2*i+1] > '9') buf[2*i+1] -= 10 + '0' - 'a';
+    }
+    buf[2 * ARRAY_SIZE(v->ld)] = 0;
+    return buf;
+}
+
+static void test___STRINGTOLD(void)
+{
+    static const struct {
+        const char *str;
+        int endptr;
+        int r;
+        _LDOUBLE v;
+        BOOL todo;
+    } tests[] = {
+        { "0", 1 },
+        { "nan", 0, 4 },
+        { "inf", 0, 4 },
+        { "-0.0", 4, 0, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80 }} },
+        { "1e0", 3, 0, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xff, 0x3f }} },
+        { "1.7976931348623158e+308", 23, 0, {{ 0xaf, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x43 }} },
+        { "1.7976931348623159e+308", 23, 0, {{ 0xb1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x43 }} },
+        { "3.65e-4951", 10, 0, {{ 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }} },
+        { "1.82e-4951", 10, 0, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }}, TRUE },
+        { "1e-99999", 8, 1, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }} },
+        { "1.18e+4932", 10, 0, {{ 0x25, 0x75, 0x06, 0x68, 0x8a, 0xf1, 0xe7, 0xfd, 0xfe, 0x7f }} },
+        { "1.19e+4932", 10, 2, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xff, 0x7f }} },
+        { "1e+99999", 8, 2, {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xff, 0x7f }} },
+    };
+
+    char *endptr;
+    _LDOUBLE v;
+    int i, r;
+
+    for(i=0; i<ARRAY_SIZE(tests); i++)
+    {
+        errno = 0xdeadbeef;
+        r = __STRINGTOLD(&v, &endptr, tests[i].str, 0);
+        todo_wine_if(tests[i].todo)
+            ok(r == tests[i].r, "%d) r = %d\n", i, r);
+        ok(endptr == tests[i].str + tests[i].endptr, "%d) endptr = %p, expected %p\n",
+                i, endptr, tests[i].str+tests[i].endptr);
+        ok(!memcmp(&v, &tests[i].v, sizeof(v)), "%d) v = %s\n", i, debugstr_ldouble(&v));
+        ok(errno == 0xdeadbeef, "%d) errno = %x\n", i, errno);
+    }
+}
+
+static void test_SpecialCasing(void)
+{
+    int i;
+    wint_t ret, exp;
+    _locale_t locale;
+    struct test {
+        const char *lang;
+        wint_t ch;
+        wint_t exp;
+    };
+
+    struct test ucases[] = {
+        {"English", 'I', 'i'},  /* LATIN CAPITAL LETTER I */
+        {"English", 0x0130},    /* LATIN CAPITAL LETTER I WITH DOT ABOVE */
+
+        {"Turkish", 'I', 'i'},  /* LATIN CAPITAL LETTER I */
+        {"Turkish", 0x0130},    /* LATIN CAPITAL LETTER I WITH DOT ABOVE */
+    };
+    struct test lcases[] = {
+        {"English", 'i', 'I'},  /* LATIN SMALL LETTER I */
+        {"English", 0x0131},    /* LATIN SMALL LETTER DOTLESS I */
+
+        {"Turkish", 'i', 'I'},  /* LATIN SMALL LETTER I */
+        {"Turkish", 0x0131},    /* LATIN SMALL LETTER DOTLESS I */
+    };
+
+    for (i = 0; i < ARRAY_SIZE(ucases); i++) {
+        if (!setlocale(LC_ALL, ucases[i].lang)) {
+            win_skip("skipping special case tests for %s\n", ucases[i].lang);
+            continue;
+        }
+
+        ret = p_towlower(ucases[i].ch);
+        exp = ucases[i].exp ? ucases[i].exp : ucases[i].ch;
+        ok(ret == exp, "expected lowercase %x, got %x for locale %s\n", exp, ret, ucases[i].lang);
+    }
+
+    for (i = 0; i < ARRAY_SIZE(lcases); i++) {
+        if (!setlocale(LC_ALL, lcases[i].lang)) {
+            win_skip("skipping special case tests for %s\n", lcases[i].lang);
+            continue;
+        }
+
+        ret = p_towupper(lcases[i].ch);
+        exp = lcases[i].exp ? lcases[i].exp : lcases[i].ch;
+        ok(ret == exp, "expected uppercase %x, got %x for locale %s\n", exp, ret, lcases[i].lang);
+    }
+
+    setlocale(LC_ALL, "C");
+
+    if (!p__towlower_l || !p__towupper_l || !p__create_locale)
+    {
+        win_skip("_towlower_l/_towupper_l/_create_locale not available\n");
+        return;
+    }
+
+    /* test _towlower_l creating locale */
+    for (i = 0; i < ARRAY_SIZE(ucases); i++) {
+        if (!(locale = p__create_locale(LC_ALL, ucases[i].lang))) {
+            win_skip("locale %s not available.  skipping\n", ucases[i].lang);
+            continue;
+        }
+
+        ret = p__towlower_l(ucases[i].ch, locale);
+        exp = ucases[i].exp ? ucases[i].exp : ucases[i].ch;
+        ok(ret == exp, "expected lowercase %x, got %x for locale %s\n", exp, ret, ucases[i].lang);
+
+        p__free_locale(locale);
+    }
+
+    /* test _towupper_l creating locale */
+    for (i = 0; i < ARRAY_SIZE(lcases); i++) {
+        if (!(locale = p__create_locale(LC_ALL, lcases[i].lang))) {
+            win_skip("locale %s not available.  skipping\n", lcases[i].lang);
+            continue;
+        }
+
+        ret = p__towupper_l(lcases[i].ch, locale);
+        exp = lcases[i].exp ? lcases[i].exp : lcases[i].ch;
+        ok(ret == exp, "expected uppercase %x, got %x for locale %s\n", exp, ret, lcases[i].lang);
+
+        p__free_locale(locale);
+    }
+}
+
+
+static void test__mbbtype(void)
+{
+    static const char *test_locales[] =
+    {
+        "Arabic_Algeria",
+        "Chinese_China",
+        "English_Australia",
+        "French_Belgium",
+        "German_Austria",
+        "Greek",
+        "Hindi",
+        "Japanese",
+        "Korean",
+        "Polish",
+        "Portuguese_Brazil",
+        "Russian",
+        "Spanish_Argentina",
+        "Swedish_Finland",
+        "Ukrainian",
+        "Vietnamese",
+    };
+
+    int expected, ret;
+    unsigned int c, i;
+
+    for (i = 0; i < ARRAY_SIZE(test_locales); ++i)
+    {
+        setlocale(LC_ALL, test_locales[i]);
+        _setmbcp(_MB_CP_LOCALE);
+        for (c = 0; c < 256; ++c)
+        {
+            if (_ismbblead(c))
+                expected = _MBC_LEAD;
+            else if (isprint(c))
+                expected = _MBC_SINGLE;
+            else
+                expected = _MBC_ILLEGAL;
+
+            ret = _mbbtype(c, 0);
+            ok(ret == expected, "test %u, c %#x, got ret %#x, expected %#x.\n", i, c, ret, expected);
+
+            if (_ismbbtrail(c))
+                expected = _MBC_TRAIL;
+            else
+                expected = _MBC_ILLEGAL;
+
+            ret = _mbbtype(c, 1);
+            ok(ret == expected, "test %u, c %#x, got ret %#x, expected %#x.\n", i, c, ret, expected);
+        }
+    }
+}
+
+static void test_wcsncpy(void)
+{
+    wchar_t dst[6], *p;
+
+    memset(dst, 0xff, sizeof(dst));
+    p = wcsncpy(dst, L"1234567", 6);
+    ok(p == dst, "Unexpected return value.\n");
+    ok(!memcmp(dst, L"123456", sizeof(dst)), "unexpected buffer %s\n",
+            wine_dbgstr_wn(dst, ARRAY_SIZE(dst)));
+}
+
 START_TEST(string)
 {
     char mem[100];
@@ -4302,6 +4548,8 @@ START_TEST(string)
     p__memicmp = (void*)GetProcAddress(hMsvcrt, "_memicmp");
     p__memicmp_l = (void*)GetProcAddress(hMsvcrt, "_memicmp_l");
     p___strncnt = (void*)GetProcAddress(hMsvcrt, "__strncnt");
+    p_mbsnextc_l = (void*)GetProcAddress(hMsvcrt, "_mbsnextc_l");
+    p_mbscmp_l = (void*)GetProcAddress(hMsvcrt, "_mbscmp_l");
 
     /* MSVCRT memcpy behaves like memmove for overlapping moves,
        MFC42 CString::Insert seems to rely on that behaviour */
@@ -4380,4 +4628,9 @@ START_TEST(string)
     test_C_locale();
     test_strstr();
     test_iswdigit();
+    test_wcscmp();
+    test___STRINGTOLD();
+    test_SpecialCasing();
+    test__mbbtype();
+    test_wcsncpy();
 }

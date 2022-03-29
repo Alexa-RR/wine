@@ -22,6 +22,7 @@
 #define __WINE_WINE_EXCEPTION_H
 
 #include <windef.h>
+#include <winternl.h>
 #include <excpt.h>
 
 #ifdef __cplusplus
@@ -70,7 +71,7 @@ extern "C" {
  * -- AJ
  */
 
-#ifndef __GNUC__
+#if !defined(__GNUC__) && !defined(__clang__)
 #define __attribute__(x) /* nothing */
 #endif
 
@@ -105,9 +106,9 @@ typedef struct { int reg; } __wine_jmp_buf;
 
 extern int __cdecl __attribute__ ((__nothrow__,__returns_twice__)) __wine_setjmpex( __wine_jmp_buf *buf,
                                                    EXCEPTION_REGISTRATION_RECORD *frame ) DECLSPEC_HIDDEN;
-extern void __cdecl __wine_longjmp( __wine_jmp_buf *buf, int retval ) DECLSPEC_HIDDEN DECLSPEC_NORETURN;
-extern void __cdecl __wine_rtl_unwind( EXCEPTION_REGISTRATION_RECORD* frame, EXCEPTION_RECORD *record,
-                                       void (*target)(void) ) DECLSPEC_HIDDEN DECLSPEC_NORETURN;
+extern void DECLSPEC_NORETURN __cdecl __wine_longjmp( __wine_jmp_buf *buf, int retval ) DECLSPEC_HIDDEN;
+extern void DECLSPEC_NORETURN __cdecl __wine_rtl_unwind( EXCEPTION_REGISTRATION_RECORD* frame, EXCEPTION_RECORD *record,
+                                                         void (*target)(void) ) DECLSPEC_HIDDEN;
 extern DWORD __cdecl __wine_exception_handler( EXCEPTION_RECORD *record,
                                                EXCEPTION_REGISTRATION_RECORD *frame,
                                                CONTEXT *context,
@@ -163,27 +164,18 @@ extern DWORD __cdecl __wine_finally_ctx_handler( EXCEPTION_RECORD *record,
                  const __WINE_FRAME * const __eptr __attribute__((unused)) = &__f; \
                  do {
 
-/* convenience handler for page fault exceptions */
-#define __EXCEPT_PAGE_FAULT \
+#define __EXCEPT_HANDLER(handler) \
              } while(0); \
              __wine_pop_frame( &__f.frame ); \
              break; \
          } else { \
-             __f.frame.Handler = __wine_exception_handler_page_fault; \
+             __f.frame.Handler = (handler); \
              if (__wine_setjmpex( &__f.jmp, &__f.frame )) { \
                  const __WINE_FRAME * const __eptr __attribute__((unused)) = &__f; \
                  do {
 
-/* convenience handler for all exceptions */
-#define __EXCEPT_ALL \
-             } while(0); \
-             __wine_pop_frame( &__f.frame ); \
-             break; \
-         } else { \
-             __f.frame.Handler = __wine_exception_handler_all; \
-             if (__wine_setjmpex( &__f.jmp, &__f.frame )) { \
-                 const __WINE_FRAME * const __eptr __attribute__((unused)) = &__f; \
-                 do {
+#define __EXCEPT_PAGE_FAULT __EXCEPT_HANDLER(__wine_exception_handler_page_fault)
+#define __EXCEPT_ALL        __EXCEPT_HANDLER(__wine_exception_handler_all)
 
 #define __ENDTRY \
                  } while (0); \
@@ -294,22 +286,6 @@ static inline EXCEPTION_REGISTRATION_RECORD *__wine_get_frame(void)
     return teb->ExceptionList;
 #endif
 }
-
-/* Exception handling flags - from OS/2 2.0 exception handling */
-
-/* Win32 seems to use the same flags as ExceptionFlags in an EXCEPTION_RECORD */
-#define EH_NONCONTINUABLE   0x01
-#define EH_UNWINDING        0x02
-#define EH_EXIT_UNWIND      0x04
-#define EH_STACK_INVALID    0x08
-#define EH_NESTED_CALL      0x10
-#define EH_TARGET_UNWIND    0x20
-#define EH_COLLIDED_UNWIND  0x40
-
-/* Wine-specific exceptions codes */
-
-#define EXCEPTION_WINE_STUB       0x80000100  /* stub entry point called */
-#define EXCEPTION_WINE_ASSERTION  0x80000101  /* assertion failed */
 
 #ifdef __cplusplus
 }

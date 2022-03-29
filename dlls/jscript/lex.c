@@ -41,6 +41,7 @@ static const struct {
     {L"break",       kBREAK,       TRUE},
     {L"case",        kCASE},
     {L"catch",       kCATCH},
+    {L"const",       kCONST},
     {L"continue",    kCONTINUE,    TRUE},
     {L"default",     kDEFAULT},
     {L"delete",      kDELETE},
@@ -54,6 +55,7 @@ static const struct {
     {L"if",          kIF},
     {L"in",          kIN},
     {L"instanceof",  kINSTANCEOF},
+    {L"let",         kLET,         FALSE, SCRIPTLANGUAGEVERSION_ES5},
     {L"new",         kNEW},
     {L"null",        kNULL},
     {L"return",      kRETURN,      TRUE},
@@ -159,10 +161,8 @@ static int check_keywords(parser_ctx_t *ctx, const WCHAR **lval)
 
 static BOOL skip_html_comment(parser_ctx_t *ctx)
 {
-    const WCHAR html_commentW[] = {'<','!','-','-',0};
-
     if(!ctx->is_html || ctx->ptr+3 >= ctx->end ||
-        memcmp(ctx->ptr, html_commentW, sizeof(WCHAR)*4))
+        memcmp(ctx->ptr, L"<!--", sizeof(WCHAR)*4))
         return FALSE;
 
     ctx->nl = TRUE;

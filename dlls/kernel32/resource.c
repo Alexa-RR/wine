@@ -20,9 +20,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <stdarg.h>
 
 #define NONAMELESSUNION
@@ -34,8 +31,8 @@
 #include "winternl.h"
 #include "wine/debug.h"
 #include "wine/exception.h"
-#include "wine/unicode.h"
 #include "wine/list.h"
+#include "kernel_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(resource);
 
@@ -62,6 +59,26 @@ static NTSTATUS get_res_nameA( LPCSTR name, UNICODE_STRING *str )
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS get_res_nameW( LPCWSTR name, UNICODE_STRING *str )
+{
+    if (IS_INTRESOURCE(name))
+    {
+        str->Buffer = ULongToPtr( LOWORD(name) );
+        return STATUS_SUCCESS;
+    }
+    if (name[0] == '#')
+    {
+        ULONG value;
+        RtlInitUnicodeString( str, name + 1 );
+        if (RtlUnicodeStringToInteger( str, 10, &value ) != STATUS_SUCCESS || HIWORD(value))
+            return STATUS_INVALID_PARAMETER;
+        str->Buffer = ULongToPtr(value);
+        return STATUS_SUCCESS;
+    }
+    RtlCreateUnicodeString( str, name );
+    RtlUpcaseUnicodeString( str, str, FALSE );
+    return STATUS_SUCCESS;
+}
 
 /**********************************************************************
  *	    FindResourceExA  (KERNEL32.@)
@@ -192,7 +209,7 @@ static int resource_strcmp( LPCWSTR a, LPCWSTR b )
     if ( a == b )
         return 0;
     if (!IS_INTRESOURCE( a ) && !IS_INTRESOURCE( b ) )
-        return lstrcmpW( a, b );
+        return wcscmp( a, b );
     /* strings come before ids */
     if (!IS_INTRESOURCE( a ) && IS_INTRESOURCE( b ))
         return -1;
@@ -447,7 +464,7 @@ static BOOL check_pe_exe( HANDLE file, QUEUEDUPDATES *updates )
     if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
         dd = &nt64->OptionalHeader.DataDirectory[0];
 
-    TRACE("resources: %08x %08x\n",
+    TRACE("resources: %08lx %08lx\n",
           dd[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress,
           dd[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size);
 
@@ -622,7 +639,7 @@ static BOOL read_mapped_resources( QUEUEDUPDATES *updates, void *base, DWORD map
         (sec[i].PointerToRawData + sec[i].SizeOfRawData) > mapping_size)
         return TRUE;
 
-    TRACE("found .rsrc at %08x, size %08x\n", sec[i].PointerToRawData, sec[i].SizeOfRawData);
+    TRACE("found .rsrc at %08lx, size %08lx\n", sec[i].PointerToRawData, sec[i].SizeOfRawData);
 
     if (!sec[i].PointerToRawData || sec[i].SizeOfRawData < sizeof(IMAGE_RESOURCE_DIRECTORY))
         return TRUE;
@@ -709,7 +726,7 @@ static BOOL resize_mapping( struct mapping_info *mi, DWORD new_size )
     SetFilePointer( mi->file, new_size, NULL, FILE_BEGIN );
     if (!SetEndOfFile( mi->file ))
     {
-        ERR("failed to set file size to %08x\n", new_size );
+        ERR("failed to set file size to %08lx\n", new_size );
         return FALSE;
     }
 
@@ -767,7 +784,7 @@ static void get_resource_sizes( QUEUEDUPDATES *updates, struct resource_size_inf
 
     si->total_size = si->data_ofs + data_size;
 
-    TRACE("names %08x langs %08x data entries %08x strings %08x data %08x total %08x\n",
+    TRACE("names %08lx langs %08lx data entries %08lx strings %08lx data %08lx total %08lx\n",
           si->names_ofs, si->langs_ofs, si->data_entry_ofs,
           si->strings_ofs, si->data_ofs, si->total_size);
 }
@@ -789,7 +806,7 @@ static BOOL write_resources( QUEUEDUPDATES *updates, LPBYTE base, struct resourc
     struct resource_data *data;
     IMAGE_RESOURCE_DIRECTORY *root;
 
-    TRACE("%p %p %p %08x\n", updates, base, si, rva );
+    TRACE("%p %p %p %08lx\n", updates, base, si, rva );
 
     memset( base, 0, si->total_size );
 
@@ -957,14 +974,13 @@ static DWORD get_init_data_size( void *base, DWORD mapping_size )
         if (s[i].Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA)
             sz += s[i].SizeOfRawData;
 
-    TRACE("size = %08x\n", sz);
+    TRACE("size = %08lx\n", sz);
 
     return sz;
 }
 
 static BOOL write_raw_resources( QUEUEDUPDATES *updates )
 {
-    static const WCHAR prefix[] = { 'r','e','s','u',0 };
     WCHAR tempdir[MAX_PATH], tempfile[MAX_PATH];
     DWORD i, section_size;
     BOOL ret = FALSE;
@@ -981,7 +997,7 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
     if (!GetTempPathW( MAX_PATH, tempdir ))
         return ret;
 
-    if (!GetTempFileNameW( tempdir, prefix, 0, tempfile ))
+    if (!GetTempFileNameW( tempdir, L"resu", 0, tempfile ))
         return ret;
 
     if (!CopyFileW( updates->pFileName, tempfile, FALSE ))
@@ -1024,13 +1040,13 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
 
     if ((LONG)PeSectionAlignment <= 0)
     {
-        ERR("invalid section alignment %08x\n", PeSectionAlignment);
+        ERR("invalid section alignment %08lx\n", PeSectionAlignment);
         goto done;
     }
 
     if ((LONG)PeFileAlignment <= 0)
     {
-        ERR("invalid file alignment %08x\n", PeFileAlignment);
+        ERR("invalid file alignment %08lx\n", PeFileAlignment);
         goto done;
     }
 
@@ -1058,7 +1074,7 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
         sec->SizeOfRawData = 0;
     }
 
-    TRACE("before .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
+    TRACE("before .rsrc at %08lx, size %08lx\n", sec->PointerToRawData, sec->SizeOfRawData);
 
     get_resource_sizes( updates, &res_size );
 
@@ -1066,7 +1082,7 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
     section_size = res_size.total_size;
     section_size += (-section_size) % PeFileAlignment;
 
-    TRACE("requires %08x (%08x) bytes\n", res_size.total_size, section_size );
+    TRACE("requires %08lx (%08lx) bytes\n", res_size.total_size, section_size );
 
     /* check if the file size needs to be changed */
     if (section_size != sec->SizeOfRawData)
@@ -1084,7 +1100,7 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
         /* postpone file truncation if there are some data to be moved down from file end */
         BOOL resize_after = mapping_size < old_size && !rsrc_is_last;
 
-        TRACE("file size %08x -> %08x\n", old_size, mapping_size);
+        TRACE("file size %08lx -> %08lx\n", old_size, mapping_size);
 
         if (!resize_after)
         {
@@ -1168,13 +1184,13 @@ static BOOL write_raw_resources( QUEUEDUPDATES *updates )
 
     res_base = (LPBYTE) write_map->base + sec->PointerToRawData;
 
-    TRACE("base = %p offset = %08x\n", write_map->base, sec->PointerToRawData);
+    TRACE("base = %p offset = %08lx\n", write_map->base, sec->PointerToRawData);
 
     ret = write_resources( updates, res_base, &res_size, sec->VirtualAddress );
 
     res_write_padding( res_base + res_size.total_size, section_size - res_size.total_size );
 
-    TRACE("after  .rsrc at %08x, size %08x\n", sec->PointerToRawData, sec->SizeOfRawData);
+    TRACE("after  .rsrc at %08lx, size %08lx\n", sec->PointerToRawData, sec->SizeOfRawData);
 
 done:
     destroy_mapping( read_map );
@@ -1290,27 +1306,37 @@ BOOL WINAPI UpdateResourceW( HANDLE hUpdate, LPCWSTR lpType, LPCWSTR lpName,
                              WORD wLanguage, LPVOID lpData, DWORD cbData)
 {
     QUEUEDUPDATES *updates;
+    UNICODE_STRING nameW, typeW;
     BOOL ret = FALSE;
 
-    TRACE("%p %s %s %08x %p %d\n", hUpdate,
+    TRACE("%p %s %s %08x %p %ld\n", hUpdate,
           debugstr_w(lpType), debugstr_w(lpName), wLanguage, lpData, cbData);
 
+    nameW.Buffer = typeW.Buffer = NULL;
     updates = GlobalLock(hUpdate);
     if (updates)
     {
+        if (!set_ntstatus( get_res_nameW( lpName, &nameW ))) goto done;
+        if (!set_ntstatus( get_res_nameW( lpType, &typeW ))) goto done;
+
         if (lpData == NULL && cbData == 0)  /* remove resource */
         {
-            ret = update_add_resource( updates, lpType, lpName, wLanguage, NULL, TRUE );
+            ret = update_add_resource( updates, typeW.Buffer, nameW.Buffer, wLanguage, NULL, TRUE );
         }
         else
         {
             struct resource_data *data;
             data = allocate_resource_data( wLanguage, 0, lpData, cbData, TRUE );
             if (data)
-                ret = update_add_resource( updates, lpType, lpName, wLanguage, data, TRUE );
+                ret = update_add_resource( updates, typeW.Buffer, nameW.Buffer, wLanguage, data, TRUE );
         }
+
+    done:
         GlobalUnlock(hUpdate);
     }
+
+    if (!IS_INTRESOURCE(nameW.Buffer)) HeapFree( GetProcessHeap(), 0, nameW.Buffer );
+    if (!IS_INTRESOURCE(typeW.Buffer)) HeapFree( GetProcessHeap(), 0, typeW.Buffer );
     return ret;
 }
 

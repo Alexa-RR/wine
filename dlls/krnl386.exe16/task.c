@@ -624,7 +624,11 @@ void WINAPI InitTask16( CONTEXT *context )
 
     /* Initialize the INSTANCEDATA structure */
     pinstance = MapSL( MAKESEGPTR(CURRENT_DS, 0) );
+<<<<<<< HEAD
     pinstance->stackmin    = OFFSETOF(NtCurrentTeb()->SystemReserved1[0]) + sizeof( STACK16FRAME );
+=======
+    pinstance->stackmin    = CURRENT_SP + sizeof( STACK16FRAME );
+>>>>>>> master
     pinstance->stackbottom = pinstance->stackmin; /* yup, that's right. Confused me too. */
     pinstance->stacktop    = ( pinstance->stackmin > LOWORD(context->Ebx) ?
                                pinstance->stackmin - LOWORD(context->Ebx) : 0 ) + 150;
@@ -680,7 +684,7 @@ BOOL16 WINAPI WaitEvent16( HTASK16 hTask )
 
     if (pTask->flags & TDBF_WIN32)
     {
-        FIXME("called for Win32 thread (%04x)!\n", GetCurrentThreadId());
+        FIXME("called for Win32 thread (%04lx)!\n", GetCurrentThreadId());
         return TRUE;
     }
 
@@ -719,7 +723,7 @@ void WINAPI PostEvent16( HTASK16 hTask )
 
     if (pTask->flags & TDBF_WIN32)
     {
-        FIXME("called for Win32 thread (%04x)!\n", (DWORD)pTask->teb->ClientId.UniqueThread );
+        FIXME("called for Win32 thread (%04lx)!\n", (DWORD)pTask->teb->ClientId.UniqueThread );
         return;
     }
 
@@ -881,7 +885,7 @@ FARPROC16 WINAPI MakeProcInstance16( FARPROC16 func, HANDLE16 hInstance )
     thunk = MapSL( thunkaddr );
     lfunc = MapSL( (SEGPTR)func );
 
-    TRACE("(%p,%04x): got thunk %08x\n", func, hInstance, thunkaddr );
+    TRACE("(%p,%04x): got thunk %08lx\n", func, hInstance, thunkaddr );
     if (((lfunc[0]==0x8c) && (lfunc[1]==0xd8)) || /* movw %ds, %ax */
     	((lfunc[0]==0x1e) && (lfunc[1]==0x58))    /* pushw %ds, popw %ax */
     ) {
@@ -1094,17 +1098,27 @@ void WINAPI SwitchStackTo16( WORD seg, WORD ptr, WORD top )
     UINT16 copySize;
 
     if (!(pData = GlobalLock16( seg ))) return;
+<<<<<<< HEAD
     TRACE("old=%04x:%04x new=%04x:%04x\n",
           SELECTOROF( NtCurrentTeb()->SystemReserved1[0] ),
           OFFSETOF( NtCurrentTeb()->SystemReserved1[0] ), seg, ptr );
+=======
+    TRACE( "old=%04x:%04x new=%04x:%04x\n", CURRENT_SS, CURRENT_SP, seg, ptr );
+>>>>>>> master
 
     /* Save the old stack */
 
     oldFrame = CURRENT_STACK16;
     /* pop frame + args and push bp */
+<<<<<<< HEAD
     pData->old_ss_sp   = (SEGPTR)NtCurrentTeb()->SystemReserved1[0] + sizeof(STACK16FRAME)
                            + 2 * sizeof(WORD);
     *(WORD *)MapSL(pData->old_ss_sp) = oldFrame->bp;
+=======
+    pData->old_ss = CURRENT_SS;
+    pData->old_sp = CURRENT_SP + sizeof(STACK16FRAME) + 2 * sizeof(WORD);
+    *(WORD *)MapSL(MAKESEGPTR(pData->old_ss, pData->old_sp)) = oldFrame->bp;
+>>>>>>> master
     pData->stacktop    = top;
     pData->stackmin    = ptr;
     pData->stackbottom = ptr;
@@ -1114,9 +1128,14 @@ void WINAPI SwitchStackTo16( WORD seg, WORD ptr, WORD top )
     /* Note: we need to take the 3 arguments into account; otherwise,
      * the stack will underflow upon return from this function.
      */
-    copySize = oldFrame->bp - OFFSETOF(pData->old_ss_sp);
+    copySize = oldFrame->bp - pData->old_sp;
     copySize += 3 * sizeof(WORD) + sizeof(STACK16FRAME);
+<<<<<<< HEAD
     NtCurrentTeb()->SystemReserved1[0] = (void *)MAKESEGPTR( seg, ptr - copySize );
+=======
+    CURRENT_SS = seg;
+    CURRENT_SP = ptr - copySize;
+>>>>>>> master
     newFrame = CURRENT_STACK16;
 
     /* Copy the stack frame and the local variables to the new stack */
@@ -1135,29 +1154,40 @@ void WINAPI SwitchStackBack16( CONTEXT *context )
     STACK16FRAME *oldFrame, *newFrame;
     INSTANCEDATA *pData;
 
+<<<<<<< HEAD
     if (!(pData = GlobalLock16(SELECTOROF(NtCurrentTeb()->SystemReserved1[0]))))
+=======
+    if (!(pData = GlobalLock16(CURRENT_SS)))
+>>>>>>> master
         return;
-    if (!pData->old_ss_sp)
+    if (!pData->old_ss)
     {
         WARN("No previous SwitchStackTo\n" );
         return;
     }
-    TRACE("restoring stack %04x:%04x\n",
-          SELECTOROF(pData->old_ss_sp), OFFSETOF(pData->old_ss_sp) );
+    TRACE( "restoring stack %04x:%04x\n", pData->old_ss, pData->old_sp );
 
     oldFrame = CURRENT_STACK16;
 
     /* Pop bp from the previous stack */
 
-    context->Ebp = (context->Ebp & ~0xffff) | *(WORD *)MapSL(pData->old_ss_sp);
-    pData->old_ss_sp += sizeof(WORD);
+    context->Ebp = (context->Ebp & ~0xffff) | *(WORD *)MapSL(MAKESEGPTR(pData->old_ss, pData->old_sp));
+    pData->old_sp += sizeof(WORD);
 
     /* Switch back to the old stack */
 
+<<<<<<< HEAD
     NtCurrentTeb()->SystemReserved1[0] = (void *)(pData->old_ss_sp - sizeof(STACK16FRAME));
     context->SegSs = SELECTOROF(pData->old_ss_sp);
     context->Esp   = OFFSETOF(pData->old_ss_sp) - sizeof(DWORD); /*ret addr*/
     pData->old_ss_sp = 0;
+=======
+    CURRENT_SS = pData->old_ss;
+    CURRENT_SP = pData->old_sp - sizeof(STACK16FRAME);
+    context->SegSs = pData->old_ss;
+    context->Esp   = pData->old_sp - sizeof(DWORD); /*ret addr*/
+    pData->old_ss = pData->old_sp = 0;
+>>>>>>> master
 
     /* Build a stack frame for the return */
 
@@ -1253,6 +1283,16 @@ WORD WINAPI GetExeVersion16(void)
 
     if (!(pTask = TASK_GetCurrent())) return 0;
     return pTask->version;
+}
+
+
+/***********************************************************************
+ *           GetLPErrMode   (KERNEL.99)
+ */
+SEGPTR WINAPI GetLPErrMode(void)
+{
+    FIXME("(): stub\n");
+    return 0;
 }
 
 

@@ -36,7 +36,6 @@
 #include "winerror.h"
 #include "winternl.h"
 
-#include "wine/unicode.h"
 #include "wine/debug.h"
 #include "wine/list.h"
 
@@ -95,7 +94,7 @@ LSTATUS WINAPI RegCreateKeyTransactedW( HKEY hkey, LPCWSTR name, DWORD reserved,
                                         DWORD options, REGSAM access, SECURITY_ATTRIBUTES *sa,
                                         PHKEY retkey, LPDWORD dispos, HANDLE transaction, PVOID reserved2 )
 {
-    FIXME( "(%p,%s,%u,%s,%u,%u,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_w(name), reserved,
+    FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_w(name), reserved,
            debugstr_w(class), options, access, sa, retkey, dispos, transaction, reserved2 );
     return ERROR_CALL_NOT_IMPLEMENTED;
 }
@@ -108,7 +107,7 @@ LSTATUS WINAPI RegCreateKeyTransactedA( HKEY hkey, LPCSTR name, DWORD reserved, 
                                         DWORD options, REGSAM access, SECURITY_ATTRIBUTES *sa,
                                         PHKEY retkey, LPDWORD dispos, HANDLE transaction, PVOID reserved2 )
 {
-    FIXME( "(%p,%s,%u,%s,%u,%u,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_a(name), reserved,
+    FIXME( "(%p,%s,%lu,%s,%lu,%lu,%p,%p,%p,%p,%p): stub\n", hkey, debugstr_a(name), reserved,
            debugstr_a(class), options, access, sa, retkey, dispos, transaction, reserved2 );
     return ERROR_CALL_NOT_IMPLEMENTED;
 }
@@ -220,7 +219,7 @@ LSTATUS WINAPI RegQueryMultipleValuesA( HKEY hkey, PVALENTA val_list, DWORD num_
     LPSTR bufptr = lpValueBuf;
     *ldwTotsize = 0;
 
-    TRACE("(%p,%p,%d,%p,%p=%d)\n", hkey, val_list, num_vals, lpValueBuf, ldwTotsize, *ldwTotsize);
+    TRACE("(%p,%p,%ld,%p,%p=%ld)\n", hkey, val_list, num_vals, lpValueBuf, ldwTotsize, *ldwTotsize);
 
     for(i=0; i < num_vals; ++i)
     {
@@ -266,7 +265,7 @@ LSTATUS WINAPI RegQueryMultipleValuesW( HKEY hkey, PVALENTW val_list, DWORD num_
     LPSTR bufptr = (LPSTR)lpValueBuf;
     *ldwTotsize = 0;
 
-    TRACE("(%p,%p,%d,%p,%p=%d)\n", hkey, val_list, num_vals, lpValueBuf, ldwTotsize, *ldwTotsize);
+    TRACE("(%p,%p,%ld,%p,%p=%ld)\n", hkey, val_list, num_vals, lpValueBuf, ldwTotsize, *ldwTotsize);
 
     for(i=0; i < num_vals; ++i)
     {
@@ -361,11 +360,11 @@ LSTATUS WINAPI RegDeleteKeyA( HKEY hkey, LPCSTR name )
  */
 LSTATUS WINAPI RegSetValueW( HKEY hkey, LPCWSTR subkey, DWORD type, LPCWSTR data, DWORD count )
 {
-    TRACE("(%p,%s,%d,%s,%d)\n", hkey, debugstr_w(subkey), type, debugstr_w(data), count );
+    TRACE("(%p,%s,%ld,%s,%ld)\n", hkey, debugstr_w(subkey), type, debugstr_w(data), count );
 
     if (type != REG_SZ || !data) return ERROR_INVALID_PARAMETER;
 
-    return RegSetKeyValueW( hkey, subkey, NULL, type, data, (strlenW(data) + 1)*sizeof(WCHAR) );
+    return RegSetKeyValueW( hkey, subkey, NULL, type, data, (lstrlenW(data) + 1)*sizeof(WCHAR) );
 }
 
 /******************************************************************************
@@ -375,7 +374,7 @@ LSTATUS WINAPI RegSetValueW( HKEY hkey, LPCWSTR subkey, DWORD type, LPCWSTR data
  */
 LSTATUS WINAPI RegSetValueA( HKEY hkey, LPCSTR subkey, DWORD type, LPCSTR data, DWORD count )
 {
-    TRACE("(%p,%s,%d,%s,%d)\n", hkey, debugstr_a(subkey), type, debugstr_a(data), count );
+    TRACE("(%p,%s,%ld,%s,%ld)\n", hkey, debugstr_a(subkey), type, debugstr_a(data), count );
 
     if (type != REG_SZ || !data) return ERROR_INVALID_PARAMETER;
 
@@ -404,7 +403,7 @@ LSTATUS WINAPI RegQueryValueW( HKEY hkey, LPCWSTR name, LPWSTR data, LPLONG coun
     DWORD ret;
     HKEY subkey = hkey;
 
-    TRACE("(%p,%s,%p,%d)\n", hkey, debugstr_w(name), data, count ? *count : 0 );
+    TRACE("(%p,%s,%p,%ld)\n", hkey, debugstr_w(name), data, count ? *count : 0 );
 
     if (name && name[0])
     {
@@ -433,7 +432,7 @@ LSTATUS WINAPI RegQueryValueA( HKEY hkey, LPCSTR name, LPSTR data, LPLONG count 
     DWORD ret;
     HKEY subkey = hkey;
 
-    TRACE("(%p,%s,%p,%d)\n", hkey, debugstr_a(name), data, count ? *count : 0 );
+    TRACE("(%p,%s,%p,%ld)\n", hkey, debugstr_a(name), data, count ? *count : 0 );
 
     if (name && name[0])
     {
@@ -508,6 +507,17 @@ LSTATUS WINAPI RegReplaceKeyW( HKEY hkey, LPCWSTR lpSubKey, LPCWSTR lpNewFile,
 
 
 /******************************************************************************
+ * RegRenameKey [ADVAPI32.@]
+ *
+ */
+LSTATUS WINAPI RegRenameKey( HKEY hkey, LPCWSTR lpSubKey, LPCWSTR lpNewName )
+{
+    FIXME("(%p,%s,%s): stub\n", hkey, debugstr_w(lpSubKey), debugstr_w(lpNewName));
+    return ERROR_CALL_NOT_IMPLEMENTED;
+}
+
+
+/******************************************************************************
  * RegReplaceKeyA [ADVAPI32.@]
  *
  * See RegReplaceKeyW.
@@ -565,7 +575,7 @@ LSTATUS WINAPI RegConnectRegistryW( LPCWSTR lpMachineName, HKEY hKey,
             lpMachineName += 2;
         if (GetComputerNameW(compName, &len))
         {
-            if (!strcmpiW(lpMachineName, compName))
+            if (!wcsicmp(lpMachineName, compName))
                 ret = RegOpenKeyW(hKey, NULL, phkResult);
             else
             {
@@ -632,6 +642,17 @@ LONG WINAPI RegCopyTreeA( HKEY hsrc, const char *subkey, HKEY hdst )
     ret = RegCopyTreeW( hsrc, subkeyW.Buffer, hdst );
     RtlFreeUnicodeString( &subkeyW );
     return ret;
+}
+
+
+/******************************************************************************
+ * RegEnableReflectionKey [ADVAPI32.@]
+ *
+ */
+LONG WINAPI RegEnableReflectionKey(HKEY base)
+{
+    FIXME("%p: stub\n", base);
+    return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
 

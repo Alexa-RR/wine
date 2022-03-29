@@ -16,22 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <stdarg.h>
-
-#define COBJMACROS
-
-#include "windef.h"
-#include "winbase.h"
-#include "dshow.h"
+#include "qcap_private.h"
 #include "vfw.h"
 #include "aviriff.h"
 
-#include "qcap_main.h"
-
-#include "wine/debug.h"
-#include "wine/heap.h"
-
-WINE_DEFAULT_DEBUG_CHANNEL(qcap);
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 typedef struct {
     struct strmbase_filter filter;
@@ -96,13 +85,11 @@ static HRESULT fill_format_info(AVICompressor *This, VIDEOINFOHEADER *src_videoi
     }
 
     size += FIELD_OFFSET(VIDEOINFOHEADER, bmiHeader);
-    This->videoinfo = heap_alloc(size);
-    if(!This->videoinfo)
+    if (!(This->videoinfo = calloc(1, size)))
         return E_OUTOFMEMORY;
 
     This->videoinfo_size = size;
     This->driver_flags = icinfo.dwFlags;
-    memset(This->videoinfo, 0, sizeof(*This->videoinfo));
     ICCompressGetFormat(This->hic, &src_videoinfo->bmiHeader, &This->videoinfo->bmiHeader);
 
     This->videoinfo->dwBitRate = 10000000/src_videoinfo->AvgTimePerFrame * This->videoinfo->bmiHeader.biSizeImage * 8;
@@ -128,11 +115,11 @@ static void avi_compressor_destroy(struct strmbase_filter *iface)
 
     if (filter->hic)
         ICClose(filter->hic);
-    heap_free(filter->videoinfo);
+    free(filter->videoinfo);
     strmbase_sink_cleanup(&filter->sink);
     strmbase_source_cleanup(&filter->source);
     strmbase_filter_cleanup(&filter->filter);
-    heap_free(filter);
+    free(filter);
 }
 
 static HRESULT avi_compressor_query_interface(struct strmbase_filter *iface, REFIID iid, void **out)
@@ -155,7 +142,7 @@ static HRESULT avi_compressor_init_stream(struct strmbase_filter *iface)
 
     if (filter->source.pAllocator && FAILED(hr = IMemAllocator_Commit(filter->source.pAllocator)))
     {
-        ERR("Failed to commit allocator, hr %#x.\n", hr);
+        ERR("Failed to commit allocator, hr %#lx.\n", hr);
         return hr;
     }
 
@@ -224,14 +211,12 @@ static HRESULT WINAPI AVICompressorPropertyBag_Load(IPersistPropertyBag *iface, 
     VARIANT v;
     HRESULT hres;
 
-    static const WCHAR fcc_handlerW[] = {'F','c','c','H','a','n','d','l','e','r',0};
-
     TRACE("(%p)->(%p %p)\n", This, pPropBag, pErrorLog);
 
     V_VT(&v) = VT_BSTR;
-    hres = IPropertyBag_Read(pPropBag, fcc_handlerW, &v, NULL);
+    hres = IPropertyBag_Read(pPropBag, L"FccHandler", &v, NULL);
     if(FAILED(hres)) {
-        WARN("Could not read FccHandler: %08x\n", hres);
+        ERR("Failed to read FccHandler value, hr %#lx.\n", hres);
         return hres;
     }
 
@@ -324,7 +309,7 @@ static HRESULT WINAPI AVICompressorIn_Receive(struct strmbase_sink *base, IMedia
     BOOL is_preroll;
     BOOL sync_point;
     BYTE *ptr, *buf;
-    DWORD res;
+    LRESULT res;
     HRESULT hres;
 
     TRACE("(%p)->(%p)\n", base, pSample);
@@ -351,7 +336,7 @@ static HRESULT WINAPI AVICompressorIn_Receive(struct strmbase_sink *base, IMedia
 
     hres = IMediaSample_GetTime(pSample, &start, &stop);
     if(FAILED(hres)) {
-        WARN("GetTime failed: %08x\n", hres);
+        WARN("Failed to get sample time, hr %#lx.\n", hres);
         return hres;
     }
 
@@ -361,13 +346,18 @@ static HRESULT WINAPI AVICompressorIn_Receive(struct strmbase_sink *base, IMedia
 
     hres = IMediaSample_GetPointer(pSample, &ptr);
     if(FAILED(hres)) {
-        WARN("GetPointer failed: %08x\n", hres);
+        ERR("Failed to get input buffer pointer, hr %#lx.\n", hres);
         return hres;
     }
 
-    hres = BaseOutputPinImpl_GetDeliveryBuffer(&This->source, &out_sample, &start, &stop, 0);
-    if(FAILED(hres))
+    if (FAILED(hres = IMemAllocator_GetBuffer(This->source.pAllocator, &out_sample, &start, &stop, 0)))
+    {
+        ERR("Failed to get sample, hr %#lx.\n", hres);
         return hres;
+    }
+
+    if (FAILED(hres = IMediaSample_SetTime(out_sample, &start, &stop)))
+        ERR("Failed to set time, hr %#lx.\n", hres);
 
     hres = IMediaSample_GetPointer(out_sample, &buf);
     if(FAILED(hres))
@@ -381,7 +371,7 @@ static HRESULT WINAPI AVICompressorIn_Receive(struct strmbase_sink *base, IMedia
     res = ICCompress(This->hic, sync_point ? ICCOMPRESS_KEYFRAME : 0, &This->videoinfo->bmiHeader, buf,
             &src_videoinfo->bmiHeader, ptr, 0, &comp_flags, This->frame_cnt, 0, 0, NULL, NULL);
     if(res != ICERR_OK) {
-        WARN("ICCompress failed: %d\n", res);
+        ERR("Failed to compress frame, error %Id.\n", res);
         IMediaSample_Release(out_sample);
         return E_FAIL;
     }
@@ -398,7 +388,7 @@ static HRESULT WINAPI AVICompressorIn_Receive(struct strmbase_sink *base, IMedia
 
     hres = IMemInputPin_Receive(meminput, out_sample);
     if(FAILED(hres))
-        WARN("Deliver failed: %08x\n", hres);
+        WARN("Failed to deliver sample, hr %#lx.\n", hres);
 
     IMediaSample_Release(out_sample);
     This->frame_cnt++;
@@ -414,14 +404,13 @@ static HRESULT sink_connect(struct strmbase_sink *iface, IPin *peer, const AM_ME
 static void sink_disconnect(struct strmbase_sink *iface)
 {
     AVICompressor *filter = impl_from_strmbase_pin(&iface->pin);
-    heap_free(filter->videoinfo);
+    free(filter->videoinfo);
     filter->videoinfo = NULL;
 }
 
 static const struct strmbase_sink_ops sink_ops =
 {
     .base.pin_query_accept = sink_query_accept,
-    .base.pin_get_media_type = strmbase_pin_get_media_type,
     .base.pin_query_interface = sink_query_interface,
     .pfnReceive = AVICompressorIn_Receive,
     .sink_connect = sink_connect,
@@ -482,18 +471,19 @@ static const struct strmbase_source_ops source_ops =
 
 HRESULT avi_compressor_create(IUnknown *outer, IUnknown **out)
 {
-    static const WCHAR source_name[] = {'O','u','t',0};
-    static const WCHAR sink_name[] = {'I','n',0};
     AVICompressor *object;
 
-    if (!(object = heap_alloc_zero(sizeof(*object))))
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
 
     strmbase_filter_init(&object->filter, outer, &CLSID_AVICo, &filter_ops);
     object->IPersistPropertyBag_iface.lpVtbl = &PersistPropertyBagVtbl;
 
-    strmbase_sink_init(&object->sink, &object->filter, sink_name, &sink_ops, NULL);
-    strmbase_source_init(&object->source, &object->filter, source_name, &source_ops);
+    strmbase_sink_init(&object->sink, &object->filter, L"In", &sink_ops, NULL);
+    wcscpy(object->sink.pin.name, L"Input");
+
+    strmbase_source_init(&object->source, &object->filter, L"Out", &source_ops);
+    wcscpy(object->source.pin.name, L"Output");
 
     TRACE("Created AVI compressor %p.\n", object);
     *out = &object->filter.IUnknown_inner;

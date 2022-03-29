@@ -18,13 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <string.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -42,13 +36,14 @@
 #include "ddk/wdm.h"
 
 #include "wine/asm.h"
-#include "wine/library.h"
-#include "wine/unicode.h"
 #include "kernel_private.h"
 
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(sync);
+
+static const struct _KUSER_SHARED_DATA *user_shared_data = (struct _KUSER_SHARED_DATA *)0x7ffe0000;
+
 
 static void get_create_object_attributes( OBJECT_ATTRIBUTES *attr, UNICODE_STRING *nameW,
                                           SECURITY_ATTRIBUTES *sa, const WCHAR *name )
@@ -83,62 +78,48 @@ static BOOL get_open_object_attributes( OBJECT_ATTRIBUTES *attr, UNICODE_STRING 
     return TRUE;
 }
 
-static HANDLE normalize_handle_if_console(HANDLE handle)
+/******************************************************************************
+ *           GetTickCount64       (KERNEL32.@)
+ */
+ULONGLONG WINAPI DECLSPEC_HOTPATCH GetTickCount64(void)
 {
-    if ((handle == (HANDLE)STD_INPUT_HANDLE) ||
-        (handle == (HANDLE)STD_OUTPUT_HANDLE) ||
-        (handle == (HANDLE)STD_ERROR_HANDLE))
-        handle = GetStdHandle( HandleToULong(handle) );
+    ULONG high, low;
 
-    /* yes, even screen buffer console handles are waitable, and are
-     * handled as a handle to the console itself !!
-     */
-    if (is_console_handle(handle))
+    do
     {
-        if (VerifyConsoleIoHandle(handle))
-            handle = GetConsoleInputWaitHandle();
+        high = user_shared_data->u.TickCount.High1Time;
+        low = user_shared_data->u.TickCount.LowPart;
     }
-    return handle;
+    while (high != user_shared_data->u.TickCount.High2Time);
+    /* note: we ignore TickCountMultiplier */
+    return (ULONGLONG)high << 32 | low;
+}
+
+/***********************************************************************
+ *           GetTickCount       (KERNEL32.@)
+ */
+DWORD WINAPI DECLSPEC_HOTPATCH GetTickCount(void)
+{
+    /* note: we ignore TickCountMultiplier */
+    return user_shared_data->u.TickCount.LowPart;
 }
 
 /***********************************************************************
  *           RegisterWaitForSingleObject   (KERNEL32.@)
  */
-BOOL WINAPI RegisterWaitForSingleObject(PHANDLE phNewWaitObject, HANDLE hObject,
-                WAITORTIMERCALLBACK Callback, PVOID Context,
-                ULONG dwMilliseconds, ULONG dwFlags)
+BOOL WINAPI RegisterWaitForSingleObject( HANDLE *wait, HANDLE object, WAITORTIMERCALLBACK callback,
+                                         void *context, ULONG timeout, ULONG flags )
 {
-    NTSTATUS status;
-
-    TRACE("%p %p %p %p %d %d\n",
-          phNewWaitObject,hObject,Callback,Context,dwMilliseconds,dwFlags);
-
-    hObject = normalize_handle_if_console(hObject);
-    status = RtlRegisterWait( phNewWaitObject, hObject, Callback, Context, dwMilliseconds, dwFlags );
-    if (status != STATUS_SUCCESS)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return FALSE;
-    }
+    if (!set_ntstatus( RtlRegisterWait( wait, object, callback, context, timeout, flags ))) return FALSE;
     return TRUE;
 }
 
 /***********************************************************************
  *           UnregisterWait   (KERNEL32.@)
  */
-BOOL WINAPI UnregisterWait( HANDLE WaitHandle ) 
+BOOL WINAPI UnregisterWait( HANDLE handle )
 {
-    NTSTATUS status;
-
-    TRACE("%p\n",WaitHandle);
-
-    status = RtlDeregisterWait( WaitHandle );
-    if (status != STATUS_SUCCESS)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return FALSE;
-    }
-    return TRUE;
+    return set_ntstatus( RtlDeregisterWait( handle ));
 }
 
 /***********************************************************************
@@ -311,16 +292,10 @@ HANDLE WINAPI OpenJobObjectW( DWORD access, BOOL inherit, LPCWSTR name )
     HANDLE ret;
     UNICODE_STRING nameW;
     OBJECT_ATTRIBUTES attr;
-    NTSTATUS status;
 
     if (!get_open_object_attributes( &attr, &nameW, inherit, name )) return 0;
 
-    status = NtOpenJobObject( &ret, access, &attr );
-    if (status != STATUS_SUCCESS)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return 0;
-    }
+    if (!set_ntstatus( NtOpenJobObject( &ret, access, &attr ))) return 0;
     return ret;
 }
 
@@ -346,9 +321,7 @@ HANDLE WINAPI OpenJobObjectA( DWORD access, BOOL inherit, LPCSTR name )
  */
 BOOL WINAPI TerminateJobObject( HANDLE job, UINT exit_code )
 {
-    NTSTATUS status = NtTerminateJobObject( job, exit_code );
-    if (status) SetLastError( RtlNtStatusToDosError(status) );
-    return !status;
+    return set_ntstatus( NtTerminateJobObject( job, exit_code ));
 }
 
 /******************************************************************************
@@ -357,9 +330,7 @@ BOOL WINAPI TerminateJobObject( HANDLE job, UINT exit_code )
 BOOL WINAPI QueryInformationJobObject( HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info,
                                        DWORD len, DWORD *ret_len )
 {
-    NTSTATUS status = NtQueryInformationJobObject( job, class, info, len, ret_len );
-    if (status) SetLastError( RtlNtStatusToDosError(status) );
-    return !status;
+    return set_ntstatus( NtQueryInformationJobObject( job, class, info, len, ret_len ));
 }
 
 /******************************************************************************
@@ -367,9 +338,7 @@ BOOL WINAPI QueryInformationJobObject( HANDLE job, JOBOBJECTINFOCLASS class, LPV
  */
 BOOL WINAPI SetInformationJobObject( HANDLE job, JOBOBJECTINFOCLASS class, LPVOID info, DWORD len )
 {
-    NTSTATUS status = NtSetInformationJobObject( job, class, info, len );
-    if (status) SetLastError( RtlNtStatusToDosError(status) );
-    return !status;
+    return set_ntstatus( NtSetInformationJobObject( job, class, info, len ));
 }
 
 /******************************************************************************
@@ -377,9 +346,7 @@ BOOL WINAPI SetInformationJobObject( HANDLE job, JOBOBJECTINFOCLASS class, LPVOI
  */
 BOOL WINAPI AssignProcessToJobObject( HANDLE job, HANDLE process )
 {
-    NTSTATUS status = NtAssignProcessToJobObject( job, process );
-    if (status) SetLastError( RtlNtStatusToDosError(status) );
-    return !status;
+    return set_ntstatus( NtAssignProcessToJobObject( job, process ));
 }
 
 
@@ -546,18 +513,10 @@ BOOL WINAPI WaitNamedPipeA (LPCSTR name, DWORD nTimeOut)
 BOOL WINAPI GetNamedPipeClientProcessId( HANDLE pipe, ULONG *id )
 {
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
 
-    TRACE( "%p %p\n", pipe, id );
-
-    status = NtFsControlFile( pipe, NULL, NULL, NULL, &iosb, FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE,
-                              (void *)"ClientProcessId", sizeof("ClientProcessId"), id, sizeof(*id) );
-    if (status)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return FALSE;
-    }
-    return TRUE;
+    return set_ntstatus( NtFsControlFile( pipe, NULL, NULL, NULL, &iosb,
+                                          FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE, (void *)"ClientProcessId",
+                                          sizeof("ClientProcessId"), id, sizeof(*id) ));
 }
 
 /***********************************************************************
@@ -566,18 +525,10 @@ BOOL WINAPI GetNamedPipeClientProcessId( HANDLE pipe, ULONG *id )
 BOOL WINAPI GetNamedPipeServerProcessId( HANDLE pipe, ULONG *id )
 {
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
 
-    TRACE( "%p, %p\n", pipe, id );
-
-    status = NtFsControlFile( pipe, NULL, NULL, NULL, &iosb, FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE,
-                              (void *)"ServerProcessId", sizeof("ServerProcessId"), id, sizeof(*id) );
-    if (status)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return FALSE;
-    }
-    return TRUE;
+    return set_ntstatus( NtFsControlFile( pipe, NULL, NULL, NULL, &iosb,
+                                          FSCTL_PIPE_GET_CONNECTION_ATTRIBUTE, (void *)"ServerProcessId",
+                                          sizeof("ServerProcessId"), id, sizeof(*id) ));
 }
 
 /***********************************************************************
@@ -615,7 +566,7 @@ BOOL WINAPI GetNamedPipeHandleStateA(
     WCHAR *username = NULL;
     BOOL ret;
 
-    WARN("%p %p %p %p %p %p %d: semi-stub\n", hNamedPipe, lpState, lpCurInstances,
+    WARN("%p %p %p %p %p %p %ld: semi-stub\n", hNamedPipe, lpState, lpCurInstances,
          lpMaxCollectionCount, lpCollectDataTimeout, lpUsername, nUsernameMaxSize);
 
     if (lpUsername && nUsernameMaxSize &&
@@ -631,65 +582,6 @@ BOOL WINAPI GetNamedPipeHandleStateA(
 }
 
 /***********************************************************************
- *           GetNamedPipeHandleStateW  (KERNEL32.@)
- */
-BOOL WINAPI GetNamedPipeHandleStateW(
-    HANDLE hNamedPipe, LPDWORD lpState, LPDWORD lpCurInstances,
-    LPDWORD lpMaxCollectionCount, LPDWORD lpCollectDataTimeout,
-    LPWSTR lpUsername, DWORD nUsernameMaxSize)
-{
-    IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
-
-    FIXME("%p %p %p %p %p %p %d: semi-stub\n", hNamedPipe, lpState, lpCurInstances,
-          lpMaxCollectionCount, lpCollectDataTimeout, lpUsername, nUsernameMaxSize);
-
-    if (lpMaxCollectionCount)
-        *lpMaxCollectionCount = 0;
-
-    if (lpCollectDataTimeout)
-        *lpCollectDataTimeout = 0;
-
-    if (lpUsername && nUsernameMaxSize)
-    {
-        const char *username = wine_get_user_name();
-        int len = MultiByteToWideChar(CP_UNIXCP, 0, username, -1, lpUsername, nUsernameMaxSize);
-        if (!len) *lpUsername = 0;
-    }
-
-    if (lpState)
-    {
-        FILE_PIPE_INFORMATION fpi;
-        status = NtQueryInformationFile(hNamedPipe, &iosb, &fpi, sizeof(fpi),
-                                        FilePipeInformation);
-        if (status)
-        {
-            SetLastError( RtlNtStatusToDosError(status) );
-            return FALSE;
-        }
-
-        *lpState = (fpi.ReadMode ? PIPE_READMODE_MESSAGE : PIPE_READMODE_BYTE) |
-                   (fpi.CompletionMode ? PIPE_NOWAIT : PIPE_WAIT);
-    }
-
-    if (lpCurInstances)
-    {
-        FILE_PIPE_LOCAL_INFORMATION fpli;
-        status = NtQueryInformationFile(hNamedPipe, &iosb, &fpli, sizeof(fpli),
-                                        FilePipeLocalInformation);
-        if (status)
-        {
-            SetLastError( RtlNtStatusToDosError(status) );
-            return FALSE;
-        }
-
-        *lpCurInstances = fpli.CurrentInstances;
-    }
-
-    return TRUE;
-}
-
-/***********************************************************************
  *           CallNamedPipeA  (KERNEL32.@)
  */
 BOOL WINAPI CallNamedPipeA(
@@ -701,7 +593,7 @@ BOOL WINAPI CallNamedPipeA(
     LPWSTR str = NULL;
     BOOL ret;
 
-    TRACE("%s %p %d %p %d %p %d\n",
+    TRACE("%s %p %ld %p %ld %p %ld\n",
            debugstr_a(lpNamedPipeName), lpInput, dwInputSize,
            lpOutput, dwOutputSize, lpBytesRead, nTimeout);
 
@@ -731,7 +623,7 @@ HANDLE WINAPI CreateMailslotA( LPCSTR lpName, DWORD nMaxMessageSize,
     HANDLE handle;
     LPWSTR name = NULL;
 
-    TRACE("%s %d %d %p\n", debugstr_a(lpName),
+    TRACE("%s %ld %ld %p\n", debugstr_a(lpName),
           nMaxMessageSize, lReadTimeout, sa);
 
     if( lpName )
@@ -772,9 +664,8 @@ HANDLE WINAPI CreateMailslotW( LPCWSTR lpName, DWORD nMaxMessageSize,
     UNICODE_STRING nameW;
     LARGE_INTEGER timeout;
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
 
-    TRACE("%s %d %d %p\n", debugstr_w(lpName),
+    TRACE("%s %ld %ld %p\n", debugstr_w(lpName),
           nMaxMessageSize, lReadTimeout, sa);
 
     if (!RtlDosPathNameToNtPathName_U( lpName, &nameW, NULL, NULL ))
@@ -802,13 +693,9 @@ HANDLE WINAPI CreateMailslotW( LPCWSTR lpName, DWORD nMaxMessageSize,
     else
         timeout.QuadPart = ((LONGLONG)0x7fffffff << 32) | 0xffffffff;
 
-    status = NtCreateMailslotFile( &handle, GENERIC_READ | SYNCHRONIZE, &attr,
-                                   &iosb, 0, 0, nMaxMessageSize, &timeout );
-    if (status)
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
+    if (!set_ntstatus( NtCreateMailslotFile( &handle, GENERIC_READ | SYNCHRONIZE, &attr,
+                                             &iosb, 0, 0, nMaxMessageSize, &timeout )))
         handle = INVALID_HANDLE_VALUE;
-    }
 
     RtlFreeUnicodeString( &nameW );
     return handle;
@@ -837,19 +724,13 @@ BOOL WINAPI GetMailslotInfo( HANDLE hMailslot, LPDWORD lpMaxMessageSize,
 {
     FILE_MAILSLOT_QUERY_INFORMATION info;
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
 
     TRACE("%p %p %p %p %p\n",hMailslot, lpMaxMessageSize,
           lpNextSize, lpMessageCount, lpReadTimeout);
 
-    status = NtQueryInformationFile( hMailslot, &iosb, &info, sizeof info,
-                                     FileMailslotQueryInformation );
-
-    if( status != STATUS_SUCCESS )
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
+    if (!set_ntstatus( NtQueryInformationFile( hMailslot, &iosb, &info, sizeof info,
+                                               FileMailslotQueryInformation )))
         return FALSE;
-    }
 
     if( lpMaxMessageSize )
         *lpMaxMessageSize = info.MaximumMessageSize;
@@ -885,38 +766,24 @@ BOOL WINAPI SetMailslotInfo( HANDLE hMailslot, DWORD dwReadTimeout)
 {
     FILE_MAILSLOT_SET_INFORMATION info;
     IO_STATUS_BLOCK iosb;
-    NTSTATUS status;
 
-    TRACE("%p %d\n", hMailslot, dwReadTimeout);
+    TRACE("%p %ld\n", hMailslot, dwReadTimeout);
 
     if (dwReadTimeout != MAILSLOT_WAIT_FOREVER)
         info.ReadTimeout.QuadPart = (ULONGLONG)dwReadTimeout * -10000;
     else
         info.ReadTimeout.QuadPart = ((LONGLONG)0x7fffffff << 32) | 0xffffffff;
-    status = NtSetInformationFile( hMailslot, &iosb, &info, sizeof info,
-                                   FileMailslotSetInformation );
-    if( status != STATUS_SUCCESS )
-    {
-        SetLastError( RtlNtStatusToDosError(status) );
-        return FALSE;
-    }
-    return TRUE;
+    return set_ntstatus( NtSetInformationFile( hMailslot, &iosb, &info, sizeof info,
+                                               FileMailslotSetInformation ));
 }
 
 
 /******************************************************************************
  *		BindIoCompletionCallback (KERNEL32.@)
  */
-BOOL WINAPI BindIoCompletionCallback( HANDLE FileHandle, LPOVERLAPPED_COMPLETION_ROUTINE Function, ULONG Flags)
+BOOL WINAPI BindIoCompletionCallback( HANDLE handle, LPOVERLAPPED_COMPLETION_ROUTINE func, ULONG flags )
 {
-    NTSTATUS status;
-
-    TRACE("(%p, %p, %d)\n", FileHandle, Function, Flags);
-
-    status = RtlSetIoCompletionCallback( FileHandle, (PRTL_OVERLAPPED_COMPLETION_ROUTINE)Function, Flags );
-    if (status == STATUS_SUCCESS) return TRUE;
-    SetLastError( RtlNtStatusToDosError(status) );
-    return FALSE;
+    return set_ntstatus( RtlSetIoCompletionCallback( handle, (PRTL_OVERLAPPED_COMPLETION_ROUTINE)func, flags ));
 }
 
 

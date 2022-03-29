@@ -20,9 +20,9 @@
 
 
 #include "config.h"
-#include "wine/port.h"
 
 #include <assert.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -31,12 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#ifdef HAVE_POLL_H
 #include <poll.h>
-#endif
-#ifdef HAVE_SYS_POLL_H
-#include <sys/poll.h>
-#endif
 #ifdef HAVE_LINUX_MAJOR_H
 #include <linux/major.h>
 #endif
@@ -105,6 +100,7 @@
 
 #include "winternl.h"
 #include "winioctl.h"
+#include "ddk/wdm.h"
 
 #if !defined(O_SYMLINK) && defined(O_PATH)
 # define O_SYMLINK (O_NOFOLLOW | O_PATH)
@@ -188,6 +184,8 @@ struct fd
     unsigned int         options;     /* file options (FILE_DELETE_ON_CLOSE, FILE_SYNCHRONOUS...) */
     unsigned int         sharing;     /* file sharing mode */
     char                *unix_name;   /* unix file name */
+    WCHAR               *nt_name;     /* NT file name */
+    data_size_t          nt_namelen;  /* length of NT file name */
     int                  unix_fd;     /* unix file descriptor */
     unsigned int         no_fd_status;/* status to return when unix_fd is -1 */
     unsigned int         cacheable :1;/* can the fd be cached on the client side? */
@@ -209,8 +207,8 @@ static void fd_destroy( struct object *obj );
 static const struct object_ops fd_ops =
 {
     sizeof(struct fd),        /* size */
+    &no_type,                 /* type */
     fd_dump,                  /* dump */
-    no_get_type,              /* get_type */
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
@@ -218,9 +216,10 @@ static const struct object_ops fd_ops =
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
-    no_map_access,            /* map_access */
+    default_map_access,       /* map_access */
     default_get_sd,           /* get_sd */
     default_set_sd,           /* set_sd */
+    no_get_full_name,         /* get_full_name */
     no_lookup_name,           /* lookup_name */
     no_link_name,             /* link_name */
     NULL,                     /* unlink_name */
@@ -251,8 +250,8 @@ static void device_destroy( struct object *obj );
 static const struct object_ops device_ops =
 {
     sizeof(struct device),    /* size */
+    &no_type,                 /* type */
     device_dump,              /* dump */
-    no_get_type,              /* get_type */
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
@@ -260,9 +259,10 @@ static const struct object_ops device_ops =
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
-    no_map_access,            /* map_access */
+    default_map_access,       /* map_access */
     default_get_sd,           /* get_sd */
     default_set_sd,           /* set_sd */
+    no_get_full_name,         /* get_full_name */
     no_lookup_name,           /* lookup_name */
     no_link_name,             /* link_name */
     NULL,                     /* unlink_name */
@@ -292,8 +292,8 @@ static void inode_destroy( struct object *obj );
 static const struct object_ops inode_ops =
 {
     sizeof(struct inode),     /* size */
+    &no_type,                 /* type */
     inode_dump,               /* dump */
-    no_get_type,              /* get_type */
     no_add_queue,             /* add_queue */
     NULL,                     /* remove_queue */
     NULL,                     /* signaled */
@@ -301,9 +301,10 @@ static const struct object_ops inode_ops =
     NULL,                     /* satisfied */
     no_signal,                /* signal */
     no_get_fd,                /* get_fd */
-    no_map_access,            /* map_access */
+    default_map_access,       /* map_access */
     default_get_sd,           /* get_sd */
     default_set_sd,           /* set_sd */
+    no_get_full_name,         /* get_full_name */
     no_lookup_name,           /* lookup_name */
     no_link_name,             /* link_name */
     NULL,                     /* unlink_name */
@@ -335,8 +336,8 @@ static int file_lock_signaled( struct object *obj, struct wait_queue_entry *entr
 static const struct object_ops file_lock_ops =
 {
     sizeof(struct file_lock),   /* size */
+    &no_type,                   /* type */
     file_lock_dump,             /* dump */
-    no_get_type,                /* get_type */
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     file_lock_signaled,         /* signaled */
@@ -344,9 +345,10 @@ static const struct object_ops file_lock_ops =
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
-    no_map_access,              /* map_access */
+    default_map_access,         /* map_access */
     default_get_sd,             /* get_sd */
     default_set_sd,             /* set_sd */
+    no_get_full_name,           /* get_full_name */
     no_lookup_name,             /* lookup_name */
     no_link_name,               /* link_name */
     NULL,                       /* unlink_name */
@@ -378,20 +380,87 @@ static file_pos_t max_unix_offset = OFF_T_MAX;
 struct timeout_user
 {
     struct list           entry;      /* entry in sorted timeout list */
-    timeout_t             when;       /* timeout expiry (absolute time) */
+    abstime_t             when;       /* timeout expiry */
     timeout_callback      callback;   /* callback function */
     void                 *private;    /* callback private data */
 };
 
-static struct list timeout_list = LIST_INIT(timeout_list);   /* sorted timeouts list */
+static struct list abs_timeout_list = LIST_INIT(abs_timeout_list); /* sorted absolute timeouts list */
+static struct list rel_timeout_list = LIST_INIT(rel_timeout_list); /* sorted relative timeouts list */
 timeout_t current_time;
+timeout_t monotonic_time;
 
-static inline void set_current_time(void)
+struct _KUSER_SHARED_DATA *user_shared_data = NULL;
+static const int user_shared_data_timeout = 16;
+
+static void atomic_store_ulong(volatile ULONG *ptr, ULONG value)
+{
+    /* on x86 there should be total store order guarantees, so volatile is
+     * enough to ensure the stores aren't reordered by the compiler, and then
+     * they will always be seen in-order from other CPUs. On other archs, we
+     * need atomic intrinsics to guarantee that. */
+#if defined(__i386__) || defined(__x86_64__)
+    *ptr = value;
+#else
+    __atomic_store_n(ptr, value, __ATOMIC_SEQ_CST);
+#endif
+}
+
+static void atomic_store_long(volatile LONG *ptr, LONG value)
+{
+#if defined(__i386__) || defined(__x86_64__)
+    *ptr = value;
+#else
+    __atomic_store_n(ptr, value, __ATOMIC_SEQ_CST);
+#endif
+}
+
+static void set_user_shared_data_time(void)
+{
+    timeout_t tick_count = monotonic_time / 10000;
+    static timeout_t last_timezone_update;
+    timeout_t timezone_bias;
+    struct tm *tm;
+    time_t now;
+
+    if (monotonic_time - last_timezone_update > TICKS_PER_SEC)
+    {
+        now = time( NULL );
+        tm = gmtime( &now );
+        timezone_bias = mktime( tm ) - now;
+        tm = localtime( &now );
+        if (tm->tm_isdst) timezone_bias -= 3600;
+        timezone_bias *= TICKS_PER_SEC;
+
+        atomic_store_long(&user_shared_data->TimeZoneBias.High2Time, timezone_bias >> 32);
+        atomic_store_ulong(&user_shared_data->TimeZoneBias.LowPart, timezone_bias);
+        atomic_store_long(&user_shared_data->TimeZoneBias.High1Time, timezone_bias >> 32);
+
+        last_timezone_update = monotonic_time;
+    }
+
+    atomic_store_long(&user_shared_data->SystemTime.High2Time, current_time >> 32);
+    atomic_store_ulong(&user_shared_data->SystemTime.LowPart, current_time);
+    atomic_store_long(&user_shared_data->SystemTime.High1Time, current_time >> 32);
+
+    atomic_store_long(&user_shared_data->InterruptTime.High2Time, monotonic_time >> 32);
+    atomic_store_ulong(&user_shared_data->InterruptTime.LowPart, monotonic_time);
+    atomic_store_long(&user_shared_data->InterruptTime.High1Time, monotonic_time >> 32);
+
+    atomic_store_long(&user_shared_data->TickCount.High2Time, tick_count >> 32);
+    atomic_store_ulong(&user_shared_data->TickCount.LowPart, tick_count);
+    atomic_store_long(&user_shared_data->TickCount.High1Time, tick_count >> 32);
+    atomic_store_ulong(&user_shared_data->TickCountLowDeprecated, tick_count);
+}
+
+void set_current_time(void)
 {
     static const timeout_t ticks_1601_to_1970 = (timeout_t)86400 * (369 * 365 + 89) * TICKS_PER_SEC;
     struct timeval now;
     gettimeofday( &now, NULL );
     current_time = (timeout_t)now.tv_sec * TICKS_PER_SEC + now.tv_usec * 10 + ticks_1601_to_1970;
+    monotonic_time = monotonic_counter();
+    if (user_shared_data) set_user_shared_data_time();
 }
 
 /* add a timeout user */
@@ -401,16 +470,27 @@ struct timeout_user *add_timeout_user( timeout_t when, timeout_callback func, vo
     struct list *ptr;
 
     if (!(user = mem_alloc( sizeof(*user) ))) return NULL;
-    user->when     = (when > 0) ? when : current_time - when;
+    user->when     = timeout_to_abstime( when );
     user->callback = func;
     user->private  = private;
 
     /* Now insert it in the linked list */
 
-    LIST_FOR_EACH( ptr, &timeout_list )
+    if (user->when > 0)
     {
-        struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
-        if (timeout->when >= user->when) break;
+        LIST_FOR_EACH( ptr, &abs_timeout_list )
+        {
+            struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
+            if (timeout->when >= user->when) break;
+        }
+    }
+    else
+    {
+        LIST_FOR_EACH( ptr, &rel_timeout_list )
+        {
+            struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
+            if (timeout->when <= user->when) break;
+        }
     }
     list_add_before( ptr, &user->entry );
     return user;
@@ -500,7 +580,6 @@ static inline void set_fd_epoll_events( struct fd *fd, int user, int events )
     }
     else if (pollfd[user].fd == -1)
     {
-        if (pollfd[user].events) return;  /* stopped waiting on it, don't restart */
         ctl = EPOLL_CTL_ADD;
     }
     else
@@ -579,16 +658,6 @@ static int kqueue_fd = -1;
 
 static inline void init_epoll(void)
 {
-#ifdef __APPLE__ /* kqueue support is broken in Mac OS < 10.5 */
-    int mib[2];
-    char release[32];
-    size_t len = sizeof(release);
-
-    mib[0] = CTL_KERN;
-    mib[1] = KERN_OSRELEASE;
-    if (sysctl( mib, 2, release, &len, NULL, 0 ) == -1) return;
-    if (atoi(release) < 9) return;
-#endif
     kqueue_fd = kqueue();
 }
 
@@ -609,7 +678,6 @@ static inline void set_fd_epoll_events( struct fd *fd, int user, int events )
     }
     else if (pollfd[user].fd == -1)
     {
-        if (pollfd[user].events) return;  /* stopped waiting on it, don't restart */
         ev[0].flags |= EV_ADD | ((events & POLLIN) ? EV_ENABLE : EV_DISABLE);
         ev[1].flags |= EV_ADD | ((events & POLLOUT) ? EV_ENABLE : EV_DISABLE);
     }
@@ -718,7 +786,6 @@ static inline void set_fd_epoll_events( struct fd *fd, int user, int events )
     }
     else if (pollfd[user].fd == -1)
     {
-        if (pollfd[user].events) return;  /* stopped waiting on it, don't restart */
         ret = port_associate( port_fd, PORT_SOURCE_FD, fd->unix_fd, events, (void *)user );
     }
     else
@@ -865,18 +932,31 @@ static void remove_poll_user( struct fd *fd, int user )
 /* process pending timeouts and return the time until the next timeout, in milliseconds */
 static int get_next_timeout(void)
 {
-    if (!list_empty( &timeout_list ))
+    int ret = user_shared_data ? user_shared_data_timeout : -1;
+
+    if (!list_empty( &abs_timeout_list ) || !list_empty( &rel_timeout_list ))
     {
         struct list expired_list, *ptr;
 
         /* first remove all expired timers from the list */
 
         list_init( &expired_list );
-        while ((ptr = list_head( &timeout_list )) != NULL)
+        while ((ptr = list_head( &abs_timeout_list )) != NULL)
         {
             struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
 
             if (timeout->when <= current_time)
+            {
+                list_remove( &timeout->entry );
+                list_add_tail( &expired_list, &timeout->entry );
+            }
+            else break;
+        }
+        while ((ptr = list_head( &rel_timeout_list )) != NULL)
+        {
+            struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
+
+            if (-timeout->when <= monotonic_time)
             {
                 list_remove( &timeout->entry );
                 list_add_tail( &expired_list, &timeout->entry );
@@ -894,15 +974,25 @@ static int get_next_timeout(void)
             free( timeout );
         }
 
-        if ((ptr = list_head( &timeout_list )) != NULL)
+        if ((ptr = list_head( &abs_timeout_list )) != NULL)
         {
             struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
-            int diff = (timeout->when - current_time + 9999) / 10000;
-            if (diff < 0) diff = 0;
-            return diff;
+            timeout_t diff = (timeout->when - current_time + 9999) / 10000;
+            if (diff > INT_MAX) diff = INT_MAX;
+            else if (diff < 0) diff = 0;
+            if (ret == -1 || diff < ret) ret = diff;
+        }
+
+        if ((ptr = list_head( &rel_timeout_list )) != NULL)
+        {
+            struct timeout_user *timeout = LIST_ENTRY( ptr, struct timeout_user, entry );
+            timeout_t diff = (-timeout->when - monotonic_time + 9999) / 10000;
+            if (diff > INT_MAX) diff = INT_MAX;
+            else if (diff < 0) diff = 0;
+            if (ret == -1 || diff < ret) ret = diff;
         }
     }
-    return -1;  /* no pending timeouts */
+    return ret;
 }
 
 /* server main poll() loop */
@@ -1500,6 +1590,7 @@ static void fd_destroy( struct object *obj )
     remove_fd_locks( fd );
     list_remove( &fd->inode_entry );
     if (fd->poll_index != -1) remove_poll_user( fd, fd->poll_index );
+    free( fd->nt_name );
     if (fd->inode)
     {
         inode_add_closed_fd( fd->inode, fd->closed );
@@ -1577,7 +1668,7 @@ void set_fd_events( struct fd *fd, int events )
         pollfd[user].events = POLLERR;
         pollfd[user].revents = 0;
     }
-    else if (pollfd[user].fd != -1 || !pollfd[user].events)
+    else
     {
         pollfd[user].fd = fd->unix_fd;
         pollfd[user].events = events;
@@ -1621,6 +1712,8 @@ static struct fd *alloc_fd_object(void)
     fd->sharing    = 0;
     fd->unix_fd    = -1;
     fd->unix_name  = NULL;
+    fd->nt_name    = NULL;
+    fd->nt_namelen = 0;
     fd->cacheable  = 0;
     fd->signaled   = 1;
     fd->fs_locks   = 1;
@@ -1660,9 +1753,11 @@ struct fd *alloc_pseudo_fd( const struct fd_ops *fd_user_ops, struct object *use
     fd->options    = options;
     fd->sharing    = 0;
     fd->unix_name  = NULL;
+    fd->nt_name    = NULL;
+    fd->nt_namelen = 0;
     fd->unix_fd    = -1;
     fd->cacheable  = 0;
-    fd->signaled   = 0;
+    fd->signaled   = 1;
     fd->fs_locks   = 0;
     fd->poll_index = -1;
     fd->completion = NULL;
@@ -1695,6 +1790,11 @@ struct fd *dup_fd_object( struct fd *orig, unsigned int access, unsigned int sha
     {
         if (!(fd->unix_name = mem_alloc( strlen(orig->unix_name) + 1 ))) goto failed;
         strcpy( fd->unix_name, orig->unix_name );
+    }
+    if (orig->nt_namelen)
+    {
+        if (!(fd->nt_name = memdup( orig->nt_name, orig->nt_namelen ))) goto failed;
+        fd->nt_namelen = orig->nt_namelen;
     }
 
     if (orig->inode)
@@ -1772,6 +1872,7 @@ char *dup_fd_name( struct fd *root, const char *name )
     return ret;
 }
 
+<<<<<<< HEAD
 static void decode_symlink(char *name, int *is_dir)
 {
     char link[MAX_PATH], *p;
@@ -1817,10 +1918,52 @@ static void decode_symlink(char *name, int *is_dir)
     }
     else
         *is_dir = TRUE;
+=======
+static WCHAR *dup_nt_name( struct fd *root, struct unicode_str name, data_size_t *len )
+{
+    WCHAR *ret;
+    data_size_t retlen;
+
+    if (!root)
+    {
+        *len = name.len;
+        if (!name.len) return NULL;
+        return memdup( name.str, name.len );
+    }
+    if (!root->nt_namelen) return NULL;
+    retlen = root->nt_namelen;
+
+    /* skip . prefix */
+    if (name.len && name.str[0] == '.' && (name.len == sizeof(WCHAR) || name.str[1] == '\\'))
+    {
+        name.str++;
+        name.len -= sizeof(WCHAR);
+    }
+    if ((ret = malloc( retlen + name.len + sizeof(WCHAR) )))
+    {
+        memcpy( ret, root->nt_name, root->nt_namelen );
+        if (name.len && name.str[0] != '\\' &&
+            root->nt_namelen && root->nt_name[root->nt_namelen / sizeof(WCHAR) - 1] != '\\')
+        {
+            ret[retlen / sizeof(WCHAR)] = '\\';
+            retlen += sizeof(WCHAR);
+        }
+        memcpy( ret + retlen / sizeof(WCHAR), name.str, name.len );
+        *len = retlen + name.len;
+    }
+    return ret;
+}
+
+void get_nt_name( struct fd *fd, struct unicode_str *name )
+{
+    name->str = fd->nt_name;
+    name->len = fd->nt_namelen;
+>>>>>>> master
 }
 
 /* open() wrapper that returns a struct fd with no fd user set */
-struct fd *open_fd( struct fd *root, const char *name, int flags, mode_t *mode, unsigned int access,
+struct fd *open_fd( struct fd *root, const char *name, struct unicode_str nt_name,
+                    int flags, mode_t *mode, unsigned int access,
                     unsigned int sharing, unsigned int options )
 {
     struct stat st;
@@ -1927,6 +2070,7 @@ struct fd *open_fd( struct fd *root, const char *name, int flags, mode_t *mode, 
         }
     }
 
+    fd->nt_name = dup_nt_name( root, nt_name, &fd->nt_namelen );
     fd->unix_name = NULL;
     if ((path = dup_fd_name( root, name )))
     {
@@ -2014,6 +2158,19 @@ struct fd *open_fd( struct fd *root, const char *name, int flags, mode_t *mode, 
         free( closed_fd );
         fd->cacheable = 1;
     }
+
+#ifdef HAVE_POSIX_FADVISE
+    switch (options & (FILE_SEQUENTIAL_ONLY | FILE_RANDOM_ACCESS))
+    {
+    case FILE_SEQUENTIAL_ONLY:
+        posix_fadvise( fd->unix_fd, 0, 0, POSIX_FADV_SEQUENTIAL );
+        break;
+    case FILE_RANDOM_ACCESS:
+        posix_fadvise( fd->unix_fd, 0, 0, POSIX_FADV_RANDOM );
+        break;
+    }
+#endif
+
     if (root_fd != -1) fchdir( server_dir_fd ); /* go back to the server dir */
     return fd;
 
@@ -2052,6 +2209,12 @@ void *get_fd_user( struct fd *fd )
 unsigned int get_fd_options( struct fd *fd )
 {
     return fd->options;
+}
+
+/* retrieve the completion flags for the fd */
+unsigned int get_fd_comp_flags( struct fd *fd )
+{
+    return fd->comp_flags;
 }
 
 /* check if fd is in overlapped mode */
@@ -2096,18 +2259,6 @@ void set_fd_signaled( struct fd *fd, int signaled )
         esync_clear( fd->esync_fd );
 }
 
-/* check if fd is signaled */
-int is_fd_signaled( struct fd *fd )
-{
-    return fd->signaled;
-}
-
-/* handler for close_handle that refuses to close fd-associated handles in other processes */
-int fd_close_handle( struct object *obj, struct process *process, obj_handle_t handle )
-{
-    return (!current || current->process == process);
-}
-
 /* check if events are pending and if yes return which one(s) */
 int check_fd_events( struct fd *fd, int events )
 {
@@ -2131,6 +2282,7 @@ int default_fd_signaled( struct object *obj, struct wait_queue_entry *entry )
     return ret;
 }
 
+<<<<<<< HEAD
 int default_fd_get_esync_fd( struct object *obj, enum esync_type *type )
 {
     struct fd *fd = get_obj_fd( obj );
@@ -2150,6 +2302,8 @@ unsigned int default_fd_map_access( struct object *obj, unsigned int access )
     return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
 }
 
+=======
+>>>>>>> master
 int default_fd_get_poll_events( struct fd *fd )
 {
     int events = 0;
@@ -2219,6 +2373,11 @@ void fd_async_wake_up( struct fd *fd, int type, unsigned int status )
     }
 }
 
+void fd_cancel_async( struct fd *fd, struct async *async )
+{
+    fd->fd_ops->cancel_async( fd, async );
+}
+
 void fd_reselect_async( struct fd *fd, struct async_queue *queue )
 {
     fd->fd_ops->reselect_async( fd, queue );
@@ -2227,6 +2386,11 @@ void fd_reselect_async( struct fd *fd, struct async_queue *queue )
 void no_fd_queue_async( struct fd *fd, struct async *async, int type, int count )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
+}
+
+void default_fd_cancel_async( struct fd *fd, struct async *async )
+{
+    async_terminate( async, STATUS_CANCELLED );
 }
 
 void default_fd_queue_async( struct fd *fd, struct async *async, int type, int count )
@@ -2295,24 +2459,21 @@ static void unmount_device( struct fd *device_fd )
 }
 
 /* default read() routine */
-int no_fd_read( struct fd *fd, struct async *async, file_pos_t pos )
+void no_fd_read( struct fd *fd, struct async *async, file_pos_t pos )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
-    return 0;
 }
 
 /* default write() routine */
-int no_fd_write( struct fd *fd, struct async *async, file_pos_t pos )
+void no_fd_write( struct fd *fd, struct async *async, file_pos_t pos )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
-    return 0;
 }
 
 /* default flush() routine */
-int no_fd_flush( struct fd *fd, struct async *async )
+void no_fd_flush( struct fd *fd, struct async *async )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
-    return 0;
 }
 
 /* default get_file_info() routine */
@@ -2372,29 +2533,36 @@ void default_fd_get_file_info( struct fd *fd, obj_handle_t handle, unsigned int 
 }
 
 /* default get_volume_info() routine */
-void no_fd_get_volume_info( struct fd *fd, unsigned int info_class )
+void no_fd_get_volume_info( struct fd *fd, struct async *async, unsigned int info_class )
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
 }
 
 /* default ioctl() routine */
+<<<<<<< HEAD
 int no_fd_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
+=======
+void no_fd_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
+>>>>>>> master
 {
     set_error( STATUS_OBJECT_TYPE_MISMATCH );
-    return 0;
 }
 
 /* default ioctl() routine */
+<<<<<<< HEAD
 int default_fd_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
+=======
+void default_fd_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
+>>>>>>> master
 {
     switch(code)
     {
     case FSCTL_DISMOUNT_VOLUME:
         unmount_device( fd );
-        return 1;
+        break;
+
     default:
         set_error( STATUS_NOT_SUPPORTED );
-        return 0;
     }
 }
 
@@ -2411,6 +2579,31 @@ static struct fd *get_handle_fd_obj( struct process *process, obj_handle_t handl
         release_object( obj );
     }
     return fd;
+}
+
+static int is_dir_empty( int fd )
+{
+    DIR *dir;
+    int empty;
+    struct dirent *de;
+
+    if ((fd = dup( fd )) == -1)
+        return -1;
+
+    if (!(dir = fdopendir( fd )))
+    {
+        close( fd );
+        return -1;
+    }
+
+    empty = 1;
+    while (empty && (de = readdir( dir )))
+    {
+        if (!strcmp( de->d_name, "." ) || !strcmp( de->d_name, ".." )) continue;
+        empty = 0;
+    }
+    closedir( dir );
+    return empty;
 }
 
 /* set disposition for the fd */
@@ -2431,24 +2624,49 @@ static void set_fd_disposition( struct fd *fd, int unlink )
         return;
     }
 
-    if (fstat( fd->unix_fd, &st ) == -1)
+    if (unlink)
     {
-        file_set_error();
-        return;
-    }
+        struct fd *fd_ptr;
 
-    /* can't unlink special files */
-    if (unlink && !S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))
-    {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
-    }
+        LIST_FOR_EACH_ENTRY( fd_ptr, &fd->inode->open, struct fd, inode_entry )
+        {
+            if (fd_ptr->access & FILE_MAPPING_ACCESS)
+            {
+                set_error( STATUS_CANNOT_DELETE );
+                return;
+            }
+        }
 
-    /* can't unlink files we don't have permission to write */
-    if (unlink && !(st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) && !S_ISDIR(st.st_mode))
-    {
-        set_error( STATUS_CANNOT_DELETE );
-        return;
+        if (fstat( fd->unix_fd, &st ) == -1)
+        {
+            file_set_error();
+            return;
+        }
+        if (S_ISREG( st.st_mode ))  /* can't unlink files we don't have permission to write */
+        {
+            if (!(st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)))
+            {
+                set_error( STATUS_CANNOT_DELETE );
+                return;
+            }
+        }
+        else if (S_ISDIR( st.st_mode ))  /* can't remove non-empty directories */
+        {
+            switch (is_dir_empty( fd->unix_fd ))
+            {
+            case -1:
+                file_set_error();
+                return;
+            case 0:
+                set_error( STATUS_DIRECTORY_NOT_EMPTY );
+                return;
+            }
+        }
+        else  /* can't unlink special files */
+        {
+            set_error( STATUS_INVALID_PARAMETER );
+            return;
+        }
     }
 
     /* can't unlink files which are mapped to memory */
@@ -2468,8 +2686,8 @@ static void set_fd_disposition( struct fd *fd, int unlink )
 }
 
 /* set new name for the fd */
-static void set_fd_name( struct fd *fd, struct fd *root, const char *nameptr,
-                         data_size_t len, int create_link, int replace )
+static void set_fd_name( struct fd *fd, struct fd *root, const char *nameptr, data_size_t len,
+                         struct unicode_str nt_name, int create_link, int replace )
 {
     struct inode *inode;
     struct stat st, st2;
@@ -2584,6 +2802,8 @@ static void set_fd_name( struct fd *fd, struct fd *root, const char *nameptr,
         fchmod( fd->unix_fd, st.st_mode );
     }
 
+    free( fd->nt_name );
+    fd->nt_name = dup_nt_name( root, nt_name, &fd->nt_namelen );
     free( fd->unix_name );
     fd->closed->unix_name = fd->unix_name = realpath( name, NULL );
     free( name );
@@ -2597,9 +2817,13 @@ failed:
 
 static void set_fd_eof( struct fd *fd, file_pos_t eof )
 {
+<<<<<<< HEAD
     static const char zero;
     struct stat st;
     struct list *ptr;
+=======
+    struct stat st;
+>>>>>>> master
 
     if (!fd->inode)
     {
@@ -2612,12 +2836,17 @@ static void set_fd_eof( struct fd *fd, file_pos_t eof )
         set_error( fd->no_fd_status );
         return;
     }
+<<<<<<< HEAD
 
     if (fstat( fd->unix_fd, &st ) == -1)
+=======
+    if (fstat( fd->unix_fd, &st) == -1)
+>>>>>>> master
     {
         file_set_error();
         return;
     }
+<<<<<<< HEAD
 
     /* can't truncate files which are mapped to memory */
     if (eof < st.st_size)
@@ -2626,11 +2855,20 @@ static void set_fd_eof( struct fd *fd, file_pos_t eof )
         {
             struct fd *fd_ptr = LIST_ENTRY( ptr, struct fd, inode_entry );
             if (fd_ptr != fd && (fd_ptr->access & FILE_MAPPING_ACCESS))
+=======
+    if (eof < st.st_size)
+    {
+        struct fd *fd_ptr;
+        LIST_FOR_EACH_ENTRY( fd_ptr, &fd->inode->open, struct fd, inode_entry )
+        {
+            if (fd_ptr->access & FILE_MAPPING_ACCESS)
+>>>>>>> master
             {
                 set_error( STATUS_USER_MAPPED_FILE );
                 return;
             }
         }
+<<<<<<< HEAD
     }
 
     /* first try normal truncate */
@@ -2646,6 +2884,11 @@ static void set_fd_eof( struct fd *fd, file_pos_t eof )
     }
 
     file_set_error();
+=======
+        if (ftruncate( fd->unix_fd, eof ) == -1) file_set_error();
+    }
+    else grow_file( fd->unix_fd, eof );
+>>>>>>> master
 }
 
 struct completion *fd_get_completion( struct fd *fd, apc_param_t *p_key )
@@ -2671,7 +2914,8 @@ DECL_HANDLER(flush)
 
     if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
     {
-        reply->event = async_handoff( async, fd->fd_ops->flush( fd, async ), NULL, 1 );
+        fd->fd_ops->flush( fd, async );
+        reply->event = async_handoff( async, NULL, 1 );
         release_object( async );
     }
     release_object( fd );
@@ -2693,12 +2937,17 @@ DECL_HANDLER(get_file_info)
 DECL_HANDLER(get_volume_info)
 {
     struct fd *fd = get_handle_fd_obj( current->process, req->handle, 0 );
+    struct async *async;
 
-    if (fd)
+    if (!fd) return;
+
+    if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
     {
-        fd->fd_ops->get_volume_info( fd, req->info_class );
-        release_object( fd );
+        fd->fd_ops->get_volume_info( fd, async, req->info_class );
+        reply->wait = async_handoff( async, NULL, 1 );
+        release_object( async );
     }
+    release_object( fd );
 }
 
 /* open a file object */
@@ -2770,7 +3019,8 @@ DECL_HANDLER(read)
 
     if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
     {
-        reply->wait    = async_handoff( async, fd->fd_ops->read( fd, async, req->pos ), NULL, 0 );
+        fd->fd_ops->read( fd, async, req->pos );
+        reply->wait = async_handoff( async, NULL, 0 );
         reply->options = fd->options;
         release_object( async );
     }
@@ -2787,7 +3037,8 @@ DECL_HANDLER(write)
 
     if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
     {
-        reply->wait    = async_handoff( async, fd->fd_ops->write( fd, async, req->pos ), &reply->size, 0 );
+        fd->fd_ops->write( fd, async, req->pos );
+        reply->wait = async_handoff( async, &reply->size, 0 );
         reply->options = fd->options;
         release_object( async );
     }
@@ -2832,7 +3083,12 @@ DECL_HANDLER(ioctl)
 
     if ((async = create_request_async( fd, fd->comp_flags, &req->async )))
     {
+<<<<<<< HEAD
         reply->wait    = async_handoff( async, fd->fd_ops->ioctl( fd, req->code, req->input_buffer, req->output_buffer, async ), NULL, 0 );
+=======
+        fd->fd_ops->ioctl( fd, req->code, async );
+        reply->wait = async_handoff( async, NULL, 0 );
+>>>>>>> master
         reply->options = fd->options;
         release_object( async );
     }
@@ -2935,6 +3191,15 @@ DECL_HANDLER(set_fd_disp_info)
 DECL_HANDLER(set_fd_name_info)
 {
     struct fd *fd, *root_fd = NULL;
+    struct unicode_str nt_name;
+
+    if (req->namelen > get_req_data_size())
+    {
+        set_error( STATUS_INVALID_PARAMETER );
+        return;
+    }
+    nt_name.str = get_req_data();
+    nt_name.len = (req->namelen / sizeof(WCHAR)) * sizeof(WCHAR);
 
     if (req->rootdir)
     {
@@ -2948,7 +3213,8 @@ DECL_HANDLER(set_fd_name_info)
 
     if ((fd = get_handle_fd_obj( current->process, req->handle, 0 )))
     {
-        set_fd_name( fd, root_fd, get_req_data(), get_req_data_size(), req->link, req->replace );
+        set_fd_name( fd, root_fd, (const char *)get_req_data() + req->namelen,
+                     get_req_data_size() - req->namelen, nt_name, req->link, req->replace );
         release_object( fd );
     }
     if (root_fd) release_object( root_fd );

@@ -19,6 +19,8 @@
 #ifndef _WLAN_WLANAPI_H
 #define _WLAN_WLANAPI_H
 
+#include <windot11.h>
+
 typedef enum _WLAN_INTERFACE_STATE
 {
     wlan_interface_state_not_ready,
@@ -105,22 +107,6 @@ typedef enum _DOT11_CIPHER_ALGORITHM
     DOT11_CIPHER_ALGO_IHV_END = 0xFFFFFFFF
 } DOT11_CIPHER_ALGORITHM, *PDOT11_CIPHER_ALGORITHM;
 
-typedef enum _DOT11_PHY_TYPE
-{
-    dot11_phy_type_unknown = 0x00,
-    dot11_phy_type_any = 0x00,
-    dot11_phy_type_fhss = 0x01,
-    dot11_phy_type_dsss = 0x02,
-    dot11_phy_type_irbaseband = 0x03,
-    dot11_phy_type_ofdm = 0x04,
-    dot11_phy_type_hrdsss = 0x05,
-    dot11_phy_type_erp = 0x06,
-    dot11_phy_type_ht = 0x07,
-    dot11_phy_type_vht = 0x08,
-    dot11_phy_type_IHV_start = 0x80000000,
-    dot11_phy_type_IHV_end = 0xFFFFFFFF
-} DOT11_PHY_TYPE, *PDOT11_PHY_TYPE;
-
 #define WLAN_MAX_PHY_TYPE_NUMBER 8
 
 typedef struct _WLAN_AVAILABLE_NETWORK
@@ -142,12 +128,121 @@ typedef struct _WLAN_AVAILABLE_NETWORK
     DWORD dwReserved;
 } WLAN_AVAILABLE_NETWORK, *PWLAN_AVAILABLE_NETWORK;
 
+typedef enum _WLAN_INTF_OPCODE
+{
+    wlan_intf_opcode_autoconf_start = 0x000000000,
+    wlan_intf_opcode_autoconf_enabled,
+    wlan_intf_opcode_background_scan_enabled,
+    wlan_intf_opcode_media_streaming_mode,
+    wlan_intf_opcode_radio_state,
+    wlan_intf_opcode_bss_type,
+    wlan_intf_opcode_interface_state,
+    wlan_intf_opcode_current_connection,
+    wlan_intf_opcode_channel_number,
+    wlan_intf_opcode_supported_infrastructure_auth_cipher_pairs,
+    wlan_intf_opcode_supported_adhoc_auth_cipher_pairs,
+    wlan_intf_opcode_supported_country_or_region_string_list,
+    wlan_intf_opcode_current_operation_mode,
+    wlan_intf_opcode_supported_safe_mode,
+    wlan_intf_opcode_certified_safe_mode,
+    wlan_intf_opcode_hosted_network_capable,
+    wlan_intf_opcode_management_frame_protection_capable,
+    wlan_intf_opcode_autoconf_end = 0x0fffffff,
+    wlan_intf_opcode_msm_start = 0x10000100,
+    wlan_intf_opcode_statistics,
+    wlan_intf_opcode_rssi,
+    wlan_intf_opcode_msm_end = 0x1fffffff,
+    wlan_intf_opcode_security_start = 0x20010000,
+    wlan_intf_opcode_security_end = 0x2fffffff,
+    wlan_intf_opcode_ihv_start = 0x30000000,
+    wlan_intf_opcode_ihv_end = 0x3fffffff
+} WLAN_INTF_OPCODE, *PWLAN_INTF_OPCODE;
+
+typedef enum _WLAN_OPCODE_VALUE_TYPE
+{
+    wlan_opcode_value_type_query_only = 0,
+    wlan_opcode_value_type_set_by_group_policy,
+    wlan_opcode_value_type_set_by_user,
+    wlan_opcode_value_type_invalid
+} WLAN_OPCODE_VALUE_TYPE, *PWLAN_OPCODE_VALUE_TYPE;
+
 typedef struct _WLAN_AVAILABLE_NETWORK_LIST
 {
     DWORD dwNumberOfItems;
     DWORD dwIndex;
     WLAN_AVAILABLE_NETWORK Network[1];
 } WLAN_AVAILABLE_NETWORK_LIST, *PWLAN_AVAILABLE_NETWORK_LIST;
+
+typedef enum _WLAN_HOSTED_NETWORK_OPCODE
+{
+    wlan_hosted_network_opcode_connection_settings,
+    wlan_hosted_network_opcode_security_settings,
+    wlan_hosted_network_opcode_station_profile,
+    wlan_hosted_network_opcode_enable
+} WLAN_HOSTED_NETWORK_OPCODE, *PWLAN_HOSTED_NETWORK_OPCODE;
+
+typedef enum _WLAN_HOSTED_NETWORK_REASON
+{
+    wlan_hosted_network_reason_success = 0,
+    wlan_hosted_network_reason_unspecified,
+    wlan_hosted_network_reason_bad_parameters,
+    wlan_hosted_network_reason_service_shutting_down,
+    wlan_hosted_network_reason_insufficient_resources,
+    wlan_hosted_network_reason_elevation_required,
+    wlan_hosted_network_reason_read_only,
+    wlan_hosted_network_reason_persistence_failed,
+    wlan_hosted_network_reason_crypt_error,
+    wlan_hosted_network_reason_impersonation,
+    wlan_hosted_network_reason_stop_before_start,
+    wlan_hosted_network_reason_interface_available,
+    wlan_hosted_network_reason_interface_unavailable,
+    wlan_hosted_network_reason_miniport_stopped,
+    wlan_hosted_network_reason_miniport_started,
+    wlan_hosted_network_reason_incompatible_connection_started,
+    wlan_hosted_network_reason_incompatible_connection_stopped,
+    wlan_hosted_network_reason_user_action,
+    wlan_hosted_network_reason_client_abort,
+    wlan_hosted_network_reason_ap_start_failed,
+    wlan_hosted_network_reason_peer_arrived,
+    wlan_hosted_network_reason_peer_departed,
+    wlan_hosted_network_reason_peer_timeout,
+    wlan_hosted_network_reason_gp_denied,
+    wlan_hosted_network_reason_service_unavailable,
+    wlan_hosted_network_reason_device_change,
+    wlan_hosted_network_reason_properties_change,
+    wlan_hosted_network_reason_virtual_station_blocking_use,
+    wlan_hosted_network_reason_service_available_on_virtual_station
+} WLAN_HOSTED_NETWORK_REASON, *PWLAN_HOSTED_NETWORK_REASON;
+
+typedef enum _WLAN_HOSTED_NETWORK_STATE
+{
+    wlan_hosted_network_unavailable,
+    wlan_hosted_network_idle,
+    wlan_hosted_network_active
+} WLAN_HOSTED_NETWORK_STATE, *PWLAN_HOSTED_NETWORK_STATE;
+
+typedef enum _WLAN_HOSTED_NETWORK_PEER_AUTH_STATE
+{
+    wlan_hosted_network_peer_state_invalid,
+    wlan_hosted_network_peer_state_authenticated
+} WLAN_HOSTED_NETWORK_PEER_AUTH_STATE, *PWLAN_HOSTED_NETWORK_PEER_AUTH_STATE;
+
+typedef struct _WLAN_HOSTED_NETWORK_PEER_STATE
+{
+    DOT11_MAC_ADDRESS PeerMacAddress;
+    WLAN_HOSTED_NETWORK_PEER_AUTH_STATE PeerAuthState;
+} WLAN_HOSTED_NETWORK_PEER_STATE, *PWLAN_HOSTED_NETWORK_PEER_STATE;
+
+typedef struct _WLAN_HOSTED_NETWORK_STATUS
+{
+    WLAN_HOSTED_NETWORK_STATE HostedNetworkState;
+    GUID IPDeviceID;
+    DOT11_MAC_ADDRESS wlanHostedNetworkBSSID;
+    DOT11_PHY_TYPE dot11PhyType;
+    ULONG ulChannelFrequency;
+    DWORD dwNumberOfPeers;
+    WLAN_HOSTED_NETWORK_PEER_STATE PeerList[1];
+} WLAN_HOSTED_NETWORK_STATUS, *PWLAN_HOSTED_NETWORK_STATUS;
 
 DWORD WINAPI WlanCloseHandle(HANDLE, void *);
 DWORD WINAPI WlanEnumInterfaces(HANDLE, void *, WLAN_INTERFACE_INFO_LIST **);
@@ -157,5 +252,6 @@ void WINAPI WlanFreeMemory(void *);
 DWORD WINAPI WlanScan(HANDLE, const GUID *, const DOT11_SSID *, const WLAN_RAW_DATA *, void *);
 DWORD WINAPI WlanRegisterNotification(HANDLE, DWORD, BOOL, WLAN_NOTIFICATION_CALLBACK, void *, void *, DWORD *);
 DWORD WINAPI WlanGetAvailableNetworkList(HANDLE, const GUID *, DWORD, void *, WLAN_AVAILABLE_NETWORK_LIST **);
+DWORD WINAPI WlanQueryInterface(HANDLE, const GUID *, WLAN_INTF_OPCODE, void *, DWORD *, void **, WLAN_OPCODE_VALUE_TYPE *);
 
 #endif /* _WLAN_WLANAPI_H */

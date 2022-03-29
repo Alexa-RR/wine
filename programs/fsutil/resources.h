@@ -19,7 +19,12 @@
 #include <windef.h>
 
 #define STRING_USAGE                    101
+<<<<<<< HEAD
 #define STRING_UNSUPPORTED_CMD          102
 #define STRING_UNSUPPORTED_PARAM        103
 #define STRING_HARDLINK_USAGE           104
 #define STRING_HARDLINK_CREATE_USAGE    105
+=======
+#define STRING_HARDLINK_USAGE           102
+#define STRING_HARDLINK_CREATE_USAGE    103
+>>>>>>> master

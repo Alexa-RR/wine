@@ -19,17 +19,23 @@
  */
 
 #include "config.h"
-#include "wine/port.h"
+#include "wine/asm.h"
+
+#ifdef __ASM_OBSOLETE
 
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
+#ifdef HAVE_SYS_SYSCTL_H
+# include <sys/sysctl.h>
 #endif
+#include <unistd.h>
+#include <dlfcn.h>
 #ifdef HAVE_PWD_H
 #include <pwd.h>
 #endif
@@ -40,31 +46,20 @@
 #define _POSIX_SPAWN_DISABLE_ASLR 0x0100
 #endif
 #endif
-#include "wine/library.h"
-
-static const char server_config_dir[] = "/.wine";        /* config dir relative to $HOME */
-static const char server_root_prefix[] = "/tmp/.wine";   /* prefix for server root dir */
-static const char server_dir_prefix[] = "/server-";      /* prefix for server dir */
 
 static char *bindir;
 static char *dlldir;
 static char *datadir;
-static char *config_dir;
-static char *server_dir;
-static char *build_dir;
-static char *user_name;
+const char *build_dir;
 static char *argv0_name;
 static char *wineserver64;
 
 #ifdef __GNUC__
 static void fatal_error( const char *err, ... )  __attribute__((noreturn,format(printf,1,2)));
-static void fatal_perror( const char *err, ... )  __attribute__((noreturn,format(printf,1,2)));
 #endif
 
 #if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
 static const char exe_link[] = "/proc/self/exe";
-#elif defined (__FreeBSD__) || defined(__DragonFly__)
-static const char exe_link[] = "/proc/curproc/file";
 #else
 static const char exe_link[] = "";
 #endif
@@ -77,19 +72,6 @@ static void fatal_error( const char *err, ... )
     va_start( args, err );
     fprintf( stderr, "wine: " );
     vfprintf( stderr, err, args );
-    va_end( args );
-    exit(1);
-}
-
-/* die on a fatal error */
-static void fatal_perror( const char *err, ... )
-{
-    va_list args;
-
-    va_start( args, err );
-    fprintf( stderr, "wine: " );
-    vfprintf( stderr, err, args );
-    perror( " " );
     va_end( args );
     exit(1);
 }
@@ -113,21 +95,6 @@ static char *xstrdup( const char *str )
     return res;
 }
 
-/* check if a string ends in a given substring */
-static inline int strendswith( const char* str, const char* end )
-{
-    size_t len = strlen( str );
-    size_t tail = strlen( end );
-    return len >= tail && !strcmp( str + len - tail, end );
-}
-
-/* remove all trailing slashes from a path name */
-static inline void remove_trailing_slashes( char *path )
-{
-    int len = strlen( path );
-    while (len > 1 && path[len-1] == '/') path[--len] = 0;
-}
-
 /* build a path from the specified dir and name */
 static char *build_path( const char *dir, const char *name )
 {
@@ -143,7 +110,6 @@ static char *build_path( const char *dir, const char *name )
 /* return the directory that contains the library at run-time */
 static char *get_runtime_libdir(void)
 {
-#ifdef HAVE_DLADDR
     Dl_info info;
     char *libdir;
 
@@ -157,7 +123,6 @@ static char *get_runtime_libdir(void)
         libdir[len] = 0;
         return libdir;
     }
-#endif /* HAVE_DLADDR */
     return NULL;
 }
 
@@ -178,8 +143,18 @@ static char *symlink_dirname( const char *name )
 /* return the directory that contains the main exe at run-time */
 static char *get_runtime_exedir(void)
 {
+#if defined(__FreeBSD__) || defined(__DragonFly__)
+    static int pathname[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
+    size_t dir_size = PATH_MAX;
+    char *dir = malloc( dir_size );
+    if (dir && !sysctl( pathname, sizeof(pathname)/sizeof(pathname[0]), dir, &dir_size, NULL, 0 ))
+        return dir;
+    free( dir );
+    return NULL;
+#else
     if (exe_link[0]) return symlink_dirname( exe_link );
     return NULL;
+#endif
 }
 
 /* return the base directory from argv0 */
@@ -221,96 +196,11 @@ static char *get_runtime_argvdir( const char *argv0 )
     return bindir;
 }
 
-/* initialize the server directory value */
-static void init_server_dir( dev_t dev, ino_t ino )
-{
-    char *p, *root;
-
-#ifdef __ANDROID__  /* there's no /tmp dir on Android */
-    root = build_path( config_dir, ".wineserver" );
-#else
-    root = xmalloc( sizeof(server_root_prefix) + 12 );
-    sprintf( root, "%s-%u", server_root_prefix, getuid() );
-#endif
-
-    server_dir = xmalloc( strlen(root) + sizeof(server_dir_prefix) + 2*sizeof(dev) + 2*sizeof(ino) + 2 );
-    strcpy( server_dir, root );
-    strcat( server_dir, server_dir_prefix );
-    p = server_dir + strlen(server_dir);
-
-    if (dev != (unsigned long)dev)
-        p += sprintf( p, "%lx%08lx-", (unsigned long)((unsigned long long)dev >> 32), (unsigned long)dev );
-    else
-        p += sprintf( p, "%lx-", (unsigned long)dev );
-
-    if (ino != (unsigned long)ino)
-        sprintf( p, "%lx%08lx", (unsigned long)((unsigned long long)ino >> 32), (unsigned long)ino );
-    else
-        sprintf( p, "%lx", (unsigned long)ino );
-    free( root );
-}
-
 /* retrieve the default dll dir */
 const char *get_dlldir( const char **default_dlldir )
 {
     *default_dlldir = DLLDIR;
     return dlldir;
-}
-
-/* initialize all the paths values */
-static void init_paths(void)
-{
-    struct stat st;
-
-    const char *home = getenv( "HOME" );
-    const char *user = NULL;
-    const char *prefix = getenv( "WINEPREFIX" );
-    char uid_str[32];
-    struct passwd *pwd = getpwuid( getuid() );
-
-    if (pwd)
-    {
-        user = pwd->pw_name;
-        if (!home) home = pwd->pw_dir;
-    }
-    if (!user)
-    {
-        sprintf( uid_str, "%lu", (unsigned long)getuid() );
-        user = uid_str;
-    }
-    user_name = xstrdup( user );
-
-    /* build config_dir */
-
-    if (prefix)
-    {
-        config_dir = xstrdup( prefix );
-        remove_trailing_slashes( config_dir );
-        if (config_dir[0] != '/')
-            fatal_error( "invalid directory %s in WINEPREFIX: not an absolute path\n", prefix );
-        if (stat( config_dir, &st ) == -1)
-        {
-            if (errno == ENOENT) return;  /* will be created later on */
-            fatal_perror( "cannot open %s as specified in WINEPREFIX", config_dir );
-        }
-    }
-    else
-    {
-        if (!home) fatal_error( "could not determine your home directory\n" );
-        if (home[0] != '/') fatal_error( "your home directory %s is not an absolute path\n", home );
-        config_dir = xmalloc( strlen(home) + sizeof(server_config_dir) );
-        strcpy( config_dir, home );
-        remove_trailing_slashes( config_dir );
-        strcat( config_dir, server_config_dir );
-        if (stat( config_dir, &st ) == -1)
-        {
-            if (errno == ENOENT) return;  /* will be created later on */
-            fatal_perror( "cannot open %s", config_dir );
-        }
-    }
-    if (!S_ISDIR(st.st_mode)) fatal_error( "%s is not a directory\n", config_dir );
-    if (st.st_uid != getuid()) fatal_error( "%s is not owned by you\n", config_dir );
-    init_server_dir( st.st_dev, st.st_ino );
 }
 
 /* check if bindir is valid by checking for wineserver */
@@ -417,7 +307,7 @@ static int set_dlldir( char *libdir )
 }
 
 /* initialize the argv0 path */
-void wine_init_argv0_path( const char *argv0 )
+void wine_init_argv0_path_obsolete( const char *argv0 )
 {
     const char *basename, *wineloader;
 
@@ -451,21 +341,142 @@ done:
     }
 }
 
+static const char server_config_dir[] = "/.wine";        /* config dir relative to $HOME */
+static const char server_root_prefix[] = "/tmp/.wine";   /* prefix for server root dir */
+static const char server_dir_prefix[] = "/server-";      /* prefix for server dir */
+
+static char *config_dir;
+static char *server_dir;
+static char *user_name;
+
+/* check if a string ends in a given substring */
+static inline int strendswith( const char* str, const char* end )
+{
+    size_t len = strlen( str );
+    size_t tail = strlen( end );
+    return len >= tail && !strcmp( str + len - tail, end );
+}
+
+/* remove all trailing slashes from a path name */
+static inline void remove_trailing_slashes( char *path )
+{
+    int len = strlen( path );
+    while (len > 1 && path[len-1] == '/') path[--len] = 0;
+}
+
+/* die on a fatal error */
+static void fatal_perror( const char *err, ... )
+{
+    va_list args;
+
+    va_start( args, err );
+    fprintf( stderr, "wine: " );
+    vfprintf( stderr, err, args );
+    perror( " " );
+    va_end( args );
+    exit(1);
+}
+
+/* initialize the server directory value */
+static void init_server_dir( dev_t dev, ino_t ino )
+{
+    char *p, *root;
+
+#ifdef __ANDROID__  /* there's no /tmp dir on Android */
+    root = build_path( config_dir, ".wineserver" );
+#else
+    root = xmalloc( sizeof(server_root_prefix) + 12 );
+    sprintf( root, "%s-%u", server_root_prefix, getuid() );
+#endif
+
+    server_dir = xmalloc( strlen(root) + sizeof(server_dir_prefix) + 2*sizeof(dev) + 2*sizeof(ino) + 2 );
+    strcpy( server_dir, root );
+    strcat( server_dir, server_dir_prefix );
+    p = server_dir + strlen(server_dir);
+
+    if (dev != (unsigned long)dev)
+        p += sprintf( p, "%lx%08lx-", (unsigned long)((unsigned long long)dev >> 32), (unsigned long)dev );
+    else
+        p += sprintf( p, "%lx-", (unsigned long)dev );
+
+    if (ino != (unsigned long)ino)
+        sprintf( p, "%lx%08lx", (unsigned long)((unsigned long long)ino >> 32), (unsigned long)ino );
+    else
+        sprintf( p, "%lx", (unsigned long)ino );
+    free( root );
+}
+
+/* initialize all the paths values */
+static void init_paths(void)
+{
+    struct stat st;
+
+    const char *home = getenv( "HOME" );
+    const char *user = NULL;
+    const char *prefix = getenv( "WINEPREFIX" );
+    char uid_str[32];
+    struct passwd *pwd = getpwuid( getuid() );
+
+    if (pwd)
+    {
+        user = pwd->pw_name;
+        if (!home) home = pwd->pw_dir;
+    }
+    if (!user)
+    {
+        sprintf( uid_str, "%lu", (unsigned long)getuid() );
+        user = uid_str;
+    }
+    user_name = xstrdup( user );
+
+    /* build config_dir */
+
+    if (prefix)
+    {
+        config_dir = xstrdup( prefix );
+        remove_trailing_slashes( config_dir );
+        if (config_dir[0] != '/')
+            fatal_error( "invalid directory %s in WINEPREFIX: not an absolute path\n", prefix );
+        if (stat( config_dir, &st ) == -1)
+        {
+            if (errno == ENOENT) return;  /* will be created later on */
+            fatal_perror( "cannot open %s as specified in WINEPREFIX", config_dir );
+        }
+    }
+    else
+    {
+        if (!home) fatal_error( "could not determine your home directory\n" );
+        if (home[0] != '/') fatal_error( "your home directory %s is not an absolute path\n", home );
+        config_dir = xmalloc( strlen(home) + sizeof(server_config_dir) );
+        strcpy( config_dir, home );
+        remove_trailing_slashes( config_dir );
+        strcat( config_dir, server_config_dir );
+        if (stat( config_dir, &st ) == -1)
+        {
+            if (errno == ENOENT) return;  /* will be created later on */
+            fatal_perror( "cannot open %s", config_dir );
+        }
+    }
+    if (!S_ISDIR(st.st_mode)) fatal_error( "%s is not a directory\n", config_dir );
+    if (st.st_uid != getuid()) fatal_error( "%s is not owned by you\n", config_dir );
+    init_server_dir( st.st_dev, st.st_ino );
+}
+
 /* return the configuration directory ($WINEPREFIX or $HOME/.wine) */
-const char *wine_get_config_dir(void)
+const char *wine_get_config_dir_obsolete(void)
 {
     if (!config_dir) init_paths();
     return config_dir;
 }
 
 /* retrieve the wine data dir */
-const char *wine_get_data_dir(void)
+const char *wine_get_data_dir_obsolete(void)
 {
     return datadir;
 }
 
 /* retrieve the wine build dir (if we are running from there) */
-const char *wine_get_build_dir(void)
+const char *wine_get_build_dir_obsolete(void)
 {
     return build_dir;
 }
@@ -595,7 +606,7 @@ const char **wine_get_libs(void)
 }
 
 /* return the full name of the server directory (the one containing the socket) */
-const char *wine_get_server_dir(void)
+const char *wine_get_server_dir_obsolete(void)
 {
     if (!server_dir)
     {
@@ -616,14 +627,14 @@ const char *wine_get_server_dir(void)
 }
 
 /* return the current user name */
-const char *wine_get_user_name(void)
+const char *wine_get_user_name_obsolete(void)
 {
     if (!user_name) init_paths();
     return user_name;
 }
 
 /* return the standard version string */
-const char *wine_get_version(void)
+const char *wine_get_version_obsolete(void)
 {
     return PACKAGE_VERSION;
 }
@@ -1499,10 +1510,9 @@ const void *wine_get_patches(void)
 }
 
 /* return the build id string */
-const char *wine_get_build_id(void)
+const char *wine_get_build_id_obsolete(void)
 {
-    extern const char wine_build[];
-    return wine_build;
+    return PACKAGE_VERSION;
 }
 
 /* exec a binary using the preloader if requested; helper for wine_exec_wine_binary */
@@ -1547,7 +1557,7 @@ static void preloader_exec( char **argv, int use_preloader )
 }
 
 /* exec a wine internal binary (either the wine loader or the wine server) */
-void wine_exec_wine_binary( const char *name, char **argv, const char *env_var )
+void wine_exec_wine_binary_obsolete( const char *name, char **argv, const char *env_var )
 {
     const char *path, *pos, *ptr;
     int use_preloader;
@@ -1614,3 +1624,15 @@ void wine_exec_wine_binary( const char *name, char **argv, const char *env_var )
     preloader_exec( argv, use_preloader );
     free( argv[0] );
 }
+
+__ASM_OBSOLETE(wine_init_argv0_path);
+__ASM_OBSOLETE(wine_get_build_dir);
+__ASM_OBSOLETE(wine_get_build_id);
+__ASM_OBSOLETE(wine_get_config_dir);
+__ASM_OBSOLETE(wine_get_data_dir);
+__ASM_OBSOLETE(wine_get_server_dir);
+__ASM_OBSOLETE(wine_get_user_name);
+__ASM_OBSOLETE(wine_get_version);
+__ASM_OBSOLETE(wine_exec_wine_binary);
+
+#endif /* __ASM_OBSOLETE */

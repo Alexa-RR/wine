@@ -21,6 +21,15 @@
 
 #include "ntddk.h"
 
+#define PHCM_ERROR_INVALID_PARAMETER    ((char)-1)
+#define PHCM_ERROR_NO_TEB               ((char)-2)
+#define PHCM_ERROR_NO_PEB               ((char)-3)
+#define PHCM_APPLICATION_DEFAULT        ((char)0)
+#define PHCM_DISGUISE_PLACEHOLDERS      ((char)1)
+#define PHCM_EXPOSE_PLACEHOLDERS        ((char)2)
+#define PHCM_DISGUISE_FULL_PLACEHOLDERS ((char)3)
+#define PHCM_MAX                        ((char)3)
+
 typedef struct _EX_PUSH_LOCK EX_PUSH_LOCK, *PEX_PUSH_LOCK;
 
 typedef enum _FS_FILTER_SECTION_SYNC_TYPE
@@ -132,11 +141,14 @@ typedef struct _FS_FILTER_CALLBACKS
 BOOLEAN WINAPI FsRtlIsNameInExpression(PUNICODE_STRING, PUNICODE_STRING, BOOLEAN, PWCH);
 DEVICE_OBJECT * WINAPI IoGetAttachedDevice(DEVICE_OBJECT*);
 PEPROCESS WINAPI IoGetRequestorProcess(IRP*);
+void WINAPI KeStackAttachProcess(KPROCESS*,KAPC_STATE*);
+void WINAPI KeUnstackDetachProcess(KAPC_STATE*);
 NTSTATUS WINAPI ObOpenObjectByPointer(void*,ULONG,PACCESS_STATE,ACCESS_MASK,POBJECT_TYPE,KPROCESSOR_MODE,HANDLE*);
 NTSTATUS WINAPI ObQueryNameString(PVOID,POBJECT_NAME_INFORMATION,ULONG,PULONG);
 BOOLEAN WINAPI PsIsSystemThread(PETHREAD);
 NTSTATUS WINAPI PsLookupProcessByProcessId(HANDLE,PEPROCESS*);
 NTSTATUS WINAPI PsLookupThreadByThreadId(HANDLE,PETHREAD*);
 void WINAPI PsRevertToSelf(void);
+char WINAPI RtlQueryProcessPlaceholderCompatibilityMode(void);
 
 #endif

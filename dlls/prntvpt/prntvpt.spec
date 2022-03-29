@@ -1,22 +1,22 @@
 @ stdcall PTQuerySchemaVersionSupport(wstr ptr)
 @ stdcall PTOpenProvider(wstr long ptr)
 @ stdcall PTOpenProviderEx(wstr long long ptr ptr)
-@ stub PTCloseProvider
+@ stdcall PTCloseProvider(ptr)
 @ stub BindPTProviderThunk
-@ stub PTGetPrintCapabilities
-@ stub PTMergeAndValidatePrintTicket
-@ stub PTConvertPrintTicketToDevMode
-@ stub PTConvertDevModeToPrintTicket
-@ stub PTReleaseMemory
+@ stdcall PTGetPrintCapabilities(ptr ptr ptr ptr)
+@ stdcall PTMergeAndValidatePrintTicket(ptr ptr ptr long ptr ptr)
+@ stdcall PTConvertPrintTicketToDevMode(ptr ptr long long ptr ptr ptr)
+@ stdcall PTConvertDevModeToPrintTicket(ptr long ptr long ptr)
+@ stdcall PTReleaseMemory(ptr)
 @ stub ConvertDevModeToPrintTicketThunk2
 @ stub ConvertDevModeToPrintTicketThunk
 @ stub ConvertPrintTicketToDevModeThunk2
 @ stub ConvertPrintTicketToDevModeThunk
-@ stub DllCanUnloadNow
+@ stdcall -private DllCanUnloadNow()
 @ stub DllGetClassObject
 @ stdcall -private DllMain(long long ptr)
-@ stub DllRegisterServer
-@ stub DllUnregisterServer
+@ stdcall -private DllRegisterServer()
+@ stdcall -private DllUnregisterServer()
 @ stub GetDeviceDefaultPrintTicketThunk
 @ stub GetDeviceNamespacesThunk
 @ stub GetPrintCapabilitiesThunk2

@@ -19,12 +19,13 @@
 #ifndef _WINE_WINHTTP_PRIVATE_H_
 #define _WINE_WINHTTP_PRIVATE_H_
 
-#include "wine/heap.h"
-#include "wine/list.h"
-
 #include "ole2.h"
 #include "sspi.h"
 #include "wincrypt.h"
+
+#include "wine/list.h"
+
+#define WINHTTP_HANDLE_TYPE_SOCKET 4
 
 struct object_header;
 struct object_vtbl
@@ -48,8 +49,10 @@ struct object_header
     LONG refs;
     WINHTTP_STATUS_CALLBACK callback;
     DWORD notify_mask;
+    LONG recursion_count;
     struct list entry;
-    struct list children;
+    volatile LONG pending_sends;
+    volatile LONG pending_receives;
 };
 
 struct hostdata
@@ -107,7 +110,7 @@ struct netconn
     ULONGLONG keep_until;
     CtxtHandle ssl_ctx;
     SecPkgContext_StreamSizes ssl_sizes;
-    char *ssl_buf;
+    char *ssl_read_buf, *ssl_write_buf;
     char *extra_buf;
     size_t extra_len;
     char *peek_msg;
@@ -154,10 +157,23 @@ struct authinfo
     BOOL finished; /* finished authenticating */
 };
 
+struct queue
+{
+    SRWLOCK lock;
+    struct list queued_tasks;
+    BOOL callback_running;
+};
+
+enum request_flags
+{
+    REQUEST_FLAG_WEBSOCKET_UPGRADE = 0x01,
+};
+
 struct request
 {
     struct object_header hdr;
     struct connect *connect;
+    enum request_flags flags;
     WCHAR *verb;
     WCHAR *path;
     WCHAR *version;
@@ -176,6 +192,8 @@ struct request
     int send_timeout;
     int receive_timeout;
     int receive_response_timeout;
+    DWORD max_redirects;
+    DWORD redirect_count; /* total number of redirects during this request */
     WCHAR *status_text;
     DWORD content_length; /* total number of bytes to be read */
     DWORD content_read;   /* bytes read so far */
@@ -189,11 +207,7 @@ struct request
     DWORD num_headers;
     struct authinfo *authinfo;
     struct authinfo *proxy_authinfo;
-    HANDLE task_wait;
-    HANDLE task_cancel;
-    BOOL   task_proc_running;
-    struct list task_queue;
-    CRITICAL_SECTION task_cs;
+    struct queue queue;
     struct
     {
         WCHAR *username;
@@ -201,16 +215,77 @@ struct request
     } creds[TARGET_MAX][SCHEME_MAX];
 };
 
+enum socket_state
+{
+    SOCKET_STATE_OPEN     = 0,
+    SOCKET_STATE_SHUTDOWN = 1,
+    SOCKET_STATE_CLOSED   = 2,
+};
+
+/* rfc6455 */
+enum socket_opcode
+{
+    SOCKET_OPCODE_CONTINUE  = 0x00,
+    SOCKET_OPCODE_TEXT      = 0x01,
+    SOCKET_OPCODE_BINARY    = 0x02,
+    SOCKET_OPCODE_RESERVED3 = 0x03,
+    SOCKET_OPCODE_RESERVED4 = 0x04,
+    SOCKET_OPCODE_RESERVED5 = 0x05,
+    SOCKET_OPCODE_RESERVED6 = 0x06,
+    SOCKET_OPCODE_RESERVED7 = 0x07,
+    SOCKET_OPCODE_CLOSE     = 0x08,
+    SOCKET_OPCODE_PING      = 0x09,
+    SOCKET_OPCODE_PONG      = 0x0a,
+    SOCKET_OPCODE_INVALID   = 0xff,
+};
+
+enum fragment_type
+{
+    SOCKET_FRAGMENT_NONE,
+    SOCKET_FRAGMENT_BINARY,
+    SOCKET_FRAGMENT_UTF8,
+};
+
+struct socket
+{
+    struct object_header hdr;
+    struct request *request;
+    enum socket_state state;
+    struct queue send_q;
+    struct queue recv_q;
+    enum socket_opcode opcode;
+    DWORD read_size;
+    char mask[4];
+    unsigned int mask_index;
+    BOOL close_frame_received;
+    DWORD close_frame_receive_err;
+    USHORT status;
+    char reason[123];
+    DWORD reason_len;
+    char *send_frame_buffer;
+    unsigned int send_frame_buffer_size;
+    unsigned int send_remaining_size;
+    unsigned int bytes_in_send_frame_buffer;
+    unsigned int client_buffer_offset;
+    SRWLOCK send_lock;
+    volatile LONG pending_noncontrol_send;
+    enum fragment_type sending_fragment_type;
+    enum fragment_type receiving_fragment_type;
+    BOOL last_receive_final;
+};
+
+typedef void (*TASK_CALLBACK)( void *ctx );
+
 struct task_header
 {
     struct list entry;
-    struct request *request;
-    void (*proc)( struct task_header * );
+    TASK_CALLBACK callback;
+    struct object_header *obj;
 };
 
 struct send_request
 {
-    struct task_header hdr;
+    struct task_header task_hdr;
     WCHAR *headers;
     DWORD headers_len;
     void *optional;
@@ -221,18 +296,18 @@ struct send_request
 
 struct receive_response
 {
-    struct task_header hdr;
+    struct task_header task_hdr;
 };
 
 struct query_data
 {
-    struct task_header hdr;
+    struct task_header task_hdr;
     DWORD *available;
 };
 
 struct read_data
 {
-    struct task_header hdr;
+    struct task_header task_hdr;
     void *buffer;
     DWORD to_read;
     DWORD *read;
@@ -240,10 +315,38 @@ struct read_data
 
 struct write_data
 {
-    struct task_header hdr;
+    struct task_header task_hdr;
     const void *buffer;
     DWORD to_write;
     DWORD *written;
+};
+
+struct socket_send
+{
+    struct task_header task_hdr;
+    WINHTTP_WEB_SOCKET_BUFFER_TYPE type;
+    const void *buf;
+    DWORD len;
+    WSAOVERLAPPED ovr;
+    BOOL complete_async;
+};
+
+struct socket_receive
+{
+    struct task_header task_hdr;
+    void *buf;
+    DWORD len;
+};
+
+struct socket_shutdown
+{
+    struct task_header task_hdr;
+    USHORT status;
+    char reason[123];
+    DWORD len;
+    BOOL send_callback;
+    WSAOVERLAPPED ovr;
+    BOOL complete_async;
 };
 
 struct object_header *addref_object( struct object_header * ) DECLSPEC_HIDDEN;
@@ -254,44 +357,41 @@ BOOL free_handle( HINTERNET ) DECLSPEC_HIDDEN;
 
 void send_callback( struct object_header *, DWORD, LPVOID, DWORD ) DECLSPEC_HIDDEN;
 void close_connection( struct request * ) DECLSPEC_HIDDEN;
+void init_queue( struct queue *queue ) DECLSPEC_HIDDEN;
+void stop_queue( struct queue * ) DECLSPEC_HIDDEN;
 
 void netconn_close( struct netconn * ) DECLSPEC_HIDDEN;
-struct netconn *netconn_create( struct hostdata *, const struct sockaddr_storage *, int ) DECLSPEC_HIDDEN;
+DWORD netconn_create( struct hostdata *, const struct sockaddr_storage *, int, struct netconn ** ) DECLSPEC_HIDDEN;
 void netconn_unload( void ) DECLSPEC_HIDDEN;
 ULONG netconn_query_data_available( struct netconn * ) DECLSPEC_HIDDEN;
-BOOL netconn_recv( struct netconn *, void *, size_t, int, int * ) DECLSPEC_HIDDEN;
-BOOL netconn_resolve( WCHAR *, INTERNET_PORT, struct sockaddr_storage *, int ) DECLSPEC_HIDDEN;
-BOOL netconn_secure_connect( struct netconn *, WCHAR *, DWORD, CredHandle *, BOOL ) DECLSPEC_HIDDEN;
-BOOL netconn_send( struct netconn *, const void *, size_t, int * ) DECLSPEC_HIDDEN;
+DWORD netconn_recv( struct netconn *, void *, size_t, int, int * ) DECLSPEC_HIDDEN;
+DWORD netconn_resolve( WCHAR *, INTERNET_PORT, struct sockaddr_storage *, int ) DECLSPEC_HIDDEN;
+DWORD netconn_secure_connect( struct netconn *, WCHAR *, DWORD, CredHandle *, BOOL ) DECLSPEC_HIDDEN;
+DWORD netconn_send( struct netconn *, const void *, size_t, int *, WSAOVERLAPPED * ) DECLSPEC_HIDDEN;
 DWORD netconn_set_timeout( struct netconn *, BOOL, int ) DECLSPEC_HIDDEN;
 BOOL netconn_is_alive( struct netconn * ) DECLSPEC_HIDDEN;
 const void *netconn_get_certificate( struct netconn * ) DECLSPEC_HIDDEN;
 int netconn_get_cipher_strength( struct netconn * ) DECLSPEC_HIDDEN;
 
 BOOL set_cookies( struct request *, const WCHAR * ) DECLSPEC_HIDDEN;
-BOOL add_cookie_headers( struct request * ) DECLSPEC_HIDDEN;
-BOOL add_request_headers( struct request *, const WCHAR *, DWORD, DWORD ) DECLSPEC_HIDDEN;
+DWORD add_cookie_headers( struct request * ) DECLSPEC_HIDDEN;
+DWORD add_request_headers( struct request *, const WCHAR *, DWORD, DWORD ) DECLSPEC_HIDDEN;
 void destroy_cookies( struct session * ) DECLSPEC_HIDDEN;
 BOOL set_server_for_hostname( struct connect *, const WCHAR *, INTERNET_PORT ) DECLSPEC_HIDDEN;
 void destroy_authinfo( struct authinfo * ) DECLSPEC_HIDDEN;
 
 void release_host( struct hostdata * ) DECLSPEC_HIDDEN;
-BOOL process_header( struct request *, const WCHAR *, const WCHAR *, DWORD, BOOL ) DECLSPEC_HIDDEN;
+DWORD process_header( struct request *, const WCHAR *, const WCHAR *, DWORD, BOOL ) DECLSPEC_HIDDEN;
 
 extern HRESULT WinHttpRequest_create( void ** ) DECLSPEC_HIDDEN;
 void release_typelib( void ) DECLSPEC_HIDDEN;
-
-static inline void* __WINE_ALLOC_SIZE(2) heap_realloc_zero( LPVOID mem, SIZE_T size )
-{
-    return HeapReAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, mem, size );
-}
 
 static inline WCHAR *strdupW( const WCHAR *src )
 {
     WCHAR *dst;
 
     if (!src) return NULL;
-    dst = heap_alloc( (lstrlenW( src ) + 1) * sizeof(WCHAR) );
+    dst = malloc( (lstrlenW( src ) + 1) * sizeof(WCHAR) );
     if (dst) lstrcpyW( dst, src );
     return dst;
 }
@@ -302,7 +402,7 @@ static inline WCHAR *strdupAW( const char *src )
     if (src)
     {
         int len = MultiByteToWideChar( CP_ACP, 0, src, -1, NULL, 0 );
-        if ((dst = heap_alloc( len * sizeof(WCHAR) )))
+        if ((dst = malloc( len * sizeof(WCHAR) )))
             MultiByteToWideChar( CP_ACP, 0, src, -1, dst, len );
     }
     return dst;
@@ -314,7 +414,7 @@ static inline char *strdupWA( const WCHAR *src )
     if (src)
     {
         int len = WideCharToMultiByte( CP_ACP, 0, src, -1, NULL, 0, NULL, NULL );
-        if ((dst = heap_alloc( len )))
+        if ((dst = malloc( len )))
             WideCharToMultiByte( CP_ACP, 0, src, -1, dst, len, NULL, NULL );
     }
     return dst;
@@ -326,7 +426,7 @@ static inline char *strdupWA_sized( const WCHAR *src, DWORD size )
     if (src)
     {
         int len = WideCharToMultiByte( CP_ACP, 0, src, size, NULL, 0, NULL, NULL ) + 1;
-        if ((dst = heap_alloc( len )))
+        if ((dst = malloc( len )))
         {
             WideCharToMultiByte( CP_ACP, 0, src, size, dst, len, NULL, NULL );
             dst[len - 1] = 0;
@@ -336,5 +436,7 @@ static inline char *strdupWA_sized( const WCHAR *src, DWORD size )
 }
 
 extern HINSTANCE winhttp_instance DECLSPEC_HIDDEN;
+
+#define MAX_FRAME_BUFFER_SIZE 65536
 
 #endif /* _WINE_WINHTTP_PRIVATE_H_ */

@@ -25,6 +25,7 @@ import "oaidl.idl"; /* needed by widl */
 
 [
     uuid(a2cfdbd3-2bbf-4b1c-a414-5a5904e634c9),
+    id(3),
     version(1.0)
 ]
 library register_test
@@ -162,5 +163,18 @@ library register_test
     {
         UINT32 field;
         HRESULT hr;
+    };
+
+    [
+        uuid(f073cd92-a199-11ea-bb37-0242ac130002),
+        dllname("test.dll")
+    ]
+    module TestGetDllEntry
+    {
+        [propget, entry(1)]
+        int test1([out] int *i);
+
+        [propput, entry(2)]
+        int test1([in] int i);
     };
 }

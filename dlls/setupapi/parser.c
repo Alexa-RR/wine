@@ -724,7 +724,7 @@ static const WCHAR *value_name_state( struct parser *parser, const WCHAR *pos )
             set_state( parser, EOL_BACKSLASH );
             return p;
         default:
-            if (!iswspace(*p)) token_end = p + 1;
+            if (*p && !iswspace(*p)) token_end = p + 1;
             else
             {
                 push_token( parser, p );
@@ -838,7 +838,7 @@ static const WCHAR *trailing_spaces_state( struct parser *parser, const WCHAR *p
             set_state( parser, EOL_BACKSLASH );
             return p;
         }
-        if (!iswspace(*p)) break;
+        if (*p && !iswspace(*p)) break;
     }
     pop_state( parser );
     return p;
@@ -1341,7 +1341,7 @@ LONG WINAPI SetupGetLineCountW( HINF hinf, PCWSTR section )
         if (ret == -1) ret = 0;
         ret += file->sections[section_index]->nb_lines;
     }
-    TRACE( "(%p,%s) returning %d\n", hinf, debugstr_w(section), ret );
+    TRACE( "(%p,%s) returning %ld\n", hinf, debugstr_w(section), ret );
     SetLastError( (ret == -1) ? ERROR_SECTION_NOT_FOUND : 0 );
     return ret;
 }
@@ -1384,7 +1384,7 @@ BOOL WINAPI SetupGetLineByIndexW( HINF hinf, PCWSTR section, DWORD index, INFCON
             context->Section    = section_index;
             context->Line       = index;
             SetLastError( 0 );
-            TRACE( "(%p,%s): returning %d/%d\n",
+            TRACE( "(%p,%s): returning %d/%ld\n",
                    hinf, debugstr_w(section), section_index, index );
             return TRUE;
         }
@@ -1728,7 +1728,7 @@ BOOL WINAPI SetupGetStringFieldA( PINFCONTEXT context, DWORD index, PSTR buffer,
         }
         PARSER_string_substA( file, field->text, buffer, size );
 
-        TRACE( "context %p/%p/%d/%d index %d returning %s\n",
+        TRACE( "context %p/%p/%d/%d index %ld returning %s\n",
                context->Inf, context->CurrentInf, context->Section, context->Line,
                index, debugstr_a(buffer) );
     }
@@ -1759,7 +1759,7 @@ BOOL WINAPI SetupGetStringFieldW( PINFCONTEXT context, DWORD index, PWSTR buffer
         }
         PARSER_string_substW( file, field->text, buffer, size );
 
-        TRACE( "context %p/%p/%d/%d index %d returning %s\n",
+        TRACE( "context %p/%p/%d/%d index %ld returning %s\n",
                context->Inf, context->CurrentInf, context->Section, context->Line,
                index, debugstr_w(buffer) );
     }
@@ -1858,7 +1858,7 @@ BOOL WINAPI SetupGetBinaryField( PINFCONTEXT context, DWORD index, BYTE *buffer,
         }
         buffer[i - index] = value;
     }
-    TRACE( "%p/%p/%d/%d index %d\n",
+    TRACE( "%p/%p/%d/%d index %ld\n",
            context->Inf, context->CurrentInf, context->Section, context->Line, index );
     return TRUE;
 }

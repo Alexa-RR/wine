@@ -26,9 +26,13 @@
 #include "ntdll_test.h"
 #include "in6addr.h"
 #include "inaddr.h"
+<<<<<<< HEAD
 #include "initguid.h"
 #define COBJMACROS
 #include "shobjidl.h"
+=======
+#include "ip2string.h"
+>>>>>>> master
 
 #ifndef __WINE_WINTERNL_H
 
@@ -66,54 +70,28 @@ static inline USHORT __my_ushort_swap(USHORT s)
 
 /* Function ptrs for ntdll calls */
 static HMODULE hntdll = 0;
-static SIZE_T    (WINAPI  *pRtlCompareMemory)(LPCVOID,LPCVOID,SIZE_T);
-static SIZE_T    (WINAPI  *pRtlCompareMemoryUlong)(PULONG, SIZE_T, ULONG);
-static NTSTATUS  (WINAPI  *pRtlDeleteTimer)(HANDLE, HANDLE, HANDLE);
 static VOID      (WINAPI  *pRtlMoveMemory)(LPVOID,LPCVOID,SIZE_T);
 static VOID      (WINAPI  *pRtlFillMemory)(LPVOID,SIZE_T,BYTE);
 static VOID      (WINAPI  *pRtlFillMemoryUlong)(LPVOID,SIZE_T,ULONG);
 static VOID      (WINAPI  *pRtlZeroMemory)(LPVOID,SIZE_T);
 static ULONGLONG (WINAPIV *pRtlUlonglongByteSwap)(ULONGLONG source);
-static ULONG     (WINAPI  *pRtlUniform)(PULONG);
-static ULONG     (WINAPI  *pRtlRandom)(PULONG);
-static BOOLEAN   (WINAPI  *pRtlAreAllAccessesGranted)(ACCESS_MASK, ACCESS_MASK);
-static BOOLEAN   (WINAPI  *pRtlAreAnyAccessesGranted)(ACCESS_MASK, ACCESS_MASK);
-static DWORD     (WINAPI  *pRtlComputeCrc32)(DWORD,const BYTE*,INT);
-static void      (WINAPI * pRtlInitializeHandleTable)(ULONG, ULONG, RTL_HANDLE_TABLE *);
-static BOOLEAN   (WINAPI * pRtlIsValidIndexHandle)(const RTL_HANDLE_TABLE *, ULONG, RTL_HANDLE **);
-static NTSTATUS  (WINAPI * pRtlDestroyHandleTable)(RTL_HANDLE_TABLE *);
-static RTL_HANDLE * (WINAPI * pRtlAllocateHandle)(RTL_HANDLE_TABLE *, ULONG *);
-static BOOLEAN   (WINAPI * pRtlFreeHandle)(RTL_HANDLE_TABLE *, RTL_HANDLE *);
-static NTSTATUS  (WINAPI *pRtlAllocateAndInitializeSid)(PSID_IDENTIFIER_AUTHORITY,BYTE,DWORD,DWORD,DWORD,DWORD,DWORD,DWORD,DWORD,DWORD,PSID*);
-static NTSTATUS  (WINAPI *pRtlFreeSid)(PSID);
 static DWORD     (WINAPI *pRtlGetThreadErrorMode)(void);
 static NTSTATUS  (WINAPI *pRtlSetThreadErrorMode)(DWORD, LPDWORD);
-static IMAGE_BASE_RELOCATION *(WINAPI *pLdrProcessRelocationBlock)(void*,UINT,USHORT*,INT_PTR);
-static CHAR *    (WINAPI *pRtlIpv4AddressToStringA)(const IN_ADDR *, LPSTR);
 static NTSTATUS  (WINAPI *pRtlIpv4AddressToStringExA)(const IN_ADDR *, USHORT, LPSTR, PULONG);
-static NTSTATUS  (WINAPI *pRtlIpv4StringToAddressA)(PCSTR, BOOLEAN, PCSTR *, IN_ADDR *);
 static NTSTATUS  (WINAPI *pRtlIpv4StringToAddressExA)(PCSTR, BOOLEAN, IN_ADDR *, PUSHORT);
-static CHAR *    (WINAPI *pRtlIpv6AddressToStringA)(struct in6_addr *, PSTR);
 static NTSTATUS  (WINAPI *pRtlIpv6AddressToStringExA)(struct in6_addr *, ULONG, USHORT, PCHAR, PULONG);
-static NTSTATUS  (WINAPI *pRtlIpv6StringToAddressA)(PCSTR, PCSTR *, struct in6_addr *);
-static NTSTATUS  (WINAPI *pRtlIpv6StringToAddressW)(PCWSTR, PCWSTR *, struct in6_addr *);
 static NTSTATUS  (WINAPI *pRtlIpv6StringToAddressExA)(PCSTR, struct in6_addr *, PULONG, PUSHORT);
 static NTSTATUS  (WINAPI *pRtlIpv6StringToAddressExW)(PCWSTR, struct in6_addr *, PULONG, PUSHORT);
-static NTSTATUS  (WINAPI *pLdrAddRefDll)(ULONG, HMODULE);
-static NTSTATUS  (WINAPI *pLdrLockLoaderLock)(ULONG, ULONG*, ULONG_PTR*);
-static NTSTATUS  (WINAPI *pLdrUnlockLoaderLock)(ULONG, ULONG_PTR);
-static NTSTATUS  (WINAPI *pRtlMultiByteToUnicodeN)(LPWSTR, DWORD, LPDWORD, LPCSTR, DWORD);
-static NTSTATUS  (WINAPI *pRtlGetCompressionWorkSpaceSize)(USHORT, PULONG, PULONG);
-static NTSTATUS  (WINAPI *pRtlDecompressBuffer)(USHORT, PUCHAR, ULONG, const UCHAR*, ULONG, PULONG);
-static NTSTATUS  (WINAPI *pRtlDecompressFragment)(USHORT, PUCHAR, ULONG, const UCHAR*, ULONG, ULONG, PULONG, PVOID);
-static NTSTATUS  (WINAPI *pRtlCompressBuffer)(USHORT, const UCHAR*, ULONG, PUCHAR, ULONG, ULONG, PULONG, PVOID);
 static BOOL      (WINAPI *pRtlIsCriticalSectionLocked)(CRITICAL_SECTION *);
 static BOOL      (WINAPI *pRtlIsCriticalSectionLockedByThread)(CRITICAL_SECTION *);
 static NTSTATUS  (WINAPI *pRtlInitializeCriticalSectionEx)(CRITICAL_SECTION *, ULONG, ULONG);
 static NTSTATUS  (WINAPI *pLdrEnumerateLoadedModules)(void *, void *, void *);
+<<<<<<< HEAD
 static NTSTATUS  (WINAPI *pRtlQueryPackageIdentity)(HANDLE, WCHAR*, SIZE_T*, WCHAR*, SIZE_T*, BOOLEAN*);
 static NTSTATUS  (WINAPI *pRtlMakeSelfRelativeSD)(PSECURITY_DESCRIPTOR,PSECURITY_DESCRIPTOR,LPDWORD);
 static NTSTATUS  (WINAPI *pRtlAbsoluteToSelfRelativeSD)(PSECURITY_DESCRIPTOR,PSECURITY_DESCRIPTOR,PULONG);
+=======
+>>>>>>> master
 static NTSTATUS  (WINAPI *pLdrRegisterDllNotification)(ULONG, PLDR_DLL_NOTIFICATION_FUNCTION, void *, void **);
 static NTSTATUS  (WINAPI *pLdrUnregisterDllNotification)(void *);
 
@@ -138,54 +116,28 @@ static void InitFunctionPtrs(void)
     hntdll = LoadLibraryA("ntdll.dll");
     ok(hntdll != 0, "LoadLibrary failed\n");
     if (hntdll) {
-	pRtlCompareMemory = (void *)GetProcAddress(hntdll, "RtlCompareMemory");
-	pRtlCompareMemoryUlong = (void *)GetProcAddress(hntdll, "RtlCompareMemoryUlong");
-        pRtlDeleteTimer = (void *)GetProcAddress(hntdll, "RtlDeleteTimer");
 	pRtlMoveMemory = (void *)GetProcAddress(hntdll, "RtlMoveMemory");
 	pRtlFillMemory = (void *)GetProcAddress(hntdll, "RtlFillMemory");
 	pRtlFillMemoryUlong = (void *)GetProcAddress(hntdll, "RtlFillMemoryUlong");
 	pRtlZeroMemory = (void *)GetProcAddress(hntdll, "RtlZeroMemory");
 	pRtlUlonglongByteSwap = (void *)GetProcAddress(hntdll, "RtlUlonglongByteSwap");
-	pRtlUniform = (void *)GetProcAddress(hntdll, "RtlUniform");
-	pRtlRandom = (void *)GetProcAddress(hntdll, "RtlRandom");
-	pRtlAreAllAccessesGranted = (void *)GetProcAddress(hntdll, "RtlAreAllAccessesGranted");
-	pRtlAreAnyAccessesGranted = (void *)GetProcAddress(hntdll, "RtlAreAnyAccessesGranted");
-	pRtlComputeCrc32 = (void *)GetProcAddress(hntdll, "RtlComputeCrc32");
-	pRtlInitializeHandleTable = (void *)GetProcAddress(hntdll, "RtlInitializeHandleTable");
-	pRtlIsValidIndexHandle = (void *)GetProcAddress(hntdll, "RtlIsValidIndexHandle");
-	pRtlDestroyHandleTable = (void *)GetProcAddress(hntdll, "RtlDestroyHandleTable");
-	pRtlAllocateHandle = (void *)GetProcAddress(hntdll, "RtlAllocateHandle");
-	pRtlFreeHandle = (void *)GetProcAddress(hntdll, "RtlFreeHandle");
-        pRtlAllocateAndInitializeSid = (void *)GetProcAddress(hntdll, "RtlAllocateAndInitializeSid");
-        pRtlFreeSid = (void *)GetProcAddress(hntdll, "RtlFreeSid");
         pRtlGetThreadErrorMode = (void *)GetProcAddress(hntdll, "RtlGetThreadErrorMode");
         pRtlSetThreadErrorMode = (void *)GetProcAddress(hntdll, "RtlSetThreadErrorMode");
-        pLdrProcessRelocationBlock  = (void *)GetProcAddress(hntdll, "LdrProcessRelocationBlock");
-        pRtlIpv4AddressToStringA = (void *)GetProcAddress(hntdll, "RtlIpv4AddressToStringA");
         pRtlIpv4AddressToStringExA = (void *)GetProcAddress(hntdll, "RtlIpv4AddressToStringExA");
-        pRtlIpv4StringToAddressA = (void *)GetProcAddress(hntdll, "RtlIpv4StringToAddressA");
         pRtlIpv4StringToAddressExA = (void *)GetProcAddress(hntdll, "RtlIpv4StringToAddressExA");
-        pRtlIpv6AddressToStringA = (void *)GetProcAddress(hntdll, "RtlIpv6AddressToStringA");
         pRtlIpv6AddressToStringExA = (void *)GetProcAddress(hntdll, "RtlIpv6AddressToStringExA");
-        pRtlIpv6StringToAddressA = (void *)GetProcAddress(hntdll, "RtlIpv6StringToAddressA");
-        pRtlIpv6StringToAddressW = (void *)GetProcAddress(hntdll, "RtlIpv6StringToAddressW");
         pRtlIpv6StringToAddressExA = (void *)GetProcAddress(hntdll, "RtlIpv6StringToAddressExA");
         pRtlIpv6StringToAddressExW = (void *)GetProcAddress(hntdll, "RtlIpv6StringToAddressExW");
-        pLdrAddRefDll = (void *)GetProcAddress(hntdll, "LdrAddRefDll");
-        pLdrLockLoaderLock = (void *)GetProcAddress(hntdll, "LdrLockLoaderLock");
-        pLdrUnlockLoaderLock = (void *)GetProcAddress(hntdll, "LdrUnlockLoaderLock");
-        pRtlMultiByteToUnicodeN = (void *)GetProcAddress(hntdll, "RtlMultiByteToUnicodeN");
-        pRtlGetCompressionWorkSpaceSize = (void *)GetProcAddress(hntdll, "RtlGetCompressionWorkSpaceSize");
-        pRtlDecompressBuffer = (void *)GetProcAddress(hntdll, "RtlDecompressBuffer");
-        pRtlDecompressFragment = (void *)GetProcAddress(hntdll, "RtlDecompressFragment");
-        pRtlCompressBuffer = (void *)GetProcAddress(hntdll, "RtlCompressBuffer");
         pRtlIsCriticalSectionLocked = (void *)GetProcAddress(hntdll, "RtlIsCriticalSectionLocked");
         pRtlIsCriticalSectionLockedByThread = (void *)GetProcAddress(hntdll, "RtlIsCriticalSectionLockedByThread");
         pRtlInitializeCriticalSectionEx = (void *)GetProcAddress(hntdll, "RtlInitializeCriticalSectionEx");
         pLdrEnumerateLoadedModules = (void *)GetProcAddress(hntdll, "LdrEnumerateLoadedModules");
+<<<<<<< HEAD
         pRtlQueryPackageIdentity = (void *)GetProcAddress(hntdll, "RtlQueryPackageIdentity");
         pRtlMakeSelfRelativeSD = (void *)GetProcAddress(hntdll, "RtlMakeSelfRelativeSD");
         pRtlAbsoluteToSelfRelativeSD = (void *)GetProcAddress(hntdll, "RtlAbsoluteToSelfRelativeSD");
+=======
+>>>>>>> master
         pLdrRegisterDllNotification = (void *)GetProcAddress(hntdll, "LdrRegisterDllNotification");
         pLdrUnregisterDllNotification = (void *)GetProcAddress(hntdll, "LdrUnregisterDllNotification");
     }
@@ -198,18 +150,30 @@ static void InitFunctionPtrs(void)
     ok(strlen(src) == 15, "Source must be 16 bytes long!\n");
 }
 
-#define COMP(str1,str2,cmplen,len) size = pRtlCompareMemory(str1, str2, cmplen); \
-  ok(size == len, "Expected %ld, got %ld\n", size, (SIZE_T)len)
+static void test_RtlQueryProcessDebugInformation(void)
+{
+    DEBUG_BUFFER *buffer;
+    NTSTATUS status;
+
+    buffer = RtlCreateQueryDebugBuffer( 0, 0 );
+    ok( buffer != NULL, "RtlCreateQueryDebugBuffer returned NULL" );
+
+    status = RtlQueryProcessDebugInformation( GetCurrentThreadId(), PDI_HEAPS | PDI_HEAP_BLOCKS, buffer );
+    ok( status == STATUS_INVALID_CID, "RtlQueryProcessDebugInformation returned %lx\n", status );
+
+    status = RtlQueryProcessDebugInformation( GetCurrentProcessId(), PDI_HEAPS | PDI_HEAP_BLOCKS, buffer );
+    ok( !status, "RtlQueryProcessDebugInformation returned %lx\n", status );
+
+    status = RtlDestroyQueryDebugBuffer( buffer );
+    ok( !status, "RtlDestroyQueryDebugBuffer returned %lx\n", status );
+}
+
+#define COMP(str1,str2,cmplen,len) size = RtlCompareMemory(str1, str2, cmplen); \
+  ok(size == len, "Expected %Id, got %Id\n", size, (SIZE_T)len)
 
 static void test_RtlCompareMemory(void)
 {
   SIZE_T size;
-
-  if (!pRtlCompareMemory)
-  {
-    win_skip("RtlCompareMemory is not available\n");
-    return;
-  }
 
   strcpy(dest, src);
 
@@ -224,50 +188,44 @@ static void test_RtlCompareMemoryUlong(void)
     ULONG a[10];
     ULONG result;
 
-    if (!pRtlCompareMemoryUlong)
-    {
-        win_skip("RtlCompareMemoryUlong is not available\n");
-        return;
-    }
-
     a[0]= 0x0123;
     a[1]= 0x4567;
     a[2]= 0x89ab;
     a[3]= 0xcdef;
-    result = pRtlCompareMemoryUlong(a, 0, 0x0123);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 0, 0x0123) returns %u, expected 0\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 3, 0x0123);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 3, 0x0123) returns %u, expected 0\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 4, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 4, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 5, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 5, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 7, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 7, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 8, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 8, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 9, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 9, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 4, 0x0127);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 4, 0x0127) returns %u, expected 0\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 4, 0x7123);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 4, 0x7123) returns %u, expected 0\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 16, 0x4567);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 16, 0x4567) returns %u, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 0, 0x0123);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 0, 0x0123) returns %lu, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 3, 0x0123);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 3, 0x0123) returns %lu, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 4, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 4, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 5, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 5, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 7, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 7, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 8, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 8, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 9, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 9, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 4, 0x0127);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 4, 0x0127) returns %lu, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 4, 0x7123);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 4, 0x7123) returns %lu, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 16, 0x4567);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 16, 0x4567) returns %lu, expected 0\n", a, result);
 
     a[1]= 0x0123;
-    result = pRtlCompareMemoryUlong(a, 3, 0x0123);
-    ok(result == 0, "RtlCompareMemoryUlong(%p, 3, 0x0123) returns %u, expected 0\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 4, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 4, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 5, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 5, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 7, 0x0123);
-    ok(result == 4, "RtlCompareMemoryUlong(%p, 7, 0x0123) returns %u, expected 4\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 8, 0x0123);
-    ok(result == 8, "RtlCompareMemoryUlong(%p, 8, 0x0123) returns %u, expected 8\n", a, result);
-    result = pRtlCompareMemoryUlong(a, 9, 0x0123);
-    ok(result == 8, "RtlCompareMemoryUlong(%p, 9, 0x0123) returns %u, expected 8\n", a, result);
+    result = RtlCompareMemoryUlong(a, 3, 0x0123);
+    ok(result == 0, "RtlCompareMemoryUlong(%p, 3, 0x0123) returns %lu, expected 0\n", a, result);
+    result = RtlCompareMemoryUlong(a, 4, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 4, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 5, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 5, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 7, 0x0123);
+    ok(result == 4, "RtlCompareMemoryUlong(%p, 7, 0x0123) returns %lu, expected 4\n", a, result);
+    result = RtlCompareMemoryUlong(a, 8, 0x0123);
+    ok(result == 8, "RtlCompareMemoryUlong(%p, 8, 0x0123) returns %lu, expected 8\n", a, result);
+    result = RtlCompareMemoryUlong(a, 9, 0x0123);
+    ok(result == 8, "RtlCompareMemoryUlong(%p, 9, 0x0123) returns %lu, expected 8\n", a, result);
 }
 
 #define COPY(len) memset(dest,0,sizeof(dest_aligned_block)); pRtlMoveMemory(dest, src, len)
@@ -387,12 +345,6 @@ static void test_RtlUlonglongByteSwap(void)
         return;
     }
 
-    if ( pRtlUlonglongByteSwap( 0 ) != 0 )
-    {
-        win_skip("Broken RtlUlonglongByteSwap in win2k\n");
-        return;
-    }
-
     result = pRtlUlonglongByteSwap( ((ULONGLONG)0x76543210 << 32) | 0x87654321 );
     ok( (((ULONGLONG)0x21436587 << 32) | 0x10325476) == result,
        "RtlUlonglongByteSwap(0x7654321087654321) returns 0x%s, expected 0x2143658710325476\n",
@@ -407,12 +359,6 @@ static void test_RtlUniform(void)
     ULONG seed_bak;
     ULONG expected;
     ULONG result;
-
-    if (!pRtlUniform)
-    {
-        win_skip("RtlUniform is not available\n");
-        return;
-    }
 
 /*
  * According to the documentation RtlUniform is using D.H. Lehmer's 1948
@@ -434,9 +380,9 @@ static void test_RtlUniform(void)
  */
     seed = 0;
     expected = 0x7fffffc3;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0)) returns %lx, expected %lx\n",
         result, expected);
 /*
  * The algorithm is now:
@@ -455,16 +401,16 @@ static void test_RtlUniform(void)
  */
     seed = 1;
     expected = seed * 0xffffffed + 0x7fffffc3 + 1;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 1)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 1)) returns %lx, expected %lx\n",
         result, expected);
 /*
  * For seed = 2 the const_2 is 0x7fffffc3:
  */
     seed = 2;
     expected = seed * 0xffffffed + 0x7fffffc3;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
 
 /*
  * Windows Vista uses different algorithms, so skip the rest of the tests
@@ -477,7 +423,7 @@ static void test_RtlUniform(void)
     }
 
     ok(result == expected,
-        "RtlUniform(&seed (seed == 2)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 2)) returns %lx, expected %lx\n",
         result, expected);
 
 /*
@@ -485,32 +431,32 @@ static void test_RtlUniform(void)
  */
     seed = 3;
     expected = seed * 0xffffffed + 0x7fffffc3 + (seed & 1);
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 3)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 3)) returns %lx, expected %lx\n",
         result, expected);
 
     seed = 0x6bca1aa;
     expected = seed * 0xffffffed + 0x7fffffc3;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0x6bca1aa)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0x6bca1aa)) returns %lx, expected %lx\n",
         result, expected);
 
     seed = 0x6bca1ab;
     expected = seed * 0xffffffed + 0x7fffffc3 + 1;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0x6bca1ab)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0x6bca1ab)) returns %lx, expected %lx\n",
         result, expected);
 /*
  * When seed is 0x6bca1ac there is an exception:
  */
     seed = 0x6bca1ac;
     expected = seed * 0xffffffed + 0x7fffffc3 + 2;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0x6bca1ac)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0x6bca1ac)) returns %lx, expected %lx\n",
         result, expected);
 /*
  * Note that up to here const_3 is not used
@@ -520,16 +466,16 @@ static void test_RtlUniform(void)
  */
     seed = 0x6bca1ad;
     expected = (seed * 0xffffffed + 0x7fffffc3) & MAXLONG;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0x6bca1ad)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0x6bca1ad)) returns %lx, expected %lx\n",
         result, expected);
 
     seed = 0x6bca1ae;
     expected = (seed * 0xffffffed + 0x7fffffc3 + 1) & MAXLONG;
-    result = pRtlUniform(&seed);
+    result = RtlUniform(&seed);
     ok(result == expected,
-        "RtlUniform(&seed (seed == 0x6bca1ae)) returns %x, expected %x\n",
+        "RtlUniform(&seed (seed == 0x6bca1ae)) returns %lx, expected %lx\n",
         result, expected);
 /*
  * There are several ranges where for odd or even seed the result must be
@@ -635,12 +581,12 @@ static void test_RtlUniform(void)
 	    expected = expected + (seed & 1);
 	} /* if */
         seed_bak = seed;
-        result = pRtlUniform(&seed);
+        result = RtlUniform(&seed);
         ok(result == expected,
-                "test: 0x%s RtlUniform(&seed (seed == %x)) returns %x, expected %x\n",
+                "test: 0x%s RtlUniform(&seed (seed == %lx)) returns %lx, expected %lx\n",
                 wine_dbgstr_longlong(num), seed_bak, result, expected);
         ok(seed == expected,
-                "test: 0x%s RtlUniform(&seed (seed == %x)) sets seed to %x, expected %x\n",
+                "test: 0x%s RtlUniform(&seed (seed == %lx)) sets seed to %lx, expected %lx\n",
                 wine_dbgstr_longlong(num), seed_bak, result, expected);
     } /* for */
 /*
@@ -682,12 +628,12 @@ static void test_RtlUniform(void)
     for (num = 0; num <= 100000; num++) {
 	expected = (seed * 0x7fffffed + 0x7fffffc3) % 0x7fffffff;
         seed_bak = seed;
-        result = pRtlUniform(&seed);
+        result = RtlUniform(&seed);
         ok(result == expected,
-                "test: 0x%s RtlUniform(&seed (seed == %x)) returns %x, expected %x\n",
+                "test: 0x%s RtlUniform(&seed (seed == %lx)) returns %lx, expected %lx\n",
                 wine_dbgstr_longlong(num), seed_bak, result, expected);
         ok(seed == expected,
-                "test: 0x%s RtlUniform(&seed (seed == %x)) sets seed to %x, expected %x\n",
+                "test: 0x%s RtlUniform(&seed (seed == %lx)) sets seed to %lx, expected %lx\n",
                 wine_dbgstr_longlong(num), seed_bak, result, expected);
     } /* for */
 /*
@@ -704,19 +650,13 @@ static void test_RtlRandom(void)
     ULONG seed;
     ULONG res[512];
 
-    if (!pRtlRandom)
-    {
-        win_skip("RtlRandom is not available\n");
-        return;
-    }
-
     seed = 0;
     for (i = 0; i < ARRAY_SIZE(res); i++)
     {
-        res[i] = pRtlRandom(&seed);
-        ok(seed != res[i], "%i: seed is same as res %x\n", i, seed);
+        res[i] = RtlRandom(&seed);
+        ok(seed != res[i], "%i: seed is same as res %lx\n", i, seed);
         for (j = 0; j < i; j++)
-            ok(res[i] != res[j], "res[%i] (%x) is same as res[%i] (%x)\n", j, res[j], i, res[i]);
+            ok(res[i] != res[j], "res[%i] (%lx) is same as res[%i] (%lx)\n", j, res[j], i, res[i]);
     }
 }
 
@@ -746,17 +686,11 @@ static void test_RtlAreAllAccessesGranted(void)
     unsigned int test_num;
     BOOLEAN result;
 
-    if (!pRtlAreAllAccessesGranted)
-    {
-        win_skip("RtlAreAllAccessesGranted is not available\n");
-        return;
-    }
-
     for (test_num = 0; test_num < ARRAY_SIZE(all_accesses); test_num++) {
-	result = pRtlAreAllAccessesGranted(all_accesses[test_num].GrantedAccess,
-					   all_accesses[test_num].DesiredAccess);
+	result = RtlAreAllAccessesGranted(all_accesses[test_num].GrantedAccess,
+					  all_accesses[test_num].DesiredAccess);
 	ok(all_accesses[test_num].result == result,
-           "(test %d): RtlAreAllAccessesGranted(%08x, %08x) returns %d, expected %d\n",
+           "(test %d): RtlAreAllAccessesGranted(%08lx, %08lx) returns %d, expected %d\n",
 	   test_num, all_accesses[test_num].GrantedAccess,
 	   all_accesses[test_num].DesiredAccess,
 	   result, all_accesses[test_num].result);
@@ -788,17 +722,11 @@ static void test_RtlAreAnyAccessesGranted(void)
     unsigned int test_num;
     BOOLEAN result;
 
-    if (!pRtlAreAnyAccessesGranted)
-    {
-        win_skip("RtlAreAnyAccessesGranted is not available\n");
-        return;
-    }
-
     for (test_num = 0; test_num < ARRAY_SIZE(any_accesses); test_num++) {
-	result = pRtlAreAnyAccessesGranted(any_accesses[test_num].GrantedAccess,
-					   any_accesses[test_num].DesiredAccess);
+	result = RtlAreAnyAccessesGranted(any_accesses[test_num].GrantedAccess,
+					  any_accesses[test_num].DesiredAccess);
 	ok(any_accesses[test_num].result == result,
-           "(test %d): RtlAreAnyAccessesGranted(%08x, %08x) returns %d, expected %d\n",
+           "(test %d): RtlAreAnyAccessesGranted(%08lx, %08lx) returns %d, expected %d\n",
 	   test_num, any_accesses[test_num].GrantedAccess,
 	   any_accesses[test_num].DesiredAccess,
 	   result, any_accesses[test_num].result);
@@ -809,14 +737,8 @@ static void test_RtlComputeCrc32(void)
 {
   DWORD crc = 0;
 
-  if (!pRtlComputeCrc32)
-  {
-    win_skip("RtlComputeCrc32 is not available\n");
-    return;
-  }
-
-  crc = pRtlComputeCrc32(crc, (const BYTE *)src, LEN);
-  ok(crc == 0x40861dc2,"Expected 0x40861dc2, got %8x\n", crc);
+  crc = RtlComputeCrc32(crc, (const BYTE *)src, LEN);
+  ok(crc == 0x40861dc2,"Expected 0x40861dc2, got %8lx\n", crc);
 }
 
 
@@ -840,23 +762,17 @@ static void test_HandleTables(void)
     MY_HANDLE * MyHandle;
     RTL_HANDLE_TABLE HandleTable;
 
-    if (!pRtlInitializeHandleTable)
-    {
-        win_skip("RtlInitializeHandleTable is not available\n");
-        return;
-    }
-
-    pRtlInitializeHandleTable(0x3FFF, sizeof(MY_HANDLE), &HandleTable);
-    MyHandle = (MY_HANDLE *)pRtlAllocateHandle(&HandleTable, &Index);
+    RtlInitializeHandleTable(0x3FFF, sizeof(MY_HANDLE), &HandleTable);
+    MyHandle = (MY_HANDLE *)RtlAllocateHandle(&HandleTable, &Index);
     ok(MyHandle != NULL, "RtlAllocateHandle failed\n");
     RtlpMakeHandleAllocated(&MyHandle->RtlHandle);
     MyHandle = NULL;
-    result = pRtlIsValidIndexHandle(&HandleTable, Index, (RTL_HANDLE **)&MyHandle);
+    result = RtlIsValidIndexHandle(&HandleTable, Index, (RTL_HANDLE **)&MyHandle);
     ok(result, "Handle %p wasn't valid\n", MyHandle);
-    result = pRtlFreeHandle(&HandleTable, &MyHandle->RtlHandle);
+    result = RtlFreeHandle(&HandleTable, &MyHandle->RtlHandle);
     ok(result, "Couldn't free handle %p\n", MyHandle);
-    status = pRtlDestroyHandleTable(&HandleTable);
-    ok(status == STATUS_SUCCESS, "RtlDestroyHandleTable failed with error 0x%08x\n", status);
+    status = RtlDestroyHandleTable(&HandleTable);
+    ok(status == STATUS_SUCCESS, "RtlDestroyHandleTable failed with error 0x%08lx\n", status);
 }
 
 static void test_RtlAllocateAndInitializeSid(void)
@@ -865,42 +781,30 @@ static void test_RtlAllocateAndInitializeSid(void)
     SID_IDENTIFIER_AUTHORITY sia = {{ 1, 2, 3, 4, 5, 6 }};
     PSID psid;
 
-    if (!pRtlAllocateAndInitializeSid)
-    {
-        win_skip("RtlAllocateAndInitializeSid is not available\n");
-        return;
-    }
-
-    ret = pRtlAllocateAndInitializeSid(&sia, 0, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
-    ok(!ret, "RtlAllocateAndInitializeSid error %08x\n", ret);
-    ret = pRtlFreeSid(psid);
-    ok(!ret, "RtlFreeSid error %08x\n", ret);
+    ret = RtlAllocateAndInitializeSid(&sia, 0, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
+    ok(!ret, "RtlAllocateAndInitializeSid error %08lx\n", ret);
+    ret = RtlFreeSid(psid);
+    ok(!ret, "RtlFreeSid error %08lx\n", ret);
 
     /* these tests crash on XP */
     if (0)
     {
-        pRtlAllocateAndInitializeSid(NULL, 0, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
-        pRtlAllocateAndInitializeSid(&sia, 0, 1, 2, 3, 4, 5, 6, 7, 8, NULL);
+        RtlAllocateAndInitializeSid(NULL, 0, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
+        RtlAllocateAndInitializeSid(&sia, 0, 1, 2, 3, 4, 5, 6, 7, 8, NULL);
     }
 
-    ret = pRtlAllocateAndInitializeSid(&sia, 9, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
-    ok(ret == STATUS_INVALID_SID, "wrong error %08x\n", ret);
+    ret = RtlAllocateAndInitializeSid(&sia, 9, 1, 2, 3, 4, 5, 6, 7, 8, &psid);
+    ok(ret == STATUS_INVALID_SID, "wrong error %08lx\n", ret);
 }
 
 static void test_RtlDeleteTimer(void)
 {
     NTSTATUS ret;
 
-    if (!pRtlDeleteTimer)
-    {
-        win_skip("RtlDeleteTimer is not available\n");
-        return;
-    }
-
-    ret = pRtlDeleteTimer(NULL, NULL, NULL);
+    ret = RtlDeleteTimer(NULL, NULL, NULL);
     ok(ret == STATUS_INVALID_PARAMETER_1 ||
        ret == STATUS_INVALID_PARAMETER, /* W2K */
-       "expected STATUS_INVALID_PARAMETER_1 or STATUS_INVALID_PARAMETER, got %x\n", ret);
+       "expected STATUS_INVALID_PARAMETER_1 or STATUS_INVALID_PARAMETER, got %lx\n", ret);
 }
 
 static void test_RtlThreadErrorMode(void)
@@ -924,32 +828,32 @@ static void test_RtlThreadErrorMode(void)
     status = pRtlSetThreadErrorMode(0x70, &mode);
     ok(status == STATUS_SUCCESS ||
        status == STATUS_WAIT_1, /* Vista */
-       "RtlSetThreadErrorMode failed with error 0x%08x\n", status);
+       "RtlSetThreadErrorMode failed with error 0x%08lx\n", status);
     ok(mode == oldmode,
-       "RtlSetThreadErrorMode returned mode 0x%x, expected 0x%x\n",
+       "RtlSetThreadErrorMode returned mode 0x%lx, expected 0x%lx\n",
        mode, oldmode);
     ok(pRtlGetThreadErrorMode() == 0x70,
-       "RtlGetThreadErrorMode returned 0x%x, expected 0x%x\n", mode, 0x70);
+       "RtlGetThreadErrorMode returned 0x%lx, expected 0x%x\n", mode, 0x70);
     if (!is_wow64)
     {
         ok(NtCurrentTeb()->HardErrorDisabled == 0x70,
-           "The TEB contains 0x%x, expected 0x%x\n",
+           "The TEB contains 0x%lx, expected 0x%x\n",
            NtCurrentTeb()->HardErrorDisabled, 0x70);
     }
 
     status = pRtlSetThreadErrorMode(0, &mode);
     ok(status == STATUS_SUCCESS ||
        status == STATUS_WAIT_1, /* Vista */
-       "RtlSetThreadErrorMode failed with error 0x%08x\n", status);
+       "RtlSetThreadErrorMode failed with error 0x%08lx\n", status);
     ok(mode == 0x70,
-       "RtlSetThreadErrorMode returned mode 0x%x, expected 0x%x\n",
+       "RtlSetThreadErrorMode returned mode 0x%lx, expected 0x%x\n",
        mode, 0x70);
     ok(pRtlGetThreadErrorMode() == 0,
-       "RtlGetThreadErrorMode returned 0x%x, expected 0x%x\n", mode, 0);
+       "RtlGetThreadErrorMode returned 0x%lx, expected 0x%x\n", mode, 0);
     if (!is_wow64)
     {
         ok(NtCurrentTeb()->HardErrorDisabled == 0,
-           "The TEB contains 0x%x, expected 0x%x\n",
+           "The TEB contains 0x%lx, expected 0x%x\n",
            NtCurrentTeb()->HardErrorDisabled, 0);
     }
 
@@ -959,11 +863,11 @@ static void test_RtlThreadErrorMode(void)
         if (mode & 0x70)
             ok(status == STATUS_SUCCESS ||
                status == STATUS_WAIT_1, /* Vista */
-               "RtlSetThreadErrorMode(%x,NULL) failed with error 0x%08x\n",
+               "RtlSetThreadErrorMode(%lx,NULL) failed with error 0x%08lx\n",
                mode, status);
         else
             ok(status == STATUS_INVALID_PARAMETER_1,
-               "RtlSetThreadErrorMode(%x,NULL) returns 0x%08x, "
+               "RtlSetThreadErrorMode(%lx,NULL) returns 0x%08lx, "
                "expected STATUS_INVALID_PARAMETER_1\n",
                mode, status);
     }
@@ -978,26 +882,21 @@ static void test_LdrProcessRelocationBlock(void)
     DWORD addr32;
     SHORT addr16;
 
-    if(!pLdrProcessRelocationBlock) {
-        win_skip("LdrProcessRelocationBlock not available\n");
-        return;
-    }
-
     addr32 = 0x50005;
     reloc = IMAGE_REL_BASED_HIGHLOW<<12;
-    ret = pLdrProcessRelocationBlock(&addr32, 1, &reloc, 0x500050);
+    ret = LdrProcessRelocationBlock(&addr32, 1, &reloc, 0x500050);
     ok((USHORT*)ret == &reloc+1, "ret = %p, expected %p\n", ret, &reloc+1);
-    ok(addr32 == 0x550055, "addr32 = %x, expected 0x550055\n", addr32);
+    ok(addr32 == 0x550055, "addr32 = %lx, expected 0x550055\n", addr32);
 
     addr16 = 0x505;
     reloc = IMAGE_REL_BASED_HIGH<<12;
-    ret = pLdrProcessRelocationBlock(&addr16, 1, &reloc, 0x500060);
+    ret = LdrProcessRelocationBlock(&addr16, 1, &reloc, 0x500060);
     ok((USHORT*)ret == &reloc+1, "ret = %p, expected %p\n", ret, &reloc+1);
     ok(addr16 == 0x555, "addr16 = %x, expected 0x555\n", addr16);
 
     addr16 = 0x505;
     reloc = IMAGE_REL_BASED_LOW<<12;
-    ret = pLdrProcessRelocationBlock(&addr16, 1, &reloc, 0x500060);
+    ret = LdrProcessRelocationBlock(&addr16, 1, &reloc, 0x500060);
     ok((USHORT*)ret == &reloc+1, "ret = %p, expected %p\n", ret, &reloc+1);
     ok(addr16 == 0x565, "addr16 = %x, expected 0x565\n", addr16);
 }
@@ -1009,12 +908,6 @@ static void test_RtlIpv4AddressToString(void)
     IN_ADDR ip;
     DWORD_PTR len;
 
-    if (!pRtlIpv4AddressToStringA)
-    {
-        win_skip("RtlIpv4AddressToStringA not available\n");
-        return;
-    }
-
     ip.S_un.S_un_b.s_b1 = 1;
     ip.S_un.S_un_b.s_b2 = 2;
     ip.S_un.S_un_b.s_b3 = 3;
@@ -1022,11 +915,11 @@ static void test_RtlIpv4AddressToString(void)
 
     memset(buffer, '#', sizeof(buffer) - 1);
     buffer[sizeof(buffer) -1] = 0;
-    res = pRtlIpv4AddressToStringA(&ip, buffer);
+    res = RtlIpv4AddressToStringA(&ip, buffer);
     len = strlen(buffer);
     ok(res == (buffer + len), "got %p with '%s' (expected %p)\n", res, buffer, buffer + len);
 
-    res = pRtlIpv4AddressToStringA(&ip, NULL);
+    res = RtlIpv4AddressToStringA(&ip, NULL);
     ok( (res == (char *)~0) ||
         broken(res == (char *)len),        /* XP and w2003 */
         "got %p (expected ~0)\n", res);
@@ -1035,13 +928,13 @@ static void test_RtlIpv4AddressToString(void)
         /* this crashes in windows */
         memset(buffer, '#', sizeof(buffer) - 1);
         buffer[sizeof(buffer) -1] = 0;
-        res = pRtlIpv4AddressToStringA(NULL, buffer);
+        res = RtlIpv4AddressToStringA(NULL, buffer);
         trace("got %p with '%s'\n", res, buffer);
     }
 
     if (0) {
         /* this crashes in windows */
-        res = pRtlIpv4AddressToStringA(NULL, NULL);
+        res = RtlIpv4AddressToStringA(NULL, NULL);
         trace("got %p\n", res);
     }
 }
@@ -1079,7 +972,7 @@ static void test_RtlIpv4AddressToStringEx(void)
     used = strlen(buffer);
     ok( (res == STATUS_SUCCESS) &&
         (size == strlen(expect) + 1) && !strcmp(buffer, expect),
-        "got 0x%x and size %d with '%s'\n", res, size, buffer);
+        "got 0x%lx and size %ld with '%s'\n", res, size, buffer);
 
     size = used + 1;
     memset(buffer, '#', sizeof(buffer) - 1);
@@ -1087,14 +980,14 @@ static void test_RtlIpv4AddressToStringEx(void)
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_SUCCESS) &&
         (size == strlen(expect) + 1) && !strcmp(buffer, expect),
-        "got 0x%x and size %d with '%s'\n", res, size, buffer);
+        "got 0x%lx and size %ld with '%s'\n", res, size, buffer);
 
     size = used;
     memset(buffer, '#', sizeof(buffer) - 1);
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_INVALID_PARAMETER) && (size == used + 1),
-        "got 0x%x and %d with '%s' (expected STATUS_INVALID_PARAMETER and %d)\n",
+        "got 0x%lx and %ld with '%s' (expected STATUS_INVALID_PARAMETER and %ld)\n",
         res, size, buffer, used + 1);
 
     size = used - 1;
@@ -1102,7 +995,7 @@ static void test_RtlIpv4AddressToStringEx(void)
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_INVALID_PARAMETER) && (size == used + 1),
-        "got 0x%x and %d with '%s' (expected STATUS_INVALID_PARAMETER and %d)\n",
+        "got 0x%lx and %ld with '%s' (expected STATUS_INVALID_PARAMETER and %ld)\n",
         res, size, buffer, used + 1);
 
 
@@ -1117,7 +1010,7 @@ static void test_RtlIpv4AddressToStringEx(void)
     used = strlen(buffer);
     ok( (res == STATUS_SUCCESS) &&
         (size == strlen(expect) + 1) && !strcmp(buffer, expect),
-        "got 0x%x and size %d with '%s'\n", res, size, buffer);
+        "got 0x%lx and size %ld with '%s'\n", res, size, buffer);
 
     size = used + 1;
     memset(buffer, '#', sizeof(buffer) - 1);
@@ -1125,14 +1018,14 @@ static void test_RtlIpv4AddressToStringEx(void)
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_SUCCESS) &&
         (size == strlen(expect) + 1) && !strcmp(buffer, expect),
-        "got 0x%x and size %d with '%s'\n", res, size, buffer);
+        "got 0x%lx and size %ld with '%s'\n", res, size, buffer);
 
     size = used;
     memset(buffer, '#', sizeof(buffer) - 1);
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_INVALID_PARAMETER) && (size == used + 1),
-        "got 0x%x and %d with '%s' (expected STATUS_INVALID_PARAMETER and %d)\n",
+        "got 0x%lx and %ld with '%s' (expected STATUS_INVALID_PARAMETER and %ld)\n",
         res, size, buffer, used + 1);
 
     size = used - 1;
@@ -1140,7 +1033,7 @@ static void test_RtlIpv4AddressToStringEx(void)
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(&ip, port, buffer, &size);
     ok( (res == STATUS_INVALID_PARAMETER) && (size == used + 1),
-        "got 0x%x and %d with '%s' (expected STATUS_INVALID_PARAMETER and %d)\n",
+        "got 0x%lx and %ld with '%s' (expected STATUS_INVALID_PARAMETER and %ld)\n",
         res, size, buffer, used + 1);
 
 
@@ -1149,19 +1042,19 @@ static void test_RtlIpv4AddressToStringEx(void)
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(&ip, 0, buffer, NULL);
     ok(res == STATUS_INVALID_PARAMETER,
-        "got 0x%x with '%s' (expected STATUS_INVALID_PARAMETER)\n", res, buffer);
+        "got 0x%lx with '%s' (expected STATUS_INVALID_PARAMETER)\n", res, buffer);
 
     size = sizeof(buffer);
     res = pRtlIpv4AddressToStringExA(&ip, 0, NULL, &size);
     ok( res == STATUS_INVALID_PARAMETER,
-        "got 0x%x and size %d (expected STATUS_INVALID_PARAMETER)\n", res, size);
+        "got 0x%lx and size %ld (expected STATUS_INVALID_PARAMETER)\n", res, size);
 
     size = sizeof(buffer);
     memset(buffer, '#', sizeof(buffer) - 1);
     buffer[sizeof(buffer) -1] = 0;
     res = pRtlIpv4AddressToStringExA(NULL, 0, buffer, &size);
     ok( res == STATUS_INVALID_PARAMETER,
-        "got 0x%x and size %d with '%s' (expected STATUS_INVALID_PARAMETER)\n",
+        "got 0x%lx and size %ld with '%s' (expected STATUS_INVALID_PARAMETER)\n",
         res, size, buffer);
 }
 
@@ -1297,23 +1190,17 @@ static void test_RtlIpv4StringToAddress(void)
     CHAR dummy;
     int i;
 
-    if (!pRtlIpv4StringToAddressA)
-    {
-        skip("RtlIpv4StringToAddress not available\n");
-        return;
-    }
-
     if (0)
     {
         /* leaving either parameter NULL crashes on Windows */
-        res = pRtlIpv4StringToAddressA(NULL, FALSE, &terminator, &ip);
-        res = pRtlIpv4StringToAddressA("1.1.1.1", FALSE, NULL, &ip);
-        res = pRtlIpv4StringToAddressA("1.1.1.1", FALSE, &terminator, NULL);
+        res = RtlIpv4StringToAddressA(NULL, FALSE, &terminator, &ip);
+        res = RtlIpv4StringToAddressA("1.1.1.1", FALSE, NULL, &ip);
+        res = RtlIpv4StringToAddressA("1.1.1.1", FALSE, &terminator, NULL);
         /* same for the wide char version */
         /*
-        res = pRtlIpv4StringToAddressW(NULL, FALSE, &terminatorW, &ip);
-        res = pRtlIpv4StringToAddressW(L"1.1.1.1", FALSE, NULL, &ip);
-        res = pRtlIpv4StringToAddressW(L"1.1.1.1", FALSE, &terminatorW, NULL);
+        res = RtlIpv4StringToAddressW(NULL, FALSE, &terminatorW, &ip);
+        res = RtlIpv4StringToAddressW(L"1.1.1.1", FALSE, NULL, &ip);
+        res = RtlIpv4StringToAddressW(L"1.1.1.1", FALSE, &terminatorW, NULL);
         */
     }
 
@@ -1322,9 +1209,9 @@ static void test_RtlIpv4StringToAddress(void)
         /* non-strict */
         terminator = &dummy;
         ip.S_un.S_addr = 0xabababab;
-        res = pRtlIpv4StringToAddressA(ipv4_tests[i].address, FALSE, &terminator, &ip);
+        res = RtlIpv4StringToAddressA(ipv4_tests[i].address, FALSE, &terminator, &ip);
         ok(res == ipv4_tests[i].res,
-           "[%s] res = 0x%08x, expected 0x%08x\n",
+           "[%s] res = 0x%08lx, expected 0x%08lx\n",
            ipv4_tests[i].address, res, ipv4_tests[i].res);
         ok(terminator == ipv4_tests[i].address + ipv4_tests[i].terminator_offset,
            "[%s] terminator = %p, expected %p\n",
@@ -1332,7 +1219,7 @@ static void test_RtlIpv4StringToAddress(void)
 
         init_ip4(&expected_ip, ipv4_tests[i].ip);
         ok(ip.S_un.S_addr == expected_ip.S_un.S_addr,
-           "[%s] ip = %08x, expected %08x\n",
+           "[%s] ip = %08lx, expected %08lx\n",
            ipv4_tests[i].address, ip.S_un.S_addr, expected_ip.S_un.S_addr);
 
         if (!(ipv4_tests[i].flags & strict_diff_4))
@@ -1347,9 +1234,9 @@ static void test_RtlIpv4StringToAddress(void)
         /* strict */
         terminator = &dummy;
         ip.S_un.S_addr = 0xabababab;
-        res = pRtlIpv4StringToAddressA(ipv4_tests[i].address, TRUE, &terminator, &ip);
+        res = RtlIpv4StringToAddressA(ipv4_tests[i].address, TRUE, &terminator, &ip);
         ok(res == ipv4_tests[i].res_strict,
-           "[%s] res = 0x%08x, expected 0x%08x\n",
+           "[%s] res = 0x%08lx, expected 0x%08lx\n",
            ipv4_tests[i].address, res, ipv4_tests[i].res_strict);
         ok(terminator == ipv4_tests[i].address + ipv4_tests[i].terminator_offset_strict,
            "[%s] terminator = %p, expected %p\n",
@@ -1357,7 +1244,7 @@ static void test_RtlIpv4StringToAddress(void)
 
         init_ip4(&expected_ip, ipv4_tests[i].ip_strict);
         ok(ip.S_un.S_addr == expected_ip.S_un.S_addr,
-           "[%s] ip = %08x, expected %08x\n",
+           "[%s] ip = %08lx, expected %08lx\n",
            ipv4_tests[i].address, ip.S_un.S_addr, expected_ip.S_un.S_addr);
     }
 }
@@ -1407,23 +1294,23 @@ static void test_RtlIpv4StringToAddressEx(void)
     ip.S_un.S_addr = 0xabababab;
     port = 0xdead;
     res = pRtlIpv4StringToAddressExA(NULL, FALSE, &ip, &port);
-    ok(res == STATUS_INVALID_PARAMETER, "[null address] res = 0x%08x, expected 0x%08x\n",
+    ok(res == STATUS_INVALID_PARAMETER, "[null address] res = 0x%08lx, expected 0x%08lx\n",
        res, STATUS_INVALID_PARAMETER);
-    ok(ip.S_un.S_addr == 0xabababab, "RtlIpv4StringToAddressExA should not touch the ip!, ip == %x\n", ip.S_un.S_addr);
+    ok(ip.S_un.S_addr == 0xabababab, "RtlIpv4StringToAddressExA should not touch the ip!, ip == %lx\n", ip.S_un.S_addr);
     ok(port == 0xdead, "RtlIpv4StringToAddressExA should not touch the port!, port == %x\n", port);
 
     port = 0xdead;
     res = pRtlIpv4StringToAddressExA("1.1.1.1", FALSE, NULL, &port);
-    ok(res == STATUS_INVALID_PARAMETER, "[null ip] res = 0x%08x, expected 0x%08x\n",
+    ok(res == STATUS_INVALID_PARAMETER, "[null ip] res = 0x%08lx, expected 0x%08lx\n",
        res, STATUS_INVALID_PARAMETER);
     ok(port == 0xdead, "RtlIpv4StringToAddressExA should not touch the port!, port == %x\n", port);
 
     ip.S_un.S_addr = 0xabababab;
     port = 0xdead;
     res = pRtlIpv4StringToAddressExA("1.1.1.1", FALSE, &ip, NULL);
-    ok(res == STATUS_INVALID_PARAMETER, "[null port] res = 0x%08x, expected 0x%08x\n",
+    ok(res == STATUS_INVALID_PARAMETER, "[null port] res = 0x%08lx, expected 0x%08lx\n",
        res, STATUS_INVALID_PARAMETER);
-    ok(ip.S_un.S_addr == 0xabababab, "RtlIpv4StringToAddressExA should not touch the ip!, ip == %x\n", ip.S_un.S_addr);
+    ok(ip.S_un.S_addr == 0xabababab, "RtlIpv4StringToAddressExA should not touch the ip!, ip == %lx\n", ip.S_un.S_addr);
     ok(port == 0xdead, "RtlIpv4StringToAddressExA should not touch the port!, port == %x\n", port);
 
     /* first we run the non-ex testcases on the ex function */
@@ -1435,11 +1322,11 @@ static void test_RtlIpv4StringToAddressEx(void)
         port = 0xdead;
         ip.S_un.S_addr = 0xabababab;
         res = pRtlIpv4StringToAddressExA(ipv4_tests[i].address, FALSE, &ip, &port);
-        ok(res == expect_res, "[%s] res = 0x%08x, expected 0x%08x\n",
+        ok(res == expect_res, "[%s] res = 0x%08lx, expected 0x%08lx\n",
            ipv4_tests[i].address, res, expect_res);
 
         init_ip4(&expected_ip, ipv4_tests[i].ip);
-        ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08x, expected %08x\n",
+        ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08lx, expected %08lx\n",
            ipv4_tests[i].address, ip.S_un.S_addr, expected_ip.S_un.S_addr);
 
         if (!(ipv4_tests[i].flags & strict_diff_4))
@@ -1456,11 +1343,11 @@ static void test_RtlIpv4StringToAddressEx(void)
         port = 0xdead;
         ip.S_un.S_addr = 0xabababab;
         res = pRtlIpv4StringToAddressExA(ipv4_tests[i].address, TRUE, &ip, &port);
-        ok(res == expect_res, "[%s] res = 0x%08x, expected 0x%08x\n",
+        ok(res == expect_res, "[%s] res = 0x%08lx, expected 0x%08lx\n",
            ipv4_tests[i].address, res, expect_res);
 
         init_ip4(&expected_ip, ipv4_tests[i].ip_strict);
-        ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08x, expected %08x\n",
+        ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08lx, expected %08lx\n",
            ipv4_tests[i].address, ip.S_un.S_addr, expected_ip.S_un.S_addr);
     }
 
@@ -1473,11 +1360,11 @@ static void test_RtlIpv4StringToAddressEx(void)
             ip.S_un.S_addr = 0xabababab;
             port = 0xdead;
             res = pRtlIpv4StringToAddressExA(ipv4_ex_tests[i].address, strict, &ip, &port);
-            ok(res == ipv4_ex_tests[i].res, "[%s] res = 0x%08x, expected 0x%08x\n",
+            ok(res == ipv4_ex_tests[i].res, "[%s] res = 0x%08lx, expected 0x%08lx\n",
                ipv4_ex_tests[i].address, res, ipv4_ex_tests[i].res);
 
             init_ip4(&expected_ip, ipv4_ex_tests[i].ip);
-            ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08x, expected %08x\n",
+            ok(ip.S_un.S_addr == expected_ip.S_un.S_addr, "[%s] ip = %08lx, expected %08lx\n",
                ipv4_ex_tests[i].address, ip.S_un.S_addr, expected_ip.S_un.S_addr);
             ok(port == ipv4_ex_tests[i].port, "[%s] port = %u, expected %u\n",
                ipv4_ex_tests[i].address, port, ipv4_ex_tests[i].port);
@@ -1868,6 +1755,7 @@ static void test_RtlIpv6AddressToString(void)
     } tests[] =
     {
         /* ipv4 addresses & ISATAP addresses */
+<<<<<<< HEAD
         { "::13.1.68.3",                                { 0, 0, 0, 0, 0, 0, 0x10d, 0x344 }, TRUE },
         { "::ffff:13.1.68.3",                           { 0, 0, 0, 0, 0, 0xffff, 0x10d, 0x344 }, TRUE },
         { "::feff:d01:4403",                            { 0, 0, 0, 0, 0, 0xfffe, 0x10d, 0x344 }, TRUE },
@@ -1891,6 +1779,43 @@ static void test_RtlIpv6AddressToString(void)
         { "::100:5efe:8190:3426",                       { 0, 0, 0, 0, 1, 0xfe5e, 0x9081, 0x2634 }, TRUE },
         /* 'normal' addresses */
         { "::1",                                        { 0, 0, 0, 0, 0, 0, 0, 0x100 }, TRUE },
+=======
+        { "::13.1.68.3",                                { 0, 0, 0, 0, 0, 0, 0x10d, 0x344 } },
+        { "::123.123.123.123",                          { 0, 0, 0, 0, 0, 0, 0x7b7b, 0x7b7b } },
+        { "::ffff",                                     { 0, 0, 0, 0, 0, 0, 0, 0xffff } },
+        { "::0.1.0.0",                                  { 0, 0, 0, 0, 0, 0, 0x100, 0 } },
+        { "::ffff:13.1.68.3",                           { 0, 0, 0, 0, 0, 0xffff, 0x10d, 0x344 } },
+        { "::feff:d01:4403",                            { 0, 0, 0, 0, 0, 0xfffe, 0x10d, 0x344 } },
+        { "::fffe:d01:4403",                            { 0, 0, 0, 0, 0, 0xfeff, 0x10d, 0x344 } },
+        { "::100:d01:4403",                             { 0, 0, 0, 0, 0, 1, 0x10d, 0x344 } },
+        { "::1:d01:4403",                               { 0, 0, 0, 0, 0, 0x100, 0x10d, 0x344 } },
+        { "::1:0:d01:4403",                             { 0, 0, 0, 0, 0x100, 0, 0x10d, 0x344 } },
+        { "::fffe:d01:4403",                            { 0, 0, 0, 0, 0, 0xfeff, 0x10d, 0x344 } },
+        { "::fffe:0:d01:4403",                          { 0, 0, 0, 0, 0xfeff, 0, 0x10d, 0x344 } },
+        { "::ffff:0:4403",                              { 0, 0, 0, 0, 0, 0xffff, 0, 0x344 } },
+        { "::ffff:0.1.0.0",                             { 0, 0, 0, 0, 0, 0xffff, 0x100, 0 } },
+        { "::ffff:13.1.0.0",                            { 0, 0, 0, 0, 0, 0xffff, 0x10d, 0 } },
+        { "::ffff:0:0",                                 { 0, 0, 0, 0, 0, 0xffff, 0, 0 } },
+        { "::ffff:0:ffff",                              { 0, 0, 0, 0, 0, 0xffff, 0, 0xffff } },
+        { "::ffff:0:0.1.0.0",                           { 0, 0, 0, 0, 0xffff, 0, 0x100, 0 } },
+        { "::ffff:0:13.1.68.3",                         { 0, 0, 0, 0, 0xffff, 0, 0x10d, 0x344 } },
+        { "::ffff:ffff:d01:4403",                       { 0, 0, 0, 0, 0xffff, 0xffff, 0x10d, 0x344 } },
+        { "::ffff:0:0:d01:4403",                        { 0, 0, 0, 0xffff, 0, 0, 0x10d, 0x344 } },
+        { "::ffff:255.255.255.255",                     { 0, 0, 0, 0, 0, 0xffff, 0xffff, 0xffff } },
+        { "::ffff:129.144.52.38",                       { 0, 0, 0, 0, 0, 0xffff, 0x9081, 0x2634 } },
+        { "::5efe:0.0.0.0",                             { 0, 0, 0, 0, 0, 0xfe5e, 0, 0 } },
+        { "::5efe:129.144.52.38",                       { 0, 0, 0, 0, 0, 0xfe5e, 0x9081, 0x2634 } },
+        { "1111:2222:3333:4444:0:5efe:129.144.52.38",   { 0x1111, 0x2222, 0x3333, 0x4444, 0, 0xfe5e, 0x9081, 0x2634 } },
+        { "1111:2222:3333::5efe:129.144.52.38",         { 0x1111, 0x2222, 0x3333, 0, 0, 0xfe5e, 0x9081, 0x2634 } },
+        { "1111:2222::5efe:129.144.52.38",              { 0x1111, 0x2222, 0, 0, 0, 0xfe5e, 0x9081, 0x2634 } },
+        { "1111::5efe:129.144.52.38",                   { 0x1111, 0, 0, 0, 0, 0xfe5e, 0x9081, 0x2634 } },
+        { "::300:5efe:8190:3426",                       { 0, 0, 0, 0, 3, 0xfe5e, 0x9081, 0x2634 } },
+        { "::200:5efe:129.144.52.38",                   { 0, 0, 0, 0, 2, 0xfe5e, 0x9081, 0x2634 } },
+        { "::100:5efe:8190:3426",                       { 0, 0, 0, 0, 1, 0xfe5e, 0x9081, 0x2634 } },
+        /* 'normal' addresses */
+        { "::1",                                        { 0, 0, 0, 0, 0, 0, 0, 0x100 } },
+        { "::2",                                        { 0, 0, 0, 0, 0, 0, 0, 0x200 } },
+>>>>>>> master
         { "0:1:2:3:4:5:6:7",                            { 0, 0x100, 0x200, 0x300, 0x400, 0x500, 0x600, 0x700 } },
         { "1080::8:800:200c:417a",                      { 0x8010, 0, 0, 0, 0x800, 0x8, 0x0c20, 0x7a41 }, TRUE },
         { "1111:2222:3333:4444:5555:6666:7b7b:7b7b",    { 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7b7b, 0x7b7b } },
@@ -1922,10 +1847,16 @@ static void test_RtlIpv6AddressToString(void)
         { "2001:db8::1428:57ab",                        { 0x120, 0xb80d, 0, 0, 0, 0, 0x2814, 0xab57 }, TRUE },
         { "2001:db8:1234:ffff:ffff:ffff:ffff:ffff",     { 0x120, 0xb80d, 0x3412, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff } },
         { "2001:0:ce49:7601:2cad:dfff:7c94:fffe",       { 0x120, 0, 0x49ce, 0x176, 0xad2c, 0xffdf, 0x947c, 0xfeff } },
+<<<<<<< HEAD
         { "2001:db8:85a3::8a2e:370:7334",               { 0x120, 0xb80d, 0xa385, 0, 0, 0x2e8a, 0x7003, 0x3473 }, TRUE },
         { "3ffe:b00::1:0:0:a",                          { 0xfe3f, 0xb, 0, 0, 0x100, 0, 0, 0xa00 }, TRUE },
         { "::a:b:c:d:e",                                { 0, 0, 0, 0xa00, 0xb00, 0xc00, 0xd00, 0xe00 }, TRUE },
         { "::123.123.123.123",                          { 0, 0, 0, 0, 0, 0, 0x7b7b, 0x7b7b }, TRUE },
+=======
+        { "2001:db8:85a3::8a2e:370:7334",               { 0x120, 0xb80d, 0xa385, 0, 0, 0x2e8a, 0x7003, 0x3473 } },
+        { "3ffe:b00::1:0:0:a",                          { 0xfe3f, 0xb, 0, 0, 0x100, 0, 0, 0xa00 } },
+        { "::a:b:c:d:e",                                { 0, 0, 0, 0xa00, 0xb00, 0xc00, 0xd00, 0xe00 } },
+>>>>>>> master
         { "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",    { 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff } },
         { "1111:2222:3333:4444:5555:6666:7777:1",       { 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x100 } },
         { "1111:2222:3333:4444:5555:6666:7777:8888",    { 0x1111, 0x2222, 0x3333, 0x4444, 0x5555, 0x6666, 0x7777, 0x8888 } },
@@ -1938,24 +1869,22 @@ static void test_RtlIpv6AddressToString(void)
     };
     unsigned int i;
 
-    if (!pRtlIpv6AddressToStringA)
-    {
-        skip("RtlIpv6AddressToStringA not available\n");
-        return;
-    }
-
     memset(buffer, '#', sizeof(buffer));
     buffer[sizeof(buffer)-1] = 0;
     memset(&ip, 0, sizeof(ip));
-    result = pRtlIpv6AddressToStringA(&ip, buffer);
+    result = RtlIpv6AddressToStringA(&ip, buffer);
 
     len = strlen(buffer);
 todo_wine
     ok(result == (buffer + len) && !strcmp(buffer, "::"),
        "got %p with '%s' (expected %p with '::')\n", result, buffer, buffer + len);
 
+<<<<<<< HEAD
     result = pRtlIpv6AddressToStringA(&ip, NULL);
 todo_wine
+=======
+    result = RtlIpv6AddressToStringA(&ip, NULL);
+>>>>>>> master
     ok(result == (LPCSTR)~0 || broken(result == (LPCSTR)len) /* WinXP / Win2k3 */,
        "got %p, expected %p\n", result, (LPCSTR)~0);
 
@@ -1965,7 +1894,7 @@ todo_wine
         memset(buffer, '#', sizeof(buffer));
         buffer[sizeof(buffer)-1] = 0;
 
-        result = pRtlIpv6AddressToStringA(&ip, buffer);
+        result = RtlIpv6AddressToStringA(&ip, buffer);
         len = strlen(buffer);
 todo_wine_if(tests[i].todo)
         ok(result == (buffer + len) && !strcmp(buffer, tests[i].address),
@@ -2056,33 +1985,41 @@ static void test_RtlIpv6AddressToStringEx(void)
     len = sizeof(buffer);
     res = pRtlIpv6AddressToStringExA(&ip, 0, 0, buffer, &len);
 
+<<<<<<< HEAD
     ok(res == STATUS_SUCCESS, "[validate] res = 0x%08x, expected STATUS_SUCCESS\n", res);
 todo_wine
+=======
+    ok(res == STATUS_SUCCESS, "[validate] res = 0x%08lx, expected STATUS_SUCCESS\n", res);
+>>>>>>> master
     ok(len == 3 && !strcmp(buffer, "::"),
-        "got len %d with '%s' (expected 3 with '::')\n", len, buffer);
+        "got len %ld with '%s' (expected 3 with '::')\n", len, buffer);
 
     memset(buffer, '#', sizeof(buffer));
     buffer[sizeof(buffer)-1] = 0;
 
     len = sizeof(buffer);
     res = pRtlIpv6AddressToStringExA(NULL, 0, 0, buffer, &len);
-    ok(res == STATUS_INVALID_PARAMETER, "[null ip] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(res == STATUS_INVALID_PARAMETER, "[null ip] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
 
     len = sizeof(buffer);
     res = pRtlIpv6AddressToStringExA(&ip, 0, 0, NULL, &len);
-    ok(res == STATUS_INVALID_PARAMETER, "[null buffer] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(res == STATUS_INVALID_PARAMETER, "[null buffer] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
 
     res = pRtlIpv6AddressToStringExA(&ip, 0, 0, buffer, NULL);
-    ok(res == STATUS_INVALID_PARAMETER, "[null length] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(res == STATUS_INVALID_PARAMETER, "[null length] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
 
     len = 2;
     memset(buffer, '#', sizeof(buffer));
     buffer[sizeof(buffer)-1] = 0;
     res = pRtlIpv6AddressToStringExA(&ip, 0, 0, buffer, &len);
-    ok(res == STATUS_INVALID_PARAMETER, "[null length] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(res == STATUS_INVALID_PARAMETER, "[null length] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
     ok(buffer[0] == '#', "got first char %c (expected '#')\n", buffer[0]);
+<<<<<<< HEAD
 todo_wine
     ok(len == 3, "got len %d (expected len 3)\n", len);
+=======
+    ok(len == 3, "got len %ld (expected len 3)\n", len);
+>>>>>>> master
 
     for (i = 0; i < ARRAY_SIZE(tests); i++)
     {
@@ -2093,10 +2030,14 @@ todo_wine
 
         res = pRtlIpv6AddressToStringExA(&ip, tests[i].scopeid, tests[i].port, buffer, &len);
 
+<<<<<<< HEAD
         ok(res == STATUS_SUCCESS, "[validate] res = 0x%08x, expected STATUS_SUCCESS\n", res);
 todo_wine_if(tests[i].todo)
+=======
+        ok(res == STATUS_SUCCESS, "[validate] res = 0x%08lx, expected STATUS_SUCCESS\n", res);
+>>>>>>> master
         ok(len == (strlen(tests[i].address) + 1) && !strcmp(buffer, tests[i].address),
-           "got len %d with '%s' (expected %d with '%s')\n", len, buffer, (int)strlen(tests[i].address), tests[i].address);
+           "got len %ld with '%s' (expected %d with '%s')\n", len, buffer, (int)strlen(tests[i].address), tests[i].address);
     }
 }
 
@@ -2108,15 +2049,12 @@ static void compare_RtlIpv6StringToAddressW(PCSTR name_a, int terminator_offset_
     IN6_ADDR ip;
     PCWSTR terminator;
 
-    if (!pRtlIpv6StringToAddressW)
-        return;
-
-    pRtlMultiByteToUnicodeN(name, sizeof(name), NULL, name_a, strlen(name_a) + 1);
+    RtlMultiByteToUnicodeN(name, sizeof(name), NULL, name_a, strlen(name_a) + 1);
 
     init_ip6(&ip, NULL);
     terminator = (void *)0xdeadbeef;
-    res = pRtlIpv6StringToAddressW(name, &terminator, &ip);
-    ok(res == res_a, "[W:%s] res = 0x%08x, expected 0x%08x\n", name_a, res, res_a);
+    res = RtlIpv6StringToAddressW(name, &terminator, &ip);
+    ok(res == res_a, "[W:%s] res = 0x%08lx, expected 0x%08lx\n", name_a, res, res_a);
 
     if (terminator_offset_a < 0)
     {
@@ -2147,29 +2085,17 @@ static void test_RtlIpv6StringToAddress(void)
     PCSTR terminator;
     unsigned int i;
 
-    if (!pRtlIpv6StringToAddressW)
-    {
-        skip("RtlIpv6StringToAddressW not available\n");
-        /* we can continue, just not test W */
-    }
-
-    if (!pRtlIpv6StringToAddressA)
-    {
-        skip("RtlIpv6StringToAddressA not available\n");
-        return; /* all tests are centered around A, we cannot continue */
-    }
-
-    res = pRtlIpv6StringToAddressA("::", &terminator, &ip);
-    ok(res == STATUS_SUCCESS, "[validate] res = 0x%08x, expected STATUS_SUCCESS\n", res);
+    res = RtlIpv6StringToAddressA("::", &terminator, &ip);
+    ok(res == STATUS_SUCCESS, "[validate] res = 0x%08lx, expected STATUS_SUCCESS\n", res);
     if (0)
     {
         /* any of these crash */
-        res = pRtlIpv6StringToAddressA(NULL, &terminator, &ip);
-        ok(res == STATUS_INVALID_PARAMETER, "[null string] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-        res = pRtlIpv6StringToAddressA("::", NULL, &ip);
-        ok(res == STATUS_INVALID_PARAMETER, "[null terminator] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-        res = pRtlIpv6StringToAddressA("::", &terminator, NULL);
-        ok(res == STATUS_INVALID_PARAMETER, "[null result] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
+        res = RtlIpv6StringToAddressA(NULL, &terminator, &ip);
+        ok(res == STATUS_INVALID_PARAMETER, "[null string] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+        res = RtlIpv6StringToAddressA("::", NULL, &ip);
+        ok(res == STATUS_INVALID_PARAMETER, "[null terminator] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+        res = RtlIpv6StringToAddressA("::", &terminator, NULL);
+        ok(res == STATUS_INVALID_PARAMETER, "[null result] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
     }
 
     /* sanity check */
@@ -2179,14 +2105,14 @@ static void test_RtlIpv6StringToAddress(void)
     {
         init_ip6(&ip, NULL);
         terminator = (void *)0xdeadbeef;
-        res = pRtlIpv6StringToAddressA(ipv6_tests[i].address, &terminator, &ip);
+        res = RtlIpv6StringToAddressA(ipv6_tests[i].address, &terminator, &ip);
         compare_RtlIpv6StringToAddressW(ipv6_tests[i].address, (terminator != (void *)0xdeadbeef) ?
                                         (terminator - ipv6_tests[i].address) : -1, &ip, res);
 
         if (ipv6_tests[i].flags & win_broken_6)
         {
             ok(res == ipv6_tests[i].res || broken(res == STATUS_INVALID_PARAMETER),
-               "[%s] res = 0x%08x, expected 0x%08x\n",
+               "[%s] res = 0x%08lx, expected 0x%08lx\n",
                ipv6_tests[i].address, res, ipv6_tests[i].res);
 
             if (res == STATUS_INVALID_PARAMETER)
@@ -2195,7 +2121,7 @@ static void test_RtlIpv6StringToAddress(void)
         else
         {
             ok(res == ipv6_tests[i].res,
-               "[%s] res = 0x%08x, expected 0x%08x\n",
+               "[%s] res = 0x%08lx, expected 0x%08lx\n",
                ipv6_tests[i].address, res, ipv6_tests[i].res);
         }
 
@@ -2234,13 +2160,13 @@ static void compare_RtlIpv6StringToAddressExW(PCSTR name_a, const struct in6_add
     if (!pRtlIpv6StringToAddressExW)
         return;
 
-    pRtlMultiByteToUnicodeN(name, sizeof(name), NULL, name_a, strlen(name_a) + 1);
+    RtlMultiByteToUnicodeN(name, sizeof(name), NULL, name_a, strlen(name_a) + 1);
 
     init_ip6(&ip, NULL);
     res = pRtlIpv6StringToAddressExW(name, &ip, &scope, &port);
 
-    ok(res == res_a, "[W:%s] res = 0x%08x, expected 0x%08x\n", name_a, res, res_a);
-    ok(scope == scope_a, "[W:%s] scope = 0x%08x, expected 0x%08x\n", name_a, scope, scope_a);
+    ok(res == res_a, "[W:%s] res = 0x%08lx, expected 0x%08lx\n", name_a, res, res_a);
+    ok(scope == scope_a, "[W:%s] scope = 0x%08lx, expected 0x%08lx\n", name_a, scope, scope_a);
     ok(port == port_a, "[W:%s] port = 0x%08x, expected 0x%08x\n", name_a, port, port_a);
 
     ok(!memcmp(&ip, addr_a, sizeof(ip)),
@@ -2348,7 +2274,7 @@ static void test_RtlIpv6StringToAddressEx(void)
     }
 
     res = pRtlIpv6StringToAddressExA(simple_ip, &ip, &scope, &port);
-    ok(res == STATUS_SUCCESS, "[validate] res = 0x%08x, expected STATUS_SUCCESS\n", res);
+    ok(res == STATUS_SUCCESS, "[validate] res = 0x%08lx, expected STATUS_SUCCESS\n", res);
 
     init_ip6(&ip, NULL);
     init_ip6(&expected_ip, NULL);
@@ -2356,8 +2282,8 @@ static void test_RtlIpv6StringToAddressEx(void)
     port = 0xbeef;
     res = pRtlIpv6StringToAddressExA(NULL, &ip, &scope, &port);
     ok(res == STATUS_INVALID_PARAMETER,
-       "[null string] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-    ok(scope == 0xbadf00d, "[null string] scope = 0x%08x, expected 0xbadf00d\n", scope);
+       "[null string] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(scope == 0xbadf00d, "[null string] scope = 0x%08lx, expected 0xbadf00d\n", scope);
     ok(port == 0xbeef, "[null string] port = 0x%08x, expected 0xbeef\n", port);
     ok(!memcmp(&ip, &expected_ip, sizeof(ip)),
        "[null string] ip is changed, expected it not to change\n");
@@ -2368,8 +2294,8 @@ static void test_RtlIpv6StringToAddressEx(void)
     port = 0xbeef;
     res = pRtlIpv6StringToAddressExA(simple_ip, NULL, &scope, &port);
     ok(res == STATUS_INVALID_PARAMETER,
-       "[null result] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-    ok(scope == 0xbadf00d, "[null result] scope = 0x%08x, expected 0xbadf00d\n", scope);
+       "[null result] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(scope == 0xbadf00d, "[null result] scope = 0x%08lx, expected 0xbadf00d\n", scope);
     ok(port == 0xbeef, "[null result] port = 0x%08x, expected 0xbeef\n", port);
     ok(!memcmp(&ip, &expected_ip, sizeof(ip)),
        "[null result] ip is changed, expected it not to change\n");
@@ -2379,8 +2305,8 @@ static void test_RtlIpv6StringToAddressEx(void)
     port = 0xbeef;
     res = pRtlIpv6StringToAddressExA(simple_ip, &ip, NULL, &port);
     ok(res == STATUS_INVALID_PARAMETER,
-       "[null scope] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-    ok(scope == 0xbadf00d, "[null scope] scope = 0x%08x, expected 0xbadf00d\n", scope);
+       "[null scope] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(scope == 0xbadf00d, "[null scope] scope = 0x%08lx, expected 0xbadf00d\n", scope);
     ok(port == 0xbeef, "[null scope] port = 0x%08x, expected 0xbeef\n", port);
     ok(!memcmp(&ip, &expected_ip, sizeof(ip)),
        "[null scope] ip is changed, expected it not to change\n");
@@ -2390,8 +2316,8 @@ static void test_RtlIpv6StringToAddressEx(void)
     port = 0xbeef;
     res = pRtlIpv6StringToAddressExA(simple_ip, &ip, &scope, NULL);
     ok(res == STATUS_INVALID_PARAMETER,
-       "[null port] res = 0x%08x, expected STATUS_INVALID_PARAMETER\n", res);
-    ok(scope == 0xbadf00d, "[null port] scope = 0x%08x, expected 0xbadf00d\n", scope);
+       "[null port] res = 0x%08lx, expected STATUS_INVALID_PARAMETER\n", res);
+    ok(scope == 0xbadf00d, "[null port] scope = 0x%08lx, expected 0xbadf00d\n", scope);
     ok(port == 0xbeef, "[null port] port = 0x%08x, expected 0xbeef\n", port);
     ok(!memcmp(&ip, &expected_ip, sizeof(ip)),
        "[null port] ip is changed, expected it not to change\n");
@@ -2416,14 +2342,14 @@ static void test_RtlIpv6StringToAddressEx(void)
         /* make sure nothing was changed if this function fails. */
         if (res == STATUS_INVALID_PARAMETER)
         {
-            ok(scope == 0xbadf00d, "[%s] scope = 0x%08x, expected 0xbadf00d\n",
+            ok(scope == 0xbadf00d, "[%s] scope = 0x%08lx, expected 0xbadf00d\n",
                ipv6_tests[i].address, scope);
             ok(port == 0xbeef, "[%s] port = 0x%08x, expected 0xbeef\n",
                ipv6_tests[i].address, port);
         }
         else
         {
-            ok(scope != 0xbadf00d, "[%s] scope = 0x%08x, not expected 0xbadf00d\n",
+            ok(scope != 0xbadf00d, "[%s] scope = 0x%08lx, not expected 0xbadf00d\n",
                ipv6_tests[i].address, scope);
             ok(port != 0xbeef, "[%s] port = 0x%08x, not expected 0xbeef\n",
                ipv6_tests[i].address, port);
@@ -2432,14 +2358,14 @@ static void test_RtlIpv6StringToAddressEx(void)
         if (ipv6_tests[i].flags & win_broken_6)
         {
             ok(res == expect_ret || broken(res == STATUS_INVALID_PARAMETER),
-               "[%s] res = 0x%08x, expected 0x%08x\n", ipv6_tests[i].address, res, expect_ret);
+               "[%s] res = 0x%08lx, expected 0x%08lx\n", ipv6_tests[i].address, res, expect_ret);
 
             if (res == STATUS_INVALID_PARAMETER)
                 continue;
         }
         else
         {
-            ok(res == expect_ret, "[%s] res = 0x%08x, expected 0x%08x\n",
+            ok(res == expect_ret, "[%s] res = 0x%08lx, expected 0x%08lx\n",
                ipv6_tests[i].address, res, expect_ret);
         }
 
@@ -2467,9 +2393,9 @@ static void test_RtlIpv6StringToAddressEx(void)
         res = pRtlIpv6StringToAddressExA(ipv6_ex_tests[i].address, &ip, &scope, &port);
         compare_RtlIpv6StringToAddressExW(ipv6_ex_tests[i].address, &ip, res, scope, port);
 
-        ok(res == ipv6_ex_tests[i].res, "[%s] res = 0x%08x, expected 0x%08x\n",
+        ok(res == ipv6_ex_tests[i].res, "[%s] res = 0x%08lx, expected 0x%08lx\n",
            ipv6_ex_tests[i].address, res, ipv6_ex_tests[i].res);
-        ok(scope == ipv6_ex_tests[i].scope, "[%s] scope = 0x%08x, expected 0x%08x\n",
+        ok(scope == ipv6_ex_tests[i].scope, "[%s] scope = 0x%08lx, expected 0x%08lx\n",
            ipv6_ex_tests[i].address, scope, ipv6_ex_tests[i].scope);
         ok(port == ipv6_ex_tests[i].port, "[%s] port = 0x%08x, expected 0x%08x\n",
            ipv6_ex_tests[i].address, port, ipv6_ex_tests[i].port);
@@ -2491,12 +2417,6 @@ static void test_LdrAddRefDll(void)
     NTSTATUS status;
     BOOL ret;
 
-    if (!pLdrAddRefDll)
-    {
-        win_skip( "LdrAddRefDll not supported\n" );
-        return;
-    }
-
     mod = LoadLibraryA("comctl32.dll");
     ok(mod != NULL, "got %p\n", mod);
     ret = FreeLibrary(mod);
@@ -2508,8 +2428,8 @@ static void test_LdrAddRefDll(void)
     /* load, addref and release 2 times */
     mod = LoadLibraryA("comctl32.dll");
     ok(mod != NULL, "got %p\n", mod);
-    status = pLdrAddRefDll(0, mod);
-    ok(status == STATUS_SUCCESS, "got 0x%08x\n", status);
+    status = LdrAddRefDll(0, mod);
+    ok(status == STATUS_SUCCESS, "got 0x%08lx\n", status);
     ret = FreeLibrary(mod);
     ok(ret, "got %d\n", ret);
 
@@ -2524,8 +2444,8 @@ static void test_LdrAddRefDll(void)
     /* pin refcount */
     mod = LoadLibraryA("comctl32.dll");
     ok(mod != NULL, "got %p\n", mod);
-    status = pLdrAddRefDll(LDR_ADDREF_DLL_PIN, mod);
-    ok(status == STATUS_SUCCESS, "got 0x%08x\n", status);
+    status = LdrAddRefDll(LDR_ADDREF_DLL_PIN, mod);
+    ok(status == STATUS_SUCCESS, "got 0x%08lx\n", status);
 
     ret = FreeLibrary(mod);
     ok(ret, "got %d\n", ret);
@@ -2546,121 +2466,109 @@ static void test_LdrLockLoaderLock(void)
     ULONG result;
     NTSTATUS status;
 
-    if (!pLdrLockLoaderLock)
-    {
-        win_skip("LdrLockLoaderLock() is not available\n");
-        return;
-    }
-
     /* invalid flags */
     result = 10;
     magic = 0xdeadbeef;
-    status = pLdrLockLoaderLock(0x10, &result, &magic);
-    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08x\n", status);
-    ok(result == 0, "got %d\n", result);
-    ok(magic == 0, "got %lx\n", magic);
+    status = LdrLockLoaderLock(0x10, &result, &magic);
+    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08lx\n", status);
+    ok(result == 0, "got %ld\n", result);
+    ok(magic == 0, "got %Ix\n", magic);
 
     magic = 0xdeadbeef;
-    status = pLdrLockLoaderLock(0x10, NULL, &magic);
-    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08x\n", status);
-    ok(magic == 0, "got %lx\n", magic);
+    status = LdrLockLoaderLock(0x10, NULL, &magic);
+    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08lx\n", status);
+    ok(magic == 0, "got %Ix\n", magic);
 
     result = 10;
-    status = pLdrLockLoaderLock(0x10, &result, NULL);
-    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08x\n", status);
-    ok(result == 0, "got %d\n", result);
+    status = LdrLockLoaderLock(0x10, &result, NULL);
+    ok(status == STATUS_INVALID_PARAMETER_1, "got 0x%08lx\n", status);
+    ok(result == 0, "got %ld\n", result);
 
     /* non-blocking mode, result is null */
     magic = 0xdeadbeef;
-    status = pLdrLockLoaderLock(0x2, NULL, &magic);
-    ok(status == STATUS_INVALID_PARAMETER_2, "got 0x%08x\n", status);
-    ok(magic == 0, "got %lx\n", magic);
+    status = LdrLockLoaderLock(0x2, NULL, &magic);
+    ok(status == STATUS_INVALID_PARAMETER_2, "got 0x%08lx\n", status);
+    ok(magic == 0, "got %Ix\n", magic);
 
     /* magic pointer is null */
     result = 10;
-    status = pLdrLockLoaderLock(0, &result, NULL);
-    ok(status == STATUS_INVALID_PARAMETER_3, "got 0x%08x\n", status);
-    ok(result == 0, "got %d\n", result);
+    status = LdrLockLoaderLock(0, &result, NULL);
+    ok(status == STATUS_INVALID_PARAMETER_3, "got 0x%08lx\n", status);
+    ok(result == 0, "got %ld\n", result);
 
     /* lock in non-blocking mode */
     result = 0;
     magic = 0;
-    status = pLdrLockLoaderLock(0x2, &result, &magic);
-    ok(status == STATUS_SUCCESS, "got 0x%08x\n", status);
-    ok(result == 1, "got %d\n", result);
-    ok(magic != 0, "got %lx\n", magic);
-    pLdrUnlockLoaderLock(0, magic);
+    status = LdrLockLoaderLock(0x2, &result, &magic);
+    ok(status == STATUS_SUCCESS, "got 0x%08lx\n", status);
+    ok(result == 1, "got %ld\n", result);
+    ok(magic != 0, "got %Ix\n", magic);
+    LdrUnlockLoaderLock(0, magic);
 }
 
 static void test_RtlCompressBuffer(void)
 {
     ULONG compress_workspace, decompress_workspace;
-    static const UCHAR test_buffer[] = "WineWineWine";
+    static UCHAR test_buffer[] = "WineWineWine";
     static UCHAR buf1[0x1000], buf2[0x1000];
     ULONG final_size, buf_size;
     UCHAR *workspace = NULL;
     NTSTATUS status;
 
-    if (!pRtlCompressBuffer || !pRtlDecompressBuffer || !pRtlGetCompressionWorkSpaceSize)
-    {
-        win_skip("skipping RtlCompressBuffer tests, required functions not available\n");
-        return;
-    }
-
     compress_workspace = decompress_workspace = 0xdeadbeef;
-    status = pRtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1, &compress_workspace,
-                                             &decompress_workspace);
-    ok(status == STATUS_SUCCESS, "got wrong status 0x%08x\n", status);
-    ok(compress_workspace != 0, "got wrong compress_workspace %u\n", compress_workspace);
+    status = RtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1, &compress_workspace,
+                                            &decompress_workspace);
+    ok(status == STATUS_SUCCESS, "got wrong status 0x%08lx\n", status);
+    ok(compress_workspace != 0, "got wrong compress_workspace %lu\n", compress_workspace);
     workspace = HeapAlloc(GetProcessHeap(), 0, compress_workspace);
-    ok(workspace != NULL, "HeapAlloc failed %d\n", GetLastError());
+    ok(workspace != NULL, "HeapAlloc failed %ld\n", GetLastError());
 
     /* test compression format / engine */
     final_size = 0xdeadbeef;
-    status = pRtlCompressBuffer(COMPRESSION_FORMAT_NONE, test_buffer, sizeof(test_buffer),
-                                buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlCompressBuffer(COMPRESSION_FORMAT_NONE, test_buffer, sizeof(test_buffer),
+                               buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     final_size = 0xdeadbeef;
-    status = pRtlCompressBuffer(COMPRESSION_FORMAT_DEFAULT, test_buffer, sizeof(test_buffer),
-                                buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlCompressBuffer(COMPRESSION_FORMAT_DEFAULT, test_buffer, sizeof(test_buffer),
+                               buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     final_size = 0xdeadbeef;
-    status = pRtlCompressBuffer(0xFF, test_buffer, sizeof(test_buffer),
-                                buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
-    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlCompressBuffer(0xFF, test_buffer, sizeof(test_buffer),
+                               buf1, sizeof(buf1) - 1, 4096, &final_size, workspace);
+    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     /* test compression */
     final_size = 0xdeadbeef;
     memset(buf1, 0x11, sizeof(buf1));
-    status = pRtlCompressBuffer(COMPRESSION_FORMAT_LZNT1, test_buffer, sizeof(test_buffer),
-                                buf1, sizeof(buf1), 4096, &final_size, workspace);
-    ok(status == STATUS_SUCCESS, "got wrong status 0x%08x\n", status);
+    status = RtlCompressBuffer(COMPRESSION_FORMAT_LZNT1, test_buffer, sizeof(test_buffer),
+                               buf1, sizeof(buf1), 4096, &final_size, workspace);
+    ok(status == STATUS_SUCCESS, "got wrong status 0x%08lx\n", status);
     ok((*(WORD *)buf1 & 0x7000) == 0x3000, "no chunk signature found %04x\n", *(WORD *)buf1);
     todo_wine
-    ok(final_size < sizeof(test_buffer), "got wrong final_size %u\n", final_size);
+    ok(final_size < sizeof(test_buffer), "got wrong final_size %lu\n", final_size);
 
     /* test decompression */
     buf_size = final_size;
     final_size = 0xdeadbeef;
     memset(buf2, 0x11, sizeof(buf2));
-    status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf2, sizeof(buf2),
-                                  buf1, buf_size, &final_size);
-    ok(status == STATUS_SUCCESS, "got wrong status 0x%08x\n", status);
-    ok(final_size == sizeof(test_buffer), "got wrong final_size %u\n", final_size);
+    status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf2, sizeof(buf2),
+                                 buf1, buf_size, &final_size);
+    ok(status == STATUS_SUCCESS, "got wrong status 0x%08lx\n", status);
+    ok(final_size == sizeof(test_buffer), "got wrong final_size %lu\n", final_size);
     ok(!memcmp(buf2, test_buffer, sizeof(test_buffer)), "got wrong decoded data\n");
     ok(buf2[sizeof(test_buffer)] == 0x11, "too many bytes written\n");
 
     /* buffer too small */
     final_size = 0xdeadbeef;
     memset(buf1, 0x11, sizeof(buf1));
-    status = pRtlCompressBuffer(COMPRESSION_FORMAT_LZNT1, test_buffer, sizeof(test_buffer),
-                                buf1, 4, 4096, &final_size, workspace);
-    ok(status == STATUS_BUFFER_TOO_SMALL, "got wrong status 0x%08x\n", status);
+    status = RtlCompressBuffer(COMPRESSION_FORMAT_LZNT1, test_buffer, sizeof(test_buffer),
+                               buf1, 4, 4096, &final_size, workspace);
+    ok(status == STATUS_BUFFER_TOO_SMALL, "got wrong status 0x%08lx\n", status);
 
     HeapFree(GetProcessHeap(), 0, workspace);
 }
@@ -2670,38 +2578,32 @@ static void test_RtlGetCompressionWorkSpaceSize(void)
     ULONG compress_workspace, decompress_workspace;
     NTSTATUS status;
 
-    if (!pRtlGetCompressionWorkSpaceSize)
-    {
-        win_skip("RtlGetCompressionWorkSpaceSize is not available\n");
-        return;
-    }
-
     /* test invalid format / engine */
-    status = pRtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_NONE, &compress_workspace,
-                                             &decompress_workspace);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
+    status = RtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_NONE, &compress_workspace,
+                                            &decompress_workspace);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
 
-    status = pRtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_DEFAULT, &compress_workspace,
-                                             &decompress_workspace);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
+    status = RtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_DEFAULT, &compress_workspace,
+                                            &decompress_workspace);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
 
-    status = pRtlGetCompressionWorkSpaceSize(0xFF, &compress_workspace, &decompress_workspace);
-    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08x\n", status);
+    status = RtlGetCompressionWorkSpaceSize(0xFF, &compress_workspace, &decompress_workspace);
+    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08lx\n", status);
 
     /* test LZNT1 with normal and maximum compression */
     compress_workspace = decompress_workspace = 0xdeadbeef;
-    status = pRtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1, &compress_workspace,
-                                             &decompress_workspace);
-    ok(status == STATUS_SUCCESS, "got wrong status 0x%08x\n", status);
-    ok(compress_workspace != 0, "got wrong compress_workspace %u\n", compress_workspace);
-    ok(decompress_workspace == 0x1000, "got wrong decompress_workspace %u\n", decompress_workspace);
+    status = RtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1, &compress_workspace,
+                                            &decompress_workspace);
+    ok(status == STATUS_SUCCESS, "got wrong status 0x%08lx\n", status);
+    ok(compress_workspace != 0, "got wrong compress_workspace %lu\n", compress_workspace);
+    ok(decompress_workspace == 0x1000, "got wrong decompress_workspace %lu\n", decompress_workspace);
 
     compress_workspace = decompress_workspace = 0xdeadbeef;
-    status = pRtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1 | COMPRESSION_ENGINE_MAXIMUM,
-                                             &compress_workspace, &decompress_workspace);
-    ok(status == STATUS_SUCCESS, "got wrong status 0x%08x\n", status);
-    ok(compress_workspace != 0, "got wrong compress_workspace %u\n", compress_workspace);
-    ok(decompress_workspace == 0x1000, "got wrong decompress_workspace %u\n", decompress_workspace);
+    status = RtlGetCompressionWorkSpaceSize(COMPRESSION_FORMAT_LZNT1 | COMPRESSION_ENGINE_MAXIMUM,
+                                            &compress_workspace, &decompress_workspace);
+    ok(status == STATUS_SUCCESS, "got wrong status 0x%08lx\n", status);
+    ok(compress_workspace != 0, "got wrong compress_workspace %lu\n", compress_workspace);
+    ok(decompress_workspace == 0x1000, "got wrong decompress_workspace %lu\n", decompress_workspace);
 }
 
 /* helper for test_RtlDecompressBuffer, checks if a chunk is incomplete */
@@ -2731,7 +2633,7 @@ static BOOL is_incomplete_chunk(const UCHAR *compressed, ULONG compressed_size, 
 
 static void test_RtlDecompressBuffer(void)
 {
-    static const struct
+    static struct
     {
         UCHAR compressed[32];
         ULONG compressed_size;
@@ -2938,69 +2840,63 @@ static void test_RtlDecompressBuffer(void)
     ULONG final_size;
     int i;
 
-    if (!pRtlDecompressBuffer || !pRtlDecompressFragment)
-    {
-        win_skip("RtlDecompressBuffer or RtlDecompressFragment is not available\n");
-        return;
-    }
-
     /* test compression format / engine */
     final_size = 0xdeadbeef;
-    status = pRtlDecompressBuffer(COMPRESSION_FORMAT_NONE, buf, sizeof(buf), test_lznt[0].compressed,
-                                  test_lznt[0].compressed_size, &final_size);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlDecompressBuffer(COMPRESSION_FORMAT_NONE, buf, sizeof(buf), test_lznt[0].compressed,
+                                 test_lznt[0].compressed_size, &final_size);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     final_size = 0xdeadbeef;
-    status = pRtlDecompressBuffer(COMPRESSION_FORMAT_DEFAULT, buf, sizeof(buf), test_lznt[0].compressed,
-                                  test_lznt[0].compressed_size, &final_size);
-    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlDecompressBuffer(COMPRESSION_FORMAT_DEFAULT, buf, sizeof(buf), test_lznt[0].compressed,
+                                 test_lznt[0].compressed_size, &final_size);
+    ok(status == STATUS_INVALID_PARAMETER, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     final_size = 0xdeadbeef;
-    status = pRtlDecompressBuffer(0xFF, buf, sizeof(buf), test_lznt[0].compressed,
-                                  test_lznt[0].compressed_size, &final_size);
-    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08x\n", status);
-    ok(final_size == 0xdeadbeef, "got wrong final_size %u\n", final_size);
+    status = RtlDecompressBuffer(0xFF, buf, sizeof(buf), test_lznt[0].compressed,
+                                 test_lznt[0].compressed_size, &final_size);
+    ok(status == STATUS_UNSUPPORTED_COMPRESSION, "got wrong status 0x%08lx\n", status);
+    ok(final_size == 0xdeadbeef, "got wrong final_size %lu\n", final_size);
 
     /* regular tests for RtlDecompressBuffer */
     for (i = 0; i < ARRAY_SIZE(test_lznt); i++)
     {
-        trace("Running test %d (compressed_size=%u, uncompressed_size=%u, status=0x%08x)\n",
+        trace("Running test %d (compressed_size=%lu, uncompressed_size=%lu, status=0x%08lx)\n",
               i, test_lznt[i].compressed_size, test_lznt[i].uncompressed_size, test_lznt[i].status);
 
         /* test with very big buffer */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
-                                      test_lznt[i].compressed_size, &final_size);
+        status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
+                                     test_lznt[i].compressed_size, &final_size);
         ok(status == test_lznt[i].status || broken(status == STATUS_BAD_COMPRESSION_BUFFER &&
-           (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)), "%d: got wrong status 0x%08x\n", i, status);
+           (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)), "%d: got wrong status 0x%08lx\n", i, status);
         if (!status)
         {
             ok(final_size == test_lznt[i].uncompressed_size,
-               "%d: got wrong final_size %u\n", i, final_size);
+               "%d: got wrong final_size %lu\n", i, final_size);
             ok(!memcmp(buf, test_lznt[i].uncompressed, test_lznt[i].uncompressed_size),
                "%d: got wrong decoded data\n", i);
             ok(buf[test_lznt[i].uncompressed_size] == 0x11,
-               "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size);
+               "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size);
         }
 
         /* test that modifier for compression engine is ignored */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1 | COMPRESSION_ENGINE_MAXIMUM, buf, sizeof(buf),
-                                      test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
+        status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1 | COMPRESSION_ENGINE_MAXIMUM, buf, sizeof(buf),
+                                     test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
         ok(status == test_lznt[i].status || broken(status == STATUS_BAD_COMPRESSION_BUFFER &&
-           (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)), "%d: got wrong status 0x%08x\n", i, status);
+           (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)), "%d: got wrong status 0x%08lx\n", i, status);
         if (!status)
         {
             ok(final_size == test_lznt[i].uncompressed_size,
-               "%d: got wrong final_size %u\n", i, final_size);
+               "%d: got wrong final_size %lu\n", i, final_size);
             ok(!memcmp(buf, test_lznt[i].uncompressed, test_lznt[i].uncompressed_size),
                "%d: got wrong decoded data\n", i);
             ok(buf[test_lznt[i].uncompressed_size] == 0x11,
-               "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size);
+               "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size);
         }
 
         /* test with expected output size */
@@ -3008,17 +2904,17 @@ static void test_RtlDecompressBuffer(void)
         {
             final_size = 0xdeadbeef;
             memset(buf, 0x11, sizeof(buf));
-            status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, test_lznt[i].uncompressed_size,
-                                          test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
-            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08x\n", i, status);
+            status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, test_lznt[i].uncompressed_size,
+                                         test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
+            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08lx\n", i, status);
             if (!status)
             {
                 ok(final_size == test_lznt[i].uncompressed_size,
-                   "%d: got wrong final_size %u\n", i, final_size);
+                   "%d: got wrong final_size %lu\n", i, final_size);
                 ok(!memcmp(buf, test_lznt[i].uncompressed, test_lznt[i].uncompressed_size),
                    "%d: got wrong decoded data\n", i);
                 ok(buf[test_lznt[i].uncompressed_size] == 0x11,
-                   "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size);
+                   "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size);
             }
         }
 
@@ -3027,102 +2923,102 @@ static void test_RtlDecompressBuffer(void)
         {
             final_size = 0xdeadbeef;
             memset(buf, 0x11, sizeof(buf));
-            status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, test_lznt[i].uncompressed_size - 1,
-                                          test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
+            status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, test_lznt[i].uncompressed_size - 1,
+                                         test_lznt[i].compressed, test_lznt[i].compressed_size, &final_size);
             if (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_TRUNCATED)
                 todo_wine
-                ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08x\n", i, status);
+                ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08lx\n", i, status);
             else
-                ok(status == test_lznt[i].status, "%d: got wrong status 0x%08x\n", i, status);
+                ok(status == test_lznt[i].status, "%d: got wrong status 0x%08lx\n", i, status);
             if (!status)
             {
                 ok(final_size == test_lznt[i].uncompressed_size - 1,
-                   "%d: got wrong final_size %u\n", i, final_size);
+                   "%d: got wrong final_size %lu\n", i, final_size);
                 ok(!memcmp(buf, test_lznt[i].uncompressed, test_lznt[i].uncompressed_size - 1),
                    "%d: got wrong decoded data\n", i);
                 ok(buf[test_lznt[i].uncompressed_size - 1] == 0x11,
-                   "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size - 1);
+                   "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size - 1);
             }
         }
 
         /* test with zero output size */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, 0, test_lznt[i].compressed,
-                                      test_lznt[i].compressed_size, &final_size);
+        status = RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, buf, 0, test_lznt[i].compressed,
+                                     test_lznt[i].compressed_size, &final_size);
         if (is_incomplete_chunk(test_lznt[i].compressed, test_lznt[i].compressed_size, FALSE))
-            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08lx\n", i, status);
         else
         {
-            ok(status == STATUS_SUCCESS, "%d: got wrong status 0x%08x\n", i, status);
-            ok(final_size == 0, "%d: got wrong final_size %u\n", i, final_size);
+            ok(status == STATUS_SUCCESS, "%d: got wrong status 0x%08lx\n", i, status);
+            ok(final_size == 0, "%d: got wrong final_size %lu\n", i, final_size);
             ok(buf[0] == 0x11, "%d: buf[0] was modified\n", i);
         }
 
         /* test RtlDecompressFragment with offset = 0 */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
-                                        test_lznt[i].compressed_size, 0, &final_size, workspace);
+        status = RtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
+                                       test_lznt[i].compressed_size, 0, &final_size, workspace);
         if (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)
             todo_wine
-            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08lx\n", i, status);
         else
-            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08lx\n", i, status);
         if (!status)
         {
             ok(final_size == test_lznt[i].uncompressed_size,
-               "%d: got wrong final_size %u\n", i, final_size);
+               "%d: got wrong final_size %lu\n", i, final_size);
             ok(!memcmp(buf, test_lznt[i].uncompressed, test_lznt[i].uncompressed_size),
                "%d: got wrong decoded data\n", i);
             ok(buf[test_lznt[i].uncompressed_size] == 0x11,
-               "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size);
+               "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size);
         }
 
         /* test RtlDecompressFragment with offset = 1 */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
-                                        test_lznt[i].compressed_size, 1, &final_size, workspace);
+        status = RtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
+                                       test_lznt[i].compressed_size, 1, &final_size, workspace);
         if (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)
             todo_wine
-            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08lx\n", i, status);
         else
-            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08lx\n", i, status);
         if (!status)
         {
             if (test_lznt[i].uncompressed_size == 0)
             {
                 todo_wine
-                ok(final_size == 4095, "%d: got wrong final_size %u\n", i, final_size);
+                ok(final_size == 4095, "%d: got wrong final_size %lu\n", i, final_size);
                 /* Buffer doesn't contain any useful value on Windows */
                 ok(buf[4095] == 0x11, "%d: buf[4095] was modified\n", i);
             }
             else
             {
                 ok(final_size == test_lznt[i].uncompressed_size - 1,
-                   "%d: got wrong final_size %u\n", i, final_size);
+                   "%d: got wrong final_size %lu\n", i, final_size);
                 ok(!memcmp(buf, test_lznt[i].uncompressed + 1, test_lznt[i].uncompressed_size - 1),
                    "%d: got wrong decoded data\n", i);
                 ok(buf[test_lznt[i].uncompressed_size - 1] == 0x11,
-                   "%d: buf[%u] was modified\n", i, test_lznt[i].uncompressed_size - 1);
+                   "%d: buf[%lu] was modified\n", i, test_lznt[i].uncompressed_size - 1);
             }
         }
 
         /* test RtlDecompressFragment with offset = 4095 */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
-                                        test_lznt[i].compressed_size, 4095, &final_size, workspace);
+        status = RtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
+                                       test_lznt[i].compressed_size, 4095, &final_size, workspace);
         if (test_lznt[i].broken_flags & DECOMPRESS_BROKEN_FRAGMENT)
             todo_wine
-            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == STATUS_BAD_COMPRESSION_BUFFER, "%d: got wrong status 0x%08lx\n", i, status);
         else
-            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08x\n", i, status);
+            ok(status == test_lznt[i].status, "%d: got wrong status 0x%08lx\n", i, status);
         if (!status)
         {
             todo_wine
-            ok(final_size == 1, "%d: got wrong final_size %u\n", i, final_size);
+            ok(final_size == 1, "%d: got wrong final_size %lu\n", i, final_size);
             todo_wine
             ok(buf[0] == 0, "%d: padding is not zero\n", i);
             ok(buf[1] == 0x11, "%d: buf[1] was modified\n", i);
@@ -3131,14 +3027,14 @@ static void test_RtlDecompressBuffer(void)
         /* test RtlDecompressFragment with offset = 4096 */
         final_size = 0xdeadbeef;
         memset(buf, 0x11, sizeof(buf));
-        status = pRtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
-                                        test_lznt[i].compressed_size, 4096, &final_size, workspace);
+        status = RtlDecompressFragment(COMPRESSION_FORMAT_LZNT1, buf, sizeof(buf), test_lznt[i].compressed,
+                                       test_lznt[i].compressed_size, 4096, &final_size, workspace);
         expected_status = is_incomplete_chunk(test_lznt[i].compressed, test_lznt[i].compressed_size, TRUE) ?
                           test_lznt[i].status : STATUS_SUCCESS;
-        ok(status == expected_status, "%d: got wrong status 0x%08x, expected 0x%08x\n", i, status, expected_status);
+        ok(status == expected_status, "%d: got wrong status 0x%08lx, expected 0x%08lx\n", i, status, expected_status);
         if (!status)
         {
-            ok(final_size == 0, "%d: got wrong final_size %u\n", i, final_size);
+            ok(final_size == 0, "%d: got wrong final_size %lu\n", i, final_size);
             ok(buf[0] == 0x11, "%d: buf[4096] was modified\n", i);
         }
     }
@@ -3159,29 +3055,29 @@ static DWORD WINAPI critsect_locked_thread(void *param)
     DWORD ret;
 
     ret = pRtlIsCriticalSectionLocked(&info->crit);
-    ok(ret == TRUE, "expected TRUE, got %u\n", ret);
+    ok(ret == TRUE, "expected TRUE, got %lu\n", ret);
     ret = pRtlIsCriticalSectionLockedByThread(&info->crit);
-    ok(ret == FALSE, "expected FALSE, got %u\n", ret);
+    ok(ret == FALSE, "expected FALSE, got %lu\n", ret);
 
     ReleaseSemaphore(info->semaphores[0], 1, NULL);
     ret = WaitForSingleObject(info->semaphores[1], 1000);
-    ok(ret == WAIT_OBJECT_0, "expected WAIT_OBJECT_0, got %u\n", ret);
+    ok(ret == WAIT_OBJECT_0, "expected WAIT_OBJECT_0, got %lu\n", ret);
 
     ret = pRtlIsCriticalSectionLocked(&info->crit);
-    ok(ret == FALSE, "expected FALSE, got %u\n", ret);
+    ok(ret == FALSE, "expected FALSE, got %lu\n", ret);
     ret = pRtlIsCriticalSectionLockedByThread(&info->crit);
-    ok(ret == FALSE, "expected FALSE, got %u\n", ret);
+    ok(ret == FALSE, "expected FALSE, got %lu\n", ret);
 
     EnterCriticalSection(&info->crit);
 
     ret = pRtlIsCriticalSectionLocked(&info->crit);
-    ok(ret == TRUE, "expected TRUE, got %u\n", ret);
+    ok(ret == TRUE, "expected TRUE, got %lu\n", ret);
     ret = pRtlIsCriticalSectionLockedByThread(&info->crit);
-    ok(ret == TRUE, "expected TRUE, got %u\n", ret);
+    ok(ret == TRUE, "expected TRUE, got %lu\n", ret);
 
     ReleaseSemaphore(info->semaphores[0], 1, NULL);
     ret = WaitForSingleObject(info->semaphores[1], 1000);
-    ok(ret == WAIT_OBJECT_0, "expected WAIT_OBJECT_0, got %u\n", ret);
+    ok(ret == WAIT_OBJECT_0, "expected WAIT_OBJECT_0, got %lu\n", ret);
 
     LeaveCriticalSection(&info->crit);
     return 0;
@@ -3201,9 +3097,9 @@ static void test_RtlIsCriticalSectionLocked(void)
 
     InitializeCriticalSection(&info.crit);
     info.semaphores[0] = CreateSemaphoreW(NULL, 0, 1, NULL);
-    ok(info.semaphores[0] != NULL, "CreateSemaphore failed with %u\n", GetLastError());
+    ok(info.semaphores[0] != NULL, "CreateSemaphore failed with %lu\n", GetLastError());
     info.semaphores[1] = CreateSemaphoreW(NULL, 0, 1, NULL);
-    ok(info.semaphores[1] != NULL, "CreateSemaphore failed with %u\n", GetLastError());
+    ok(info.semaphores[1] != NULL, "CreateSemaphore failed with %lu\n", GetLastError());
 
     ret = pRtlIsCriticalSectionLocked(&info.crit);
     ok(ret == FALSE, "expected FALSE, got %u\n", ret);
@@ -3218,7 +3114,7 @@ static void test_RtlIsCriticalSectionLocked(void)
     ok(ret == TRUE, "expected TRUE, got %u\n", ret);
 
     thread = CreateThread(NULL, 0, critsect_locked_thread, &info, 0, NULL);
-    ok(thread != NULL, "CreateThread failed with %u\n", GetLastError());
+    ok(thread != NULL, "CreateThread failed with %lu\n", GetLastError());
     ret = WaitForSingleObject(info.semaphores[0], 1000);
     ok(ret == WAIT_OBJECT_0, "expected WAIT_OBJECT_0, got %u\n", ret);
 
@@ -3258,21 +3154,21 @@ static void test_RtlInitializeCriticalSectionEx(void)
     pRtlInitializeCriticalSectionEx(&cs, 0, 0);
     ok((cs.DebugInfo != NULL && cs.DebugInfo != no_debug) || broken(cs.DebugInfo == no_debug) /* >= Win 8 */,
        "expected DebugInfo != NULL and DebugInfo != ~0, got %p\n", cs.DebugInfo);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %d\n", cs.RecursionCount);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %ld\n", cs.RecursionCount);
     ok(cs.LockSemaphore == NULL, "expected LockSemaphore == NULL, got %p\n", cs.LockSemaphore);
     ok(cs.SpinCount == 0 || broken(cs.SpinCount != 0) /* >= Win 8 */,
-       "expected SpinCount == 0, got %ld\n", cs.SpinCount);
+       "expected SpinCount == 0, got %Id\n", cs.SpinCount);
     RtlDeleteCriticalSection(&cs);
 
     memset(&cs, 0x11, sizeof(cs));
     pRtlInitializeCriticalSectionEx(&cs, 0, RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO);
     ok(cs.DebugInfo == no_debug, "expected DebugInfo == ~0, got %p\n", cs.DebugInfo);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %d\n", cs.RecursionCount);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %ld\n", cs.RecursionCount);
     ok(cs.LockSemaphore == NULL, "expected LockSemaphore == NULL, got %p\n", cs.LockSemaphore);
     ok(cs.SpinCount == 0 || broken(cs.SpinCount != 0) /* >= Win 8 */,
-       "expected SpinCount == 0, got %ld\n", cs.SpinCount);
+       "expected SpinCount == 0, got %Id\n", cs.SpinCount);
     RtlDeleteCriticalSection(&cs);
 }
 
@@ -3285,19 +3181,19 @@ static void test_RtlLeaveCriticalSection(void)
         return; /* Skip winxp */
 
     status = RtlInitializeCriticalSection(&cs);
-    ok(!status, "RtlInitializeCriticalSection failed: %x\n", status);
+    ok(!status, "RtlInitializeCriticalSection failed: %lx\n", status);
 
     status = RtlEnterCriticalSection(&cs);
-    ok(!status, "RtlEnterCriticalSection failed: %x\n", status);
+    ok(!status, "RtlEnterCriticalSection failed: %lx\n", status);
     todo_wine
-    ok(cs.LockCount == -2, "expected LockCount == -2, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 1, "expected RecursionCount == 1, got %d\n", cs.RecursionCount);
+    ok(cs.LockCount == -2, "expected LockCount == -2, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 1, "expected RecursionCount == 1, got %ld\n", cs.RecursionCount);
     ok(cs.OwningThread == ULongToHandle(GetCurrentThreadId()), "unexpected OwningThread\n");
 
     status = RtlLeaveCriticalSection(&cs);
-    ok(!status, "RtlLeaveCriticalSection failed: %x\n", status);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %d\n", cs.RecursionCount);
+    ok(!status, "RtlLeaveCriticalSection failed: %lx\n", status);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %ld\n", cs.RecursionCount);
     ok(!cs.OwningThread, "unexpected OwningThread %p\n", cs.OwningThread);
 
     /*
@@ -3305,34 +3201,34 @@ static void test_RtlLeaveCriticalSection(void)
      * but doesn't modify LockCount so that an attempt to enter the section later will work.
      */
     status = RtlLeaveCriticalSection(&cs);
-    ok(!status, "RtlLeaveCriticalSection failed: %x\n", status);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == -1, "expected RecursionCount == -1, got %d\n", cs.RecursionCount);
+    ok(!status, "RtlLeaveCriticalSection failed: %lx\n", status);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == -1, "expected RecursionCount == -1, got %ld\n", cs.RecursionCount);
     ok(!cs.OwningThread, "unexpected OwningThread %p\n", cs.OwningThread);
 
     /* and again */
     status = RtlLeaveCriticalSection(&cs);
-    ok(!status, "RtlLeaveCriticalSection failed: %x\n", status);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == -2, "expected RecursionCount == -2, got %d\n", cs.RecursionCount);
+    ok(!status, "RtlLeaveCriticalSection failed: %lx\n", status);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == -2, "expected RecursionCount == -2, got %ld\n", cs.RecursionCount);
     ok(!cs.OwningThread, "unexpected OwningThread %p\n", cs.OwningThread);
 
     /* entering section fixes RecursionCount */
     status = RtlEnterCriticalSection(&cs);
-    ok(!status, "RtlEnterCriticalSection failed: %x\n", status);
+    ok(!status, "RtlEnterCriticalSection failed: %lx\n", status);
     todo_wine
-    ok(cs.LockCount == -2, "expected LockCount == -2, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 1, "expected RecursionCount == 1, got %d\n", cs.RecursionCount);
+    ok(cs.LockCount == -2, "expected LockCount == -2, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 1, "expected RecursionCount == 1, got %ld\n", cs.RecursionCount);
     ok(cs.OwningThread == ULongToHandle(GetCurrentThreadId()), "unexpected OwningThread\n");
 
     status = RtlLeaveCriticalSection(&cs);
-    ok(!status, "RtlLeaveCriticalSection failed: %x\n", status);
-    ok(cs.LockCount == -1, "expected LockCount == -1, got %d\n", cs.LockCount);
-    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %d\n", cs.RecursionCount);
+    ok(!status, "RtlLeaveCriticalSection failed: %lx\n", status);
+    ok(cs.LockCount == -1, "expected LockCount == -1, got %ld\n", cs.LockCount);
+    ok(cs.RecursionCount == 0, "expected RecursionCount == 0, got %ld\n", cs.RecursionCount);
     ok(!cs.OwningThread, "unexpected OwningThread %p\n", cs.OwningThread);
 
     status = RtlDeleteCriticalSection(&cs);
-    ok(!status, "RtlDeleteCriticalSection failed: %x\n", status);
+    ok(!status, "RtlDeleteCriticalSection failed: %lx\n", status);
 }
 
 struct ldr_enum_context
@@ -3342,7 +3238,7 @@ struct ldr_enum_context
     int  count;
 };
 
-static void WINAPI ldr_enum_callback(LDR_MODULE *module, void *context, BOOLEAN *stop)
+static void WINAPI ldr_enum_callback(LDR_DATA_TABLE_ENTRY *module, void *context, BOOLEAN *stop)
 {
     static const WCHAR ntdllW[] = {'n','t','d','l','l','.','d','l','l',0};
     struct ldr_enum_context *ctx = context;
@@ -3369,24 +3265,24 @@ static void test_LdrEnumerateLoadedModules(void)
     ctx.found = FALSE;
     ctx.count = 0;
     status = pLdrEnumerateLoadedModules(NULL, ldr_enum_callback, &ctx);
-    ok(status == STATUS_SUCCESS, "LdrEnumerateLoadedModules failed with %08x\n", status);
+    ok(status == STATUS_SUCCESS, "LdrEnumerateLoadedModules failed with %08lx\n", status);
     ok(ctx.count > 1, "Expected more than one module, got %d\n", ctx.count);
     ok(ctx.found, "Could not find ntdll in list of modules\n");
 
     ctx.abort = TRUE;
     ctx.count = 0;
     status = pLdrEnumerateLoadedModules(NULL, ldr_enum_callback, &ctx);
-    ok(status == STATUS_SUCCESS, "LdrEnumerateLoadedModules failed with %08x\n", status);
+    ok(status == STATUS_SUCCESS, "LdrEnumerateLoadedModules failed with %08lx\n", status);
     ok(ctx.count == 1, "Expected exactly one module, got %d\n", ctx.count);
 
     status = pLdrEnumerateLoadedModules((void *)0x1, ldr_enum_callback, (void *)0xdeadbeef);
-    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08x\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08lx\n", status);
 
     status = pLdrEnumerateLoadedModules((void *)0xdeadbeef, ldr_enum_callback, (void *)0xdeadbeef);
-    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08x\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08lx\n", status);
 
     status = pLdrEnumerateLoadedModules(NULL, NULL, (void *)0xdeadbeef);
-    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08x\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "expected STATUS_INVALID_PARAMETER, got 0x%08lx\n", status);
 }
 
 static void test_RtlMakeSelfRelativeSD(void)
@@ -3397,42 +3293,36 @@ static void test_RtlMakeSelfRelativeSD(void)
     NTSTATUS status;
     DWORD len;
 
-    if (!pRtlMakeSelfRelativeSD || !pRtlAbsoluteToSelfRelativeSD)
-    {
-        win_skip( "RtlMakeSelfRelativeSD/RtlAbsoluteToSelfRelativeSD not available\n" );
-        return;
-    }
-
     memset( &sd, 0, sizeof(sd) );
     sd.Revision = SECURITY_DESCRIPTOR_REVISION;
 
     len = 0;
-    status = pRtlMakeSelfRelativeSD( &sd, NULL, &len );
-    ok( status == STATUS_BUFFER_TOO_SMALL, "got %08x\n", status );
-    ok( len == sizeof(*sd_rel), "got %u\n", len );
+    status = RtlMakeSelfRelativeSD( &sd, NULL, &len );
+    ok( status == STATUS_BUFFER_TOO_SMALL, "got %08lx\n", status );
+    ok( len == sizeof(*sd_rel), "got %lu\n", len );
 
     len += 4;
-    status = pRtlMakeSelfRelativeSD( &sd, sd_rel, &len );
-    ok( status == STATUS_SUCCESS, "got %08x\n", status );
-    ok( len == sizeof(*sd_rel) + 4, "got %u\n", len );
+    status = RtlMakeSelfRelativeSD( &sd, sd_rel, &len );
+    ok( status == STATUS_SUCCESS, "got %08lx\n", status );
+    ok( len == sizeof(*sd_rel) + 4, "got %lu\n", len );
 
     len = 0;
-    status = pRtlAbsoluteToSelfRelativeSD( &sd, NULL, &len );
-    ok( status == STATUS_BUFFER_TOO_SMALL, "got %08x\n", status );
-    ok( len == sizeof(*sd_rel), "got %u\n", len );
+    status = RtlAbsoluteToSelfRelativeSD( &sd, NULL, &len );
+    ok( status == STATUS_BUFFER_TOO_SMALL, "got %08lx\n", status );
+    ok( len == sizeof(*sd_rel), "got %lu\n", len );
 
     len += 4;
-    status = pRtlAbsoluteToSelfRelativeSD( &sd, sd_rel, &len );
-    ok( status == STATUS_SUCCESS, "got %08x\n", status );
-    ok( len == sizeof(*sd_rel) + 4, "got %u\n", len );
+    status = RtlAbsoluteToSelfRelativeSD( &sd, sd_rel, &len );
+    ok( status == STATUS_SUCCESS, "got %08lx\n", status );
+    ok( len == sizeof(*sd_rel) + 4, "got %lu\n", len );
 
     sd.Control = SE_SELF_RELATIVE;
-    status = pRtlMakeSelfRelativeSD( &sd, sd_rel, &len );
-    ok( status == STATUS_SUCCESS, "got %08x\n", status );
-    ok( len == sizeof(*sd_rel) + 4, "got %u\n", len );
+    status = RtlMakeSelfRelativeSD( &sd, sd_rel, &len );
+    ok( status == STATUS_SUCCESS, "got %08lx\n", status );
+    ok( len == sizeof(*sd_rel) + 4, "got %lu\n", len );
 
-    status = pRtlAbsoluteToSelfRelativeSD( &sd, sd_rel, &len );
-    ok( status == STATUS_BAD_DESCRIPTOR_FORMAT, "got %08x\n", status );
+    status = RtlAbsoluteToSelfRelativeSD( &sd, sd_rel, &len );
+    ok( status == STATUS_BAD_DESCRIPTOR_FORMAT, "got %08lx\n", status );
 }
 
 static DWORD (CALLBACK *orig_entry)(HMODULE,DWORD,LPVOID);
@@ -3448,9 +3338,9 @@ static void CALLBACK ldr_notify_callback1(ULONG reason, LDR_DLL_NOTIFICATION_DAT
     const IMAGE_IMPORT_DESCRIPTOR *imports;
     const IMAGE_THUNK_DATA *import_list;
     IMAGE_THUNK_DATA *thunk_list;
+    LDR_DATA_TABLE_ENTRY *mod;
     DWORD *calls = context;
     LIST_ENTRY *mark;
-    LDR_MODULE *mod;
     ULONG size;
     int i, j;
 
@@ -3460,7 +3350,7 @@ static void CALLBACK ldr_notify_callback1(ULONG reason, LDR_DLL_NOTIFICATION_DAT
     if (!lstrcmpiW(data->Loaded.BaseDllName->Buffer, expected_dll))
         return;
 
-    ok(data->Loaded.Flags == 0, "Expected flags 0, got %x\n", data->Loaded.Flags);
+    ok(data->Loaded.Flags == 0, "Expected flags 0, got %lx\n", data->Loaded.Flags);
     ok(!lstrcmpiW(data->Loaded.BaseDllName->Buffer, expected_dll), "Expected %s, got %s\n",
        wine_dbgstr_w(expected_dll), wine_dbgstr_w(data->Loaded.BaseDllName->Buffer));
     ok(!!data->Loaded.DllBase, "Expected non zero base address\n");
@@ -3468,9 +3358,9 @@ static void CALLBACK ldr_notify_callback1(ULONG reason, LDR_DLL_NOTIFICATION_DAT
 
     /* expect module to be last module listed in LdrData load order list */
     mark = &NtCurrentTeb()->Peb->LdrData->InMemoryOrderModuleList;
-    mod = CONTAINING_RECORD(mark->Blink, LDR_MODULE, InMemoryOrderModuleList);
-    ok(mod->BaseAddress == data->Loaded.DllBase, "Expected base address %p, got %p\n",
-       data->Loaded.DllBase, mod->BaseAddress);
+    mod = CONTAINING_RECORD(mark->Blink, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+    ok(mod->DllBase == data->Loaded.DllBase, "Expected base address %p, got %p\n",
+       data->Loaded.DllBase, mod->DllBase);
     ok(!lstrcmpiW(mod->BaseDllName.Buffer, expected_dll), "Expected %s, got %s\n",
        wine_dbgstr_w(expected_dll), wine_dbgstr_w(mod->BaseDllName.Buffer));
 
@@ -3520,7 +3410,7 @@ static void CALLBACK ldr_notify_callback_dll_main(ULONG reason, LDR_DLL_NOTIFICA
 {
     DWORD *calls = context;
     LIST_ENTRY *mark;
-    LDR_MODULE *mod;
+    LDR_DATA_TABLE_ENTRY *mod;
 
     *calls <<= 4;
     *calls |= reason;
@@ -3529,10 +3419,10 @@ static void CALLBACK ldr_notify_callback_dll_main(ULONG reason, LDR_DLL_NOTIFICA
         return;
 
     mark = &NtCurrentTeb()->Peb->LdrData->InMemoryOrderModuleList;
-    mod = CONTAINING_RECORD(mark->Blink, LDR_MODULE, InMemoryOrderModuleList);
-    ok(mod->BaseAddress == data->Loaded.DllBase, "Expected base address %p, got %p\n",
-       data->Loaded.DllBase, mod->BaseAddress);
-    if (mod->BaseAddress != data->Loaded.DllBase)
+    mod = CONTAINING_RECORD(mark->Blink, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+    ok(mod->DllBase == data->Loaded.DllBase, "Expected base address %p, got %p\n",
+       data->Loaded.DllBase, mod->DllBase);
+    if (mod->DllBase != data->Loaded.DllBase)
        return;
 
     orig_entry = mod->EntryPoint;
@@ -3559,7 +3449,7 @@ static void CALLBACK ldr_notify_callback_fail(ULONG reason, LDR_DLL_NOTIFICATION
 {
     DWORD *calls = context;
     LIST_ENTRY *mark;
-    LDR_MODULE *mod;
+    LDR_DATA_TABLE_ENTRY *mod;
 
     *calls <<= 4;
     *calls |= reason;
@@ -3568,10 +3458,10 @@ static void CALLBACK ldr_notify_callback_fail(ULONG reason, LDR_DLL_NOTIFICATION
         return;
 
     mark = &NtCurrentTeb()->Peb->LdrData->InMemoryOrderModuleList;
-    mod = CONTAINING_RECORD(mark->Blink, LDR_MODULE, InMemoryOrderModuleList);
-    ok(mod->BaseAddress == data->Loaded.DllBase, "Expected base address %p, got %p\n",
-       data->Loaded.DllBase, mod->BaseAddress);
-    if (mod->BaseAddress != data->Loaded.DllBase)
+    mod = CONTAINING_RECORD(mark->Blink, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+    ok(mod->DllBase == data->Loaded.DllBase, "Expected base address %p, got %p\n",
+       data->Loaded.DllBase, mod->DllBase);
+    if (mod->DllBase != data->Loaded.DllBase)
        return;
 
     orig_entry = mod->EntryPoint;
@@ -3620,72 +3510,73 @@ static void test_LdrRegisterDllNotification(void)
 
     /* generic test */
     status = pLdrRegisterDllNotification(0, ldr_notify_callback1, &calls, &cookie);
-    ok(!status, "Expected STATUS_SUCCESS, got %08x\n", status);
+    ok(!status, "Expected STATUS_SUCCESS, got %08lx\n", status);
 
     calls = 0;
     mod = LoadLibraryW(expected_dll);
-    ok(!!mod, "Failed to load library: %d\n", GetLastError());
-    ok(calls == LDR_DLL_NOTIFICATION_REASON_LOADED, "Expected LDR_DLL_NOTIFICATION_REASON_LOADED, got %x\n", calls);
+    ok(!!mod, "Failed to load library: %ld\n", GetLastError());
+    ok(calls == LDR_DLL_NOTIFICATION_REASON_LOADED, "Expected LDR_DLL_NOTIFICATION_REASON_LOADED, got %lx\n", calls);
 
     calls = 0;
     FreeLibrary(mod);
-    ok(calls == LDR_DLL_NOTIFICATION_REASON_UNLOADED, "Expected LDR_DLL_NOTIFICATION_REASON_UNLOADED, got %x\n", calls);
+    ok(calls == LDR_DLL_NOTIFICATION_REASON_UNLOADED, "Expected LDR_DLL_NOTIFICATION_REASON_UNLOADED, got %lx\n", calls);
 
     /* test order of callbacks */
     status = pLdrRegisterDllNotification(0, ldr_notify_callback2, &calls, &cookie2);
-    ok(!status, "Expected STATUS_SUCCESS, got %08x\n", status);
+    ok(!status, "Expected STATUS_SUCCESS, got %08lx\n", status);
 
     calls = 0;
     mod = LoadLibraryW(expected_dll);
-    ok(!!mod, "Failed to load library: %d\n", GetLastError());
-    ok(calls == 0x13, "Expected order 0x13, got %x\n", calls);
+    ok(!!mod, "Failed to load library: %ld\n", GetLastError());
+    ok(calls == 0x13, "Expected order 0x13, got %lx\n", calls);
 
     calls = 0;
     FreeLibrary(mod);
-    ok(calls == 0x24, "Expected order 0x24, got %x\n", calls);
+    ok(calls == 0x24, "Expected order 0x24, got %lx\n", calls);
 
     pLdrUnregisterDllNotification(cookie2);
     pLdrUnregisterDllNotification(cookie);
 
     /* test dll main order */
     status = pLdrRegisterDllNotification(0, ldr_notify_callback_dll_main, &calls, &cookie);
-    ok(!status, "Expected STATUS_SUCCESS, got %08x\n", status);
+    ok(!status, "Expected STATUS_SUCCESS, got %08lx\n", status);
 
     calls = 0;
     mod = LoadLibraryW(expected_dll);
-    ok(!!mod, "Failed to load library: %d\n", GetLastError());
-    ok(calls == 0x13, "Expected order 0x13, got %x\n", calls);
+    ok(!!mod, "Failed to load library: %ld\n", GetLastError());
+    ok(calls == 0x13, "Expected order 0x13, got %lx\n", calls);
 
     calls = 0;
     FreeLibrary(mod);
-    ok(calls == 0x42, "Expected order 0x42, got %x\n", calls);
+    ok(calls == 0x42, "Expected order 0x42, got %lx\n", calls);
 
     pLdrUnregisterDllNotification(cookie);
 
     /* test dll main order */
     status = pLdrRegisterDllNotification(0, ldr_notify_callback_fail, &calls, &cookie);
-    ok(!status, "Expected STATUS_SUCCESS, got %08x\n", status);
+    ok(!status, "Expected STATUS_SUCCESS, got %08lx\n", status);
 
     calls = 0;
     mod = LoadLibraryW(expected_dll);
     ok(!mod, "Expected library to fail loading\n");
-    ok(calls == 0x1342, "Expected order 0x1342, got %x\n", calls);
+    ok(calls == 0x1342, "Expected order 0x1342, got %lx\n", calls);
 
     pLdrUnregisterDllNotification(cookie);
 
     /* test dll with dependencies */
     status = pLdrRegisterDllNotification(0, ldr_notify_callback_imports, &calls, &cookie);
-    ok(!status, "Expected STATUS_SUCCESS, got %08x\n", status);
+    ok(!status, "Expected STATUS_SUCCESS, got %08lx\n", status);
 
     calls = 0;
     mod = LoadLibraryW(wintrustdllW);
-    ok(!!mod, "Failed to load library: %d\n", GetLastError());
-    ok(calls == 0x12 || calls == 0x21, "got %x\n", calls);
+    ok(!!mod, "Failed to load library: %ld\n", GetLastError());
+    ok(calls == 0x12 || calls == 0x21, "got %lx\n", calls);
 
     FreeLibrary(mod);
     pLdrUnregisterDllNotification(cookie);
 }
 
+<<<<<<< HEAD
 static void test_RtlQueryPackageIdentity(void)
 {
     const WCHAR programW[] = {'M','i','c','r','o','s','o','f','t','.','W','i','n','d','o','w','s','.',
@@ -3754,12 +3645,194 @@ static void test_RtlQueryPackageIdentity(void)
 
 done:
     CoUninitialize();
+=======
+static BOOL test_dbg_print_except;
+static LONG test_dbg_print_except_ret;
+
+static LONG CALLBACK test_dbg_print_except_handler( EXCEPTION_POINTERS *eptrs )
+{
+    if (eptrs->ExceptionRecord->ExceptionCode == DBG_PRINTEXCEPTION_C)
+    {
+        ok( eptrs->ExceptionRecord->NumberParameters == 2,
+            "Unexpected NumberParameters: %ld\n", eptrs->ExceptionRecord->NumberParameters );
+        ok( eptrs->ExceptionRecord->ExceptionInformation[0] == strlen("test_DbgPrint: Hello World") + 1,
+            "Unexpected ExceptionInformation[0]: %d\n", (int)eptrs->ExceptionRecord->ExceptionInformation[0] );
+        ok( !strcmp((char *)eptrs->ExceptionRecord->ExceptionInformation[1], "test_DbgPrint: Hello World"),
+            "Unexpected ExceptionInformation[1]: %s\n", wine_dbgstr_a((char *)eptrs->ExceptionRecord->ExceptionInformation[1]) );
+        test_dbg_print_except = TRUE;
+        return test_dbg_print_except_ret;
+    }
+
+    return (LONG)EXCEPTION_CONTINUE_SEARCH;
+}
+
+static NTSTATUS WINAPIV test_vDbgPrintEx( ULONG id, ULONG level, const char *fmt, ... )
+{
+    NTSTATUS status;
+    va_list args;
+    va_start( args, fmt );
+    status = vDbgPrintEx( id, level, fmt, args );
+    va_end( args );
+    return status;
+}
+
+static NTSTATUS WINAPIV test_vDbgPrintExWithPrefix( const char *prefix, ULONG id, ULONG level, const char *fmt, ... )
+{
+    NTSTATUS status;
+    va_list args;
+    va_start( args, fmt );
+    status = vDbgPrintExWithPrefix( prefix, id, level, fmt, args );
+    va_end( args );
+    return status;
+}
+
+static void test_DbgPrint(void)
+{
+    NTSTATUS status;
+    void *handler = RtlAddVectoredExceptionHandler( TRUE, test_dbg_print_except_handler );
+    PEB *Peb = NtCurrentTeb()->Peb;
+    BOOL debugged = Peb->BeingDebugged;
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrint( "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrint returned %lx\n", status );
+    ok( !test_dbg_print_except, "DBG_PRINTEXCEPTION_C received\n" );
+
+    Peb->BeingDebugged = TRUE;
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrint( "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrint returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_CONTINUE_EXECUTION;
+    status = DbgPrint( "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrint returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_CONTINUE_SEARCH;
+    status = DbgPrint( "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrint returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+
+    /* FIXME: NtSetDebugFilterState / DbgSetDebugFilterState are probably what's controlling these */
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrintEx( 0, DPFLTR_ERROR_LEVEL, "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrintEx returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrintEx( 0, DPFLTR_WARNING_LEVEL, "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrintEx returned %lx\n", status );
+    ok( !test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrintEx( 0, DPFLTR_MASK|(1 << DPFLTR_ERROR_LEVEL), "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrintEx returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = DbgPrintEx( 0, DPFLTR_MASK|(1 << DPFLTR_WARNING_LEVEL), "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "DbgPrintEx returned %lx\n", status );
+    ok( !test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = test_vDbgPrintEx( 0, 0xFFFFFFFF, "test_DbgPrint: %s", "Hello World" );
+    ok( !status, "vDbgPrintEx returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    test_dbg_print_except = FALSE;
+    test_dbg_print_except_ret = (LONG)EXCEPTION_EXECUTE_HANDLER;
+    status = test_vDbgPrintExWithPrefix( "test_", 0, 0xFFFFFFFF, "DbgPrint: %s", "Hello World" );
+    ok( !status, "vDbgPrintExWithPrefix returned %lx\n", status );
+    ok( test_dbg_print_except, "DBG_PRINTEXCEPTION_C not received\n" );
+
+    Peb->BeingDebugged = debugged;
+    RtlRemoveVectoredExceptionHandler( handler );
+}
+
+static BOOL test_heap_destroy_dbgstr = FALSE;
+static BOOL test_heap_destroy_break = FALSE;
+
+static LONG CALLBACK test_heap_destroy_except_handler( EXCEPTION_POINTERS *eptrs )
+{
+    if (eptrs->ExceptionRecord->ExceptionCode == STATUS_BREAKPOINT)
+    {
+#if defined( __i386__ )
+        eptrs->ContextRecord->Eip += 1;
+        test_heap_destroy_break = TRUE;
+        return (LONG)EXCEPTION_CONTINUE_EXECUTION;
+#elif defined( __x86_64__ )
+        eptrs->ContextRecord->Rip += 1;
+        test_heap_destroy_break = TRUE;
+        return (LONG)EXCEPTION_CONTINUE_EXECUTION;
+#endif
+    }
+
+    if (eptrs->ExceptionRecord->ExceptionCode == DBG_PRINTEXCEPTION_C)
+    {
+        test_heap_destroy_dbgstr = TRUE;
+        return (LONG)EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    return (LONG)EXCEPTION_CONTINUE_SEARCH;
+}
+
+/* partially copied from ntdll/heap.c */
+#define HEAP_VALIDATE_PARAMS 0x40000000
+
+struct heap
+{
+    DWORD_PTR unknown1[2];
+    DWORD     unknown2[2];
+    DWORD_PTR unknown3[4];
+    DWORD     unknown4;
+    DWORD_PTR unknown5[2];
+    DWORD     unknown6[3];
+    DWORD_PTR unknown7[2];
+    DWORD     flags;
+    DWORD     force_flags;
+    DWORD_PTR unknown8[6];
+};
+
+static void test_RtlDestroyHeap(void)
+{
+    const struct heap invalid = {{0, 0}, {0, HEAP_VALIDATE_PARAMS}, {0, 0, 0, 0}, 0, {0, 0}, {0, 0, 0}, {0, 0}, HEAP_VALIDATE_PARAMS, 0, {0}};
+    HANDLE heap = (HANDLE)&invalid, ret;
+    PEB *Peb = NtCurrentTeb()->Peb;
+    BOOL debugged;
+    void *handler = RtlAddVectoredExceptionHandler( TRUE, test_heap_destroy_except_handler );
+
+    test_heap_destroy_dbgstr = FALSE;
+    test_heap_destroy_break = FALSE;
+    debugged = Peb->BeingDebugged;
+    Peb->BeingDebugged = TRUE;
+    ret = RtlDestroyHeap( heap );
+    ok( ret == heap, "RtlDestroyHeap(%p) returned %p\n", heap, ret );
+    ok( test_heap_destroy_dbgstr, "HeapDestroy didn't call OutputDebugStrA\n" );
+    ok( test_heap_destroy_break, "HeapDestroy didn't call DbgBreakPoint\n" );
+    Peb->BeingDebugged = debugged;
+
+    RtlRemoveVectoredExceptionHandler( handler );
+>>>>>>> master
 }
 
 START_TEST(rtl)
 {
     InitFunctionPtrs();
 
+    test_RtlQueryProcessDebugInformation();
     test_RtlCompareMemory();
     test_RtlCompareMemoryUlong();
     test_RtlMoveMemory();
@@ -3797,4 +3870,6 @@ START_TEST(rtl)
     test_RtlQueryPackageIdentity();
     test_RtlMakeSelfRelativeSD();
     test_LdrRegisterDllNotification();
+    test_DbgPrint();
+    test_RtlDestroyHeap();
 }

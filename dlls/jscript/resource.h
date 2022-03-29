@@ -25,6 +25,7 @@
 #define IDS_TO_PRIMITIVE                    0x0001
 #define IDS_INVALID_CALL_ARG                0x0005
 #define IDS_SUBSCRIPT_OUT_OF_RANGE          0x0009
+#define IDS_STACK_OVERFLOW                  0x001C
 #define IDS_OBJECT_REQUIRED                 0x01A8
 #define IDS_CREATE_OBJ_ERROR                0x01AD
 #define IDS_NO_PROPERTY                     0x01B6
@@ -56,7 +57,8 @@
 #define IDS_INVALID_DELETE                  0x1394
 #define IDS_NOT_VBARRAY                     0x1395
 #define IDS_JSCRIPT_EXPECTED                0x1396
-#define IDS_NOT_ENUMERATOR                  0x1397
+#define IDS_ENUMERATOR_EXPECTED             0x1397
+#define IDS_REGEXP_EXPECTED                 0x1398
 #define IDS_REGEXP_SYNTAX_ERROR             0x1399
 #define IDS_EXCEPTION_THROWN                0x139E
 #define IDS_URI_INVALID_CHAR                0x13A0
@@ -66,8 +68,12 @@
 #define IDS_INVALID_LENGTH                  0x13A5
 #define IDS_ARRAY_EXPECTED                  0x13A7
 #define IDS_INVALID_WRITABLE_PROP_DESC      0x13AC
+#define IDS_CYCLIC_PROTO_VALUE              0x13B0
+#define IDS_CREATE_FOR_NONEXTENSIBLE        0x13B6
+#define IDS_OBJECT_NONEXTENSIBLE            0x13D5
 #define IDS_NONCONFIGURABLE_REDEFINED       0x13D6
 #define IDS_NONWRITABLE_MODIFIED            0x13D7
+#define IDS_MAP_EXPECTED                    0x13FC
 /* FIXME: This is not compatible with native, but we would
  * conflict with IDS_UNSUPPORTED_ACTION otherwise */
 #define IDS_PROP_DESC_MISMATCH              0x1F00

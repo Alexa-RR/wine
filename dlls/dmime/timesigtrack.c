@@ -19,6 +19,7 @@
 
 #include "dmime_private.h"
 #include "dmobject.h"
+#include "wine/heap.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(dmime);
 
@@ -29,12 +30,20 @@ typedef struct IDirectMusicTimeSigTrack {
     IDirectMusicTrack IDirectMusicTrack_iface;
     struct dmobject dmobj;  /* IPersistStream only */
     LONG ref;
+
+    DMUS_IO_TIMESIGNATURE_ITEM *items;
+    unsigned int count;
 } IDirectMusicTimeSigTrack;
 
 /* IDirectMusicTimeSigTrack IDirectMusicTrack8 part: */
 static inline IDirectMusicTimeSigTrack *impl_from_IDirectMusicTrack(IDirectMusicTrack *iface)
 {
     return CONTAINING_RECORD(iface, IDirectMusicTimeSigTrack, IDirectMusicTrack_iface);
+}
+
+static inline IDirectMusicTimeSigTrack *impl_from_IPersistStream(IPersistStream *iface)
+{
+    return CONTAINING_RECORD(iface, IDirectMusicTimeSigTrack, dmobj.IPersistStream_iface);
 }
 
 static HRESULT WINAPI IDirectMusicTrackImpl_QueryInterface(IDirectMusicTrack *iface, REFIID riid,
@@ -64,7 +73,7 @@ static ULONG WINAPI IDirectMusicTrackImpl_AddRef(IDirectMusicTrack *iface)
     IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -74,9 +83,10 @@ static ULONG WINAPI IDirectMusicTrackImpl_Release(IDirectMusicTrack *iface)
     IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if (!ref) {
+        heap_free(This->items);
         HeapFree(GetProcessHeap(), 0, This);
         DMIME_UnlockModule();
     }
@@ -97,7 +107,7 @@ static HRESULT WINAPI IDirectMusicTrackImpl_InitPlay(IDirectMusicTrack *iface,
         void **ppStateData, DWORD dwVirtualTrack8ID, DWORD dwFlags)
 {
         IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
-	FIXME("(%p, %p, %p, %p, %d, %d): stub\n", This, pSegmentState, pPerformance, ppStateData, dwVirtualTrack8ID, dwFlags);
+	FIXME("(%p, %p, %p, %p, %ld, %ld): stub\n", This, pSegmentState, pPerformance, ppStateData, dwVirtualTrack8ID, dwFlags);
 	return S_OK;
 }
 
@@ -113,7 +123,7 @@ static HRESULT WINAPI IDirectMusicTrackImpl_Play(IDirectMusicTrack *iface, void 
         IDirectMusicPerformance *pPerf, IDirectMusicSegmentState *pSegSt, DWORD dwVirtualID)
 {
         IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
-	FIXME("(%p, %p, %d, %d, %d, %d, %p, %p, %d): stub\n", This, pStateData, mtStart, mtEnd, mtOffset, dwFlags, pPerf, pSegSt, dwVirtualID);
+	FIXME("(%p, %p, %ld, %ld, %ld, %ld, %p, %p, %ld): stub\n", This, pStateData, mtStart, mtEnd, mtOffset, dwFlags, pPerf, pSegSt, dwVirtualID);
 	return S_OK;
 }
 
@@ -122,7 +132,7 @@ static HRESULT WINAPI IDirectMusicTrackImpl_GetParam(IDirectMusicTrack *iface, R
 {
     IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
 
-    TRACE("(%p, %s, %d, %p, %p)\n", This, debugstr_dmguid(type), time, next, param);
+    TRACE("(%p, %s, %ld, %p, %p)\n", This, debugstr_dmguid(type), time, next, param);
 
     if (IsEqualGUID(type, &GUID_TimeSignature)) {
         FIXME("GUID_TimeSignature not handled yet\n");
@@ -137,7 +147,7 @@ static HRESULT WINAPI IDirectMusicTrackImpl_SetParam(IDirectMusicTrack *iface, R
 {
     IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
 
-    TRACE("(%p, %s, %d, %p)\n", This, debugstr_dmguid(type), time, param);
+    TRACE("(%p, %s, %ld, %p)\n", This, debugstr_dmguid(type), time, param);
 
     if (IsEqualGUID(type, &GUID_DisableTimeSig)) {
         FIXME("GUID_DisableTimeSig not handled yet\n");
@@ -187,7 +197,7 @@ static HRESULT WINAPI IDirectMusicTrackImpl_Clone(IDirectMusicTrack *iface, MUSI
         MUSIC_TIME mtEnd, IDirectMusicTrack **ppTrack)
 {
         IDirectMusicTimeSigTrack *This = impl_from_IDirectMusicTrack(iface);
-	FIXME("(%p, %d, %d, %p): stub\n", This, mtStart, mtEnd, ppTrack);
+	FIXME("(%p, %ld, %ld, %p): stub\n", This, mtStart, mtEnd, ppTrack);
 	return S_OK;
 }
 
@@ -207,10 +217,60 @@ static const IDirectMusicTrackVtbl dmtack_vtbl = {
     IDirectMusicTrackImpl_Clone
 };
 
+static HRESULT parse_timetrack_list(IDirectMusicTimeSigTrack *This, IStream *stream,
+            struct chunk_entry *timesig)
+{
+    HRESULT hr;
+    struct chunk_entry chunk = {.parent = timesig};
+    int i;
+
+    TRACE("Parsing segment form in %p: %s\n", stream, debugstr_chunk(timesig));
+
+    if (FAILED(hr = stream_next_chunk(stream, &chunk))) {
+        WARN("Failed to read data of %s\n", debugstr_chunk(&chunk));
+        return hr;
+    }
+
+    if (chunk.id != DMUS_FOURCC_TIMESIGNATURE_TRACK)
+        return DMUS_E_UNSUPPORTED_STREAM;
+
+    hr = stream_chunk_get_array(stream, &chunk, (void **)&This->items, &This->count,
+            sizeof(DMUS_IO_TIMESIGNATURE_ITEM));
+    if (FAILED(hr))
+        return hr;
+
+    for (i = 0; i < This->count; i++)
+    {
+        TRACE("Found DMUS_IO_TIMESIGNATURE_ITEM\n");
+        TRACE("  - lTime %ld\n", This->items[i].lTime);
+        TRACE("  - bBeatsPerMeasure %d\n", This->items[i].bBeatsPerMeasure);
+        TRACE("  - bBeat %d\n", This->items[i].bBeat);
+        TRACE("  - wGridsPerBeat %d\n", This->items[i].wGridsPerBeat);
+    }
+
+    return S_OK;
+}
+
 static HRESULT WINAPI time_IPersistStream_Load(IPersistStream *iface, IStream *stream)
 {
-	FIXME(": Loading not implemented yet\n");
-	return S_OK;
+    IDirectMusicTimeSigTrack *This = impl_from_IPersistStream(iface);
+    HRESULT hr;
+    struct chunk_entry chunk = {0};
+
+    TRACE("%p, %p\n", This, stream);
+
+    if (!stream)
+        return E_POINTER;
+
+    if ((hr = stream_get_chunk(stream, &chunk)) != S_OK)
+        return hr;
+
+    if (chunk.id == FOURCC_LIST && chunk.type == DMUS_FOURCC_TIMESIGTRACK_LIST)
+        hr = parse_timetrack_list(This, stream, &chunk);
+    else
+        hr = DMUS_E_UNSUPPORTED_STREAM;
+
+    return hr;
 }
 
 static const IPersistStreamVtbl persiststream_vtbl = {

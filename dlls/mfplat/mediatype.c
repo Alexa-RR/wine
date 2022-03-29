@@ -20,11 +20,10 @@
 
 #include "mfplat_private.h"
 
+#include "dxva2api.h"
 #include "initguid.h"
 #include "ks.h"
 #include "ksmedia.h"
-
-#include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(mfplat);
 
@@ -37,6 +36,10 @@ struct media_type
 {
     struct attributes attributes;
     IMFMediaType IMFMediaType_iface;
+    IMFVideoMediaType IMFVideoMediaType_iface;
+    IMFAudioMediaType IMFAudioMediaType_iface;
+    MFVIDEOFORMAT *video_format;
+    WAVEFORMATEX *audio_format;
 };
 
 struct stream_desc
@@ -66,9 +69,19 @@ struct presentation_desc
 
 static HRESULT presentation_descriptor_init(struct presentation_desc *object, DWORD count);
 
-static inline struct media_type *impl_from_IMFMediaType(IMFMediaType *iface)
+static struct media_type *impl_from_IMFMediaType(IMFMediaType *iface)
 {
     return CONTAINING_RECORD(iface, struct media_type, IMFMediaType_iface);
+}
+
+static struct media_type *impl_from_IMFVideoMediaType(IMFVideoMediaType *iface)
+{
+    return CONTAINING_RECORD(iface, struct media_type, IMFVideoMediaType_iface);
+}
+
+static struct media_type *impl_from_IMFAudioMediaType(IMFAudioMediaType *iface)
+{
+    return CONTAINING_RECORD(iface, struct media_type, IMFAudioMediaType_iface);
 }
 
 static inline struct stream_desc *impl_from_IMFStreamDescriptor(IMFStreamDescriptor *iface)
@@ -88,20 +101,36 @@ static struct presentation_desc *impl_from_IMFPresentationDescriptor(IMFPresenta
 
 static HRESULT WINAPI mediatype_QueryInterface(IMFMediaType *iface, REFIID riid, void **out)
 {
+    struct media_type *media_type = impl_from_IMFMediaType(iface);
+    GUID major = { 0 };
+
     TRACE("%p, %s, %p.\n", iface, debugstr_guid(riid), out);
 
-    if (IsEqualIID(riid, &IID_IMFMediaType) ||
+    attributes_GetGUID(&media_type->attributes, &MF_MT_MAJOR_TYPE, &major);
+
+    if (IsEqualGUID(&major, &MFMediaType_Video) && IsEqualIID(riid, &IID_IMFVideoMediaType))
+    {
+        *out = &media_type->IMFVideoMediaType_iface;
+    }
+    else if (IsEqualGUID(&major, &MFMediaType_Audio) && IsEqualIID(riid, &IID_IMFAudioMediaType))
+    {
+        *out = &media_type->IMFAudioMediaType_iface;
+    }
+    else if (IsEqualIID(riid, &IID_IMFMediaType) ||
             IsEqualIID(riid, &IID_IMFAttributes) ||
             IsEqualIID(riid, &IID_IUnknown))
     {
-        *out = iface;
-        IMFMediaType_AddRef(iface);
-        return S_OK;
+        *out = &media_type->IMFMediaType_iface;
+    }
+    else
+    {
+        WARN("Unsupported %s.\n", debugstr_guid(riid));
+        *out = NULL;
+        return E_NOINTERFACE;
     }
 
-    WARN("Unsupported %s.\n", debugstr_guid(riid));
-    *out = NULL;
-    return E_NOINTERFACE;
+    IUnknown_AddRef((IUnknown *)*out);
+    return S_OK;
 }
 
 static ULONG WINAPI mediatype_AddRef(IMFMediaType *iface)
@@ -109,7 +138,7 @@ static ULONG WINAPI mediatype_AddRef(IMFMediaType *iface)
     struct media_type *media_type = impl_from_IMFMediaType(iface);
     ULONG refcount = InterlockedIncrement(&media_type->attributes.ref);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     return refcount;
 }
@@ -119,12 +148,14 @@ static ULONG WINAPI mediatype_Release(IMFMediaType *iface)
     struct media_type *media_type = impl_from_IMFMediaType(iface);
     ULONG refcount = InterlockedDecrement(&media_type->attributes.ref);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     if (!refcount)
     {
         clear_attributes_object(&media_type->attributes);
-        heap_free(media_type);
+        CoTaskMemFree(media_type->video_format);
+        CoTaskMemFree(media_type->audio_format);
+        free(media_type);
     }
 
     return refcount;
@@ -413,12 +444,9 @@ static HRESULT WINAPI mediatype_GetMajorType(IMFMediaType *iface, GUID *guid)
     return attributes_GetGUID(&media_type->attributes, &MF_MT_MAJOR_TYPE, guid);
 }
 
-static HRESULT WINAPI mediatype_IsCompressedFormat(IMFMediaType *iface, BOOL *compressed)
+static HRESULT mediatype_is_compressed(struct media_type *media_type, BOOL *compressed)
 {
-    struct media_type *media_type = impl_from_IMFMediaType(iface);
     UINT32 value;
-
-    TRACE("%p, %p.\n", iface, compressed);
 
     if (FAILED(attributes_GetUINT32(&media_type->attributes, &MF_MT_ALL_SAMPLES_INDEPENDENT, &value)))
     {
@@ -430,11 +458,19 @@ static HRESULT WINAPI mediatype_IsCompressedFormat(IMFMediaType *iface, BOOL *co
     return S_OK;
 }
 
-static HRESULT WINAPI mediatype_IsEqual(IMFMediaType *iface, IMFMediaType *type, DWORD *flags)
+static HRESULT WINAPI mediatype_IsCompressedFormat(IMFMediaType *iface, BOOL *compressed)
+{
+    struct media_type *media_type = impl_from_IMFMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, compressed);
+
+    return mediatype_is_compressed(media_type, compressed);
+}
+
+static HRESULT media_type_is_equal(struct media_type *media_type, IMFMediaType *type, DWORD *flags)
 {
     const DWORD full_equality_flags = MF_MEDIATYPE_EQUAL_MAJOR_TYPES | MF_MEDIATYPE_EQUAL_FORMAT_TYPES |
             MF_MEDIATYPE_EQUAL_FORMAT_DATA | MF_MEDIATYPE_EQUAL_FORMAT_USER_DATA;
-    struct media_type *media_type = impl_from_IMFMediaType(iface);
     struct comparand
     {
         IMFAttributes *type;
@@ -445,8 +481,6 @@ static HRESULT WINAPI mediatype_IsEqual(IMFMediaType *iface, IMFMediaType *type,
     } left, right, swp;
     unsigned int i;
     BOOL result;
-
-    TRACE("%p, %p, %p.\n", iface, type, flags);
 
     *flags = 0;
 
@@ -535,6 +569,15 @@ static HRESULT WINAPI mediatype_IsEqual(IMFMediaType *iface, IMFMediaType *type,
     return *flags == full_equality_flags ? S_OK : S_FALSE;
 }
 
+static HRESULT WINAPI mediatype_IsEqual(IMFMediaType *iface, IMFMediaType *type, DWORD *flags)
+{
+    struct media_type *media_type = impl_from_IMFMediaType(iface);
+
+    TRACE("%p, %p, %p.\n", iface, type, flags);
+
+    return media_type_is_equal(media_type, type, flags);
+}
+
 static HRESULT WINAPI mediatype_GetRepresentation(IMFMediaType *iface, GUID guid, void **representation)
 {
     FIXME("%p, %s, %p.\n", iface, debugstr_guid(&guid), representation);
@@ -591,6 +634,822 @@ static const IMFMediaTypeVtbl mediatypevtbl =
     mediatype_FreeRepresentation
 };
 
+static HRESULT WINAPI video_mediatype_QueryInterface(IMFVideoMediaType *iface, REFIID riid, void **out)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+    return IMFMediaType_QueryInterface(&media_type->IMFMediaType_iface, riid, out);
+}
+
+static ULONG WINAPI video_mediatype_AddRef(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+    return IMFMediaType_AddRef(&media_type->IMFMediaType_iface);
+}
+
+static ULONG WINAPI video_mediatype_Release(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+    return IMFMediaType_Release(&media_type->IMFMediaType_iface);
+}
+
+static HRESULT WINAPI video_mediatype_GetItem(IMFVideoMediaType *iface, REFGUID key, PROPVARIANT *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetItem(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_GetItemType(IMFVideoMediaType *iface, REFGUID key, MF_ATTRIBUTE_TYPE *type)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), type);
+
+    return attributes_GetItemType(&media_type->attributes, key, type);
+}
+
+static HRESULT WINAPI video_mediatype_CompareItem(IMFVideoMediaType *iface, REFGUID key, REFPROPVARIANT value, BOOL *result)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
+
+    return attributes_CompareItem(&media_type->attributes, key, value, result);
+}
+
+static HRESULT WINAPI video_mediatype_Compare(IMFVideoMediaType *iface, IMFAttributes *attrs,
+        MF_ATTRIBUTES_MATCH_TYPE type, BOOL *result)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p, %d, %p.\n", iface, attrs, type, result);
+
+    return attributes_Compare(&media_type->attributes, attrs, type, result);
+}
+
+static HRESULT WINAPI video_mediatype_GetUINT32(IMFVideoMediaType *iface, REFGUID key, UINT32 *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetUINT32(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_GetUINT64(IMFVideoMediaType *iface, REFGUID key, UINT64 *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetUINT64(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_GetDouble(IMFVideoMediaType *iface, REFGUID key, double *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetDouble(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_GetGUID(IMFVideoMediaType *iface, REFGUID key, GUID *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetGUID(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_GetStringLength(IMFVideoMediaType *iface, REFGUID key, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), length);
+
+    return attributes_GetStringLength(&media_type->attributes, key, length);
+}
+
+static HRESULT WINAPI video_mediatype_GetString(IMFVideoMediaType *iface, REFGUID key, WCHAR *value,
+        UINT32 size, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p, %u, %p.\n", iface, debugstr_attr(key), value, size, length);
+
+    return attributes_GetString(&media_type->attributes, key, value, size, length);
+}
+
+static HRESULT WINAPI video_mediatype_GetAllocatedString(IMFVideoMediaType *iface, REFGUID key,
+        WCHAR **value, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, length);
+
+    return attributes_GetAllocatedString(&media_type->attributes, key, value, length);
+}
+
+static HRESULT WINAPI video_mediatype_GetBlobSize(IMFVideoMediaType *iface, REFGUID key, UINT32 *size)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), size);
+
+    return attributes_GetBlobSize(&media_type->attributes, key, size);
+}
+
+static HRESULT WINAPI video_mediatype_GetBlob(IMFVideoMediaType *iface, REFGUID key, UINT8 *buf,
+        UINT32 bufsize, UINT32 *blobsize)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p, %u, %p.\n", iface, debugstr_attr(key), buf, bufsize, blobsize);
+
+    return attributes_GetBlob(&media_type->attributes, key, buf, bufsize, blobsize);
+}
+
+static HRESULT WINAPI video_mediatype_GetAllocatedBlob(IMFVideoMediaType *iface, REFGUID key, UINT8 **buf, UINT32 *size)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), buf, size);
+
+    return attributes_GetAllocatedBlob(&media_type->attributes, key, buf, size);
+}
+
+static HRESULT WINAPI video_mediatype_GetUnknown(IMFVideoMediaType *iface, REFGUID key, REFIID riid, void **obj)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_guid(riid), obj);
+
+    return attributes_GetUnknown(&media_type->attributes, key, riid, obj);
+}
+
+static HRESULT WINAPI video_mediatype_SetItem(IMFVideoMediaType *iface, REFGUID key, REFPROPVARIANT value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
+
+    return attributes_SetItem(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_DeleteItem(IMFVideoMediaType *iface, REFGUID key)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s.\n", iface, debugstr_attr(key));
+
+    return attributes_DeleteItem(&media_type->attributes, key);
+}
+
+static HRESULT WINAPI video_mediatype_DeleteAllItems(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_DeleteAllItems(&media_type->attributes);
+}
+
+static HRESULT WINAPI video_mediatype_SetUINT32(IMFVideoMediaType *iface, REFGUID key, UINT32 value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %u.\n", iface, debugstr_attr(key), value);
+
+    return attributes_SetUINT32(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_SetUINT64(IMFVideoMediaType *iface, REFGUID key, UINT64 value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), wine_dbgstr_longlong(value));
+
+    return attributes_SetUINT64(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_SetDouble(IMFVideoMediaType *iface, REFGUID key, double value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %f.\n", iface, debugstr_attr(key), value);
+
+    return attributes_SetDouble(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_SetGUID(IMFVideoMediaType *iface, REFGUID key, REFGUID value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
+
+    return attributes_SetGUID(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_SetString(IMFVideoMediaType *iface, REFGUID key, const WCHAR *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_w(value));
+
+    return attributes_SetString(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_SetBlob(IMFVideoMediaType *iface, REFGUID key, const UINT8 *buf, UINT32 size)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p, %u.\n", iface, debugstr_attr(key), buf, size);
+
+    return attributes_SetBlob(&media_type->attributes, key, buf, size);
+}
+
+static HRESULT WINAPI video_mediatype_SetUnknown(IMFVideoMediaType *iface, REFGUID key, IUnknown *unknown)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), unknown);
+
+    return attributes_SetUnknown(&media_type->attributes, key, unknown);
+}
+
+static HRESULT WINAPI video_mediatype_LockStore(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_LockStore(&media_type->attributes);
+}
+
+static HRESULT WINAPI video_mediatype_UnlockStore(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_UnlockStore(&media_type->attributes);
+}
+
+static HRESULT WINAPI video_mediatype_GetCount(IMFVideoMediaType *iface, UINT32 *count)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, count);
+
+    return attributes_GetCount(&media_type->attributes, count);
+}
+
+static HRESULT WINAPI video_mediatype_GetItemByIndex(IMFVideoMediaType *iface, UINT32 index, GUID *key, PROPVARIANT *value)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %u, %p, %p.\n", iface, index, key, value);
+
+    return attributes_GetItemByIndex(&media_type->attributes, index, key, value);
+}
+
+static HRESULT WINAPI video_mediatype_CopyAllItems(IMFVideoMediaType *iface, IMFAttributes *dest)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, dest);
+
+    return attributes_CopyAllItems(&media_type->attributes, dest);
+}
+
+static HRESULT WINAPI video_mediatype_GetMajorType(IMFVideoMediaType *iface, GUID *guid)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, guid);
+
+    return attributes_GetGUID(&media_type->attributes, &MF_MT_MAJOR_TYPE, guid);
+}
+
+static HRESULT WINAPI video_mediatype_IsCompressedFormat(IMFVideoMediaType *iface, BOOL *compressed)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, compressed);
+
+    return mediatype_is_compressed(media_type, compressed);
+}
+
+static HRESULT WINAPI video_mediatype_IsEqual(IMFVideoMediaType *iface, IMFMediaType *type, DWORD *flags)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+
+    TRACE("%p, %p, %p.\n", iface, type, flags);
+
+    return media_type_is_equal(media_type, type, flags);
+}
+
+static HRESULT WINAPI video_mediatype_GetRepresentation(IMFVideoMediaType *iface, GUID guid, void **representation)
+{
+    FIXME("%p, %s, %p.\n", iface, debugstr_guid(&guid), representation);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI video_mediatype_FreeRepresentation(IMFVideoMediaType *iface, GUID guid, void *representation)
+{
+    FIXME("%p, %s, %p.\n", iface, debugstr_guid(&guid), representation);
+
+    return E_NOTIMPL;
+}
+
+static const MFVIDEOFORMAT * WINAPI video_mediatype_GetVideoFormat(IMFVideoMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFVideoMediaType(iface);
+    unsigned int size;
+    HRESULT hr;
+
+    TRACE("%p.\n", iface);
+
+    CoTaskMemFree(media_type->video_format);
+    if (FAILED(hr = MFCreateMFVideoFormatFromMFMediaType(&media_type->IMFMediaType_iface, &media_type->video_format, &size)))
+        WARN("Failed to create format description, hr %#lx.\n", hr);
+
+    return media_type->video_format;
+}
+
+static HRESULT WINAPI video_mediatype_GetVideoRepresentation(IMFVideoMediaType *iface, GUID representation,
+        void **data, LONG stride)
+{
+    FIXME("%p, %s, %p, %ld.\n", iface, debugstr_guid(&representation), data, stride);
+
+    return E_NOTIMPL;
+}
+
+static const IMFVideoMediaTypeVtbl videomediatypevtbl =
+{
+    video_mediatype_QueryInterface,
+    video_mediatype_AddRef,
+    video_mediatype_Release,
+    video_mediatype_GetItem,
+    video_mediatype_GetItemType,
+    video_mediatype_CompareItem,
+    video_mediatype_Compare,
+    video_mediatype_GetUINT32,
+    video_mediatype_GetUINT64,
+    video_mediatype_GetDouble,
+    video_mediatype_GetGUID,
+    video_mediatype_GetStringLength,
+    video_mediatype_GetString,
+    video_mediatype_GetAllocatedString,
+    video_mediatype_GetBlobSize,
+    video_mediatype_GetBlob,
+    video_mediatype_GetAllocatedBlob,
+    video_mediatype_GetUnknown,
+    video_mediatype_SetItem,
+    video_mediatype_DeleteItem,
+    video_mediatype_DeleteAllItems,
+    video_mediatype_SetUINT32,
+    video_mediatype_SetUINT64,
+    video_mediatype_SetDouble,
+    video_mediatype_SetGUID,
+    video_mediatype_SetString,
+    video_mediatype_SetBlob,
+    video_mediatype_SetUnknown,
+    video_mediatype_LockStore,
+    video_mediatype_UnlockStore,
+    video_mediatype_GetCount,
+    video_mediatype_GetItemByIndex,
+    video_mediatype_CopyAllItems,
+    video_mediatype_GetMajorType,
+    video_mediatype_IsCompressedFormat,
+    video_mediatype_IsEqual,
+    video_mediatype_GetRepresentation,
+    video_mediatype_FreeRepresentation,
+    video_mediatype_GetVideoFormat,
+    video_mediatype_GetVideoRepresentation,
+};
+
+static HRESULT WINAPI audio_mediatype_QueryInterface(IMFAudioMediaType *iface, REFIID riid, void **out)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+    return IMFMediaType_QueryInterface(&media_type->IMFMediaType_iface, riid, out);
+}
+
+static ULONG WINAPI audio_mediatype_AddRef(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+    return IMFMediaType_AddRef(&media_type->IMFMediaType_iface);
+}
+
+static ULONG WINAPI audio_mediatype_Release(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+    return IMFMediaType_Release(&media_type->IMFMediaType_iface);
+}
+
+static HRESULT WINAPI audio_mediatype_GetItem(IMFAudioMediaType *iface, REFGUID key, PROPVARIANT *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetItem(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_GetItemType(IMFAudioMediaType *iface, REFGUID key, MF_ATTRIBUTE_TYPE *type)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), type);
+
+    return attributes_GetItemType(&media_type->attributes, key, type);
+}
+
+static HRESULT WINAPI audio_mediatype_CompareItem(IMFAudioMediaType *iface, REFGUID key, REFPROPVARIANT value, BOOL *result)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_propvar(value), result);
+
+    return attributes_CompareItem(&media_type->attributes, key, value, result);
+}
+
+static HRESULT WINAPI audio_mediatype_Compare(IMFAudioMediaType *iface, IMFAttributes *attrs,
+        MF_ATTRIBUTES_MATCH_TYPE type, BOOL *result)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p, %d, %p.\n", iface, attrs, type, result);
+
+    return attributes_Compare(&media_type->attributes, attrs, type, result);
+}
+
+static HRESULT WINAPI audio_mediatype_GetUINT32(IMFAudioMediaType *iface, REFGUID key, UINT32 *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetUINT32(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_GetUINT64(IMFAudioMediaType *iface, REFGUID key, UINT64 *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetUINT64(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_GetDouble(IMFAudioMediaType *iface, REFGUID key, double *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetDouble(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_GetGUID(IMFAudioMediaType *iface, REFGUID key, GUID *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), value);
+
+    return attributes_GetGUID(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_GetStringLength(IMFAudioMediaType *iface, REFGUID key, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), length);
+
+    return attributes_GetStringLength(&media_type->attributes, key, length);
+}
+
+static HRESULT WINAPI audio_mediatype_GetString(IMFAudioMediaType *iface, REFGUID key, WCHAR *value,
+        UINT32 size, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p, %u, %p.\n", iface, debugstr_attr(key), value, size, length);
+
+    return attributes_GetString(&media_type->attributes, key, value, size, length);
+}
+
+static HRESULT WINAPI audio_mediatype_GetAllocatedString(IMFAudioMediaType *iface, REFGUID key,
+        WCHAR **value, UINT32 *length)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), value, length);
+
+    return attributes_GetAllocatedString(&media_type->attributes, key, value, length);
+}
+
+static HRESULT WINAPI audio_mediatype_GetBlobSize(IMFAudioMediaType *iface, REFGUID key, UINT32 *size)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), size);
+
+    return attributes_GetBlobSize(&media_type->attributes, key, size);
+}
+
+static HRESULT WINAPI audio_mediatype_GetBlob(IMFAudioMediaType *iface, REFGUID key, UINT8 *buf,
+        UINT32 bufsize, UINT32 *blobsize)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p, %u, %p.\n", iface, debugstr_attr(key), buf, bufsize, blobsize);
+
+    return attributes_GetBlob(&media_type->attributes, key, buf, bufsize, blobsize);
+}
+
+static HRESULT WINAPI audio_mediatype_GetAllocatedBlob(IMFAudioMediaType *iface, REFGUID key, UINT8 **buf, UINT32 *size)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p, %p.\n", iface, debugstr_attr(key), buf, size);
+
+    return attributes_GetAllocatedBlob(&media_type->attributes, key, buf, size);
+}
+
+static HRESULT WINAPI audio_mediatype_GetUnknown(IMFAudioMediaType *iface, REFGUID key, REFIID riid, void **obj)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s, %p.\n", iface, debugstr_attr(key), debugstr_guid(riid), obj);
+
+    return attributes_GetUnknown(&media_type->attributes, key, riid, obj);
+}
+
+static HRESULT WINAPI audio_mediatype_SetItem(IMFAudioMediaType *iface, REFGUID key, REFPROPVARIANT value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_propvar(value));
+
+    return attributes_SetItem(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_DeleteItem(IMFAudioMediaType *iface, REFGUID key)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s.\n", iface, debugstr_attr(key));
+
+    return attributes_DeleteItem(&media_type->attributes, key);
+}
+
+static HRESULT WINAPI audio_mediatype_DeleteAllItems(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_DeleteAllItems(&media_type->attributes);
+}
+
+static HRESULT WINAPI audio_mediatype_SetUINT32(IMFAudioMediaType *iface, REFGUID key, UINT32 value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %u.\n", iface, debugstr_attr(key), value);
+
+    return attributes_SetUINT32(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_SetUINT64(IMFAudioMediaType *iface, REFGUID key, UINT64 value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), wine_dbgstr_longlong(value));
+
+    return attributes_SetUINT64(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_SetDouble(IMFAudioMediaType *iface, REFGUID key, double value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %f.\n", iface, debugstr_attr(key), value);
+
+    return attributes_SetDouble(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_SetGUID(IMFAudioMediaType *iface, REFGUID key, REFGUID value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_mf_guid(value));
+
+    return attributes_SetGUID(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_SetString(IMFAudioMediaType *iface, REFGUID key, const WCHAR *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %s.\n", iface, debugstr_attr(key), debugstr_w(value));
+
+    return attributes_SetString(&media_type->attributes, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_SetBlob(IMFAudioMediaType *iface, REFGUID key, const UINT8 *buf, UINT32 size)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p, %u.\n", iface, debugstr_attr(key), buf, size);
+
+    return attributes_SetBlob(&media_type->attributes, key, buf, size);
+}
+
+static HRESULT WINAPI audio_mediatype_SetUnknown(IMFAudioMediaType *iface, REFGUID key, IUnknown *unknown)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %s, %p.\n", iface, debugstr_attr(key), unknown);
+
+    return attributes_SetUnknown(&media_type->attributes, key, unknown);
+}
+
+static HRESULT WINAPI audio_mediatype_LockStore(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_LockStore(&media_type->attributes);
+}
+
+static HRESULT WINAPI audio_mediatype_UnlockStore(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p.\n", iface);
+
+    return attributes_UnlockStore(&media_type->attributes);
+}
+
+static HRESULT WINAPI audio_mediatype_GetCount(IMFAudioMediaType *iface, UINT32 *count)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, count);
+
+    return attributes_GetCount(&media_type->attributes, count);
+}
+
+static HRESULT WINAPI audio_mediatype_GetItemByIndex(IMFAudioMediaType *iface, UINT32 index, GUID *key, PROPVARIANT *value)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %u, %p, %p.\n", iface, index, key, value);
+
+    return attributes_GetItemByIndex(&media_type->attributes, index, key, value);
+}
+
+static HRESULT WINAPI audio_mediatype_CopyAllItems(IMFAudioMediaType *iface, IMFAttributes *dest)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, dest);
+
+    return attributes_CopyAllItems(&media_type->attributes, dest);
+}
+
+static HRESULT WINAPI audio_mediatype_GetMajorType(IMFAudioMediaType *iface, GUID *guid)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, guid);
+
+    return attributes_GetGUID(&media_type->attributes, &MF_MT_MAJOR_TYPE, guid);
+}
+
+static HRESULT WINAPI audio_mediatype_IsCompressedFormat(IMFAudioMediaType *iface, BOOL *compressed)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p.\n", iface, compressed);
+
+    return mediatype_is_compressed(media_type, compressed);
+}
+
+static HRESULT WINAPI audio_mediatype_IsEqual(IMFAudioMediaType *iface, IMFMediaType *type, DWORD *flags)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+
+    TRACE("%p, %p, %p.\n", iface, type, flags);
+
+    return media_type_is_equal(media_type, type, flags);
+}
+
+static HRESULT WINAPI audio_mediatype_GetRepresentation(IMFAudioMediaType *iface, GUID guid, void **representation)
+{
+    FIXME("%p, %s, %p.\n", iface, debugstr_guid(&guid), representation);
+
+    return E_NOTIMPL;
+}
+
+static HRESULT WINAPI audio_mediatype_FreeRepresentation(IMFAudioMediaType *iface, GUID guid, void *representation)
+{
+    FIXME("%p, %s, %p.\n", iface, debugstr_guid(&guid), representation);
+
+    return E_NOTIMPL;
+}
+
+static const WAVEFORMATEX * WINAPI audio_mediatype_GetAudioFormat(IMFAudioMediaType *iface)
+{
+    struct media_type *media_type = impl_from_IMFAudioMediaType(iface);
+    unsigned int size;
+    HRESULT hr;
+
+    TRACE("%p.\n", iface);
+
+    CoTaskMemFree(media_type->audio_format);
+    if (FAILED(hr = MFCreateWaveFormatExFromMFMediaType(&media_type->IMFMediaType_iface, &media_type->audio_format,
+            &size, MFWaveFormatExConvertFlag_Normal)))
+    {
+        WARN("Failed to create wave format description, hr %#lx.\n", hr);
+    }
+
+    return media_type->audio_format;
+}
+
+static const IMFAudioMediaTypeVtbl audiomediatypevtbl =
+{
+    audio_mediatype_QueryInterface,
+    audio_mediatype_AddRef,
+    audio_mediatype_Release,
+    audio_mediatype_GetItem,
+    audio_mediatype_GetItemType,
+    audio_mediatype_CompareItem,
+    audio_mediatype_Compare,
+    audio_mediatype_GetUINT32,
+    audio_mediatype_GetUINT64,
+    audio_mediatype_GetDouble,
+    audio_mediatype_GetGUID,
+    audio_mediatype_GetStringLength,
+    audio_mediatype_GetString,
+    audio_mediatype_GetAllocatedString,
+    audio_mediatype_GetBlobSize,
+    audio_mediatype_GetBlob,
+    audio_mediatype_GetAllocatedBlob,
+    audio_mediatype_GetUnknown,
+    audio_mediatype_SetItem,
+    audio_mediatype_DeleteItem,
+    audio_mediatype_DeleteAllItems,
+    audio_mediatype_SetUINT32,
+    audio_mediatype_SetUINT64,
+    audio_mediatype_SetDouble,
+    audio_mediatype_SetGUID,
+    audio_mediatype_SetString,
+    audio_mediatype_SetBlob,
+    audio_mediatype_SetUnknown,
+    audio_mediatype_LockStore,
+    audio_mediatype_UnlockStore,
+    audio_mediatype_GetCount,
+    audio_mediatype_GetItemByIndex,
+    audio_mediatype_CopyAllItems,
+    audio_mediatype_GetMajorType,
+    audio_mediatype_IsCompressedFormat,
+    audio_mediatype_IsEqual,
+    audio_mediatype_GetRepresentation,
+    audio_mediatype_FreeRepresentation,
+    audio_mediatype_GetAudioFormat,
+};
+
+static HRESULT create_media_type(struct media_type **ret)
+{
+    struct media_type *object;
+    HRESULT hr;
+
+    if (!(object = calloc(1, sizeof(*object))))
+        return E_OUTOFMEMORY;
+
+    if (FAILED(hr = init_attributes_object(&object->attributes, 0)))
+    {
+        free(object);
+        return hr;
+    }
+    object->IMFMediaType_iface.lpVtbl = &mediatypevtbl;
+    object->IMFVideoMediaType_iface.lpVtbl = &videomediatypevtbl;
+    object->IMFAudioMediaType_iface.lpVtbl = &audiomediatypevtbl;
+
+    *ret = object;
+
+    return S_OK;
+}
+
 /***********************************************************************
  *      MFCreateMediaType (mfplat.@)
  */
@@ -604,16 +1463,8 @@ HRESULT WINAPI MFCreateMediaType(IMFMediaType **media_type)
     if (!media_type)
         return E_INVALIDARG;
 
-    object = heap_alloc(sizeof(*object));
-    if (!object)
-        return E_OUTOFMEMORY;
-
-    if (FAILED(hr = init_attributes_object(&object->attributes, 0)))
-    {
-        heap_free(object);
+    if (FAILED(hr = create_media_type(&object)))
         return hr;
-    }
-    object->IMFMediaType_iface.lpVtbl = &mediatypevtbl;
 
     *media_type = &object->IMFMediaType_iface;
 
@@ -645,7 +1496,7 @@ static ULONG WINAPI stream_descriptor_AddRef(IMFStreamDescriptor *iface)
     struct stream_desc *stream_desc = impl_from_IMFStreamDescriptor(iface);
     ULONG refcount = InterlockedIncrement(&stream_desc->attributes.ref);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     return refcount;
 }
@@ -656,7 +1507,7 @@ static ULONG WINAPI stream_descriptor_Release(IMFStreamDescriptor *iface)
     ULONG refcount = InterlockedDecrement(&stream_desc->attributes.ref);
     unsigned int i;
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -665,11 +1516,11 @@ static ULONG WINAPI stream_descriptor_Release(IMFStreamDescriptor *iface)
             if (stream_desc->media_types[i])
                 IMFMediaType_Release(stream_desc->media_types[i]);
         }
-        heap_free(stream_desc->media_types);
+        free(stream_desc->media_types);
         if (stream_desc->current_type)
             IMFMediaType_Release(stream_desc->current_type);
         clear_attributes_object(&stream_desc->attributes);
-        heap_free(stream_desc);
+        free(stream_desc);
     }
 
     return refcount;
@@ -1102,7 +1953,7 @@ static HRESULT WINAPI mediatype_handler_GetMediaTypeByIndex(IMFMediaTypeHandler 
 {
     struct stream_desc *stream_desc = impl_from_IMFMediaTypeHandler(iface);
 
-    TRACE("%p, %u, %p.\n", iface, index, type);
+    TRACE("%p, %lu, %p.\n", iface, index, type);
 
     if (index >= stream_desc->media_types_count)
         return MF_E_NO_MORE_TYPES;
@@ -1163,10 +2014,8 @@ static HRESULT WINAPI mediatype_handler_GetMajorType(IMFMediaTypeHandler *iface,
     TRACE("%p, %p.\n", iface, type);
 
     EnterCriticalSection(&stream_desc->attributes.cs);
-    if (stream_desc->current_type)
-        hr = IMFMediaType_GetGUID(stream_desc->current_type, &MF_MT_MAJOR_TYPE, type);
-    else
-        hr = MF_E_ATTRIBUTENOTFOUND;
+    hr = IMFMediaType_GetGUID(stream_desc->current_type ? stream_desc->current_type :
+            stream_desc->media_types[0], &MF_MT_MAJOR_TYPE, type);
     LeaveCriticalSection(&stream_desc->attributes.cs);
 
     return hr;
@@ -1195,24 +2044,23 @@ HRESULT WINAPI MFCreateStreamDescriptor(DWORD identifier, DWORD count,
     unsigned int i;
     HRESULT hr;
 
-    TRACE("%d, %d, %p, %p.\n", identifier, count, types, descriptor);
+    TRACE("%ld, %ld, %p, %p.\n", identifier, count, types, descriptor);
 
     if (!count)
         return E_INVALIDARG;
 
-    object = heap_alloc_zero(sizeof(*object));
-    if (!object)
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
 
     if (FAILED(hr = init_attributes_object(&object->attributes, 0)))
     {
-        heap_free(object);
+        free(object);
         return hr;
     }
     object->IMFStreamDescriptor_iface.lpVtbl = &streamdescriptorvtbl;
     object->IMFMediaTypeHandler_iface.lpVtbl = &mediatypehandlervtbl;
     object->identifier = identifier;
-    object->media_types = heap_alloc(count * sizeof(*object->media_types));
+    object->media_types = calloc(count, sizeof(*object->media_types));
     if (!object->media_types)
     {
         IMFStreamDescriptor_Release(&object->IMFStreamDescriptor_iface);
@@ -1254,7 +2102,7 @@ static ULONG WINAPI presentation_descriptor_AddRef(IMFPresentationDescriptor *if
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
     ULONG refcount = InterlockedIncrement(&presentation_desc->attributes.ref);
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     return refcount;
 }
@@ -1265,7 +2113,7 @@ static ULONG WINAPI presentation_descriptor_Release(IMFPresentationDescriptor *i
     ULONG refcount = InterlockedDecrement(&presentation_desc->attributes.ref);
     unsigned int i;
 
-    TRACE("%p, refcount %u.\n", iface, refcount);
+    TRACE("%p, refcount %lu.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -1275,8 +2123,8 @@ static ULONG WINAPI presentation_descriptor_Release(IMFPresentationDescriptor *i
                 IMFStreamDescriptor_Release(presentation_desc->descriptors[i].descriptor);
         }
         clear_attributes_object(&presentation_desc->attributes);
-        heap_free(presentation_desc->descriptors);
-        heap_free(presentation_desc);
+        free(presentation_desc->descriptors);
+        free(presentation_desc);
     }
 
     return refcount;
@@ -1583,7 +2431,7 @@ static HRESULT WINAPI presentation_descriptor_GetStreamDescriptorByIndex(IMFPres
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %u, %p, %p.\n", iface, index, selected, descriptor);
+    TRACE("%p, %lu, %p, %p.\n", iface, index, selected, descriptor);
 
     if (index >= presentation_desc->count)
         return E_INVALIDARG;
@@ -1602,7 +2450,7 @@ static HRESULT WINAPI presentation_descriptor_SelectStream(IMFPresentationDescri
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %u.\n", iface, index);
+    TRACE("%p, %lu.\n", iface, index);
 
     if (index >= presentation_desc->count)
         return E_INVALIDARG;
@@ -1618,7 +2466,7 @@ static HRESULT WINAPI presentation_descriptor_DeselectStream(IMFPresentationDesc
 {
     struct presentation_desc *presentation_desc = impl_from_IMFPresentationDescriptor(iface);
 
-    TRACE("%p, %u.\n", iface, index);
+    TRACE("%p, %lu.\n", iface, index);
 
     if (index >= presentation_desc->count)
         return E_INVALIDARG;
@@ -1639,8 +2487,7 @@ static HRESULT WINAPI presentation_descriptor_Clone(IMFPresentationDescriptor *i
 
     TRACE("%p, %p.\n", iface, descriptor);
 
-    object = heap_alloc_zero(sizeof(*object));
-    if (!object)
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
 
     presentation_descriptor_init(object, presentation_desc->count);
@@ -1711,8 +2558,7 @@ static HRESULT presentation_descriptor_init(struct presentation_desc *object, DW
     if (FAILED(hr = init_attributes_object(&object->attributes, 0)))
         return hr;
     object->IMFPresentationDescriptor_iface.lpVtbl = &presentationdescriptorvtbl;
-    object->descriptors = heap_alloc_zero(count * sizeof(*object->descriptors));
-    if (!object->descriptors)
+    if (!(object->descriptors = calloc(count, sizeof(*object->descriptors))))
     {
         IMFPresentationDescriptor_Release(&object->IMFPresentationDescriptor_iface);
         return E_OUTOFMEMORY;
@@ -1732,7 +2578,7 @@ HRESULT WINAPI MFCreatePresentationDescriptor(DWORD count, IMFStreamDescriptor *
     unsigned int i;
     HRESULT hr;
 
-    TRACE("%u, %p, %p.\n", count, descriptors, out);
+    TRACE("%lu, %p, %p.\n", count, descriptors, out);
 
     if (!count)
         return E_INVALIDARG;
@@ -1743,13 +2589,12 @@ HRESULT WINAPI MFCreatePresentationDescriptor(DWORD count, IMFStreamDescriptor *
             return E_INVALIDARG;
     }
 
-    object = heap_alloc_zero(sizeof(*object));
-    if (!object)
+    if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
 
     if (FAILED(hr = presentation_descriptor_init(object, count)))
     {
-        heap_free(object);
+        free(object);
         return hr;
     }
 
@@ -1791,10 +2636,12 @@ static const struct uncompressed_video_format video_formats[] =
     { &MFVideoFormat_RGB8,          1, 3, 1, 0 },
     { &MFVideoFormat_L8,            1, 3, 1, 0 },
     { &MFVideoFormat_AYUV,          4, 3, 0, 1 },
+    { &MFVideoFormat_I420,          1, 0, 0, 1 },
     { &MFVideoFormat_IMC1,          2, 3, 0, 1 },
     { &MFVideoFormat_IMC2,          1, 0, 0, 1 },
     { &MFVideoFormat_IMC3,          2, 3, 0, 1 },
     { &MFVideoFormat_IMC4,          1, 0, 0, 1 },
+    { &MFVideoFormat_IYUV,          1, 0, 0, 1 },
     { &MFVideoFormat_NV12,          1, 0, 0, 1 },
     { &MFVideoFormat_D16,           2, 3, 0, 0 },
     { &MFVideoFormat_L16,           2, 3, 0, 0 },
@@ -1836,7 +2683,7 @@ HRESULT WINAPI MFGetStrideForBitmapInfoHeader(DWORD fourcc, DWORD width, LONG *s
     struct uncompressed_video_format *format;
     GUID subtype;
 
-    TRACE("%s, %u, %p.\n", debugstr_fourcc(fourcc), width, stride);
+    TRACE("%s, %lu, %p.\n", debugstr_fourcc(fourcc), width, stride);
 
     memcpy(&subtype, &MFVideoFormat_Base, sizeof(subtype));
     subtype.Data1 = fourcc;
@@ -1876,6 +2723,8 @@ HRESULT WINAPI MFCalculateImageSize(REFGUID subtype, UINT32 width, UINT32 height
         case MAKEFOURCC('I','M','C','4'):
         case MAKEFOURCC('N','V','1','2'):
         case MAKEFOURCC('Y','V','1','2'):
+        case MAKEFOURCC('I','4','2','0'):
+        case MAKEFOURCC('I','Y','U','V'):
             /* 2 x 2 block, interleaving UV for half the height */
             *size = ((width + 1) & ~1) * height * 3 / 2;
             break;
@@ -1901,15 +2750,15 @@ HRESULT WINAPI MFGetPlaneSize(DWORD fourcc, DWORD width, DWORD height, DWORD *si
     unsigned int stride;
     GUID subtype;
 
-    TRACE("%s, %u, %u, %p.\n", debugstr_fourcc(fourcc), width, height, size);
+    TRACE("%s, %lu, %lu, %p.\n", debugstr_fourcc(fourcc), width, height, size);
 
     memcpy(&subtype, &MFVideoFormat_Base, sizeof(subtype));
     subtype.Data1 = fourcc;
 
-    if (!(format = mf_get_video_format(&subtype)))
-        return MF_E_INVALIDMEDIATYPE;
-
-    stride = mf_get_stride_for_format(format, width);
+    if ((format = mf_get_video_format(&subtype)))
+        stride = mf_get_stride_for_format(format, width);
+    else
+        stride = 0;
 
     switch (fourcc)
     {
@@ -1917,6 +2766,8 @@ HRESULT WINAPI MFGetPlaneSize(DWORD fourcc, DWORD width, DWORD height, DWORD *si
         case MAKEFOURCC('I','M','C','4'):
         case MAKEFOURCC('N','V','1','2'):
         case MAKEFOURCC('Y','V','1','2'):
+        case MAKEFOURCC('I','4','2','0'):
+        case MAKEFOURCC('I','Y','U','V'):
             *size = stride * height * 3 / 2;
             break;
         default:
@@ -1960,7 +2811,7 @@ HRESULT WINAPI MFWrapMediaType(IMFMediaType *original, REFGUID major, REFGUID su
     if (FAILED(hr = MFGetAttributesAsBlobSize((IMFAttributes *)original, &size)))
         return hr;
 
-    if (!(buffer = heap_alloc(size)))
+    if (!(buffer = malloc(size)))
         return E_OUTOFMEMORY;
 
     if (FAILED(hr = MFGetAttributesAsBlob((IMFAttributes *)original, buffer, size)))
@@ -1981,7 +2832,7 @@ HRESULT WINAPI MFWrapMediaType(IMFMediaType *original, REFGUID major, REFGUID su
     *ret = mediatype;
 
 failed:
-    heap_free(buffer);
+    free(buffer);
 
     return hr;
 }
@@ -2040,7 +2891,7 @@ HRESULT WINAPI MFCreateWaveFormatExFromMFMediaType(IMFMediaType *mediatype, WAVE
     if (!IsEqualGUID(&major, &MFMediaType_Audio))
         return E_INVALIDARG;
 
-    if (!IsEqualGUID(&subtype, &MFAudioFormat_PCM))
+    if (!IsEqualGUID(&subtype, &MFAudioFormat_PCM) && !IsEqualGUID(&subtype, &MFAudioFormat_Float))
     {
         FIXME("Unsupported audio format %s.\n", debugstr_guid(&subtype));
         return E_NOTIMPL;
@@ -2064,12 +2915,19 @@ HRESULT WINAPI MFCreateWaveFormatExFromMFMediaType(IMFMediaType *mediatype, WAVE
 
     memset(format, 0, *size);
 
-    format->wFormatTag = format_ext ? WAVE_FORMAT_EXTENSIBLE : WAVE_FORMAT_PCM;
+    if (format_ext)
+        format->wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+    else if (IsEqualGUID(&subtype, &MFAudioFormat_Float))
+        format->wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
+    else
+        format->wFormatTag = WAVE_FORMAT_PCM;
 
     if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_NUM_CHANNELS, &value)))
         format->nChannels = value;
-    IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &format->nSamplesPerSec);
-    IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &format->nAvgBytesPerSec);
+    if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_SAMPLES_PER_SECOND, &value)))
+        format->nSamplesPerSec = value;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &value)))
+        format->nAvgBytesPerSec = value;
     if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_BLOCK_ALIGNMENT, &value)))
         format->nBlockAlign = value;
     if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_BITS_PER_SAMPLE, &value)))
@@ -2081,11 +2939,619 @@ HRESULT WINAPI MFCreateWaveFormatExFromMFMediaType(IMFMediaType *mediatype, WAVE
         if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, &value)))
             format_ext->Samples.wSamplesPerBlock = value;
 
-        IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_CHANNEL_MASK, &format_ext->dwChannelMask);
+        if (SUCCEEDED(IMFMediaType_GetUINT32(mediatype, &MF_MT_AUDIO_CHANNEL_MASK, &value)))
+            format_ext->dwChannelMask = value;
         memcpy(&format_ext->SubFormat, &KSDATAFORMAT_SUBTYPE_PCM, sizeof(format_ext->SubFormat));
     }
 
     *ret_format = format;
+
+    return S_OK;
+}
+
+static void mediatype_set_uint32(IMFMediaType *mediatype, const GUID *attr, unsigned int value, HRESULT *hr)
+{
+    if (SUCCEEDED(*hr))
+        *hr = IMFMediaType_SetUINT32(mediatype, attr, value);
+}
+
+static void mediatype_set_guid(IMFMediaType *mediatype, const GUID *attr, const GUID *value, HRESULT *hr)
+{
+    if (SUCCEEDED(*hr))
+        *hr = IMFMediaType_SetGUID(mediatype, attr, value);
+}
+
+static void mediatype_set_blob(IMFMediaType *mediatype, const GUID *attr, const UINT8 *data,
+        unsigned int size, HRESULT *hr)
+{
+    if (SUCCEEDED(*hr))
+        *hr = IMFMediaType_SetBlob(mediatype, attr, data, size);
+}
+
+/***********************************************************************
+ *      MFInitMediaTypeFromWaveFormatEx (mfplat.@)
+ */
+HRESULT WINAPI MFInitMediaTypeFromWaveFormatEx(IMFMediaType *mediatype, const WAVEFORMATEX *format, UINT32 size)
+{
+    const WAVEFORMATEXTENSIBLE *wfex = (const WAVEFORMATEXTENSIBLE *)format;
+    GUID subtype;
+    HRESULT hr;
+
+    TRACE("%p, %p, %u.\n", mediatype, format, size);
+
+    if (!mediatype || !format)
+        return E_POINTER;
+
+    if (format->cbSize + sizeof(*format) > size)
+        return E_INVALIDARG;
+
+    hr = IMFMediaType_DeleteAllItems(mediatype);
+
+    mediatype_set_guid(mediatype, &MF_MT_MAJOR_TYPE, &MFMediaType_Audio, &hr);
+
+    if (format->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
+    {
+        memcpy(&subtype, &wfex->SubFormat, sizeof(subtype));
+
+        if (wfex->dwChannelMask)
+            mediatype_set_uint32(mediatype, &MF_MT_AUDIO_CHANNEL_MASK, wfex->dwChannelMask, &hr);
+
+        if (format->wBitsPerSample && wfex->Samples.wValidBitsPerSample)
+            mediatype_set_uint32(mediatype, &MF_MT_AUDIO_VALID_BITS_PER_SAMPLE, wfex->Samples.wValidBitsPerSample, &hr);
+    }
+    else
+    {
+        memcpy(&subtype, &MFAudioFormat_Base, sizeof(subtype));
+        subtype.Data1 = format->wFormatTag;
+
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_PREFER_WAVEFORMATEX, 1, &hr);
+    }
+    mediatype_set_guid(mediatype, &MF_MT_SUBTYPE, &subtype, &hr);
+
+    if (format->nChannels)
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_NUM_CHANNELS, format->nChannels, &hr);
+
+    if (format->nSamplesPerSec)
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_SAMPLES_PER_SECOND, format->nSamplesPerSec, &hr);
+
+    if (format->nAvgBytesPerSec)
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND, format->nAvgBytesPerSec, &hr);
+
+    if (format->nBlockAlign)
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_BLOCK_ALIGNMENT, format->nBlockAlign, &hr);
+
+    if (format->wBitsPerSample)
+        mediatype_set_uint32(mediatype, &MF_MT_AUDIO_BITS_PER_SAMPLE, format->wBitsPerSample, &hr);
+
+    if (IsEqualGUID(&subtype, &MFAudioFormat_PCM) ||
+            IsEqualGUID(&subtype, &MFAudioFormat_Float))
+    {
+        mediatype_set_uint32(mediatype, &MF_MT_ALL_SAMPLES_INDEPENDENT, 1, &hr);
+    }
+
+    if (format->cbSize && format->wFormatTag != WAVE_FORMAT_EXTENSIBLE)
+        mediatype_set_blob(mediatype, &MF_MT_USER_DATA, (const UINT8 *)(format + 1), format->cbSize, &hr);
+
+    return hr;
+}
+
+/***********************************************************************
+ *      MFCreateVideoMediaTypeFromSubtype (mfplat.@)
+ */
+HRESULT WINAPI MFCreateVideoMediaTypeFromSubtype(const GUID *subtype, IMFVideoMediaType **media_type)
+{
+    struct media_type *object;
+    HRESULT hr;
+
+    TRACE("%s, %p.\n", debugstr_guid(subtype), media_type);
+
+    if (!media_type)
+        return E_INVALIDARG;
+
+    if (FAILED(hr = create_media_type(&object)))
+        return hr;
+
+    IMFMediaType_SetGUID(&object->IMFMediaType_iface, &MF_MT_MAJOR_TYPE, &MFMediaType_Video);
+    IMFMediaType_SetGUID(&object->IMFMediaType_iface, &MF_MT_SUBTYPE, subtype);
+
+    *media_type = &object->IMFVideoMediaType_iface;
+
+    return S_OK;
+}
+
+/***********************************************************************
+ *      MFCreateAudioMediaType (mfplat.@)
+ */
+HRESULT WINAPI MFCreateAudioMediaType(const WAVEFORMATEX *format, IMFAudioMediaType **media_type)
+{
+    struct media_type *object;
+    HRESULT hr;
+
+    TRACE("%p, %p.\n", format, media_type);
+
+    if (!media_type)
+        return E_INVALIDARG;
+
+    if (FAILED(hr = create_media_type(&object)))
+        return hr;
+
+    if (FAILED(hr = MFInitMediaTypeFromWaveFormatEx(&object->IMFMediaType_iface, format, sizeof(*format) + format->cbSize)))
+    {
+        IMFMediaType_Release(&object->IMFMediaType_iface);
+        return hr;
+    }
+
+    *media_type = &object->IMFAudioMediaType_iface;
+
+    return S_OK;
+}
+
+static void media_type_get_ratio(IMFMediaType *media_type, const GUID *attr, DWORD *numerator,
+        DWORD *denominator)
+{
+    UINT64 value;
+
+    if (SUCCEEDED(IMFMediaType_GetUINT64(media_type, attr, &value)))
+    {
+        *numerator = value >> 32;
+        *denominator = value;
+    }
+}
+
+/***********************************************************************
+ *      MFCreateMFVideoFormatFromMFMediaType (mfplat.@)
+ */
+HRESULT WINAPI MFCreateMFVideoFormatFromMFMediaType(IMFMediaType *media_type, MFVIDEOFORMAT **video_format, UINT32 *size)
+{
+    UINT32 flags, palette_size = 0, value;
+    MFVIDEOFORMAT *format;
+    INT32 stride;
+    GUID guid;
+
+    TRACE("%p, %p, %p.\n", media_type, video_format, size);
+
+    *size = sizeof(*format);
+
+    if (SUCCEEDED(IMFMediaType_GetBlobSize(media_type, &MF_MT_PALETTE, &palette_size)))
+        *size += palette_size;
+
+    if (!(format = CoTaskMemAlloc(*size)))
+        return E_OUTOFMEMORY;
+
+    *video_format = format;
+
+    memset(format, 0, sizeof(*format));
+    format->dwSize = *size;
+
+    if (SUCCEEDED(IMFMediaType_GetGUID(media_type, &MF_MT_SUBTYPE, &guid)))
+    {
+        memcpy(&format->guidFormat, &guid, sizeof(guid));
+        format->surfaceInfo.Format = guid.Data1;
+    }
+
+    media_type_get_ratio(media_type, &MF_MT_FRAME_SIZE, &format->videoInfo.dwWidth, &format->videoInfo.dwHeight);
+    media_type_get_ratio(media_type, &MF_MT_PIXEL_ASPECT_RATIO, &format->videoInfo.PixelAspectRatio.Numerator,
+            &format->videoInfo.PixelAspectRatio.Denominator);
+    media_type_get_ratio(media_type, &MF_MT_FRAME_RATE, &format->videoInfo.FramesPerSecond.Numerator,
+            &format->videoInfo.FramesPerSecond.Denominator);
+
+    IMFMediaType_GetUINT32(media_type, &MF_MT_VIDEO_CHROMA_SITING, &format->videoInfo.SourceChromaSubsampling);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_INTERLACE_MODE, &format->videoInfo.InterlaceMode);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_TRANSFER_FUNCTION, &format->videoInfo.TransferFunction);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_VIDEO_PRIMARIES, &format->videoInfo.ColorPrimaries);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_YUV_MATRIX, &format->videoInfo.TransferMatrix);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_VIDEO_LIGHTING, &format->videoInfo.SourceLighting);
+    IMFMediaType_GetUINT32(media_type, &MF_MT_VIDEO_NOMINAL_RANGE, &format->videoInfo.NominalRange);
+    IMFMediaType_GetBlob(media_type, &MF_MT_GEOMETRIC_APERTURE, (UINT8 *)&format->videoInfo.GeometricAperture,
+           sizeof(format->videoInfo.GeometricAperture), NULL);
+    IMFMediaType_GetBlob(media_type, &MF_MT_MINIMUM_DISPLAY_APERTURE, (UINT8 *)&format->videoInfo.MinimumDisplayAperture,
+           sizeof(format->videoInfo.MinimumDisplayAperture), NULL);
+
+    /* Video flags. */
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_PAD_CONTROL_FLAGS, &flags)))
+        format->videoInfo.VideoFlags |= flags;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_SOURCE_CONTENT_HINT, &flags)))
+        format->videoInfo.VideoFlags |= flags;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_DRM_FLAGS, &flags)))
+        format->videoInfo.VideoFlags |= flags;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_PAN_SCAN_ENABLED, &flags)) && !!flags)
+    {
+        format->videoInfo.VideoFlags |= MFVideoFlag_PanScanEnabled;
+        IMFMediaType_GetBlob(media_type, &MF_MT_PAN_SCAN_APERTURE, (UINT8 *)&format->videoInfo.PanScanAperture,
+               sizeof(format->videoInfo.PanScanAperture), NULL);
+    }
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_DEFAULT_STRIDE, (UINT32 *)&stride)) && stride < 0)
+        format->videoInfo.VideoFlags |= MFVideoFlag_BottomUpLinearRep;
+
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_AVG_BITRATE, &value)))
+        format->compressedInfo.AvgBitrate = value;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_AVG_BIT_ERROR_RATE, &value)))
+        format->compressedInfo.AvgBitErrorRate = value;
+    if (SUCCEEDED(IMFMediaType_GetUINT32(media_type, &MF_MT_MAX_KEYFRAME_SPACING, &value)))
+        format->compressedInfo.MaxKeyFrameSpacing = value;
+
+    /* Palette. */
+    if (palette_size)
+    {
+        format->surfaceInfo.PaletteEntries = palette_size / sizeof(*format->surfaceInfo.Palette);
+        IMFMediaType_GetBlob(media_type, &MF_MT_PALETTE, (UINT8 *)format->surfaceInfo.Palette, palette_size, NULL);
+    }
+
+    return S_OK;
+}
+
+/***********************************************************************
+ *      MFConvertColorInfoToDXVA (mfplat.@)
+ */
+HRESULT WINAPI MFConvertColorInfoToDXVA(DWORD *dxva_info, const MFVIDEOFORMAT *format)
+{
+    struct
+    {
+        UINT SampleFormat           : 8;
+        UINT VideoChromaSubsampling : 4;
+        UINT NominalRange           : 3;
+        UINT VideoTransferMatrix    : 3;
+        UINT VideoLighting          : 4;
+        UINT VideoPrimaries         : 5;
+        UINT VideoTransferFunction  : 5;
+    } *dxva_format = (void *)dxva_info;
+
+    TRACE("%p, %p.\n", dxva_info, format);
+
+    if (format->videoInfo.InterlaceMode == MFVideoInterlace_MixedInterlaceOrProgressive)
+        dxva_format->SampleFormat = DXVA2_SampleFieldInterleavedEvenFirst;
+    else
+        dxva_format->SampleFormat = format->videoInfo.InterlaceMode;
+
+    dxva_format->VideoChromaSubsampling = format->videoInfo.SourceChromaSubsampling;
+    dxva_format->NominalRange = format->videoInfo.NominalRange;
+    dxva_format->VideoTransferMatrix = format->videoInfo.TransferMatrix;
+    dxva_format->VideoLighting = format->videoInfo.SourceLighting;
+    dxva_format->VideoPrimaries = format->videoInfo.ColorPrimaries;
+    dxva_format->VideoTransferFunction = format->videoInfo.TransferFunction;
+
+    return S_OK;
+}
+
+struct frame_rate
+{
+    UINT64 key;
+    UINT64 value;
+};
+
+static int __cdecl frame_rate_compare(const void *a, const void *b)
+{
+    const UINT64 *key = a;
+    const struct frame_rate *known_rate = b;
+    return *key == known_rate->key ? 0 : ( *key < known_rate->key ? 1 : -1 );
+}
+
+/***********************************************************************
+ *      MFFrameRateToAverageTimePerFrame (mfplat.@)
+ */
+HRESULT WINAPI MFFrameRateToAverageTimePerFrame(UINT32 numerator, UINT32 denominator, UINT64 *avgframetime)
+{
+    static const struct frame_rate known_rates[] =
+    {
+#define KNOWN_RATE(n,d,ft) { ((UINT64)n << 32) | d, ft }
+        KNOWN_RATE(60000, 1001, 166833),
+        KNOWN_RATE(30000, 1001, 333667),
+        KNOWN_RATE(24000, 1001, 417188),
+        KNOWN_RATE(60,       1, 166667),
+        KNOWN_RATE(50,       1, 200000),
+        KNOWN_RATE(30,       1, 333333),
+        KNOWN_RATE(25,       1, 400000),
+        KNOWN_RATE(24,       1, 416667),
+#undef KNOWN_RATE
+    };
+    UINT64 rate = ((UINT64)numerator << 32) | denominator;
+    const struct frame_rate *entry;
+
+    TRACE("%u, %u, %p.\n", numerator, denominator, avgframetime);
+
+    if ((entry = bsearch(&rate, known_rates, ARRAY_SIZE(known_rates), sizeof(*known_rates),
+            frame_rate_compare)))
+    {
+        *avgframetime = entry->value;
+    }
+    else
+        *avgframetime = numerator ? denominator * (UINT64)10000000 / numerator : 0;
+
+    return S_OK;
+}
+
+static unsigned int get_gcd(unsigned int a, unsigned int b)
+{
+    unsigned int m;
+
+    while (b)
+    {
+        m = a % b;
+        a = b;
+        b = m;
+    }
+
+    return a;
+}
+
+/***********************************************************************
+ *      MFAverageTimePerFrameToFrameRate (mfplat.@)
+ */
+HRESULT WINAPI MFAverageTimePerFrameToFrameRate(UINT64 avgtime, UINT32 *numerator, UINT32 *denominator)
+{
+    static const struct frame_rate known_rates[] =
+    {
+#define KNOWN_RATE(ft,n,d) { ft, ((UINT64)n << 32) | d }
+        KNOWN_RATE(417188, 24000, 1001),
+        KNOWN_RATE(416667,    24,    1),
+        KNOWN_RATE(400000,    25,    1),
+        KNOWN_RATE(333667, 30000, 1001),
+        KNOWN_RATE(333333,    30,    1),
+        KNOWN_RATE(200000,    50,    1),
+        KNOWN_RATE(166833, 60000, 1001),
+        KNOWN_RATE(166667,    60,    1),
+#undef KNOWN_RATE
+    };
+    const struct frame_rate *entry;
+    unsigned int gcd;
+
+    TRACE("%s, %p, %p.\n", wine_dbgstr_longlong(avgtime), numerator, denominator);
+
+    if ((entry = bsearch(&avgtime, known_rates, ARRAY_SIZE(known_rates), sizeof(*known_rates),
+            frame_rate_compare)))
+    {
+        *numerator = entry->value >> 32;
+        *denominator = entry->value;
+    }
+    else if (avgtime)
+    {
+        if (avgtime > 100000000) avgtime = 100000000;
+        gcd = get_gcd(10000000, avgtime);
+        *numerator = 10000000 / gcd;
+        *denominator = avgtime / gcd;
+    }
+    else
+    {
+        *numerator = *denominator = 0;
+    }
+
+    return S_OK;
+}
+
+/***********************************************************************
+ *      MFMapDXGIFormatToDX9Format (mfplat.@)
+ */
+DWORD WINAPI MFMapDXGIFormatToDX9Format(DXGI_FORMAT dxgi_format)
+{
+    switch (dxgi_format)
+    {
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+            return D3DFMT_A32B32G32R32F;
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:
+            return D3DFMT_A16B16G16R16F;
+        case DXGI_FORMAT_R16G16B16A16_UNORM:
+            return D3DFMT_A16B16G16R16;
+        case DXGI_FORMAT_R16G16B16A16_SNORM:
+            return D3DFMT_Q16W16V16U16;
+        case DXGI_FORMAT_R32G32_FLOAT:
+            return D3DFMT_G32R32F;
+        case DXGI_FORMAT_R10G10B10A2_UNORM:
+            return D3DFMT_A2B10G10R10;
+        case DXGI_FORMAT_R8G8B8A8_SNORM:
+            return D3DFMT_Q8W8V8U8;
+        case DXGI_FORMAT_R16G16_FLOAT:
+            return D3DFMT_G16R16F;
+        case DXGI_FORMAT_R16G16_UNORM:
+            return D3DFMT_G16R16;
+        case DXGI_FORMAT_R16G16_SNORM:
+            return D3DFMT_V16U16;
+        case DXGI_FORMAT_D32_FLOAT:
+            return D3DFMT_D32F_LOCKABLE;
+        case DXGI_FORMAT_R32_FLOAT:
+            return D3DFMT_R32F;
+        case DXGI_FORMAT_D24_UNORM_S8_UINT:
+            return D3DFMT_D24S8;
+        case DXGI_FORMAT_R8G8_SNORM:
+            return D3DFMT_V8U8;
+        case DXGI_FORMAT_R16_FLOAT:
+            return D3DFMT_R16F;
+        case DXGI_FORMAT_D16_UNORM:
+            return D3DFMT_D16_LOCKABLE;
+        case DXGI_FORMAT_R16_UNORM:
+            return D3DFMT_L16;
+        case DXGI_FORMAT_R8_UNORM:
+            return D3DFMT_L8;
+        case DXGI_FORMAT_A8_UNORM:
+            return D3DFMT_A8;
+        case DXGI_FORMAT_BC1_UNORM:
+        case DXGI_FORMAT_BC1_UNORM_SRGB:
+            return D3DFMT_DXT1;
+        case DXGI_FORMAT_BC2_UNORM:
+        case DXGI_FORMAT_BC2_UNORM_SRGB:
+            return D3DFMT_DXT2;
+        case DXGI_FORMAT_BC3_UNORM:
+        case DXGI_FORMAT_BC3_UNORM_SRGB:
+            return D3DFMT_DXT4;
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+            return D3DFMT_A8B8G8R8;
+        case DXGI_FORMAT_B8G8R8A8_UNORM:
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            return D3DFMT_A8R8G8B8;
+        case DXGI_FORMAT_B8G8R8X8_UNORM:
+        case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+            return D3DFMT_X8R8G8B8;
+        case DXGI_FORMAT_AYUV:
+            return MAKEFOURCC('A','Y','U','V');
+        case DXGI_FORMAT_Y410:
+            return MAKEFOURCC('Y','4','1','0');
+        case DXGI_FORMAT_Y416:
+            return MAKEFOURCC('Y','4','1','6');
+        case DXGI_FORMAT_NV12:
+            return MAKEFOURCC('N','V','1','2');
+        case DXGI_FORMAT_P010:
+            return MAKEFOURCC('P','0','1','0');
+        case DXGI_FORMAT_P016:
+            return MAKEFOURCC('P','0','1','6');
+        case DXGI_FORMAT_420_OPAQUE:
+            return MAKEFOURCC('4','2','0','O');
+        case DXGI_FORMAT_YUY2:
+            return D3DFMT_YUY2;
+        case DXGI_FORMAT_Y210:
+            return MAKEFOURCC('Y','2','1','0');
+        case DXGI_FORMAT_Y216:
+            return MAKEFOURCC('Y','2','1','6');
+        case DXGI_FORMAT_NV11:
+            return MAKEFOURCC('N','V','1','1');
+        case DXGI_FORMAT_AI44:
+            return MAKEFOURCC('A','I','4','4');
+        case DXGI_FORMAT_IA44:
+            return MAKEFOURCC('I','A','4','4');
+        case DXGI_FORMAT_P8:
+            return D3DFMT_P8;
+        case DXGI_FORMAT_A8P8:
+            return D3DFMT_A8P8;
+        default:
+            return 0;
+    }
+}
+
+/***********************************************************************
+ *      MFMapDX9FormatToDXGIFormat (mfplat.@)
+ */
+DXGI_FORMAT WINAPI MFMapDX9FormatToDXGIFormat(DWORD format)
+{
+    switch (format)
+    {
+        case D3DFMT_A32B32G32R32F:
+            return DXGI_FORMAT_R32G32B32A32_FLOAT;
+        case D3DFMT_A16B16G16R16F:
+            return DXGI_FORMAT_R16G16B16A16_FLOAT;
+        case D3DFMT_A16B16G16R16:
+            return DXGI_FORMAT_R16G16B16A16_UNORM;
+        case D3DFMT_Q16W16V16U16:
+            return DXGI_FORMAT_R16G16B16A16_SNORM;
+        case D3DFMT_G32R32F:
+            return DXGI_FORMAT_R32G32_FLOAT;
+        case D3DFMT_A2B10G10R10:
+            return DXGI_FORMAT_R10G10B10A2_UNORM;
+        case D3DFMT_Q8W8V8U8:
+            return DXGI_FORMAT_R8G8B8A8_SNORM;
+        case D3DFMT_G16R16F:
+            return DXGI_FORMAT_R16G16_FLOAT;
+        case D3DFMT_G16R16:
+            return DXGI_FORMAT_R16G16_UNORM;
+        case D3DFMT_V16U16:
+            return DXGI_FORMAT_R16G16_SNORM;
+        case D3DFMT_D32F_LOCKABLE:
+            return DXGI_FORMAT_D32_FLOAT;
+        case D3DFMT_R32F:
+            return DXGI_FORMAT_R32_FLOAT;
+        case D3DFMT_D24S8:
+            return DXGI_FORMAT_D24_UNORM_S8_UINT;
+        case D3DFMT_V8U8:
+            return DXGI_FORMAT_R8G8_SNORM;
+        case D3DFMT_R16F:
+            return DXGI_FORMAT_R16_FLOAT;
+        case D3DFMT_L16:
+            return DXGI_FORMAT_R16_UNORM;
+        case D3DFMT_L8:
+            return DXGI_FORMAT_R8_UNORM;
+        case D3DFMT_A8:
+            return DXGI_FORMAT_A8_UNORM;
+        case D3DFMT_DXT1:
+            return DXGI_FORMAT_BC1_UNORM;
+        case D3DFMT_DXT2:
+            return DXGI_FORMAT_BC2_UNORM;
+        case D3DFMT_DXT4:
+            return DXGI_FORMAT_BC3_UNORM;
+        case D3DFMT_A8R8G8B8:
+            return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case D3DFMT_X8R8G8B8:
+            return DXGI_FORMAT_B8G8R8X8_UNORM;
+        case MAKEFOURCC('A','Y','U','V'):
+            return DXGI_FORMAT_AYUV;
+        case MAKEFOURCC('Y','4','1','0'):
+            return DXGI_FORMAT_Y410;
+        case MAKEFOURCC('Y','4','1','6'):
+            return DXGI_FORMAT_Y416;
+        case MAKEFOURCC('N','V','1','2'):
+            return DXGI_FORMAT_NV12;
+        case MAKEFOURCC('P','0','1','0'):
+            return DXGI_FORMAT_P010;
+        case MAKEFOURCC('P','0','1','6'):
+            return DXGI_FORMAT_P016;
+        case MAKEFOURCC('4','2','0','O'):
+            return DXGI_FORMAT_420_OPAQUE;
+        case D3DFMT_YUY2:
+            return DXGI_FORMAT_YUY2;
+        case MAKEFOURCC('Y','2','1','0'):
+            return DXGI_FORMAT_Y210;
+        case MAKEFOURCC('Y','2','1','6'):
+            return DXGI_FORMAT_Y216;
+        case MAKEFOURCC('N','V','1','1'):
+            return DXGI_FORMAT_NV11;
+        case MAKEFOURCC('A','I','4','4'):
+            return DXGI_FORMAT_AI44;
+        case MAKEFOURCC('I','A','4','4'):
+            return DXGI_FORMAT_IA44;
+        case D3DFMT_P8:
+            return DXGI_FORMAT_P8;
+        case D3DFMT_A8P8:
+            return DXGI_FORMAT_A8P8;
+        default:
+            return DXGI_FORMAT_UNKNOWN;
+    }
+}
+
+/***********************************************************************
+ *      MFInitVideoFormat_RGB (mfplat.@)
+ */
+HRESULT WINAPI MFInitVideoFormat_RGB(MFVIDEOFORMAT *format, DWORD width, DWORD height, DWORD d3dformat)
+{
+    unsigned int transfer_function;
+
+    TRACE("%p, %lu, %lu, %#lx.\n", format, width, height, d3dformat);
+
+    if (!format)
+        return E_INVALIDARG;
+
+    if (!d3dformat) d3dformat = D3DFMT_X8R8G8B8;
+
+    switch (d3dformat)
+    {
+        case D3DFMT_X8R8G8B8:
+        case D3DFMT_R8G8B8:
+        case D3DFMT_A8R8G8B8:
+        case D3DFMT_R5G6B5:
+        case D3DFMT_X1R5G5B5:
+        case D3DFMT_A2B10G10R10:
+        case D3DFMT_P8:
+            transfer_function = MFVideoTransFunc_sRGB;
+            break;
+        default:
+            transfer_function = MFVideoTransFunc_10;
+    }
+
+    memset(format, 0, sizeof(*format));
+    format->dwSize = sizeof(*format);
+    format->videoInfo.dwWidth = width;
+    format->videoInfo.dwHeight = height;
+    format->videoInfo.PixelAspectRatio.Numerator = 1;
+    format->videoInfo.PixelAspectRatio.Denominator = 1;
+    format->videoInfo.InterlaceMode = MFVideoInterlace_Progressive;
+    format->videoInfo.TransferFunction = transfer_function;
+    format->videoInfo.ColorPrimaries = MFVideoPrimaries_BT709;
+    format->videoInfo.SourceLighting = MFVideoLighting_office;
+    format->videoInfo.FramesPerSecond.Numerator = 60;
+    format->videoInfo.FramesPerSecond.Denominator = 1;
+    format->videoInfo.NominalRange = MFNominalRange_Normal;
+    format->videoInfo.GeometricAperture.Area.cx = width;
+    format->videoInfo.GeometricAperture.Area.cy = height;
+    format->videoInfo.MinimumDisplayAperture = format->videoInfo.GeometricAperture;
+    memcpy(&format->guidFormat, &MFVideoFormat_Base, sizeof(format->guidFormat));
+    format->guidFormat.Data1 = d3dformat;
+    format->surfaceInfo.Format = d3dformat;
 
     return S_OK;
 }

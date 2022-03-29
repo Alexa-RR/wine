@@ -1,5 +1,9 @@
 TESTDLL   = dxva2.dll
+<<<<<<< HEAD
 IMPORTS   = d3d9 user32 ole32
+=======
+IMPORTS   = dxva2 user32 d3d9 ole32
+>>>>>>> master
 
 C_SRCS = \
 	dxva2.c

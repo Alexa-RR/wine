@@ -66,7 +66,7 @@ static void __cdecl test_invalid_parameter_handler(const wchar_t *expression,
     ok(function == NULL, "function is not NULL\n");
     ok(file == NULL, "file is not NULL\n");
     ok(line == 0, "line = %u\n", line);
-    ok(arg == 0, "arg = %lx\n", (UINT_PTR)arg);
+    ok(arg == 0, "arg = %Ix\n", arg);
 }
 
 _ACRTIMP int __cdecl _o_tolower(int);
@@ -77,19 +77,22 @@ static BOOL local_isnan(double d)
     return d != d;
 }
 
-#define test_strtod_str(string, value, length) _test_strtod_str(__LINE__, string, value, length, FALSE)
-#define test_strtod_str_todo(string, value, length) _test_strtod_str(__LINE__, string, value, length, TRUE)
-static void _test_strtod_str(int line, const char* string, double value, int length, BOOL todo)
+#define test_strtod_str_errno(string, value, length, err) _test_strtod_str(__LINE__, string, value, length, err)
+#define test_strtod_str(string, value, length) _test_strtod_str(__LINE__, string, value, length, 0)
+static void _test_strtod_str(int line, const char* string, double value, int length, int err)
 {
     char *end;
     double d;
+    errno = 0xdeadbeef;
     d = strtod(string, &end);
-    todo_wine_if(todo) {
-        if (local_isnan(value))
-            ok_(__FILE__, line)(local_isnan(d), "d = %.16le (\"%s\")\n", d, string);
-        else
-            ok_(__FILE__, line)(d == value, "d = %.16le (\"%s\")\n", d, string);
-    }
+    if(!err)
+        ok_(__FILE__, line)(errno == 0xdeadbeef, "errno = %d\n", errno);
+    else
+        ok_(__FILE__, line)(errno == err, "errno = %d\n", errno);
+    if (local_isnan(value))
+        ok_(__FILE__, line)(local_isnan(d), "d = %.16le (\"%s\")\n", d, string);
+    else
+        ok_(__FILE__, line)(d == value, "d = %.16le (\"%s\")\n", d, string);
     ok_(__FILE__, line)(end == string + length, "incorrect end (%d, \"%s\")\n", (int)(end - string), string);
 }
 
@@ -105,6 +108,8 @@ static void test_strtod(void)
     test_strtod_str("infini", INFINITY, 3);
     test_strtod_str("input", 0, 0);
     test_strtod_str("-input", 0, 0);
+    test_strtod_str_errno("1.7976931348623159e+308", INFINITY, 23, ERANGE);
+    test_strtod_str_errno("-1.7976931348623159e+308", -INFINITY, 24, ERANGE);
 
     test_strtod_str("NAN", NAN, 3);
     test_strtod_str("nan", NAN, 3);
@@ -139,9 +144,48 @@ static void test_strtod(void)
     test_strtod_str("0x1fffffffffffff.80000000000000000001", 9007199254740992.0, 37);
 
     test_strtod_str("4.0621786324484881721115322e-53", 4.0621786324484881721115322e-53, 31);
-    test_strtod_str_todo("1.8905590910042396899370942", 1.8905590910042396899370942, 27);
+    test_strtod_str("1.8905590910042396899370942", 1.8905590910042396899370942, 27);
+    test_strtod_str("1.7976931348623158e+308", 1.7976931348623158e+308, 23);
     test_strtod_str("2.2250738585072014e-308", 2.2250738585072014e-308, 23);
     test_strtod_str("4.9406564584124654e-324", 4.9406564584124654e-324, 23);
+    test_strtod_str("2.48e-324", 4.9406564584124654e-324, 9);
+    test_strtod_str_errno("2.47e-324", 0, 9, ERANGE);
+}
+
+static void test_strtof(void)
+{
+    static const struct {
+        const char *str;
+        int len;
+        float ret;
+        int err;
+    } tests[] = {
+        { "12.1", 4, 12.1f },
+        { "-13.721", 7, -13.721f },
+        { "1.e40", 5, INFINITY, ERANGE },
+        { "-1.e40", 6, -INFINITY, ERANGE },
+        { "0.0", 3, 0.0f },
+        { "-0.0", 4, 0.0f },
+        { "1.4e-45", 7, 1.4e-45f },
+        { "-1.4e-45", 8, -1.4e-45f },
+        { "1.e-60", 6, 0, ERANGE },
+        { "-1.e-60", 7, 0, ERANGE },
+    };
+
+    char *end;
+    float f;
+    int i;
+
+    for (i=0; i<ARRAY_SIZE(tests); i++)
+    {
+        errno = 0xdeadbeef;
+        f = strtof(tests[i].str, &end);
+        ok(f == tests[i].ret, "%d) f = %.16e\n", i, f);
+        ok(end == tests[i].str + tests[i].len, "%d) len = %d\n",
+                i, (int)(end - tests[i].str));
+        ok(errno == tests[i].err || (!tests[i].err && errno == 0xdeadbeef),
+                "%d) errno = %d\n", i, errno);
+    }
 }
 
 static void test__memicmp(void)
@@ -410,6 +454,24 @@ static void test_wcstok(void)
     ok(!wcscmp(L"words", token), "expected \"words\", got \"%ls\"\n", token);
     token = wcstok(NULL, L" ", NULL);
     ok(!token, "expected NULL, got %p\n", token);
+
+    next = NULL;
+    wcscpy(buffer, input);
+    token = wcstok(buffer, L"=", &next);
+    ok(!wcscmp(token, input), "expected \"%ls\", got \"%ls\"\n", input, token);
+    ok(next == buffer + wcslen(input), "expected %p, got %p\n", buffer + wcslen(input), next);
+    token = wcstok(NULL, L"=", &next);
+    ok(!token, "expected NULL, got \"%ls\"\n", token);
+    ok(next == buffer + wcslen(input), "expected %p, got %p\n", buffer + wcslen(input), next);
+
+    next = NULL;
+    wcscpy(buffer, L"");
+    token = wcstok(buffer, L"=", &next);
+    ok(token == NULL, "expected NULL, got \"%ls\"\n", token);
+    ok(next == buffer, "expected %p, got %p\n", buffer, next);
+    token = wcstok(NULL, L"=", &next);
+    ok(!token, "expected NULL, got \"%ls\"\n", token);
+    ok(next == buffer, "expected %p, got %p\n", buffer, next);
 }
 
 static void test__strnicmp(void)
@@ -429,12 +491,110 @@ static void test__strnicmp(void)
     ok(!ret, "got %d.\n", ret);
 }
 
+static void test_SpecialCasing(void)
+{
+    int i;
+    wint_t ret, exp;
+    _locale_t locale;
+    struct test {
+        const char *lang;
+        wint_t ch;
+        wint_t exp;
+    };
+
+    struct test ucases[] = {
+        {"English", 'I', 'i'}, /* LATIN CAPITAL LETTER I */
+        {"English", 0x0130},   /* LATIN CAPITAL LETTER I WITH DOT ABOVE */
+
+        {"Turkish", 'I', 'i'}, /* LATIN CAPITAL LETTER I */
+        {"Turkish", 0x0130},   /* LATIN CAPITAL LETTER I WITH DOT ABOVE */
+    };
+    struct test lcases[] = {
+        {"English", 'i', 'I'}, /* LATIN SMALL LETTER I */
+        {"English", 0x0131},   /* LATIN SMALL LETTER DOTLESS I */
+
+        {"Turkish", 'i', 'I'}, /* LATIN SMALL LETTER I */
+        {"Turkish", 0x0131},   /* LATIN SMALL LETTER DOTLESS I */
+    };
+
+    for (i = 0; i < ARRAY_SIZE(ucases); i++) {
+        if (!setlocale(LC_ALL, ucases[i].lang)) {
+            win_skip("skipping special case tests for %s\n", ucases[i].lang);
+            continue;
+        }
+
+        ret = towlower(ucases[i].ch);
+        exp = ucases[i].exp ? ucases[i].exp : ucases[i].ch;
+        ok(ret == exp, "expected lowercase %x, got %x for locale %s\n", exp, ret, ucases[i].lang);
+    }
+
+    for (i = 0; i < ARRAY_SIZE(lcases); i++) {
+        if (!setlocale(LC_ALL, lcases[i].lang)) {
+            win_skip("skipping special case tests for %s\n", lcases[i].lang);
+            continue;
+        }
+
+        ret = towupper(lcases[i].ch);
+        exp = lcases[i].exp ? lcases[i].exp : lcases[i].ch;
+        ok(ret == exp, "expected uppercase %x, got %x for locale %s\n", exp, ret, lcases[i].lang);
+    }
+
+    setlocale(LC_ALL, "C");
+
+    /* test _towlower_l creating locale */
+    for (i = 0; i < ARRAY_SIZE(ucases); i++) {
+        if (!(locale = _create_locale(LC_ALL, ucases[i].lang))) {
+            win_skip("locale %s not available.  skipping\n", ucases[i].lang);
+            continue;
+        }
+
+        ret = _towlower_l(ucases[i].ch, locale);
+        exp = ucases[i].exp ? ucases[i].exp : ucases[i].ch;
+        ok(ret == exp, "expected lowercase %x, got %x for locale %s\n", exp, ret, ucases[i].lang);
+
+        _free_locale(locale);
+    }
+
+    /* test _towupper_l creating locale */
+    for (i = 0; i < ARRAY_SIZE(lcases); i++) {
+        if (!(locale = _create_locale(LC_ALL, lcases[i].lang))) {
+            win_skip("locale %s not available.  skipping\n", lcases[i].lang);
+            continue;
+        }
+
+        ret = _towupper_l(lcases[i].ch, locale);
+        exp = lcases[i].exp ? lcases[i].exp : lcases[i].ch;
+        ok(ret == exp, "expected uppercase %x, got %x for locale %s\n", exp, ret, lcases[i].lang);
+
+        _free_locale(locale);
+    }
+}
+
+static void test__mbbtype_l(void)
+{
+    int expected, ret;
+    unsigned int c;
+
+    _setmbcp(_MB_CP_LOCALE);
+    for (c = 0; c < 256; ++c)
+    {
+        expected = _mbbtype(c, 0);
+        ret = _mbbtype_l(c, 0, NULL);
+        ok(ret == expected, "c %#x, got ret %#x, expected %#x.\n", c, ret, expected);
+
+        expected = _mbbtype(c, 1);
+        ret = _mbbtype_l(c, 1, NULL);
+        ok(ret == expected, "c %#x, got ret %#x, expected %#x.\n", c, ret, expected);
+    }
+}
+
 START_TEST(string)
 {
     ok(_set_invalid_parameter_handler(test_invalid_parameter_handler) == NULL,
             "Invalid parameter handler was already set\n");
 
     test_strtod();
+    test_strtof();
     test__memicmp();
     test__memicmp_l();
     test___strncnt();
@@ -442,4 +602,6 @@ START_TEST(string)
     test_mbsspn();
     test_wcstok();
     test__strnicmp();
+    test_SpecialCasing();
+    test__mbbtype_l();
 }

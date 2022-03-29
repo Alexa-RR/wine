@@ -24,21 +24,11 @@
  *  - Thread-safing
  */
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <limits.h>
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
-#ifdef HAVE_SYS_STAT_H
-# include <sys/stat.h>
-#endif
-#include <fcntl.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -47,7 +37,7 @@
 #include "winreg.h"
 #include "rpc.h"
 #include "wine/debug.h"
-#include "wine/unicode.h"
+#include "wine/exception.h"
 #include "winternl.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
@@ -68,22 +58,51 @@ static HWND crypt_hWindow;
 #define CRYPT_Alloc(size) (LocalAlloc(LMEM_ZEROINIT, size))
 #define CRYPT_Free(buffer) (LocalFree(buffer))
 
+static void *pointer_from_handle(UINT_PTR handle, DWORD magic)
+{
+    void *ret = NULL;
+
+    __TRY
+    {
+        if (handle && *(DWORD *)handle == magic)
+            ret = (void *)handle;
+    }
+    __EXCEPT_PAGE_FAULT
+    {
+    }
+    __ENDTRY
+
+    if (!ret)
+        SetLastError(ERROR_INVALID_PARAMETER);
+
+    return ret;
+}
+
+static PCRYPTPROV provider_from_handle(HCRYPTPROV handle)
+{
+    return pointer_from_handle(handle, MAGIC_CRYPTPROV);
+}
+
+static PCRYPTHASH hash_from_handle(HCRYPTHASH handle)
+{
+    return pointer_from_handle(handle, MAGIC_CRYPTHASH);
+}
+
+static PCRYPTKEY key_from_handle(HCRYPTKEY handle)
+{
+    return pointer_from_handle(handle, MAGIC_CRYPTKEY);
+}
+
 static inline PWSTR CRYPT_GetProvKeyName(PCWSTR pProvName)
 {
-	static const WCHAR KEYSTR[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y','\\',
-                'D','e','f','a','u','l','t','s','\\',
-                'P','r','o','v','i','d','e','r','\\',0
-	};
+	static const WCHAR KEYSTR[] = L"Software\\Microsoft\\Cryptography\\Defaults\\Provider\\";
 	PWSTR keyname;
 
-	keyname = CRYPT_Alloc((strlenW(KEYSTR) + strlenW(pProvName) +1)*sizeof(WCHAR));
+	keyname = CRYPT_Alloc((lstrlenW(KEYSTR) + lstrlenW(pProvName) +1)*sizeof(WCHAR));
 	if (keyname)
 	{
-		strcpyW(keyname, KEYSTR);
-		strcpyW(keyname + strlenW(KEYSTR), pProvName);
+		lstrcpyW(keyname, KEYSTR);
+		lstrcpyW(keyname + lstrlenW(KEYSTR), pProvName);
 	} else
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 	return keyname;
@@ -91,28 +110,16 @@ static inline PWSTR CRYPT_GetProvKeyName(PCWSTR pProvName)
 
 static inline PWSTR CRYPT_GetTypeKeyName(DWORD dwType, BOOL user)
 {
-	static const WCHAR MACHINESTR[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y','\\',
-                'D','e','f','a','u','l','t','s','\\',
-                'P','r','o','v','i','d','e','r',' ','T','y','p','e','s','\\',
-                'T','y','p','e',' ','X','X','X',0
-	};
-	static const WCHAR USERSTR[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y','\\',
-                'P','r','o','v','i','d','e','r',' ','T','y','p','e',' ','X','X','X',0
-	};
+	static const WCHAR MACHINESTR[] = L"Software\\Microsoft\\Cryptography\\Defaults\\Provider Types\\Type XXX";
+	static const WCHAR USERSTR[] = L"Software\\Microsoft\\Cryptography\\Provider Type XXX";
 	PWSTR keyname;
 	PWSTR ptr;
 
-	keyname = CRYPT_Alloc( ((user ? strlenW(USERSTR) : strlenW(MACHINESTR)) +1)*sizeof(WCHAR));
+	keyname = CRYPT_Alloc( ((user ? lstrlenW(USERSTR) : lstrlenW(MACHINESTR)) +1)*sizeof(WCHAR));
 	if (keyname)
 	{
-		user ? strcpyW(keyname, USERSTR) : strcpyW(keyname, MACHINESTR);
-		ptr = keyname + strlenW(keyname);
+		user ? lstrcpyW(keyname, USERSTR) : lstrcpyW(keyname, MACHINESTR);
+		ptr = keyname + lstrlenW(keyname);
 		*(--ptr) = (dwType % 10) + '0';
 		*(--ptr) = ((dwType / 10) % 10) + '0';
 		*(--ptr) = (dwType / 100) + '0';
@@ -283,45 +290,30 @@ error:
 
 static void CRYPT_CreateMachineGuid(void)
 {
-	static const WCHAR cryptographyW[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y',0 };
-	static const WCHAR machineGuidW[] = {
-		'M','a','c','h','i','n','e','G','u','i','d',0 };
 	LONG r;
 	HKEY key;
 
-	r = RegOpenKeyExW(HKEY_LOCAL_MACHINE, cryptographyW, 0, KEY_ALL_ACCESS | KEY_WOW64_64KEY,
+	r = RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Cryptography", 0, KEY_ALL_ACCESS | KEY_WOW64_64KEY,
 			  &key);
 	if (!r)
 	{
 		DWORD size;
 
-		r = RegQueryValueExW(key, machineGuidW, NULL, NULL, NULL, &size);
+		r = RegQueryValueExW(key, L"MachineGuid", NULL, NULL, NULL, &size);
 		if (r == ERROR_FILE_NOT_FOUND)
 		{
                     UUID uuid;
                     WCHAR buf[37];
-                    RPC_STATUS rs;
-                    static const WCHAR uuidFmt[] = {
-                        '%','0','8','x','-','%','0','4','x','-',
-                        '%','0','4','x','-','%','0','2','x',
-                        '%','0','2','x','-','%','0','2','x',
-                        '%','0','2','x','%','0','2','x',
-                        '%','0','2','x','%','0','2','x',
-                        '%','0','2','x',0 };
 
-                    rs = UuidCreate(&uuid);
-                    if (rs == S_OK)
+                    if (UuidCreate(&uuid) == S_OK)
                     {
-                        sprintfW(buf, uuidFmt,
+                        swprintf(buf, ARRAY_SIZE(buf), L"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
                                  uuid.Data1, uuid.Data2, uuid.Data3,
                                  uuid.Data4[0], uuid.Data4[1],
                                  uuid.Data4[2], uuid.Data4[3],
                                  uuid.Data4[4], uuid.Data4[5],
                                  uuid.Data4[6], uuid.Data4[7] );
-                        RegSetValueExW(key, machineGuidW, 0, REG_SZ,
+                        RegSetValueExW(key, L"MachineGuid", 0, REG_SZ,
                                        (const BYTE *)buf,
                                        (lstrlenW(buf)+1)*sizeof(WCHAR));
                     }
@@ -371,11 +363,8 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 	PSTR provnameA = NULL, pszContainerA = NULL;
 	DWORD keytype, type, len;
 	ULONG r;
-	static const WCHAR nameW[] = {'N','a','m','e',0};
-	static const WCHAR typeW[] = {'T','y','p','e',0};
-	static const WCHAR imagepathW[] = {'I','m','a','g','e',' ','P','a','t','h',0};
 
-	TRACE("(%p, %s, %s, %d, %08x)\n", phProv, debugstr_w(pszContainer),
+	TRACE("(%p, %s, %s, %ld, %08lx)\n", phProv, debugstr_w(pszContainer),
 		debugstr_w(pszProvider), dwProvType, dwFlags);
 
 	if (dwProvType < 1 || dwProvType > MAXPROVTYPES)
@@ -399,7 +388,7 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 		 * then try the machine default CSP
 		 */
 		if ( !(keyname = CRYPT_GetTypeKeyName(dwProvType, TRUE)) ) {
-			TRACE("No provider registered for crypto provider type %d.\n", dwProvType);
+			TRACE("No provider registered for crypto provider type %ld.\n", dwProvType);
 			SetLastError(NTE_PROV_TYPE_NOT_DEF);
 			return FALSE;
 		}
@@ -407,7 +396,7 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 		{
 			CRYPT_Free(keyname);
 			if ( !(keyname = CRYPT_GetTypeKeyName(dwProvType, FALSE)) ) {
-				TRACE("No type registered for crypto provider type %d.\n", dwProvType);
+				TRACE("No type registered for crypto provider type %ld.\n", dwProvType);
 				RegCloseKey(key);
 				SetLastError(NTE_PROV_TYPE_NOT_DEF);
 				goto error;
@@ -421,10 +410,10 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 			}
 		}
 		CRYPT_Free(keyname);
-		r = RegQueryValueExW(key, nameW, NULL, &keytype, NULL, &len);
+		r = RegQueryValueExW(key, L"Name", NULL, &keytype, NULL, &len);
 		if( r != ERROR_SUCCESS || !len || keytype != REG_SZ)
 		{
-			TRACE("error %d reading size of 'Name' from registry\n", r );
+			TRACE("error %ld reading size of 'Name' from registry\n", r );
 			RegCloseKey(key);
 			SetLastError(NTE_PROV_TYPE_ENTRY_BAD);
 			goto error;
@@ -435,22 +424,22 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 			SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 			goto error;
 		}
-		r = RegQueryValueExW(key, nameW, NULL, NULL, (LPBYTE)provname, &len);
+		r = RegQueryValueExW(key, L"Name", NULL, NULL, (LPBYTE)provname, &len);
 		if( r != ERROR_SUCCESS )
 		{
-			TRACE("error %d reading 'Name' from registry\n", r );
+			TRACE("error %ld reading 'Name' from registry\n", r );
 			RegCloseKey(key);
 			SetLastError(NTE_PROV_TYPE_ENTRY_BAD);
 			goto error;
 		}
 		RegCloseKey(key);
 	} else {
-		if ( !(provname = CRYPT_Alloc((strlenW(pszProvider) +1)*sizeof(WCHAR))) )
+		if ( !(provname = CRYPT_Alloc((lstrlenW(pszProvider) +1)*sizeof(WCHAR))) )
 		{
 			SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 			goto error;
 		}
-		strcpyW(provname, pszProvider);
+		lstrcpyW(provname, pszProvider);
 	}
 
 	keyname = CRYPT_GetProvKeyName(provname);
@@ -462,7 +451,7 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 		goto error;
 	}
 	len = sizeof(DWORD);
-	r = RegQueryValueExW(key, typeW, NULL, NULL, (BYTE*)&type, &len);
+	r = RegQueryValueExW(key, L"Type", NULL, NULL, (BYTE*)&type, &len);
 	if (r != ERROR_SUCCESS)
 	{
 		SetLastError(NTE_PROV_TYPE_ENTRY_BAD);
@@ -470,15 +459,15 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 	}
 	if (type != dwProvType)
 	{
-		TRACE("Crypto provider has wrong type (%d vs expected %d).\n", type, dwProvType);
+		TRACE("Crypto provider has wrong type (%ld vs expected %ld).\n", type, dwProvType);
 		SetLastError(NTE_PROV_TYPE_NO_MATCH);
 		goto error;
 	}
 
-	r = RegQueryValueExW(key, imagepathW, NULL, &keytype, NULL, &len);
+	r = RegQueryValueExW(key, L"Image Path", NULL, &keytype, NULL, &len);
 	if ( r != ERROR_SUCCESS || keytype != REG_SZ)
 	{
-		TRACE("error %d reading size of 'Image Path' from registry\n", r );
+		TRACE("error %ld reading size of 'Image Path' from registry\n", r );
 		RegCloseKey(key);
 		SetLastError(NTE_PROV_TYPE_ENTRY_BAD);
 		goto error;
@@ -489,10 +478,10 @@ BOOL WINAPI CryptAcquireContextW (HCRYPTPROV *phProv, LPCWSTR pszContainer,
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 		goto error;
 	}
-	r = RegQueryValueExW(key, imagepathW, NULL, NULL, (LPBYTE)temp, &len);
+	r = RegQueryValueExW(key, L"Image Path", NULL, NULL, (LPBYTE)temp, &len);
 	if( r != ERROR_SUCCESS )
 	{
-		TRACE("error %d reading 'Image Path' from registry\n", r );
+		TRACE("error %ld reading 'Image Path' from registry\n", r );
 		RegCloseKey(key);
 		SetLastError(NTE_PROV_TYPE_ENTRY_BAD);
 		goto error;
@@ -580,7 +569,7 @@ BOOL WINAPI CryptAcquireContextA (HCRYPTPROV *phProv, LPCSTR pszContainer,
 	PWSTR pProvider = NULL, pContainer = NULL;
 	BOOL ret = FALSE;
 
-	TRACE("(%p, %s, %s, %d, %08x)\n", phProv, debugstr_a(pszContainer),
+	TRACE("(%p, %s, %s, %ld, %08lx)\n", phProv, debugstr_a(pszContainer),
               debugstr_a(pszProvider), dwProvType, dwFlags);
 
 	if ( !CRYPT_ANSIToUnicode(pszContainer, &pContainer, -1) )
@@ -620,21 +609,12 @@ BOOL WINAPI CryptAcquireContextA (HCRYPTPROV *phProv, LPCSTR pszContainer,
  */
 BOOL WINAPI CryptContextAddRef (HCRYPTPROV hProv, DWORD *pdwReserved, DWORD dwFlags)
 {
-	PCRYPTPROV pProv = (PCRYPTPROV)hProv;	
+	PCRYPTPROV pProv = provider_from_handle(hProv);
 
-	TRACE("(0x%lx, %p, %08x)\n", hProv, pdwReserved, dwFlags);
+	TRACE("(0x%Ix, %p, %08lx)\n", hProv, pdwReserved, dwFlags);
 
 	if (!pProv)
-	{
-		SetLastError(NTE_BAD_UID);
 		return FALSE;
-	}
-
-	if (pProv->dwMagic != MAGIC_CRYPTPROV)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
-		return FALSE;
-	}
 
 	InterlockedIncrement(&pProv->refcount);
 	return TRUE;
@@ -655,22 +635,13 @@ BOOL WINAPI CryptContextAddRef (HCRYPTPROV hProv, DWORD *pdwReserved, DWORD dwFl
  */
 BOOL WINAPI CryptReleaseContext (HCRYPTPROV hProv, DWORD dwFlags)
 {
-	PCRYPTPROV pProv = (PCRYPTPROV)hProv;
+	PCRYPTPROV pProv = provider_from_handle(hProv);
 	BOOL ret = TRUE;
 
-	TRACE("(0x%lx, %08x)\n", hProv, dwFlags);
+	TRACE("(0x%Ix, %08lx)\n", hProv, dwFlags);
 
 	if (!pProv)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
-	}
-
-	if (pProv->dwMagic != MAGIC_CRYPTPROV)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
-		return FALSE;
-	}
 
 	if (InterlockedDecrement(&pProv->refcount) == 0)
 	{
@@ -707,21 +678,12 @@ BOOL WINAPI CryptReleaseContext (HCRYPTPROV hProv, DWORD dwFlags)
  */
 BOOL WINAPI CryptGenRandom (HCRYPTPROV hProv, DWORD dwLen, BYTE *pbBuffer)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+	PCRYPTPROV prov = provider_from_handle(hProv);
 
-	TRACE("(0x%lx, %d, %p)\n", hProv, dwLen, pbBuffer);
+	TRACE("(0x%Ix, %ld, %p)\n", hProv, dwLen, pbBuffer);
 
-	if (!hProv)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!prov)
 		return FALSE;
-	}
-
-	if (prov->dwMagic != MAGIC_CRYPTPROV)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
-		return FALSE;
-	}
 
 	return prov->pFuncs->pCPGenRandom(prov->hPrivate, dwLen, pbBuffer);
 }
@@ -748,14 +710,19 @@ BOOL WINAPI CryptGenRandom (HCRYPTPROV hProv, DWORD dwLen, BYTE *pbBuffer)
 BOOL WINAPI CryptCreateHash (HCRYPTPROV hProv, ALG_ID Algid, HCRYPTKEY hKey,
 		DWORD dwFlags, HCRYPTHASH *phHash)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
+	PCRYPTKEY key = NULL;
+	PCRYPTPROV prov;
 	PCRYPTHASH hash;
 
-	TRACE("(0x%lx, 0x%x, 0x%lx, %08x, %p)\n", hProv, Algid, hKey, dwFlags, phHash);
+	TRACE("(0x%Ix, 0x%x, 0x%Ix, %08lx, %p)\n", hProv, Algid, hKey, dwFlags, phHash);
 
-	if (!prov || !phHash || prov->dwMagic != MAGIC_CRYPTPROV ||
-		(key && key->dwMagic != MAGIC_CRYPTKEY))
+	if (!(prov = provider_from_handle(hProv)))
+		return FALSE;
+
+	if (hKey && !(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (!phHash)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -808,15 +775,19 @@ BOOL WINAPI CryptCreateHash (HCRYPTPROV hProv, ALG_ID Algid, HCRYPTKEY hKey,
 BOOL WINAPI CryptDecrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 		DWORD dwFlags, BYTE *pbData, DWORD *pdwDataLen)
 {
+	PCRYPTHASH hash = NULL;
 	PCRYPTPROV prov;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTKEY key;
 
-	TRACE("(0x%lx, 0x%lx, %d, %08x, %p, %p)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen);
+	TRACE("(0x%Ix, 0x%Ix, %d, %08lx, %p, %p)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen);
 
-	if (!key || !pbData || !pdwDataLen ||
-		!key->pProvider || key->dwMagic != MAGIC_CRYPTKEY ||
-		key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (hHash && !(hash = hash_from_handle(hHash)))
+		return FALSE;
+
+	if (!pbData || !pdwDataLen || !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -846,18 +817,19 @@ BOOL WINAPI CryptDecrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 BOOL WINAPI CryptDeriveKey (HCRYPTPROV hProv, ALG_ID Algid, HCRYPTHASH hBaseData,
 		DWORD dwFlags, HCRYPTKEY *phKey)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
-	PCRYPTHASH hash = (PCRYPTHASH)hBaseData;
+	PCRYPTPROV prov;
+	PCRYPTHASH hash;
 	PCRYPTKEY key;
 
-	TRACE("(0x%lx, 0x%08x, 0x%lx, 0x%08x, %p)\n", hProv, Algid, hBaseData, dwFlags, phKey);
+	TRACE("(0x%Ix, 0x%08x, 0x%Ix, 0x%08lx, %p)\n", hProv, Algid, hBaseData, dwFlags, phKey);
 
-	if (!prov || !hash)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(prov = provider_from_handle(hProv)))
 		return FALSE;
-	}
-	if (!phKey || prov->dwMagic != MAGIC_CRYPTPROV || hash->dwMagic != MAGIC_CRYPTHASH)
+
+	if (!(hash = hash_from_handle(hBaseData)))
+		return FALSE;
+
+	if (!phKey)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -897,20 +869,16 @@ BOOL WINAPI CryptDeriveKey (HCRYPTPROV hProv, ALG_ID Algid, HCRYPTHASH hBaseData
  */
 BOOL WINAPI CryptDestroyHash (HCRYPTHASH hHash)
 {
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTHASH hash;
 	PCRYPTPROV prov;
 	BOOL ret;
 
-	TRACE("(0x%lx)\n", hHash);
+	TRACE("(0x%Ix)\n", hHash);
 
-	if (!hash)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(hash = hash_from_handle(hHash)))
 		return FALSE;
-	}
 
-	if (!hash->pProvider || hash->dwMagic != MAGIC_CRYPTHASH ||
-		hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -937,20 +905,16 @@ BOOL WINAPI CryptDestroyHash (HCRYPTHASH hHash)
  */
 BOOL WINAPI CryptDestroyKey (HCRYPTKEY hKey)
 {
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
 	PCRYPTPROV prov;
+	PCRYPTKEY key;
 	BOOL ret;
 
-	TRACE("(0x%lx)\n", hKey);
+	TRACE("(0x%Ix)\n", hKey);
 
-	if (!key)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(key = key_from_handle(hKey)))
 		return FALSE;
-	}
 
-	if (!key->pProvider || key->dwMagic != MAGIC_CRYPTKEY ||
-		key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -984,11 +948,12 @@ BOOL WINAPI CryptDuplicateHash (HCRYPTHASH hHash, DWORD *pdwReserved,
 	PCRYPTPROV prov;
 	PCRYPTHASH orghash, newhash;
 
-	TRACE("(0x%lx, %p, %08x, %p)\n", hHash, pdwReserved, dwFlags, phHash);
+	TRACE("(0x%Ix, %p, %08lx, %p)\n", hHash, pdwReserved, dwFlags, phHash);
 
-	orghash = (PCRYPTHASH)hHash;
-	if (!orghash || pdwReserved || !phHash || !orghash->pProvider ||
-		orghash->dwMagic != MAGIC_CRYPTHASH || orghash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(orghash = hash_from_handle(hHash)))
+		return FALSE;
+
+	if (pdwReserved || !phHash || !orghash->pProvider || orghash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1039,12 +1004,12 @@ BOOL WINAPI CryptDuplicateKey (HCRYPTKEY hKey, DWORD *pdwReserved, DWORD dwFlags
 	PCRYPTPROV prov;
 	PCRYPTKEY orgkey, newkey;
 
-	TRACE("(0x%lx, %p, %08x, %p)\n", hKey, pdwReserved, dwFlags, phKey);
+	TRACE("(0x%Ix, %p, %08lx, %p)\n", hKey, pdwReserved, dwFlags, phKey);
 
-	orgkey = (PCRYPTKEY)hKey;
-	if (!orgkey || pdwReserved || !phKey || !orgkey->pProvider ||
-		orgkey->dwMagic != MAGIC_CRYPTKEY ||
-		orgkey->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(orgkey = key_from_handle(hKey)))
+		return FALSE;
+
+	if (pdwReserved || !phKey || !orgkey->pProvider || orgkey->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1101,14 +1066,19 @@ BOOL WINAPI CryptDuplicateKey (HCRYPTKEY hKey, DWORD *pdwReserved, DWORD dwFlags
 BOOL WINAPI CryptEncrypt (HCRYPTKEY hKey, HCRYPTHASH hHash, BOOL Final,
 		DWORD dwFlags, BYTE *pbData, DWORD *pdwDataLen, DWORD dwBufLen)
 {
+	PCRYPTHASH hash = NULL;
 	PCRYPTPROV prov;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTKEY key;
 
-	TRACE("(0x%lx, 0x%lx, %d, %08x, %p, %p, %d)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen, dwBufLen);
+	TRACE("(0x%Ix, 0x%Ix, %d, %08lx, %p, %p, %ld)\n", hKey, hHash, Final, dwFlags, pbData, pdwDataLen, dwBufLen);
 
-	if (!key || !pdwDataLen || !key->pProvider ||
-		key->dwMagic != MAGIC_CRYPTKEY || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (hHash && !(hash = hash_from_handle(hHash)))
+		return FALSE;
+
+	if (!pdwDataLen || !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1145,17 +1115,9 @@ BOOL WINAPI CryptEnumProvidersW (DWORD dwIndex, DWORD *pdwReserved,
 		DWORD dwFlags, DWORD *pdwProvType, LPWSTR pszProvName, DWORD *pcbProvName)
 {
 	HKEY hKey;
-	static const WCHAR providerW[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y','\\',
-                'D','e','f','a','u','l','t','s','\\',
-                'P','r','o','v','i','d','e','r',0
-        };
-	static const WCHAR typeW[] = {'T','y','p','e',0};
 	BOOL ret;
 
-	TRACE("(%d, %p, %d, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
+	TRACE("(%ld, %p, %ld, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
 			pdwProvType, pszProvName, pcbProvName);
 
 	if (pdwReserved || !pcbProvName)
@@ -1169,7 +1131,7 @@ BOOL WINAPI CryptEnumProvidersW (DWORD dwIndex, DWORD *pdwReserved,
 		return FALSE;
 	}
 
-	if (RegOpenKeyW(HKEY_LOCAL_MACHINE, providerW, &hKey))
+	if (RegOpenKeyW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Cryptography\\Defaults\\Provider", &hKey))
 	{
 		SetLastError(NTE_FAIL);
 		return FALSE;
@@ -1219,7 +1181,7 @@ BOOL WINAPI CryptEnumProvidersW (DWORD dwIndex, DWORD *pdwReserved,
 			return FALSE;
 		}
 
-		if (RegQueryValueExW(subkey, typeW, NULL, NULL, (BYTE*)pdwProvType, &size))
+		if (RegQueryValueExW(subkey, L"Type", NULL, NULL, (BYTE*)pdwProvType, &size))
 			ret = FALSE;
 
 		RegCloseKey(subkey);
@@ -1240,7 +1202,7 @@ BOOL WINAPI CryptEnumProvidersA (DWORD dwIndex, DWORD *pdwReserved,
 	DWORD bufsize;
 	BOOL ret;
 
-	TRACE("(%d, %p, %08x, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
+	TRACE("(%ld, %p, %08lx, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
 			pdwProvType, pszProvName, pcbProvName);
 
 	if(!CryptEnumProvidersW(dwIndex, pdwReserved, dwFlags, pdwProvType, NULL, &bufsize))
@@ -1295,16 +1257,8 @@ BOOL WINAPI CryptEnumProviderTypesW (DWORD dwIndex, DWORD *pdwReserved,
 	DWORD keylen, numkeys, dwType;
 	PWSTR keyname, ch;
 	DWORD result;
-	static const WCHAR KEYSTR[] = {
-                'S','o','f','t','w','a','r','e','\\',
-                'M','i','c','r','o','s','o','f','t','\\',
-                'C','r','y','p','t','o','g','r','a','p','h','y','\\',
-                'D','e','f','a','u','l','t','s','\\',
-                'P','r','o','v','i','d','e','r',' ','T','y','p','e','s',0
-	};
-	static const WCHAR typenameW[] = {'T','y','p','e','N','a','m','e',0};
 
-	TRACE("(%d, %p, %08x, %p, %p, %p)\n", dwIndex, pdwReserved,
+	TRACE("(%ld, %p, %08lx, %p, %p, %p)\n", dwIndex, pdwReserved,
 		dwFlags, pdwProvType, pszTypeName, pcbTypeName);
 
 	if (pdwReserved || !pdwProvType || !pcbTypeName)
@@ -1318,7 +1272,7 @@ BOOL WINAPI CryptEnumProviderTypesW (DWORD dwIndex, DWORD *pdwReserved,
 		return FALSE;
 	}
 
-	if (RegOpenKeyW(HKEY_LOCAL_MACHINE, KEYSTR, &hKey))
+	if (RegOpenKeyW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Cryptography\\Defaults\\Provider Types", &hKey))
 		return FALSE;
 
 	RegQueryInfoKeyW(hKey, NULL, NULL, NULL, &numkeys, &keylen, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -1343,14 +1297,14 @@ BOOL WINAPI CryptEnumProviderTypesW (DWORD dwIndex, DWORD *pdwReserved,
 	RegOpenKeyW(hKey, keyname, &hSubkey);
 	RegCloseKey(hKey);
 
-	ch = keyname + strlenW(keyname);
+	ch = keyname + lstrlenW(keyname);
 	/* Convert "Type 000" to 0, etc/ */
 	*pdwProvType = *(--ch) - '0';
 	*pdwProvType += (*(--ch) - '0') * 10;
 	*pdwProvType += (*(--ch) - '0') * 100;
 	CRYPT_Free(keyname);
 	
-	result = RegQueryValueExW(hSubkey, typenameW, NULL, &dwType, (LPBYTE)pszTypeName, pcbTypeName);
+	result = RegQueryValueExW(hSubkey, L"TypeName", NULL, &dwType, (LPBYTE)pszTypeName, pcbTypeName);
 	if (result)
 	{
 		SetLastError(result);
@@ -1374,7 +1328,7 @@ BOOL WINAPI CryptEnumProviderTypesA (DWORD dwIndex, DWORD *pdwReserved,
 	DWORD bufsize;
 	BOOL ret;
 
-	TRACE("(%d, %p, %08x, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
+	TRACE("(%ld, %p, %08lx, %p, %p, %p)\n", dwIndex, pdwReserved, dwFlags,
 			pdwProvType, pszTypeName, pcbTypeName);
 
 	if(!CryptEnumProviderTypesW(dwIndex, pdwReserved, dwFlags, pdwProvType, NULL, &bufsize))
@@ -1425,12 +1379,17 @@ BOOL WINAPI CryptExportKey (HCRYPTKEY hKey, HCRYPTKEY hExpKey, DWORD dwBlobType,
 		DWORD dwFlags, BYTE *pbData, DWORD *pdwDataLen)
 {
 	PCRYPTPROV prov;
-	PCRYPTKEY key = (PCRYPTKEY)hKey, expkey = (PCRYPTKEY)hExpKey;
+	PCRYPTKEY key, expkey = NULL;
 
-	TRACE("(0x%lx, 0x%lx, %d, %08x, %p, %p)\n", hKey, hExpKey, dwBlobType, dwFlags, pbData, pdwDataLen);
+	TRACE("(0x%Ix, 0x%Ix, %ld, %08lx, %p, %p)\n", hKey, hExpKey, dwBlobType, dwFlags, pbData, pdwDataLen);
 
-	if (!key || !pdwDataLen || !key->pProvider ||
-		key->dwMagic != MAGIC_CRYPTKEY || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (hExpKey && !(expkey = key_from_handle(hExpKey)))
+		return FALSE;
+
+	if (!pdwDataLen || !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1458,12 +1417,15 @@ BOOL WINAPI CryptExportKey (HCRYPTKEY hKey, HCRYPTKEY hExpKey, DWORD dwBlobType,
  */
 BOOL WINAPI CryptGenKey (HCRYPTPROV hProv, ALG_ID Algid, DWORD dwFlags, HCRYPTKEY *phKey)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+	PCRYPTPROV prov;
 	PCRYPTKEY key;
 
-	TRACE("(0x%lx, %d, %08x, %p)\n", hProv, Algid, dwFlags, phKey);
+	TRACE("(0x%Ix, %d, %08lx, %p)\n", hProv, Algid, dwFlags, phKey);
 
-	if (!phKey || !prov || prov->dwMagic != MAGIC_CRYPTPROV)
+	if (!(prov = provider_from_handle(hProv)))
+		return FALSE;
+
+	if (!phKey)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1514,7 +1476,6 @@ BOOL WINAPI CryptGetDefaultProviderW (DWORD dwProvType, DWORD *pdwReserved,
 	HKEY hKey;
 	PWSTR keyname;
 	DWORD result;
-	static const WCHAR nameW[] = {'N','a','m','e',0};
 
 	if (pdwReserved || !pcbProvName)
 	{
@@ -1544,7 +1505,7 @@ BOOL WINAPI CryptGetDefaultProviderW (DWORD dwProvType, DWORD *pdwReserved,
 	}
 	CRYPT_Free(keyname);
 	
-	result = RegQueryValueExW(hKey, nameW, NULL, NULL, (LPBYTE)pszProvName, pcbProvName); 
+	result = RegQueryValueExW(hKey, L"Name", NULL, NULL, (LPBYTE)pszProvName, pcbProvName);
 	RegCloseKey(hKey);
 
 	if (result)
@@ -1572,7 +1533,7 @@ BOOL WINAPI CryptGetDefaultProviderA (DWORD dwProvType, DWORD *pdwReserved,
 	DWORD bufsize;
 	BOOL ret;
 
-	TRACE("(%d, %p, %08x, %p, %p)\n", dwProvType, pdwReserved, dwFlags, pszProvName, pcbProvName);
+	TRACE("(%ld, %p, %08lx, %p, %p)\n", dwProvType, pdwReserved, dwFlags, pszProvName, pcbProvName);
 
 	CryptGetDefaultProviderW(dwProvType, pdwReserved, dwFlags, NULL, &bufsize);
 	if ( pszProvName && !(str = CRYPT_Alloc(bufsize)) )
@@ -1619,12 +1580,15 @@ BOOL WINAPI CryptGetHashParam (HCRYPTHASH hHash, DWORD dwParam, BYTE *pbData,
 		DWORD *pdwDataLen, DWORD dwFlags)
 {
 	PCRYPTPROV prov;
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTHASH hash;
 
-	TRACE("(0x%lx, %d, %p, %p, %08x)\n", hHash, dwParam, pbData, pdwDataLen, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %p, %08lx)\n", hHash, dwParam, pbData, pdwDataLen, dwFlags);
 
-	if (!hash || !pdwDataLen || !hash->pProvider ||
-		hash->dwMagic != MAGIC_CRYPTHASH || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(hash = hash_from_handle(hHash)))
+		return FALSE;
+
+
+	if (!pdwDataLen || !hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1658,12 +1622,14 @@ BOOL WINAPI CryptGetKeyParam (HCRYPTKEY hKey, DWORD dwParam, BYTE *pbData,
 		DWORD *pdwDataLen, DWORD dwFlags)
 {
 	PCRYPTPROV prov;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
+	PCRYPTKEY key;
 
-	TRACE("(0x%lx, %d, %p, %p, %08x)\n", hKey, dwParam, pbData, pdwDataLen, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %p, %08lx)\n", hKey, dwParam, pbData, pdwDataLen, dwFlags);
 
-	if (!key || !pdwDataLen || !key->pProvider ||
-		key->dwMagic != MAGIC_CRYPTKEY || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (!pdwDataLen || !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1696,15 +1662,12 @@ BOOL WINAPI CryptGetKeyParam (HCRYPTKEY hKey, DWORD dwParam, BYTE *pbData,
 BOOL WINAPI CryptGetProvParam (HCRYPTPROV hProv, DWORD dwParam, BYTE *pbData,
 		DWORD *pdwDataLen, DWORD dwFlags)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, %d, %p, %p, %08x)\n", hProv, dwParam, pbData, pdwDataLen, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %p, %08lx)\n", hProv, dwParam, pbData, pdwDataLen, dwFlags);
 
-	if (!prov || prov->dwMagic != MAGIC_CRYPTPROV)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
+	if (!(prov = provider_from_handle(hProv)))
 		return FALSE;
-	}
 
 	return prov->pFuncs->pCPGetProvParam(prov->hPrivate, dwParam, pbData, pdwDataLen, dwFlags);
 }
@@ -1725,17 +1688,15 @@ BOOL WINAPI CryptGetProvParam (HCRYPTPROV hProv, DWORD dwParam, BYTE *pbData,
  */
 BOOL WINAPI CryptGetUserKey (HCRYPTPROV hProv, DWORD dwKeySpec, HCRYPTKEY *phUserKey)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+	PCRYPTPROV prov;
 	PCRYPTKEY key;
 
-	TRACE("(0x%lx, %d, %p)\n", hProv, dwKeySpec, phUserKey);
+	TRACE("(0x%Ix, %ld, %p)\n", hProv, dwKeySpec, phUserKey);
 
-	if (!prov)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(prov = provider_from_handle(hProv)))
 		return FALSE;
-	}
-	if (!phUserKey || prov->dwMagic != MAGIC_CRYPTPROV)
+
+	if (!phUserKey)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1778,18 +1739,15 @@ BOOL WINAPI CryptGetUserKey (HCRYPTPROV hProv, DWORD dwKeySpec, HCRYPTKEY *phUse
  */
 BOOL WINAPI CryptHashData (HCRYPTHASH hHash, const BYTE *pbData, DWORD dwDataLen, DWORD dwFlags)
 {
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTHASH hash;
 	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, %p, %d, %08x)\n", hHash, pbData, dwDataLen, dwFlags);
+	TRACE("(0x%Ix, %p, %ld, %08lx)\n", hHash, pbData, dwDataLen, dwFlags);
 
-	if (!hash)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(hash = hash_from_handle(hHash)))
 		return FALSE;
-	}
-	if (!hash->pProvider || hash->dwMagic != MAGIC_CRYPTHASH ||
-		hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+
+	if (!hash->pProvider ||	hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1815,20 +1773,19 @@ BOOL WINAPI CryptHashData (HCRYPTHASH hHash, const BYTE *pbData, DWORD dwDataLen
  */
 BOOL WINAPI CryptHashSessionKey (HCRYPTHASH hHash, HCRYPTKEY hKey, DWORD dwFlags)
 {
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
+	PCRYPTHASH hash;
+	PCRYPTKEY key;
 	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, 0x%lx, %08x)\n", hHash, hKey, dwFlags);
+	TRACE("(0x%Ix, 0x%Ix, %08lx)\n", hHash, hKey, dwFlags);
 
-	if (!hash || !key)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(hash = hash_from_handle(hHash)))
 		return FALSE;
-	}
 
-	if (!hash->pProvider || hash->dwMagic != MAGIC_CRYPTHASH ||
-		hash->pProvider->dwMagic != MAGIC_CRYPTPROV || key->dwMagic != MAGIC_CRYPTKEY)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (!hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1858,14 +1815,18 @@ BOOL WINAPI CryptHashSessionKey (HCRYPTHASH hHash, HCRYPTKEY hKey, DWORD dwFlags
 BOOL WINAPI CryptImportKey (HCRYPTPROV hProv, const BYTE *pbData, DWORD dwDataLen,
 		HCRYPTKEY hPubKey, DWORD dwFlags, HCRYPTKEY *phKey)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
-	PCRYPTKEY pubkey = (PCRYPTKEY)hPubKey, importkey;
+	PCRYPTPROV prov;
+	PCRYPTKEY pubkey = NULL, importkey;
 
-	TRACE("(0x%lx, %p, %d, 0x%lx, %08x, %p)\n", hProv, pbData, dwDataLen, hPubKey, dwFlags, phKey);
+	TRACE("(0x%Ix, %p, %ld, 0x%Ix, %08lx, %p)\n", hProv, pbData, dwDataLen, hPubKey, dwFlags, phKey);
 
-	if (!prov || !pbData || !dwDataLen || !phKey ||
-		prov->dwMagic != MAGIC_CRYPTPROV ||
-		(pubkey && pubkey->dwMagic != MAGIC_CRYPTKEY))
+	if (!(prov = provider_from_handle(hProv)))
+		return FALSE;
+
+	if (hPubKey && !(pubkey = key_from_handle(hPubKey)))
+		return FALSE;
+
+	if (!pbData || !dwDataLen || !phKey)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1916,19 +1877,16 @@ BOOL WINAPI CryptImportKey (HCRYPTPROV hProv, const BYTE *pbData, DWORD dwDataLe
 BOOL WINAPI CryptSignHashW (HCRYPTHASH hHash, DWORD dwKeySpec, LPCWSTR sDescription,
 		DWORD dwFlags, BYTE *pbSignature, DWORD *pdwSigLen)
 {
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTHASH hash;
 	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, %d, %s, %08x, %p, %p)\n", 
+	TRACE("(0x%Ix, %ld, %s, %08lx, %p, %p)\n",
 		hHash, dwKeySpec, debugstr_w(sDescription), dwFlags, pbSignature, pdwSigLen);
 
-	if (!hash)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(hash = hash_from_handle(hHash)))
 		return FALSE;
-	}
-	if (!pdwSigLen || !hash->pProvider || hash->dwMagic != MAGIC_CRYPTHASH ||
-		 hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+
+	if (!pdwSigLen || !hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -1950,7 +1908,7 @@ BOOL WINAPI CryptSignHashA (HCRYPTHASH hHash, DWORD dwKeySpec, LPCSTR sDescripti
 	LPWSTR wsDescription;
 	BOOL result;
 
-	TRACE("(0x%lx, %d, %s, %08x, %p, %p)\n", 
+	TRACE("(0x%Ix, %ld, %s, %08lx, %p, %p)\n",
 		hHash, dwKeySpec, debugstr_a(sDescription), dwFlags, pbSignature, pdwSigLen);
 
 	CRYPT_ANSIToUnicode(sDescription, &wsDescription, -1);
@@ -1978,12 +1936,14 @@ BOOL WINAPI CryptSignHashA (HCRYPTHASH hHash, DWORD dwKeySpec, LPCSTR sDescripti
 BOOL WINAPI CryptSetHashParam (HCRYPTHASH hHash, DWORD dwParam, const BYTE *pbData, DWORD dwFlags)
 {
 	PCRYPTPROV prov;
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
+	PCRYPTHASH hash;
 
-	TRACE("(0x%lx, %d, %p, %08x)\n", hHash, dwParam, pbData, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %08lx)\n", hHash, dwParam, pbData, dwFlags);
 
-	if (!hash || !pbData || !hash->pProvider ||
-		hash->dwMagic != MAGIC_CRYPTHASH || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(hash = hash_from_handle(hHash)))
+		return FALSE;
+
+	if (!pbData || !hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -2012,12 +1972,14 @@ BOOL WINAPI CryptSetHashParam (HCRYPTHASH hHash, DWORD dwParam, const BYTE *pbDa
 BOOL WINAPI CryptSetKeyParam (HCRYPTKEY hKey, DWORD dwParam, const BYTE *pbData, DWORD dwFlags)
 {
 	PCRYPTPROV prov;
-	PCRYPTKEY key = (PCRYPTKEY)hKey;
+	PCRYPTKEY key;
 
-	TRACE("(0x%lx, %d, %p, %08x)\n", hKey, dwParam, pbData, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %08lx)\n", hKey, dwParam, pbData, dwFlags);
 
-	if (!key || !pbData || !key->pProvider ||
-		key->dwMagic != MAGIC_CRYPTKEY || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
+	if (!(key = key_from_handle(hKey)))
+		return FALSE;
+
+	if (!pbData || !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return FALSE;
@@ -2043,7 +2005,7 @@ BOOL WINAPI CryptSetKeyParam (HCRYPTKEY hKey, DWORD dwParam, const BYTE *pbData,
  */
 BOOL WINAPI CryptSetProviderA (LPCSTR pszProvName, DWORD dwProvType)
 {
-	TRACE("(%s, %d)\n", pszProvName, dwProvType);
+	TRACE("(%s, %ld)\n", pszProvName, dwProvType);
 	return CryptSetProviderExA(pszProvName, dwProvType, NULL, CRYPT_USER_DEFAULT);
 }
 
@@ -2054,7 +2016,7 @@ BOOL WINAPI CryptSetProviderA (LPCSTR pszProvName, DWORD dwProvType)
  */
 BOOL WINAPI CryptSetProviderW (LPCWSTR pszProvName, DWORD dwProvType)
 {
-	TRACE("(%s, %d)\n", debugstr_w(pszProvName), dwProvType);
+	TRACE("(%s, %ld)\n", debugstr_w(pszProvName), dwProvType);
 	return CryptSetProviderExW(pszProvName, dwProvType, NULL, CRYPT_USER_DEFAULT);
 }
 
@@ -2077,9 +2039,8 @@ BOOL WINAPI CryptSetProviderExW (LPCWSTR pszProvName, DWORD dwProvType, DWORD *p
 {
 	HKEY hProvKey, hTypeKey;
 	PWSTR keyname;
-	static const WCHAR nameW[] = {'N','a','m','e',0};
 
-	TRACE("(%s, %d, %p, %08x)\n", debugstr_w(pszProvName), dwProvType, pdwReserved, dwFlags);
+	TRACE("(%s, %ld, %p, %08lx)\n", debugstr_w(pszProvName), dwProvType, pdwReserved, dwFlags);
 
 	if (!pszProvName || pdwReserved)
 	{
@@ -2114,7 +2075,7 @@ BOOL WINAPI CryptSetProviderExW (LPCWSTR pszProvName, DWORD dwProvType, DWORD *p
 	
 	if (dwFlags & CRYPT_DELETE_DEFAULT)
 	{
-		RegDeleteValueW(hTypeKey, nameW);
+		RegDeleteValueW(hTypeKey, L"Name");
 	}
 	else
 	{
@@ -2134,8 +2095,8 @@ BOOL WINAPI CryptSetProviderExW (LPCWSTR pszProvName, DWORD dwProvType, DWORD *p
 		}
 		CRYPT_Free(keyname);
 		
-		if (RegSetValueExW(hTypeKey, nameW, 0, REG_SZ, (const BYTE *)pszProvName,
-			(strlenW(pszProvName) + 1)*sizeof(WCHAR)))
+		if (RegSetValueExW(hTypeKey, L"Name", 0, REG_SZ, (const BYTE *)pszProvName,
+			(lstrlenW(pszProvName) + 1)*sizeof(WCHAR)))
 		{
 			RegCloseKey(hTypeKey);
 			RegCloseKey(hProvKey);
@@ -2159,7 +2120,7 @@ BOOL WINAPI CryptSetProviderExA (LPCSTR pszProvName, DWORD dwProvType, DWORD *pd
 	BOOL ret = FALSE;
 	PWSTR str = NULL;
 
-	TRACE("(%s, %d, %p, %08x)\n", pszProvName, dwProvType, pdwReserved, dwFlags);
+	TRACE("(%s, %ld, %p, %08lx)\n", pszProvName, dwProvType, pdwReserved, dwFlags);
 
 	if (CRYPT_ANSIToUnicode(pszProvName, &str, -1))
 	{
@@ -2186,20 +2147,13 @@ BOOL WINAPI CryptSetProviderExA (LPCSTR pszProvName, DWORD dwProvType, DWORD *pd
  */
 BOOL WINAPI CryptSetProvParam (HCRYPTPROV hProv, DWORD dwParam, const BYTE *pbData, DWORD dwFlags)
 {
-	PCRYPTPROV prov = (PCRYPTPROV)hProv;
+	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, %d, %p, %08x)\n", hProv, dwParam, pbData, dwFlags);
+	TRACE("(0x%Ix, %ld, %p, %08lx)\n", hProv, dwParam, pbData, dwFlags);
 
-	if (!prov)
-	{
-		SetLastError(ERROR_INVALID_HANDLE);
+	if (!(prov = provider_from_handle(hProv)))
 		return FALSE;
-	}
-	if (prov->dwMagic != MAGIC_CRYPTPROV)
-	{
-		SetLastError(ERROR_INVALID_PARAMETER);
-		return FALSE;
-	}
+
 	if (dwParam == PP_USE_HARDWARE_RNG)
 	{
 		FIXME("PP_USE_HARDWARE_RNG: What do I do with this?\n");
@@ -2246,15 +2200,20 @@ BOOL WINAPI CryptSetProvParam (HCRYPTPROV hProv, DWORD dwParam, const BYTE *pbDa
 BOOL WINAPI CryptVerifySignatureW (HCRYPTHASH hHash, const BYTE *pbSignature, DWORD dwSigLen,
 		HCRYPTKEY hPubKey, LPCWSTR sDescription, DWORD dwFlags)
 {
-	PCRYPTHASH hash = (PCRYPTHASH)hHash;
-	PCRYPTKEY key = (PCRYPTKEY)hPubKey;
+	PCRYPTHASH hash;
+	PCRYPTKEY key;
 	PCRYPTPROV prov;
 
-	TRACE("(0x%lx, %p, %d, 0x%lx, %s, %08x)\n", hHash, pbSignature,
+	TRACE("(0x%Ix, %p, %ld, 0x%Ix, %s, %08lx)\n", hHash, pbSignature,
 			dwSigLen, hPubKey, debugstr_w(sDescription), dwFlags);
 
-	if (!hash || !key || key->dwMagic != MAGIC_CRYPTKEY || hash->dwMagic != MAGIC_CRYPTHASH ||
-	    !hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV ||
+	if (!(hash = hash_from_handle(hHash)))
+		return FALSE;
+
+	if (!(key = key_from_handle(hPubKey)))
+		return FALSE;
+
+	if (!hash->pProvider || hash->pProvider->dwMagic != MAGIC_CRYPTPROV ||
 	    !key->pProvider || key->pProvider->dwMagic != MAGIC_CRYPTPROV)
 	{
 		SetLastError(ERROR_INVALID_PARAMETER);
@@ -2277,7 +2236,7 @@ BOOL WINAPI CryptVerifySignatureA (HCRYPTHASH hHash, const BYTE *pbSignature, DW
 	LPWSTR wsDescription;
 	BOOL result;
 
-	TRACE("(0x%lx, %p, %d, 0x%lx, %s, %08x)\n", hHash, pbSignature,
+	TRACE("(0x%Ix, %p, %ld, 0x%Ix, %s, %08lx)\n", hHash, pbSignature,
 			dwSigLen, hPubKey, debugstr_a(sDescription), dwFlags);
 
 	CRYPT_ANSIToUnicode(sDescription, &wsDescription, -1);
@@ -2294,7 +2253,7 @@ BOOL WINAPI CryptVerifySignatureA (HCRYPTHASH hHash, const BYTE *pbSignature, DW
  */
 DWORD WINAPI OpenEncryptedFileRawA(LPCSTR filename, ULONG flags, PVOID *context)
 {
-    FIXME("(%s, %x, %p): stub\n", debugstr_a(filename), flags, context);
+    FIXME("(%s, %lx, %p): stub\n", debugstr_a(filename), flags, context);
     return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
@@ -2313,7 +2272,7 @@ DWORD WINAPI OpenEncryptedFileRawA(LPCSTR filename, ULONG flags, PVOID *context)
  */
 DWORD WINAPI OpenEncryptedFileRawW(LPCWSTR filename, ULONG flags, PVOID *context)
 {
-    FIXME("(%s, %x, %p): stub\n", debugstr_w(filename), flags, context);
+    FIXME("(%s, %lx, %p): stub\n", debugstr_w(filename), flags, context);
     return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
@@ -2422,6 +2381,36 @@ BOOL WINAPI SystemFunction035(LPCSTR lpszDllFilePath)
     return TRUE;
 }
 
+static CRITICAL_SECTION random_cs;
+static CRITICAL_SECTION_DEBUG random_debug =
+{
+    0, 0, &random_cs,
+    { &random_debug.ProcessLocksList, &random_debug.ProcessLocksList },
+      0, 0, { (DWORD_PTR)(__FILE__ ": random_cs") }
+};
+static CRITICAL_SECTION random_cs = { &random_debug, -1, 0, 0, 0, 0 };
+
+#define MAX_CPUS 128
+static char random_buf[sizeof(SYSTEM_INTERRUPT_INFORMATION) * MAX_CPUS];
+static ULONG random_len;
+static ULONG random_pos;
+
+/* FIXME: assumes interrupt information provides sufficient randomness */
+static BOOL fill_random_buffer(void)
+{
+    ULONG len = sizeof(SYSTEM_INTERRUPT_INFORMATION) * min( NtCurrentTeb()->Peb->NumberOfProcessors, MAX_CPUS );
+    NTSTATUS status;
+
+    if ((status = NtQuerySystemInformation( SystemInterruptInformation, random_buf, len, NULL )))
+    {
+        WARN( "failed to get random bytes %08lx\n", status );
+        return FALSE;
+    }
+    random_len = len;
+    random_pos = 0;
+    return TRUE;
+}
+
 /******************************************************************************
  * SystemFunction036   (ADVAPI32.@)
  *
@@ -2436,27 +2425,35 @@ BOOL WINAPI SystemFunction035(LPCSTR lpszDllFilePath)
  *  Failure: FALSE
  */
 
-BOOLEAN WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen)
+BOOLEAN WINAPI SystemFunction036( void *buffer, ULONG len )
 {
-    int dev_random;
+    char *ptr = buffer;
 
-    dev_random = open("/dev/urandom", O_RDONLY);
-    if (dev_random != -1)
+    EnterCriticalSection( &random_cs );
+    while (len)
     {
+<<<<<<< HEAD
         if (!IsBadWritePtr( pbBuffer, dwLen ) &&
             read(dev_random, pbBuffer, dwLen) == (ssize_t)dwLen)
+=======
+        ULONG size;
+        if (random_pos >= random_len && !fill_random_buffer())
+>>>>>>> master
         {
-            close(dev_random);
-            return TRUE;
+            SetLastError( NTE_FAIL );
+            LeaveCriticalSection( &random_cs );
+            return FALSE;
         }
-        close(dev_random);
+        size = min( len, random_len - random_pos );
+        memcpy( ptr, random_buf + random_pos, size );
+        random_pos += size;
+        ptr += size;
+        len -= size;
     }
-    else
-        FIXME("couldn't open /dev/urandom\n");
-    SetLastError(NTE_FAIL);
-    return FALSE;
-}    
-    
+    LeaveCriticalSection( &random_cs );
+    return TRUE;
+}
+
 /*
    These functions have nearly identical prototypes to CryptProtectMemory and CryptUnprotectMemory,
    in crypt32.dll.
@@ -2486,7 +2483,7 @@ BOOLEAN WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen)
  */
 NTSTATUS WINAPI SystemFunction040(PVOID memory, ULONG length, ULONG flags)
 {
-	FIXME("(%p, %x, %x): stub [RtlEncryptMemory]\n", memory, length, flags);
+	FIXME("(%p, %lx, %lx): stub [RtlEncryptMemory]\n", memory, length, flags);
 	return STATUS_SUCCESS;
 }
 
@@ -2514,7 +2511,7 @@ NTSTATUS WINAPI SystemFunction040(PVOID memory, ULONG length, ULONG flags)
  */
 NTSTATUS WINAPI SystemFunction041(PVOID memory, ULONG length, ULONG flags)
 {
-	FIXME("(%p, %x, %x): stub [RtlDecryptMemory]\n", memory, length, flags);
+	FIXME("(%p, %lx, %lx): stub [RtlDecryptMemory]\n", memory, length, flags);
 	return STATUS_SUCCESS;
 }
 

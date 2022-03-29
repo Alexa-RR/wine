@@ -209,7 +209,7 @@ static DWORD NE_FindNameTableId( NE_MODULE *pModule, LPCSTR typeId, LPCSTR resId
                 if (p[1] & 0x8000)
                 {
                     if (!HIWORD(typeId)) continue;
-                    if (_strnicmp( typeId, (char *)(p + 3), -1 )) continue;
+                    if (stricmp( typeId, (char *)(p + 3) )) continue;
                 }
                 else if (HIWORD(typeId) || (((DWORD)typeId & ~0x8000)!= p[1]))
                   continue;
@@ -219,7 +219,7 @@ static DWORD NE_FindNameTableId( NE_MODULE *pModule, LPCSTR typeId, LPCSTR resId
                 if (p[2] & 0x8000)
                 {
                     if (!HIWORD(resId)) continue;
-                    if (_strnicmp( resId, (char*)(p+3)+strlen((char*)(p+3))+1, -1 )) continue;
+                    if (stricmp( resId, (char*)(p+3)+strlen((char*)(p+3))+1 )) continue;
 
                 }
                 else if (HIWORD(resId) || ((LOWORD(resId) & ~0x8000) != p[2]))
@@ -869,7 +869,7 @@ HGLOBAL16 WINAPI AllocResource16( HMODULE16 hModule, HRSRC16 hRsrc, DWORD size)
     NE_MODULE *pModule = NE_GetPtr( hModule );
     if (!pModule || !pModule->ne_rsrctab || !hRsrc) return 0;
 
-    TRACE("module=%04x res=%04x size=%d\n", hModule, hRsrc, size );
+    TRACE("module=%04x res=%04x size=%ld\n", hModule, hRsrc, size );
 
     sizeShift = *(WORD *)((char *)pModule + pModule->ne_rsrctab);
     pNameInfo = (NE_NAMEINFO*)((char*)pModule + hRsrc);

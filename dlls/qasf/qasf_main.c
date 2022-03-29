@@ -20,9 +20,7 @@
 
 #include "qasf_private.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(qasf);
-
-static HINSTANCE qasf_instance;
+WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 struct class_factory
 {
@@ -98,6 +96,7 @@ static const IClassFactoryVtbl class_factory_vtbl =
     class_factory_LockServer,
 };
 
+static struct class_factory asf_reader_cf = {{&class_factory_vtbl}, asf_reader_create};
 static struct class_factory dmo_wrapper_cf = {{&class_factory_vtbl}, dmo_wrapper_create};
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
@@ -105,7 +104,10 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
     if (reason == DLL_PROCESS_ATTACH)
     {
         DisableThreadLibraryCalls(instance);
-        qasf_instance = instance;
+    }
+    else if (reason == DLL_PROCESS_DETACH && !reserved)
+    {
+        strmbase_release_typelibs();
     }
     return TRUE;
 }
@@ -116,22 +118,9 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void **out)
 
     if (IsEqualGUID(clsid, &CLSID_DMOWrapperFilter))
         return IClassFactory_QueryInterface(&dmo_wrapper_cf.IClassFactory_iface, iid, out);
+    if (IsEqualGUID(clsid, &CLSID_WMAsfReader))
+        return IClassFactory_QueryInterface(&asf_reader_cf.IClassFactory_iface, iid, out);
 
     FIXME("%s not available, returning CLASS_E_CLASSNOTAVAILABLE.\n", debugstr_guid(clsid));
     return CLASS_E_CLASSNOTAVAILABLE;
-}
-
-HRESULT WINAPI DllCanUnloadNow(void)
-{
-    return S_FALSE;
-}
-
-HRESULT WINAPI DllRegisterServer(void)
-{
-    return __wine_register_resources(qasf_instance);
-}
-
-HRESULT WINAPI DllUnregisterServer(void)
-{
-    return __wine_unregister_resources(qasf_instance);
 }

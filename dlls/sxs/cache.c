@@ -57,19 +57,17 @@ static inline struct cache *impl_from_IAssemblyCache(IAssemblyCache *iface)
 static HRESULT WINAPI cache_QueryInterface(
     IAssemblyCache *iface,
     REFIID riid,
-    void **obj )
+    void **ret_iface )
 {
-    struct cache *cache = impl_from_IAssemblyCache(iface);
+    TRACE("%p, %s, %p\n", iface, debugstr_guid(riid), ret_iface);
 
-    TRACE("%p, %s, %p\n", cache, debugstr_guid(riid), obj);
-
-    *obj = NULL;
+    *ret_iface = NULL;
 
     if (IsEqualIID(riid, &IID_IUnknown) ||
         IsEqualIID(riid, &IID_IAssemblyCache))
     {
         IAssemblyCache_AddRef( iface );
-        *obj = cache;
+        *ret_iface = iface;
         return S_OK;
     }
 
@@ -122,23 +120,22 @@ static WCHAR *build_assembly_name( const WCHAR *arch, const WCHAR *name, const W
     return wcslwr( ret );
 }
 
-static WCHAR *build_manifest_path( const WCHAR *arch, const WCHAR *name, const WCHAR *token,
-                                   const WCHAR *version )
+static WCHAR *build_dll_path( const WCHAR *arch, const WCHAR *name, const WCHAR *token,
+                              const WCHAR *version )
 {
-    static const WCHAR fmtW[] =
-        {'%','s','m','a','n','i','f','e','s','t','s','\\','%','s','.','m','a','n','i','f','e','s','t',0};
     WCHAR *path = NULL, *ret, sxsdir[MAX_PATH];
     unsigned int len;
 
     if (!(path = build_assembly_name( arch, name, token, version, &len ))) return NULL;
-    len += ARRAY_SIZE(fmtW);
-    len += build_sxs_path( sxsdir );
+    len += build_sxs_path( sxsdir ) + 2;
     if (!(ret = HeapAlloc( GetProcessHeap(), 0, len * sizeof(WCHAR) )))
     {
         HeapFree( GetProcessHeap(), 0, path );
         return NULL;
     }
-    swprintf( ret, len, fmtW, sxsdir, path );
+    lstrcpyW( ret, sxsdir );
+    lstrcatW( ret, path );
+    lstrcatW( ret, L"\\" );
     HeapFree( GetProcessHeap(), 0, path );
     return ret;
 }
@@ -202,11 +199,11 @@ static HRESULT WINAPI cache_QueryAssemblyInfo(
     struct cache *cache = impl_from_IAssemblyCache( iface );
     IAssemblyName *name_obj;
     const WCHAR *arch, *name, *token, *type, *version;
-    WCHAR *p, *path = NULL;
+    WCHAR *path = NULL;
     unsigned int len;
     HRESULT hr;
 
-    TRACE("%p, 0x%08x, %s, %p\n", iface, flags, debugstr_w(assembly_name), info);
+    TRACE("%p, 0x%08lx, %s, %p\n", iface, flags, debugstr_w(assembly_name), info);
 
     if (flags || (info && info->cbAssemblyInfo != sizeof(*info)))
         return E_INVALIDARG;
@@ -232,7 +229,7 @@ static HRESULT WINAPI cache_QueryAssemblyInfo(
     }
     cache_lock( cache );
 
-    if (!wcscmp( type, win32W )) path = build_manifest_path( arch, name, token, version );
+    if (!wcscmp( type, win32W )) path = build_dll_path( arch, name, token, version );
     else if (!wcscmp( type, win32_policyW )) path = build_policy_path( arch, name, token, version );
     else
     {
@@ -250,7 +247,6 @@ static HRESULT WINAPI cache_QueryAssemblyInfo(
         info->dwAssemblyFlags = ASSEMBLYINFO_FLAG_INSTALLED;
         TRACE("assembly is installed\n");
     }
-    if ((p = wcsrchr( path, '\\' ))) *p = 0;
     len = lstrlenW( path ) + 1;
     if (info->pszCurrentAssemblyPathBuf)
     {
@@ -276,7 +272,7 @@ static HRESULT WINAPI cache_CreateAssemblyCacheItem(
     IAssemblyCacheItem **item,
     LPCWSTR name )
 {
-    FIXME("%p, 0x%08x, %p, %p, %s\n", iface, flags, reserved, item, debugstr_w(name));
+    FIXME("%p, 0x%08lx, %p, %p, %s\n", iface, flags, reserved, item, debugstr_w(name));
     return E_NOTIMPL;
 }
 
@@ -367,7 +363,7 @@ static HRESULT parse_files( IXMLDOMDocument *doc, struct assembly *assembly )
 
     hr = IXMLDOMNodeList_get_length( list, &len );
     if (hr != S_OK) goto done;
-    TRACE("found %d files\n", len);
+    TRACE("found %ld files\n", len);
     if (!len)
     {
         hr = ERROR_SXS_MANIFEST_FORMAT_ERROR;
@@ -534,7 +530,7 @@ static HRESULT install_policy( const WCHAR *manifest, struct assembly *assembly 
     if (!ret)
     {
         HRESULT hr = HRESULT_FROM_WIN32( GetLastError() );
-        WARN("failed to copy policy manifest file 0x%08x\n", hr);
+        WARN("failed to copy policy manifest file 0x%08lx\n", hr);
         return hr;
     }
     return S_OK;
@@ -623,7 +619,7 @@ static HRESULT install_assembly( const WCHAR *manifest, struct assembly *assembl
     if (!ret)
     {
         hr = HRESULT_FROM_WIN32( GetLastError() );
-        WARN("failed to copy manifest file 0x%08x\n", hr);
+        WARN("failed to copy manifest file 0x%08lx\n", hr);
         return hr;
     }
 
@@ -656,7 +652,7 @@ static HRESULT install_assembly( const WCHAR *manifest, struct assembly *assembl
         if (!ret)
         {
             hr = HRESULT_FROM_WIN32( GetLastError() );
-            WARN("failed to copy file 0x%08x\n", hr);
+            WARN("failed to copy file 0x%08lx\n", hr);
             goto done;
         }
     }
@@ -678,7 +674,7 @@ static HRESULT WINAPI cache_InstallAssembly(
     IXMLDOMDocument *doc = NULL;
     struct assembly *assembly = NULL;
 
-    TRACE("%p, 0x%08x, %s, %p\n", iface, flags, debugstr_w(path), ref);
+    TRACE("%p, 0x%08lx, %s, %p\n", iface, flags, debugstr_w(path), ref);
 
     cache_lock( cache );
     init = CoInitialize( NULL );
@@ -728,7 +724,7 @@ static HRESULT uninstall_assembly( struct assembly *assembly )
         lstrcatW( filename, backslashW );
         lstrcatW( filename, file->name );
 
-        if (!DeleteFileW( filename )) WARN( "failed to delete file %u\n", GetLastError() );
+        if (!DeleteFileW( filename )) WARN( "failed to delete file %lu\n", GetLastError() );
         HeapFree( GetProcessHeap(), 0, filename );
     }
     RemoveDirectoryW( dirname );
@@ -755,7 +751,7 @@ static HRESULT WINAPI cache_UninstallAssembly(
     const WCHAR *arch, *name, *token, *type, *version;
     WCHAR *p, *path = NULL;
 
-    TRACE("%p, 0x%08x, %s, %p, %p\n", iface, flags, debugstr_w(assembly_name), ref, disp);
+    TRACE("%p, 0x%08lx, %s, %p, %p\n", iface, flags, debugstr_w(assembly_name), ref, disp);
 
     if (ref)
     {
@@ -794,7 +790,7 @@ static HRESULT WINAPI cache_UninstallAssembly(
     if ((hr = load_manifest( doc, path )) != S_OK) goto done;
     if ((hr = parse_assembly( doc, &assembly )) != S_OK) goto done;
 
-    if (!DeleteFileW( path )) WARN( "unable to remove manifest file %u\n", GetLastError() );
+    if (!DeleteFileW( path )) WARN( "unable to remove manifest file %lu\n", GetLastError() );
     else if ((p = wcsrchr( path, '\\' )))
     {
         *p = 0;
@@ -831,7 +827,7 @@ HRESULT WINAPI CreateAssemblyCache( IAssemblyCache **obj, DWORD reserved )
 {
     struct cache *cache;
 
-    TRACE("%p, %u\n", obj, reserved);
+    TRACE("%p, %lu\n", obj, reserved);
 
     if (!obj)
         return E_INVALIDARG;

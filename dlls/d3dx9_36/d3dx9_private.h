@@ -23,7 +23,6 @@
 #define __WINE_D3DX9_PRIVATE_H
 
 #include <stdint.h>
-#define NONAMELESSUNION
 #include "wine/debug.h"
 #include "wine/heap.h"
 #include "wine/rbtree.h"
@@ -99,6 +98,8 @@ HRESULT write_buffer_to_file(const WCHAR *filename, ID3DXBuffer *buffer) DECLSPE
 
 const struct pixel_format_desc *get_format_info(D3DFORMAT format) DECLSPEC_HIDDEN;
 const struct pixel_format_desc *get_format_info_idx(int idx) DECLSPEC_HIDDEN;
+
+void format_to_vec4(const struct pixel_format_desc *format, const BYTE *src, struct vec4 *dst);
 
 void copy_pixels(const BYTE *src, UINT src_row_pitch, UINT src_slice_pitch,
     BYTE *dst, UINT dst_row_pitch, UINT dst_slice_pitch, const struct volume *size,
@@ -231,19 +232,8 @@ static inline BOOL is_param_type_sampler(D3DXPARAMETER_TYPE type)
 /* Returns the smallest power of 2 which is greater than or equal to num */
 static inline uint32_t make_pow2(uint32_t num)
 {
-#if defined(__GNUC__) && ((__GNUC__ > 3) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 3)))
-    return num == 1 ? 1 : 1u << ((__builtin_clz(num - 1) ^ 0x1f) + 1);
-#else
-    num--;
-    num |= num >> 1;
-    num |= num >> 2;
-    num |= num >> 4;
-    num |= num >> 8;
-    num |= num >> 16;
-    num++;
-
-    return num;
-#endif
+    uint32_t index;
+    return BitScanReverse(&index, num - 1) ? 1u << (index + 1) : 1;
 }
 
 struct d3dx_parameter;

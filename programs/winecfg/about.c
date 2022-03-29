@@ -24,8 +24,6 @@
 
 #define COBJMACROS
 
-#include "config.h"
-
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
@@ -40,10 +38,11 @@ static HFONT titleFont = NULL;
 INT_PTR CALLBACK
 AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    const char * (CDECL *wine_get_version)(void);
     HWND hWnd;
     HDC hDC;
     RECT rcClient, rcRect;
-    char *owner, *org;
+    WCHAR *owner, *org;
 
     switch (uMsg)
     {
@@ -55,14 +54,14 @@ AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
             owner = get_text(hDlg, IDC_ABT_OWNER);
             org   = get_text(hDlg, IDC_ABT_ORG);
 
-            set_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows\\CurrentVersion",
-                        "RegisteredOwner", owner ? owner : "");
-            set_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows\\CurrentVersion",
-                        "RegisteredOrganization", org ? org : "");
-            set_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion",
-                        "RegisteredOwner", owner ? owner : "");
-            set_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion",
-                        "RegisteredOrganization", org ? org : "");
+            set_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion",
+                        L"RegisteredOwner", owner ? owner : L"");
+            set_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion",
+                        L"RegisteredOrganization", org ? org : L"");
+            set_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion",
+                        L"RegisteredOwner", owner ? owner : L"");
+            set_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion",
+                        L"RegisteredOrganization", org ? org : L"");
             apply();
 
             HeapFree(GetProcessHeap(), 0, owner);
@@ -72,23 +71,22 @@ AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
         case NM_CLICK:
         case NM_RETURN:
             if(wParam == IDC_ABT_WEB_LINK)
-                ShellExecuteA(NULL, "open", PACKAGE_URL, NULL, NULL, SW_SHOW);
+                ShellExecuteW(NULL, L"open", ((NMLINK *)lParam)->item.szUrl, NULL, NULL, SW_SHOW);
             break;
         }
         break;
 
     case WM_INITDIALOG:
-
         hDC = GetDC(hDlg);
 
         /* read owner and organization info from registry, load it into text box */
-        owner = get_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion",
-                            "RegisteredOwner", "");
-        org =   get_reg_key(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion",
-                            "RegisteredOrganization", "");
+        owner = get_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion",
+                            L"RegisteredOwner", L"");
+        org =   get_reg_key(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows NT\\CurrentVersion",
+                            L"RegisteredOrganization", L"");
 
-        SetDlgItemTextA(hDlg, IDC_ABT_OWNER, owner);
-        SetDlgItemTextA(hDlg, IDC_ABT_ORG, org);
+        SetDlgItemTextW(hDlg, IDC_ABT_OWNER, owner);
+        SetDlgItemTextW(hDlg, IDC_ABT_ORG, org);
 
         SendMessageW(GetParent(hDlg), PSM_UNCHANGED, 0, 0);
 
@@ -108,6 +106,7 @@ AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
         }
 
         /* prepare the title text */
+<<<<<<< HEAD
         hWnd = GetDlgItem(hDlg, IDC_ABT_TITLE_TEXT);
         if(hWnd)
         {
@@ -119,9 +118,14 @@ AboutDlgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
             SetWindowTextA(hWnd, PACKAGE_NAME);
         }
         SetDlgItemTextA(hDlg, IDC_ABT_PANEL_TEXT, PACKAGE_VERSION " (Staging)");
+=======
+        titleFont = CreateFontW( -MulDiv(24, GetDeviceCaps(hDC, LOGPIXELSY), 72),
+                                 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, L"Tahoma" );
+        SendDlgItemMessageW(hDlg, IDC_ABT_TITLE_TEXT, WM_SETFONT, (WPARAM)titleFont, TRUE);
+>>>>>>> master
 
-        /* prepare the web link */
-        SetDlgItemTextA(hDlg, IDC_ABT_WEB_LINK, "<a href=\"" PACKAGE_URL "\">" PACKAGE_URL "</a>");
+        wine_get_version = (void *)GetProcAddress( GetModuleHandleW(L"ntdll.dll"), "wine_get_version" );
+        if (wine_get_version) SetDlgItemTextA(hDlg, IDC_ABT_PANEL_TEXT, wine_get_version());
 
         ReleaseDC(hDlg, hDC);
 

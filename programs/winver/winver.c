@@ -18,11 +18,18 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
 #include "windows.h"
+#include "commctrl.h"
 #include "shellapi.h"
 
 int PASCAL WinMain (HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 {
-   return !ShellAboutA(NULL, PACKAGE_NAME, PACKAGE_STRING, 0);
+    char name[128] = "Wine ";
+    const char * (CDECL *wine_get_version)(void);
+
+    InitCommonControls();
+
+    wine_get_version = (void *)GetProcAddress( GetModuleHandleA("ntdll.dll"), "wine_get_version" );
+    if (wine_get_version) strcat( name, wine_get_version() );
+    return !ShellAboutA( NULL, name, NULL, 0 );
 }

@@ -19,7 +19,9 @@ SOURCES = \
 	appcompatapi.h \
 	appmgmt.h \
 	appmodel.h \
+	asferr.h \
 	asptlb.idl \
+	asyncinfo.idl \
 	asynot.idl \
 	asysta.idl \
 	atlbase.h \
@@ -37,6 +39,7 @@ SOURCES = \
 	avrt.h \
 	axcore.idl \
 	axextend.idl \
+	axextendenums.h \
 	basetsd.h \
 	basetyps.h \
 	bcrypt.h \
@@ -49,22 +52,30 @@ SOURCES = \
 	bits2_0.idl \
 	bits2_5.idl \
 	bits3_0.idl \
+	bits5_0.idl \
 	bitsmsg.h \
 	bluetoothapis.h \
 	bthsdpdef.h \
 	cderr.h \
 	cdosys.idl \
+	cfg.h \
 	cfgmgr32.h \
 	cguid.h \
 	chprst.idl \
 	cierror.h \
 	clusapi.h \
 	cmdbas.idl \
+	cmdpre.idl \
+	cmdprp.idl \
+	cmdstrm.idl \
 	cmdtxt.idl \
+	cmdwpr.idl \
 	cmnquery.idl \
 	codecapi.h \
 	colinf.idl \
 	colordlg.h \
+	colrst.idl \
+	combaseapi.h \
 	comcat.idl \
 	commctrl.h \
 	commctrl.rh \
@@ -72,11 +83,14 @@ SOURCES = \
 	commoncontrols.idl \
 	compobj.h \
 	comsvcs.idl \
+	concurrencysal.h \
+	consoleapi.h \
 	control.idl \
 	cor.idl \
 	cordebug.idl \
 	corerror.h \
 	corhdr.h \
+	corsym.idl \
 	cpl.h \
 	crtrow.idl \
 	cryptdlg.h \
@@ -87,9 +101,11 @@ SOURCES = \
 	custcntl.h \
 	cuviddec.h \
 	cvconst.h \
+	cvttyp.idl \
 	d2d1.idl \
 	d2d1_1.idl \
 	d2d1_2.idl \
+	d2d1effects.idl \
 	d2dbasetypes.h \
 	d2derr.h \
 	d3d.h \
@@ -109,6 +125,8 @@ SOURCES = \
 	d3d11sdklayers.idl \
 	d3d11shader.h \
 	d3d12.idl \
+	d3d12sdklayers.idl \
+	d3d12shader.idl \
 	d3d8.h \
 	d3d8caps.h \
 	d3d8types.h \
@@ -119,6 +137,7 @@ SOURCES = \
 	d3dcommon.idl \
 	d3dcompiler.h \
 	d3dhal.h \
+	d3dkmdt.h \
 	d3drm.h \
 	d3drmdef.h \
 	d3drmobj.h \
@@ -128,8 +147,9 @@ SOURCES = \
 	d3dvec.inl \
 	d3dx10.h \
 	d3dx10async.h \
-	d3dx10core.idl \
+	d3dx10core.h \
 	d3dx10math.h \
+	d3dx10mesh.h \
 	d3dx10tex.h \
 	d3dx11.h \
 	d3dx11async.h \
@@ -167,6 +187,7 @@ SOURCES = \
 	ddk/d3dkmthk.h \
 	ddk/fltkernel.h \
 	ddk/hidclass.h \
+	ddk/hidpddi.h \
 	ddk/hidpi.h \
 	ddk/hidport.h \
 	ddk/hidsdi.h \
@@ -188,6 +209,7 @@ SOURCES = \
 	ddk/wdm.h \
 	ddk/winddiui.h \
 	ddk/winsplp.h \
+	ddk/wsk.h \
 	ddraw.h \
 	ddrawgdi.h \
 	ddrawi.h \
@@ -227,19 +249,24 @@ SOURCES = \
 	dmusics.h \
 	docobj.idl \
 	docobjectservice.idl \
+	documenttarget.idl \
 	downloadmgr.idl \
 	dpaddr.h \
+	dpfilter.h \
 	dplay.h \
 	dplay8.h \
 	dplobby.h \
 	dplobby8.h \
 	dpnathlp.h \
+	driverspecs.h \
 	drmexternals.idl \
+	dsclient.h \
 	dsconf.h \
 	dsgetdc.h \
 	dshow.h \
 	dsound.h \
 	dsrole.h \
+	dvdif.idl \
 	dvdmedia.h \
 	dvoice.h \
 	dwmapi.h \
@@ -269,20 +296,25 @@ SOURCES = \
 	errors.h \
 	errrec.idl \
 	evcode.h \
+	eventtoken.idl \
 	evntprov.h \
 	evntrace.h \
 	evr.idl \
+	evr9.idl \
 	excpt.h \
 	exdisp.idl \
 	exdispid.h \
+	exposeenums2managed.h \
 	fci.h \
 	fdi.h \
+	featurestagingapi.h \
 	fileapi.h \
 	filter.idl \
 	fltdefs.h \
 	fontsub.h \
 	fusion.idl \
 	gameux.idl \
+	gamingtcui.h \
 	gdiplus.h \
 	gdipluscolor.h \
 	gdipluscolormatrix.h \
@@ -296,6 +328,7 @@ SOURCES = \
 	gdiplusmetaheader.h \
 	gdipluspixelformats.h \
 	gdiplustypes.h \
+	getdts.idl \
 	guiddef.h \
 	hidusage.h \
 	highlevelmonitorconfigurationapi.h \
@@ -313,6 +346,7 @@ SOURCES = \
 	icftypes.idl \
 	icm.h \
 	icmpapi.h \
+	icodecapi.idl \
 	idispids.h \
 	ieautomation.idl \
 	iextag.idl \
@@ -380,6 +414,7 @@ SOURCES = \
 	mediaobj.idl \
 	metahost.idl \
 	mfapi.h \
+	mfd3d12.idl \
 	mferror.h \
 	mfidl.idl \
 	mfmediaengine.idl \
@@ -427,8 +462,10 @@ SOURCES = \
 	mstask.idl \
 	mstcpip.h \
 	msvcrt/assert.h \
+	msvcrt/complex.h \
 	msvcrt/conio.h \
 	msvcrt/corecrt.h \
+	msvcrt/corecrt_io.h \
 	msvcrt/corecrt_startup.h \
 	msvcrt/corecrt_stdio_config.h \
 	msvcrt/corecrt_wctype.h \
@@ -451,6 +488,7 @@ SOURCES = \
 	msvcrt/fenv.h \
 	msvcrt/float.h \
 	msvcrt/fpieee.h \
+	msvcrt/intrin.h \
 	msvcrt/inttypes.h \
 	msvcrt/io.h \
 	msvcrt/limits.h \
@@ -465,6 +503,7 @@ SOURCES = \
 	msvcrt/setjmp.h \
 	msvcrt/share.h \
 	msvcrt/signal.h \
+	msvcrt/stdbool.h \
 	msvcrt/stddef.h \
 	msvcrt/stdint.h \
 	msvcrt/stdio.h \
@@ -489,7 +528,9 @@ SOURCES = \
 	msxml6did.h \
 	msxmldid.h \
 	mtxdm.h \
+	mulres.idl \
 	multimon.h \
+	namespaceapi.h \
 	natupnp.idl \
 	nb30.h \
 	ncrypt.h \
@@ -498,6 +539,7 @@ SOURCES = \
 	netcon.idl \
 	netfw.idl \
 	netioapi.h \
+	netiodef.h \
 	netlistmgr.idl \
 	newdev.h \
 	nldef.h \
@@ -505,6 +547,7 @@ SOURCES = \
 	nserror.h \
 	nspapi.h \
 	ntddcdrm.h \
+	ntddkbd.h \
 	ntddmou.h \
 	ntddndis.h \
 	ntddscsi.h \
@@ -512,19 +555,28 @@ SOURCES = \
 	ntddvdeo.h \
 	ntdef.h \
 	ntdsapi.h \
+<<<<<<< HEAD
 	ntifs.h \
+=======
+	ntgdi.h \
+>>>>>>> master
 	ntlsa.h \
 	ntquery.h \
 	ntsecapi.h \
 	ntsecpkg.h \
 	ntstatus.h \
+<<<<<<< HEAD
 	nvapi.h \
 	nvcuvid.h \
 	nvencodeapi.h \
+=======
+	ntuser.h \
+>>>>>>> master
 	oaidl.idl \
 	objbase.h \
 	objectarray.idl \
 	objidl.idl \
+	objidlbase.idl \
 	objsafe.idl \
 	objsel.h \
 	ocidl.idl \
@@ -555,7 +607,9 @@ SOURCES = \
 	poppack.h \
 	powrprof.h \
 	prntvpt.h \
+	processthreadsapi.h \
 	profinfo.h \
+	proofofpossessioncookieinfo.idl \
 	propidl.idl \
 	propkey.h \
 	propkeydef.h \
@@ -575,6 +629,7 @@ SOURCES = \
 	raserror.h \
 	reason.h \
 	regstr.h \
+	relogger.idl \
 	restartmanager.h \
 	restrictederrorinfo.idl \
 	richedit.h \
@@ -597,9 +652,11 @@ SOURCES = \
 	rpcproxy.h \
 	rpcsal.h \
 	rstbas.idl \
+	rstchg.idl \
 	rstinf.idl \
 	rstloc.idl \
 	rstnot.idl \
+	rstupd.idl \
 	rtutils.h \
 	rtworkq.idl \
 	sal.h \
@@ -635,6 +692,8 @@ SOURCES = \
 	slpublic.h \
 	snmp.h \
 	softpub.h \
+	spatialaudioclient.idl \
+	specstrings.h \
 	sperror.h \
 	sql.h \
 	sqlext.h \
@@ -643,8 +702,11 @@ SOURCES = \
 	srcrst.idl \
 	srrestoreptapi.h \
 	sspi.h \
+<<<<<<< HEAD
 	stdole2.idl \
 	stdole32.idl \
+=======
+>>>>>>> master
 	stgprop.h \
 	sti.h \
 	storage.h \
@@ -657,6 +719,7 @@ SOURCES = \
 	t2embapi.h \
 	tapi.h \
 	taskschd.idl \
+	tbs.h \
 	tchar.h \
 	tcpestats.h \
 	tcpmib.h \
@@ -672,6 +735,9 @@ SOURCES = \
 	tpcshrd.h \
 	traffic.h \
 	transact.idl \
+	trnjoi.idl \
+	trnlcl.idl \
+	trnobj.idl \
 	twain.h \
 	txcoord.idl \
 	txdtc.idl \
@@ -682,6 +748,7 @@ SOURCES = \
 	uiautomationcore.idl \
 	uiautomationcoreapi.h \
 	uiribbon.idl \
+	unexposeenums2managed.h \
 	unknwn.idl \
 	urlhist.idl \
 	urlmon.idl \
@@ -706,6 +773,7 @@ SOURCES = \
 	wbemdisp.idl \
 	wbemprov.idl \
 	wct.h \
+	weakreference.idl \
 	webservices.h \
 	werapi.h \
 	wfext.h \
@@ -714,22 +782,43 @@ SOURCES = \
 	wia_xp.idl \
 	wiadef.h \
 	wimgapi.h \
+	winapifamily.h \
 	winbase.h \
+	winber.h \
 	wincodec.idl \
 	wincodecsdk.idl \
 	wincon.h \
+	wincontypes.h \
 	wincred.h \
 	wincrypt.h \
 	windef.h \
 	windns.h \
+	windot11.h \
+	windows.devices.enumeration.idl \
+	windows.devices.haptics.idl \
+	windows.devices.power.idl \
+	windows.foundation.collections.idl \
 	windows.foundation.idl \
+	windows.gaming.input.custom.idl \
+	windows.gaming.input.forcefeedback.idl \
+	windows.gaming.input.idl \
+	windows.globalization.idl \
 	windows.h \
+	windows.media.devices.idl \
+	windows.media.idl \
+	windows.media.speechrecognition.idl \
+	windows.media.speechsynthesis.idl \
+	windows.storage.streams.idl \
+	windows.system.idl \
+	windows.system.power.idl \
+	windows.system.userprofile.idl \
+	windowscontracts.idl \
 	windowsx.h \
 	wine/debug.h \
 	wine/exception.h \
 	wine/fil_data.idl \
 	wine/itss.idl \
-	wine/library.h \
+	wine/orpc.idl \
 	wine/svcctl.idl \
 	wine/winedxgi.idl \
 	winerror.h \
@@ -773,10 +862,14 @@ SOURCES = \
 	wmiutils.idl \
 	wmp.idl \
 	wmpids.h \
+	wmprealestate.idl \
+	wmpservices.idl \
 	wmsbuffer.idl \
 	wmsdk.h \
 	wmsdkidl.idl \
+	wmsecure.idl \
 	wnaspi32.h \
+	wownt16.h \
 	wownt32.h \
 	wpcapi.idl \
 	ws2def.h \
@@ -797,7 +890,13 @@ SOURCES = \
 	wtypes.idl \
 	wuapi.idl \
 	x3daudio.h \
+<<<<<<< HEAD
 	xact3.idl \
+=======
+	xact.h \
+	xact2wb.h \
+	xact3.h \
+>>>>>>> master
 	xact3wb.h \
 	xapo.idl \
 	xapofx.h \
@@ -811,4 +910,6 @@ SOURCES = \
 	xmldso.idl \
 	xmldsodid.h \
 	xmllite.idl \
+	xpsobjectmodel.idl \
+	xpsobjectmodel_1.idl \
 	zmouse.h

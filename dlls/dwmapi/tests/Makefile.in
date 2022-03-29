@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 TESTDLL   = dwmapi.dll
 IMPORTS   = dwmapi
+=======
+TESTDLL = dwmapi.dll
+IMPORTS = dwmapi
+>>>>>>> master
 
 C_SRCS = \
 	dwmapi.c

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 EXTRADEFS = -DXACT3_VER=0x0304
 MODULE    = xactengine3_4.dll
 IMPORTS   = advapi32 ole32 user32 uuid
@@ -8,5 +9,15 @@ EXTRAINCL = $(FAUDIO_CFLAGS)
 C_SRCS = \
 	xact_dll.c \
 	xaudio_allocator.c
+=======
+MODULE    = xactengine3_4.dll
+IMPORTS   = $(FAUDIO_PE_LIBS) ole32 uuid
+EXTRAINCL = $(FAUDIO_PE_CFLAGS)
+EXTRADEFS = -DXACT3_VER=0x0304
+PARENTSRC = ../xactengine3_7
+
+C_SRCS = \
+	xact_dll.c
+>>>>>>> master
 
 IDL_SRCS = xact_classes.idl

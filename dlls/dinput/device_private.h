@@ -30,45 +30,71 @@
 
 typedef struct
 {
-    int size;
-    int offset_in;
-    int offset_out;
-    int value;
-} DataTransform;
-
-typedef struct
-{
-    int                         size;
-    int                         internal_format_size;
-    DataTransform              *dt;
-
-    int                        *offsets;     /* object offsets */
-    LPDIDATAFORMAT              wine_df;     /* wine internal data format */
-    LPDIDATAFORMAT              user_df;     /* user defined data format */
-} DataFormat;
-
-typedef struct
-{
     unsigned int offset;
     UINT_PTR uAppData;
 } ActionMap;
 
-/* Device implementation */
-typedef struct IDirectInputDeviceImpl IDirectInputDeviceImpl;
-struct IDirectInputDeviceImpl
+struct dinput_device_vtbl
 {
-    IDirectInputDevice8A        IDirectInputDevice8A_iface;
+    void (*release)( IDirectInputDevice8W *iface );
+    HRESULT (*poll)( IDirectInputDevice8W *iface );
+    HRESULT (*read)( IDirectInputDevice8W *iface );
+    HRESULT (*acquire)( IDirectInputDevice8W *iface );
+    HRESULT (*unacquire)( IDirectInputDevice8W *iface );
+    HRESULT (*enum_objects)( IDirectInputDevice8W *iface, const DIPROPHEADER *filter, DWORD flags,
+                             LPDIENUMDEVICEOBJECTSCALLBACKW callback, void *context );
+    HRESULT (*get_property)( IDirectInputDevice8W *iface, DWORD property, DIPROPHEADER *header,
+                             const DIDEVICEOBJECTINSTANCEW *instance );
+    HRESULT (*get_effect_info)( IDirectInputDevice8W *iface, DIEFFECTINFOW *info, const GUID *guid );
+    HRESULT (*create_effect)( IDirectInputDevice8W *iface, IDirectInputEffect **out );
+    HRESULT (*send_force_feedback_command)( IDirectInputDevice8W *iface, DWORD command, BOOL unacquire );
+    HRESULT (*send_device_gain)( IDirectInputDevice8W *iface, LONG device_gain );
+    HRESULT (*enum_created_effect_objects)( IDirectInputDevice8W *iface, LPDIENUMCREATEDEFFECTOBJECTSCALLBACK callback,
+                                            void *context, DWORD flags );
+};
+
+#define DEVICE_STATE_MAX_SIZE 1024
+
+struct object_properties
+{
+    LONG bit_size;
+    LONG physical_min;
+    LONG physical_max;
+    LONG logical_min;
+    LONG logical_max;
+    LONG range_min;
+    LONG range_max;
+    LONG deadzone;
+    LONG saturation;
+    DWORD calibration_mode;
+};
+
+enum device_status
+{
+    STATUS_UNACQUIRED,
+    STATUS_ACQUIRED,
+    STATUS_UNPLUGGED,
+};
+
+/* Device implementation */
+struct dinput_device
+{
     IDirectInputDevice8W        IDirectInputDevice8W_iface;
+    IDirectInputDevice8A        IDirectInputDevice8A_iface;
     LONG                        ref;
     GUID                        guid;
     CRITICAL_SECTION            crit;
-    IDirectInputImpl           *dinput;
-    struct list                 entry;       /* entry into IDirectInput devices list */
+    struct dinput              *dinput;
+    struct list                 entry;       /* entry into acquired device list */
     HANDLE                      hEvent;
+    DIDEVICEINSTANCEW           instance;
+    DIDEVCAPS                   caps;
     DWORD                       dwCoopLevel;
     HWND                        win;
-    int                         acquired;
-    DI_EVENT_PROC               event_proc;  /* function to receive mouse & keyboard events */
+    enum device_status          status;
+
+    BOOL                        use_raw_input; /* use raw input instead of low-level messages */
+    RAWINPUTDEVICE              raw_device;    /* raw device to (un)register */
 
     BOOL                        use_raw_input; /* use raw input instead of low-level messages */
     RAWINPUTDEVICE              raw_device;    /* raw device to (un)register */
@@ -80,24 +106,39 @@ struct IDirectInputDeviceImpl
     BOOL                        overflow;    /* return DI_BUFFEROVERFLOW in 'GetDeviceData' */
     DWORD                       buffersize;  /* size of the queue - set in 'SetProperty'    */
 
-    DataFormat                  data_format; /* user data format and wine to user format converter */
+    DIDATAFORMAT *device_format;
+    DIDATAFORMAT *user_format;
 
     /* Action mapping */
     int                         num_actions; /* number of actions mapped */
     ActionMap                  *action_map;  /* array of mappings */
+
+    /* internal device callbacks */
+    HANDLE read_event;
+    const struct dinput_device_vtbl *vtbl;
+
+    BYTE device_state_report_id;
+    BYTE device_state[DEVICE_STATE_MAX_SIZE];
+
+    BOOL autocenter;
+    LONG device_gain;
+    DWORD force_feedback_state;
+    struct object_properties *object_properties;
 };
 
+extern HRESULT dinput_device_alloc( SIZE_T size, const struct dinput_device_vtbl *vtbl, const GUID *guid,
+                                    struct dinput *dinput, void **out ) DECLSPEC_HIDDEN;
+extern HRESULT dinput_device_init( IDirectInputDevice8W *iface );
+extern void dinput_device_destroy( IDirectInputDevice8W *iface );
+
 extern BOOL get_app_key(HKEY*, HKEY*) DECLSPEC_HIDDEN;
-extern DWORD get_config_key(HKEY, HKEY, const char*, char*, DWORD) DECLSPEC_HIDDEN;
+extern DWORD get_config_key( HKEY, HKEY, const WCHAR *, WCHAR *, DWORD ) DECLSPEC_HIDDEN;
+extern BOOL device_instance_is_disabled( DIDEVICEINSTANCEW *instance, BOOL *override ) DECLSPEC_HIDDEN;
 
 /* Routines to do DataFormat / WineFormat conversions */
-extern void fill_DataFormat(void *out, DWORD size, const void *in, const DataFormat *df)  DECLSPEC_HIDDEN;
-extern void release_DataFormat(DataFormat *df)  DECLSPEC_HIDDEN;
-extern void queue_event(LPDIRECTINPUTDEVICE8A iface, int inst_id, DWORD data, DWORD time, DWORD seq) DECLSPEC_HIDDEN;
-/* Helper functions to work with data format */
-extern int id_to_object(LPCDIDATAFORMAT df, int id) DECLSPEC_HIDDEN;
-extern int find_property(const DataFormat *df, LPCDIPROPHEADER ph) DECLSPEC_HIDDEN;
+extern void queue_event( IDirectInputDevice8W *iface, int inst_id, DWORD data, DWORD time, DWORD seq ) DECLSPEC_HIDDEN;
 
+<<<<<<< HEAD
 /* Common joystick stuff */
 typedef struct
 {
@@ -253,5 +294,8 @@ extern HRESULT WINAPI IDirectInputDevice8AImpl_GetImageInfo(LPDIRECTINPUTDEVICE8
 							    LPDIDEVICEIMAGEINFOHEADERA lpdiDevImageInfoHeader) DECLSPEC_HIDDEN;
 extern HRESULT WINAPI IDirectInputDevice8WImpl_GetImageInfo(LPDIRECTINPUTDEVICE8W iface,
 							    LPDIDEVICEIMAGEINFOHEADERW lpdiDevImageInfoHeader) DECLSPEC_HIDDEN;
+=======
+extern const GUID dinput_pidvid_guid DECLSPEC_HIDDEN;
+>>>>>>> master
 
 #endif /* __WINE_DLLS_DINPUT_DINPUTDEVICE_PRIVATE_H */

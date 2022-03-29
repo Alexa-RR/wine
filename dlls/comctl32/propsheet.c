@@ -139,8 +139,7 @@ typedef struct
  * Defines and global variables
  */
 
-static const WCHAR PropSheetInfoStr[] =
-    {'P','r','o','p','e','r','t','y','S','h','e','e','t','I','n','f','o',0 };
+static const WCHAR PropSheetInfoStr[] = L"PropertySheetInfo";
 
 #define PSP_INTERNAL_UNICODE 0x80000000
 
@@ -322,7 +321,7 @@ static void PROPSHEET_CollectSheetInfoA(LPCPROPSHEETHEADERA lppsh,
   psInfo->useCallback = (dwFlags & PSH_USECALLBACK )&& (lppsh->pfnCallback);
 
   memcpy(&psInfo->ppshheader,lppsh,dwSize);
-  TRACE("\n** PROPSHEETHEADER **\ndwSize\t\t%d\ndwFlags\t\t%08x\nhwndParent\t%p\nhInstance\t%p\npszCaption\t'%s'\nnPages\t\t%d\npfnCallback\t%p\n",
+  TRACE("\n** PROPSHEETHEADER **\ndwSize\t\t%ld\ndwFlags\t\t%#lx\nhwndParent\t%p\nhInstance\t%p\npszCaption\t'%s'\nnPages\t\t%d\npfnCallback\t%p\n",
 	lppsh->dwSize, lppsh->dwFlags, lppsh->hwndParent, lppsh->hInstance,
 	debugstr_a(lppsh->pszCaption), lppsh->nPages, lppsh->pfnCallback);
 
@@ -366,7 +365,7 @@ static void PROPSHEET_CollectSheetInfoW(LPCPROPSHEETHEADERW lppsh,
   psInfo->useCallback = (dwFlags & PSH_USECALLBACK) && (lppsh->pfnCallback);
 
   memcpy(&psInfo->ppshheader,lppsh,dwSize);
-  TRACE("\n** PROPSHEETHEADER **\ndwSize\t\t%d\ndwFlags\t\t%08x\nhwndParent\t%p\nhInstance\t%p\npszCaption\t%s\nnPages\t\t%d\npfnCallback\t%p\n",
+  TRACE("\n** PROPSHEETHEADER **\ndwSize\t\t%ld\ndwFlags\t\t%#lx\nhwndParent\t%p\nhInstance\t%p\npszCaption\t%s\nnPages\t\t%d\npfnCallback\t%p\n",
       lppsh->dwSize, lppsh->dwFlags, lppsh->hwndParent, lppsh->hInstance, debugstr_w(lppsh->pszCaption), lppsh->nPages, lppsh->pfnCallback);
 
   if (lppsh->dwFlags & INTRNL_ANY_WIZARD)
@@ -546,7 +545,6 @@ static BOOL PROPSHEET_CollectPageInfo(LPCPROPSHEETPAGEW lppsp,
   {
     WCHAR szTitle[256];
     const WCHAR *pTitle;
-    static const WCHAR pszNull[] = { '(','n','u','l','l',')',0 };
 
     if (IS_INTRESOURCE( lppsp->pszTitle ))
     {
@@ -555,7 +553,7 @@ static BOOL PROPSHEET_CollectPageInfo(LPCPROPSHEETPAGEW lppsp,
       else if (*p)
         pTitle = p;
       else
-        pTitle = pszNull;
+        pTitle = L"(null)";
     }
     else
       pTitle = lppsp->pszTitle;
@@ -767,8 +765,7 @@ static BOOL PROPSHEET_AdjustSize(HWND hwndDlg, PropSheetInfo* psInfo)
 
   rc.right -= rc.left;
   rc.bottom -= rc.top;
-  TRACE("setting tab %p, rc (0,0)-(%d,%d)\n",
-        hwndTabCtrl, rc.right, rc.bottom);
+  TRACE("setting tab %p, rc (0,0)-(%ld,%ld)\n", hwndTabCtrl, rc.right, rc.bottom);
   SetWindowPos(hwndTabCtrl, 0, 0, 0, rc.right, rc.bottom,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -789,8 +786,7 @@ static BOOL PROPSHEET_AdjustSize(HWND hwndDlg, PropSheetInfo* psInfo)
   /*
    * Resize the property sheet.
    */
-  TRACE("setting dialog %p, rc (0,0)-(%d,%d)\n",
-        hwndDlg, rc.right, rc.bottom);
+  TRACE("setting dialog %p, rc (0,0)-(%ld,%ld)\n", hwndDlg, rc.right, rc.bottom);
   SetWindowPos(hwndDlg, 0, 0, 0, rc.right, rc.bottom,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
   return TRUE;
@@ -822,8 +818,7 @@ static BOOL PROPSHEET_AdjustSizeWizard(HWND hwndDlg, const PropSheetInfo* psInfo
   AdjustWindowRect(&rc, GetWindowLongW(hwndDlg, GWL_STYLE), FALSE);
 
   /* Resize the property sheet */
-  TRACE("setting dialog %p, rc (0,0)-(%d,%d)\n",
-        hwndDlg, rc.right, rc.bottom);
+  TRACE("setting dialog %p, rc (0,0)-(%ld,%ld)\n", hwndDlg, rc.right, rc.bottom);
   SetWindowPos(hwndDlg, 0, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -1299,7 +1294,7 @@ static UINT GetTemplateSize(const DLGTEMPLATE* pTemplate)
 	  p++;
 	  break;
 	case 0xffff:
-          TRACE("class ordinal 0x%08x\n",*(const DWORD*)p);
+          TRACE("class ordinal %#lx\n",*(const DWORD*)p);
 	  p += 2;
 	  break;
 	default:
@@ -1315,7 +1310,7 @@ static UINT GetTemplateSize(const DLGTEMPLATE* pTemplate)
 	  p++;
 	  break;
 	case 0xffff:
-          TRACE("text ordinal 0x%08x\n",*(const DWORD*)p);
+          TRACE("text ordinal %#lx\n",*(const DWORD*)p);
 	  p += 2;
 	  break;
 	default:
@@ -1407,7 +1402,7 @@ static BOOL PROPSHEET_CreatePage(HWND hwndParent,
   if (!pTemplateCopy)
     return FALSE;
   
-  TRACE("copying pTemplate %p into pTemplateCopy %p (%d)\n", pTemplate, pTemplateCopy, resSize);
+  TRACE("copying pTemplate %p into pTemplateCopy %p (%ld)\n", pTemplate, pTemplateCopy, resSize);
   memcpy(pTemplateCopy, pTemplate, resSize);
 
   if (((MyDLGTEMPLATEEX*)pTemplateCopy)->signature == 0xFFFF)
@@ -1676,7 +1671,7 @@ static BOOL PROPSHEET_Finish(HWND hwndDlg)
 
   msgResult = SendMessageW(hwndPage, WM_NOTIFY, 0, (LPARAM) &psn);
 
-  TRACE("msg result %ld\n", msgResult);
+  TRACE("msg result %Id\n", msgResult);
 
   if (msgResult != 0)
     return FALSE;
@@ -2032,7 +2027,7 @@ static BOOL PROPSHEET_SetCurSel(HWND hwndDlg,
      * NOTE: The resizing happens every time the page is selected and
      * not only when it's created (some applications depend on it). */
     PROPSHEET_GetPageRect(psInfo, hwndDlg, &rc, ppshpage);
-    TRACE("setting page %p, rc (%s) w=%d, h=%d\n",
+    TRACE("setting page %p, rc (%s) w=%ld, h=%ld\n",
           psInfo->proppage[index].hwndPage, wine_dbgstr_rect(&rc),
           rc.right - rc.left, rc.bottom - rc.top);
     SetWindowPos(psInfo->proppage[index].hwndPage, HWND_TOP,
@@ -2138,7 +2133,7 @@ static void PROPSHEET_SetTitleW(HWND hwndDlg, DWORD dwStyle, LPCWSTR lpszText)
   PropSheetInfo* psInfo = GetPropW(hwndDlg, PropSheetInfoStr);
   WCHAR szTitle[256];
 
-  TRACE("%s (style %08x)\n", debugstr_w(lpszText), dwStyle);
+  TRACE("%s (style %#lx)\n", debugstr_w(lpszText), dwStyle);
   if (IS_INTRESOURCE(lpszText)) {
     if (!LoadStringW(psInfo->ppshheader.hInstance, LOWORD(lpszText), szTitle, ARRAY_SIZE(szTitle)))
       return;
@@ -2460,7 +2455,7 @@ static void PROPSHEET_SetWizButtons(HWND hwndDlg, DWORD dwFlags)
   HWND hwndFinish = GetDlgItem(hwndDlg, IDC_FINISH_BUTTON);
   BOOL enable_finish = ((dwFlags & PSWIZB_FINISH) || psInfo->hasFinish) && !(dwFlags & PSWIZB_DISABLEDFINISH);
 
-  TRACE("%d\n", dwFlags);
+  TRACE("%lx\n", dwFlags);
 
   EnableWindow(hwndBack, dwFlags & PSWIZB_BACK);
   EnableWindow(hwndNext, dwFlags & PSWIZB_NEXT);
@@ -3374,7 +3369,7 @@ static LRESULT PROPSHEET_Paint(HWND hwnd, HDC hdcParam)
 	if (ppshpage->dwFlags & PSP_USEHEADERSUBTITLE) {
 	    SelectObject(hdc, psInfo->hFont);
 	    SetRect(&r, 40, 25, rzone.right - 69, rzone.bottom);
-            if (!IS_INTRESOURCE(ppshpage->pszHeaderTitle))
+            if (!IS_INTRESOURCE(ppshpage->pszHeaderSubTitle))
                 DrawTextW(hdc, ppshpage->pszHeaderSubTitle, -1, &r, DT_LEFT | DT_WORDBREAK);
 	    else
 	    {
@@ -3446,8 +3441,7 @@ static LRESULT PROPSHEET_Paint(HWND hwnd, HDC hdcParam)
 static INT_PTR CALLBACK
 PROPSHEET_DialogProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-  TRACE("hwnd=%p msg=0x%04x wparam=%lx lparam=%lx\n",
-	hwnd, uMsg, wParam, lParam);
+  TRACE("hwnd %p, msg=0x%04x, wparam %Ix, lparam %Ix\n", hwnd, uMsg, wParam, lParam);
 
   switch (uMsg)
   {

@@ -37,17 +37,15 @@ static BOOL eject_all;
 /* wrapper for GetDriveTypeW */
 static DWORD get_drive_type( WCHAR drive )
 {
-    static const WCHAR rootW[] = {'a',':','\\',0};
     WCHAR path[16];
 
-    memcpy( path, rootW, sizeof(rootW) );
+    lstrcpyW( path, L"a:\\" );
     path[0] = drive;
     return GetDriveTypeW( path );
 }
 
 static BOOL eject_cd( WCHAR drive )
 {
-    static const WCHAR deviceW[] = {'\\','\\','.','\\','a',':',0};
     PREVENT_MEDIA_REMOVAL removal;
     WCHAR buffer[16];
     HANDLE handle;
@@ -59,7 +57,7 @@ static BOOL eject_cd( WCHAR drive )
         return FALSE;
     }
 
-    memcpy( buffer, deviceW, sizeof(deviceW) );
+    lstrcpyW( buffer, L"\\\\.\\a:" );
     buffer[4] = drive;
     handle = CreateFileW( buffer, 0, FILE_SHARE_READ|FILE_SHARE_WRITE,
                           NULL, OPEN_EXISTING, 0, 0 );
@@ -72,16 +70,16 @@ static BOOL eject_cd( WCHAR drive )
     WINE_TRACE( "ejecting %c:\n", (char)drive );
 
     if (!DeviceIoControl( handle, FSCTL_DISMOUNT_VOLUME, NULL, 0, NULL, 0, &result, NULL ))
-        WINE_WARN( "FSCTL_DISMOUNT_VOLUME failed with err %d\n", GetLastError() );
+        WINE_WARN( "FSCTL_DISMOUNT_VOLUME failed with err %ld\n", GetLastError() );
 
     removal.PreventMediaRemoval = FALSE;
     if (!DeviceIoControl( handle, IOCTL_STORAGE_MEDIA_REMOVAL, &removal, sizeof(removal), NULL, 0, &result, NULL ))
-        WINE_WARN( "IOCTL_STORAGE_MEDIA_REMOVAL failed with err %d\n", GetLastError() );
+        WINE_WARN( "IOCTL_STORAGE_MEDIA_REMOVAL failed with err %ld\n", GetLastError() );
 
     if (!unmount_only)
     {
         if (!DeviceIoControl( handle, IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0, &result, NULL ))
-            WINE_WARN( "IOCTL_STORAGE_EJECT_MEDIA failed with err %d\n", GetLastError() );
+            WINE_WARN( "IOCTL_STORAGE_EJECT_MEDIA failed with err %ld\n", GetLastError() );
     }
 
     CloseHandle( handle );

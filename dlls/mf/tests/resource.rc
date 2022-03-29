@@ -1,5 +1,7 @@
 /*
- * Copyright 2019 Nikolay Sivov for CodeWeavers
+ * Resources for mf test suite.
+ *
+ * Copyright 2022 Rémi Bernon for CodeWeavers
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -18,5 +20,11 @@
 
 #include "windef.h"
 
-/* @makedep: test.wav */
-test.wav RCDATA test.wav
+/* @makedep: wmadata.bin */
+wmadata.bin RCDATA wmadata.bin
+
+/* @makedep: h264data.bin */
+h264data.bin RCDATA h264data.bin
+
+/* @makedep: nv12frame.bin */
+nv12frame.bin RCDATA nv12frame.bin

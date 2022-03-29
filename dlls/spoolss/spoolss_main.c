@@ -38,18 +38,14 @@ WINE_DEFAULT_DEBUG_CHANNEL(spoolss);
 
 static HMODULE hwinspool;
 
-static const WCHAR winspooldrvW[] = {'w','i','n','s','p','o','o','l','.','d','r','v',0};
-
 /******************************************************************************
  *
  */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    TRACE("(%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
+    TRACE("(%p, %ld, %p)\n", hinstDLL, fdwReason, lpvReserved);
 
     switch (fdwReason) {
-        case DLL_WINE_PREATTACH:
-            return FALSE;  /* prefer native version */
         case DLL_PROCESS_ATTACH: {
             DisableThreadLibraryCalls(hinstDLL);
             break;
@@ -125,7 +121,7 @@ LPVOID WINAPI DllAllocSplMem(DWORD size)
     LPVOID  res;
 
     res = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size);
-    TRACE("(%d) => %p\n", size, res);
+    TRACE("(%ld) => %p\n", size, res);
     return res;
 }
 
@@ -232,7 +228,7 @@ BOOL WINAPI SplInitializeWinSpoolDrv(LPVOID * table)
 
     TRACE("(%p)\n", table);
 
-    hwinspool = LoadLibraryW(winspooldrvW);
+    hwinspool = LoadLibraryW(L"winspool.drv");
     if (!hwinspool) return FALSE;
 
     table[0] = (void *) GetProcAddress(hwinspool, "OpenPrinterW");

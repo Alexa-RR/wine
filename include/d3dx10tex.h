@@ -140,8 +140,34 @@ extern "C" {
 HRESULT WINAPI D3DX10CreateTextureFromMemory(ID3D10Device *device, const void *src_data, SIZE_T src_data_size,
         D3DX10_IMAGE_LOAD_INFO *loadinfo, ID3DX10ThreadPump *pump, ID3D10Resource **texture, HRESULT *hresult);
 HRESULT WINAPI D3DX10FilterTexture(ID3D10Resource *texture, UINT src_level, UINT filter);
+
+HRESULT WINAPI D3DX10GetImageInfoFromFileA(const char *src_file, ID3DX10ThreadPump *pump, D3DX10_IMAGE_INFO *info,
+        HRESULT *result);
+HRESULT WINAPI D3DX10GetImageInfoFromFileW(const WCHAR *src_file, ID3DX10ThreadPump *pump, D3DX10_IMAGE_INFO *info,
+        HRESULT *result);
+#define        D3DX10GetImageInfoFromFile WINELIB_NAME_AW(D3DX10GetImageInfoFromFile)
+
+HRESULT WINAPI D3DX10GetImageInfoFromResourceA(HMODULE module, const char *resource, ID3DX10ThreadPump *pump,
+        D3DX10_IMAGE_INFO *info, HRESULT *result);
+HRESULT WINAPI D3DX10GetImageInfoFromResourceW(HMODULE module, const WCHAR *resource, ID3DX10ThreadPump *pump,
+        D3DX10_IMAGE_INFO *info, HRESULT *result);
+#define        D3DX10GetImageInfoFromResource WINELIB_NAME_AW(D3DX10GetImageInfoFromResource)
+
 HRESULT WINAPI D3DX10GetImageInfoFromMemory(const void *src_data, SIZE_T src_data_size, ID3DX10ThreadPump *pump,
         D3DX10_IMAGE_INFO *img_info, HRESULT *hresult);
+
+HRESULT WINAPI D3DX10CreateTextureFromFileA(ID3D10Device *device, const char *src_file,
+        D3DX10_IMAGE_LOAD_INFO *load_info, ID3DX10ThreadPump *pump, ID3D10Resource **texture, HRESULT *hresult);
+HRESULT WINAPI D3DX10CreateTextureFromFileW(ID3D10Device *device, const WCHAR *src_file,
+        D3DX10_IMAGE_LOAD_INFO *load_info, ID3DX10ThreadPump *pump, ID3D10Resource **texture, HRESULT *hresult);
+#define        D3DX10CreateTextureFromFile WINELIB_NAME_AW(D3DX10CreateTextureFromFile)
+
+HRESULT WINAPI D3DX10CreateTextureFromResourceA(ID3D10Device *device, HMODULE module, const char *resource,
+        D3DX10_IMAGE_LOAD_INFO *load_info, ID3DX10ThreadPump *pump, ID3D10Resource **texture, HRESULT *hresult);
+HRESULT WINAPI D3DX10CreateTextureFromResourceW(ID3D10Device *device, HMODULE module, const WCHAR *resource,
+        D3DX10_IMAGE_LOAD_INFO *load_info, ID3DX10ThreadPump *pump, ID3D10Resource **texture, HRESULT *hresult);
+#define        D3DX10CreateTextureFromResource WINELIB_NAME_AW(D3DX10CreateTextureFromResource)
+
 HRESULT WINAPI D3DX10LoadTextureFromTexture(ID3D10Resource *src_texture, D3DX10_TEXTURE_LOAD_INFO *load_info,
         ID3D10Resource *dst_texture);
 

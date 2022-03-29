@@ -20,53 +20,22 @@
 
 #ifdef __i386__
 
-#include "config.h"
-#include "wine/port.h"
-
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <sys/types.h>
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-#ifdef HAVE_SYS_PARAM_H
-# include <sys/param.h>
-#endif
-#ifdef HAVE_SYSCALL_H
-# include <syscall.h>
-#else
-# ifdef HAVE_SYS_SYSCALL_H
-#  include <sys/syscall.h>
-# endif
-#endif
-#ifdef HAVE_SYS_SIGNAL_H
-# include <sys/signal.h>
-#endif
-#ifdef HAVE_SYS_SYSCTL_H
-# include <sys/sysctl.h>
-#endif
-#ifdef HAVE_SYS_UCONTEXT_H
-# include <sys/ucontext.h>
-#endif
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
 #include "windef.h"
-#include "wine/library.h"
 #include "ntdll_misc.h"
 #include "wine/exception.h"
 #include "wine/debug.h"
 
-#ifdef HAVE_VALGRIND_MEMCHECK_H
-#include <valgrind/memcheck.h>
-#endif
-
-#undef ERR  /* Solaris needs to define this */
-
 WINE_DEFAULT_DEBUG_CHANNEL(seh);
+<<<<<<< HEAD
 WINE_DECLARE_DEBUG_CHANNEL(relay);
 
 /* not defined for x86, so copy the x86_64 definition */
@@ -563,6 +532,8 @@ enum i386_trap_code
                                   otherwise Cache flush exception (via SIGSEV) */
 #endif
 };
+=======
+>>>>>>> master
 
 struct x86_thread_data
 {
@@ -575,23 +546,18 @@ struct x86_thread_data
     DWORD              dr6;           /* 1ec */
     DWORD              dr7;           /* 1f0 */
     void              *exit_frame;    /* 1f4 exit frame pointer */
-    /* the ntdll_thread_data structure follows here */
 };
 
-C_ASSERT( offsetof( TEB, SystemReserved2 ) + offsetof( struct x86_thread_data, gs ) == 0x1d8 );
-C_ASSERT( offsetof( TEB, SystemReserved2 ) + offsetof( struct x86_thread_data, exit_frame ) == 0x1f4 );
+C_ASSERT( sizeof(struct x86_thread_data) <= 16 * sizeof(void *) );
+C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct x86_thread_data, gs ) == 0x1d8 );
+C_ASSERT( offsetof( TEB, GdiTebBatch ) + offsetof( struct x86_thread_data, exit_frame ) == 0x1f4 );
 
 static inline struct x86_thread_data *x86_thread_data(void)
 {
-    return (struct x86_thread_data *)NtCurrentTeb()->SystemReserved2;
+    return (struct x86_thread_data *)&NtCurrentTeb()->GdiTebBatch;
 }
 
-static inline WORD get_cs(void) { WORD res; __asm__( "movw %%cs,%0" : "=r" (res) ); return res; }
-static inline WORD get_ds(void) { WORD res; __asm__( "movw %%ds,%0" : "=r" (res) ); return res; }
-static inline WORD get_fs(void) { WORD res; __asm__( "movw %%fs,%0" : "=r" (res) ); return res; }
-static inline WORD get_gs(void) { WORD res; __asm__( "movw %%gs,%0" : "=r" (res) ); return res; }
-static inline void set_fs( WORD val ) { __asm__( "mov %0,%%fs" :: "r" (val)); }
-static inline void set_gs( WORD val ) { __asm__( "mov %0,%%gs" :: "r" (val)); }
+struct ldt_copy *__wine_ldt_copy = NULL;
 
 /* Exception record for handling exceptions happening inside exception handlers */
 typedef struct
@@ -603,93 +569,6 @@ typedef struct
 extern DWORD EXC_CallHandler( EXCEPTION_RECORD *record, EXCEPTION_REGISTRATION_RECORD *frame,
                               CONTEXT *context, EXCEPTION_REGISTRATION_RECORD **dispatcher,
                               PEXCEPTION_HANDLER handler, PEXCEPTION_HANDLER nested_handler );
-
-/***********************************************************************
- *           is_gdt_sel
- */
-static inline int is_gdt_sel( WORD sel )
-{
-    return !(sel & 4);
-}
-
-/***********************************************************************
- *           ldt_is_system
- */
-static inline int ldt_is_system( WORD sel )
-{
-    return is_gdt_sel( sel ) || ((sel >> 3) < first_ldt_entry);
-}
-
-/***********************************************************************
- *           dispatch_signal
- */
-static inline int dispatch_signal(unsigned int sig)
-{
-    if (handlers[sig] == NULL) return 0;
-    return handlers[sig](sig);
-}
-
-
-/***********************************************************************
- *           get_trap_code
- *
- * Get the trap code for a signal.
- */
-static inline enum i386_trap_code get_trap_code( const ucontext_t *sigcontext )
-{
-#ifdef TRAP_sig
-    return TRAP_sig(sigcontext);
-#else
-    return TRAP_x86_UNKNOWN;  /* unknown trap code */
-#endif
-}
-
-/***********************************************************************
- *           get_error_code
- *
- * Get the error code for a signal.
- */
-static inline WORD get_error_code( const ucontext_t *sigcontext )
-{
-#ifdef ERROR_sig
-    return ERROR_sig(sigcontext);
-#else
-    return 0;
-#endif
-}
-
-/***********************************************************************
- *           get_signal_stack
- *
- * Get the base of the signal stack for the current thread.
- */
-static inline void *get_signal_stack(void)
-{
-    return (char *)NtCurrentTeb() + 4096;
-}
-
-
-/***********************************************************************
- *           has_fpux
- */
-static inline int has_fpux(void)
-{
-    return (cpu_info.FeatureSet & CPU_FEATURE_FXSR);
-}
-
-
-/***********************************************************************
- *           get_current_teb
- *
- * Get the current teb based on the stack pointer.
- */
-static inline TEB *get_current_teb(void)
-{
-    unsigned long esp;
-    __asm__("movl %%esp,%0" : "=g" (esp) );
-    return (TEB *)(esp & ~signal_stack_mask);
-}
-
 
 /*******************************************************************
  *         is_valid_frame
@@ -789,140 +668,98 @@ static NTSTATUS call_stack_handlers( EXCEPTION_RECORD *rec, CONTEXT *context )
 NTSTATUS WINAPI __syscall_NtContinue( CONTEXT *context, BOOLEAN alert );
 
 /*******************************************************************
- *		raise_exception
- *
- * Implementation of NtRaiseException.
+ *		KiUserExceptionDispatcher (NTDLL.@)
  */
-static NTSTATUS raise_exception( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance )
+NTSTATUS WINAPI dispatch_exception( EXCEPTION_RECORD *rec, CONTEXT *context )
 {
     NTSTATUS status;
+    DWORD c;
 
-    if (first_chance)
+    TRACE( "code=%x flags=%x addr=%p ip=%08x tid=%04x\n",
+           rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress,
+           context->Eip, GetCurrentThreadId() );
+    for (c = 0; c < rec->NumberParameters; c++)
+        TRACE( " info[%d]=%08lx\n", c, rec->ExceptionInformation[c] );
+
+    if (rec->ExceptionCode == EXCEPTION_WINE_STUB)
     {
-        DWORD c;
-
-        TRACE( "code=%x flags=%x addr=%p ip=%08x tid=%04x\n",
-               rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress,
-               context->Eip, GetCurrentThreadId() );
-        for (c = 0; c < rec->NumberParameters; c++)
-            TRACE( " info[%d]=%08lx\n", c, rec->ExceptionInformation[c] );
-        if (rec->ExceptionCode == EXCEPTION_WINE_STUB)
-        {
-            if (rec->ExceptionInformation[1] >> 16)
-                MESSAGE( "wine: Call from %p to unimplemented function %s.%s, aborting\n",
-                         rec->ExceptionAddress,
-                         (char*)rec->ExceptionInformation[0], (char*)rec->ExceptionInformation[1] );
-            else
-                MESSAGE( "wine: Call from %p to unimplemented function %s.%ld, aborting\n",
-                         rec->ExceptionAddress,
-                         (char*)rec->ExceptionInformation[0], rec->ExceptionInformation[1] );
-        }
+        if (rec->ExceptionInformation[1] >> 16)
+            MESSAGE( "wine: Call from %p to unimplemented function %s.%s, aborting\n",
+                     rec->ExceptionAddress,
+                     (char*)rec->ExceptionInformation[0], (char*)rec->ExceptionInformation[1] );
         else
-        {
-            TRACE(" eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n",
-                  context->Eax, context->Ebx, context->Ecx,
-                  context->Edx, context->Esi, context->Edi );
-            TRACE(" ebp=%08x esp=%08x cs=%04x ds=%04x es=%04x fs=%04x gs=%04x flags=%08x\n",
-                  context->Ebp, context->Esp, context->SegCs, context->SegDs,
-                  context->SegEs, context->SegFs, context->SegGs, context->EFlags );
-        }
-
-        /* fix up instruction pointer in context for EXCEPTION_BREAKPOINT */
-        if (rec->ExceptionCode == EXCEPTION_BREAKPOINT) context->Eip--;
-
-        if (call_vectored_handlers( rec, context ) == EXCEPTION_CONTINUE_EXECUTION) goto done;
-
-        if ((status = call_stack_handlers( rec, context )) == STATUS_SUCCESS) goto done;
-        if (status != STATUS_UNHANDLED_EXCEPTION) return status;
+            MESSAGE( "wine: Call from %p to unimplemented function %s.%ld, aborting\n",
+                     rec->ExceptionAddress,
+                     (char*)rec->ExceptionInformation[0], rec->ExceptionInformation[1] );
     }
-
-    /* last chance exception */
-
-    status = send_debug_event( rec, FALSE, context );
-    if (status != DBG_CONTINUE)
+    else if (rec->ExceptionCode == EXCEPTION_WINE_NAME_THREAD && rec->ExceptionInformation[0] == 0x1000)
     {
-        if (rec->ExceptionFlags & EH_STACK_INVALID)
-            WINE_ERR("Exception frame is not in stack limits => unable to dispatch exception.\n");
-        else if (rec->ExceptionCode == STATUS_NONCONTINUABLE_EXCEPTION)
-            WINE_ERR("Process attempted to continue execution after noncontinuable exception.\n");
-        else
-            WINE_ERR("Unhandled exception code %x flags %x addr %p\n",
-                     rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress );
-        NtTerminateProcess( NtCurrentProcess(), rec->ExceptionCode );
+        WARN( "Thread %04x renamed to %s\n", (DWORD)rec->ExceptionInformation[2], debugstr_a((char *)rec->ExceptionInformation[1]) );
     }
+    else if (rec->ExceptionCode == DBG_PRINTEXCEPTION_C)
+    {
+        WARN( "%s\n", debugstr_an((char *)rec->ExceptionInformation[1], rec->ExceptionInformation[0] - 1) );
+    }
+    else if (rec->ExceptionCode == DBG_PRINTEXCEPTION_WIDE_C)
+    {
+        WARN( "%s\n", debugstr_wn((WCHAR *)rec->ExceptionInformation[1], rec->ExceptionInformation[0] - 1) );
+    }
+    else
+    {
+        if (rec->ExceptionCode == STATUS_ASSERTION_FAILURE)
+            ERR( "%s exception (code=%x) raised\n", debugstr_exception_code(rec->ExceptionCode), rec->ExceptionCode );
+        else
+            WARN( "%s exception (code=%x) raised\n", debugstr_exception_code(rec->ExceptionCode), rec->ExceptionCode );
+
+        TRACE(" eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n",
+              context->Eax, context->Ebx, context->Ecx,
+              context->Edx, context->Esi, context->Edi );
+        TRACE(" ebp=%08x esp=%08x cs=%04x ss=%04x ds=%04x es=%04x fs=%04x gs=%04x flags=%08x\n",
+              context->Ebp, context->Esp, context->SegCs, context->SegSs, context->SegDs,
+              context->SegEs, context->SegFs, context->SegGs, context->EFlags );
+    }
+<<<<<<< HEAD
 done:
     return __syscall_NtContinue( context, FALSE );
+=======
+
+    if (call_vectored_handlers( rec, context ) == EXCEPTION_CONTINUE_EXECUTION)
+        NtContinue( context, FALSE );
+
+    if ((status = call_stack_handlers( rec, context )) == STATUS_SUCCESS)
+        NtContinue( context, FALSE );
+
+    if (status != STATUS_UNHANDLED_EXCEPTION) RtlRaiseStatus( status );
+    return NtRaiseException( rec, context, FALSE );
+>>>>>>> master
 }
 
+__ASM_STDCALL_FUNC( KiUserExceptionDispatcher, 8,
+                    "pushl 4(%esp)\n\t"
+                    "pushl 4(%esp)\n\t"
+                    "call " __ASM_STDCALL("dispatch_exception", 8) "\n\t"
+                    "int3" )
 
-#ifdef __sun
 
-/* We have to workaround two Solaris breakages:
- * - Solaris doesn't restore %ds and %es before calling the signal handler so exceptions in 16-bit
- *   code crash badly.
- * - Solaris inserts a libc trampoline to call our handler, but the trampoline expects that registers
- *   are setup correctly. So we need to insert our own trampoline below the libc trampoline to set %gs.
+/*******************************************************************
+ *		KiUserApcDispatcher (NTDLL.@)
  */
-
-extern int sigaction_syscall( int sig, const struct sigaction *new, struct sigaction *old );
-__ASM_GLOBAL_FUNC( sigaction_syscall,
-                  "movl $0x62,%eax\n\t"
-                  "int $0x91\n\t"
-                  "ret" )
-
-/* assume the same libc handler is used for all signals */
-static void (*libc_sigacthandler)( int signal, siginfo_t *siginfo, void *context );
-
-static void wine_sigacthandler( int signal, siginfo_t *siginfo, void *sigcontext )
+void WINAPI KiUserApcDispatcher( CONTEXT *context, ULONG_PTR ctx, ULONG_PTR arg1, ULONG_PTR arg2,
+                                 PNTAPCFUNC func )
 {
-    struct x86_thread_data *thread_data;
-
-    __asm__ __volatile__("mov %ss,%ax; mov %ax,%ds; mov %ax,%es");
-
-    thread_data = (struct x86_thread_data *)get_current_teb()->SystemReserved2;
-    set_fs( thread_data->fs );
-    set_gs( thread_data->gs );
-
-    libc_sigacthandler( signal, siginfo, sigcontext );
+    func( ctx, arg1, arg2 );
+    NtContinue( context, TRUE );
 }
 
-static int solaris_sigaction( int sig, const struct sigaction *new, struct sigaction *old )
-{
-    struct sigaction real_act;
 
-    if (sigaction( sig, new, old ) == -1) return -1;
-
-    /* retrieve the real handler and flags with a direct syscall */
-    sigaction_syscall( sig, NULL, &real_act );
-    libc_sigacthandler = real_act.sa_sigaction;
-    real_act.sa_sigaction = wine_sigacthandler;
-    sigaction_syscall( sig, &real_act, NULL );
-    return 0;
-}
-#define sigaction(sig,new,old) solaris_sigaction(sig,new,old)
-
-#endif
-
-extern void clear_alignment_flag(void);
-__ASM_GLOBAL_FUNC( clear_alignment_flag,
-                   "pushfl\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
-                   "andl $~0x40000,(%esp)\n\t"
-                   "popfl\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset -4\n\t")
-                   "ret" )
-
-
-/***********************************************************************
- *           init_handler
- *
- * Handler initialization when the full context is not needed.
- * Return the stack pointer to use for pushing the exception data.
+/*******************************************************************
+ *		KiUserCallbackDispatcher (NTDLL.@)
  */
-static inline void *init_handler( const ucontext_t *sigcontext, WORD *fs, WORD *gs )
+void WINAPI KiUserCallbackDispatcher( ULONG id, void *args, ULONG len )
 {
-    TEB *teb = get_current_teb();
+    NTSTATUS (WINAPI *func)(void *, ULONG) = ((void **)NtCurrentTeb()->Peb->KernelCallbackTable)[id];
 
+<<<<<<< HEAD
     clear_alignment_flag();
 
     /* get %fs and %gs at time of the fault */
@@ -957,6 +794,9 @@ static inline void *init_handler( const ucontext_t *sigcontext, WORD *fs, WORD *
         return teb->SystemReserved1[0];
     }
     return (void *)(ESP_sig(sigcontext) & ~3);
+=======
+    RtlRaiseStatus( NtCallbackReturn( NULL, 0, func( args, len )));
+>>>>>>> master
 }
 
 
@@ -1001,193 +841,13 @@ static inline void save_fpux( CONTEXT *context )
 {
 #ifdef __GNUC__
     /* we have to enforce alignment by hand */
-    char buffer[sizeof(XMM_SAVE_AREA32) + 16];
-    XMM_SAVE_AREA32 *state = (XMM_SAVE_AREA32 *)(((ULONG_PTR)buffer + 15) & ~15);
+    char buffer[sizeof(XSAVE_FORMAT) + 16];
+    XSAVE_FORMAT *state = (XSAVE_FORMAT *)(((ULONG_PTR)buffer + 15) & ~15);
 
-    if (!has_fpux()) return;
     context->ContextFlags |= CONTEXT_EXTENDED_REGISTERS;
     __asm__ __volatile__( "fxsave %0" : "=m" (*state) );
     memcpy( context->ExtendedRegisters, state, sizeof(*state) );
 #endif
-}
-
-
-/***********************************************************************
- *           restore_fpu
- *
- * Restore the FPU context to a sigcontext.
- */
-static inline void restore_fpu( const CONTEXT *context )
-{
-    FLOATING_SAVE_AREA float_status = context->FloatSave;
-    /* reset the current interrupt status */
-    float_status.StatusWord &= float_status.ControlWord | 0xffffff80;
-#ifdef __GNUC__
-    __asm__ __volatile__( "frstor %0; fwait" : : "m" (float_status) );
-#endif  /* __GNUC__ */
-}
-
-
-/***********************************************************************
- *           restore_fpux
- *
- * Restore the FPU extended context to a sigcontext.
- */
-static inline void restore_fpux( const CONTEXT *context )
-{
-#ifdef __GNUC__
-    /* we have to enforce alignment by hand */
-    char buffer[sizeof(XMM_SAVE_AREA32) + 16];
-    XMM_SAVE_AREA32 *state = (XMM_SAVE_AREA32 *)(((ULONG_PTR)buffer + 15) & ~15);
-
-    memcpy( state, context->ExtendedRegisters, sizeof(*state) );
-    /* reset the current interrupt status */
-    state->StatusWord &= state->ControlWord | 0xff80;
-    __asm__ __volatile__( "fxrstor %0" : : "m" (*state) );
-#endif
-}
-
-
-/***********************************************************************
- *           fpux_to_fpu
- *
- * Build a standard FPU context from an extended one.
- */
-static void fpux_to_fpu( FLOATING_SAVE_AREA *fpu, const XMM_SAVE_AREA32 *fpux )
-{
-    unsigned int i, tag, stack_top;
-
-    fpu->ControlWord   = fpux->ControlWord | 0xffff0000;
-    fpu->StatusWord    = fpux->StatusWord | 0xffff0000;
-    fpu->ErrorOffset   = fpux->ErrorOffset;
-    fpu->ErrorSelector = fpux->ErrorSelector | (fpux->ErrorOpcode << 16);
-    fpu->DataOffset    = fpux->DataOffset;
-    fpu->DataSelector  = fpux->DataSelector;
-    fpu->Cr0NpxState   = fpux->StatusWord | 0xffff0000;
-
-    stack_top = (fpux->StatusWord >> 11) & 7;
-    fpu->TagWord = 0xffff0000;
-    for (i = 0; i < 8; i++)
-    {
-        memcpy( &fpu->RegisterArea[10 * i], &fpux->FloatRegisters[i], 10 );
-        if (!(fpux->TagWord & (1 << i))) tag = 3;  /* empty */
-        else
-        {
-            const M128A *reg = &fpux->FloatRegisters[(i - stack_top) & 7];
-            if ((reg->High & 0x7fff) == 0x7fff)  /* exponent all ones */
-            {
-                tag = 2;  /* special */
-            }
-            else if (!(reg->High & 0x7fff))  /* exponent all zeroes */
-            {
-                if (reg->Low) tag = 2;  /* special */
-                else tag = 1;  /* zero */
-            }
-            else
-            {
-                if (reg->Low >> 63) tag = 0;  /* valid */
-                else tag = 2;  /* special */
-            }
-        }
-        fpu->TagWord |= tag << (2 * i);
-    }
-}
-
-
-/***********************************************************************
- *           save_context
- *
- * Build a context structure from the signal info.
- */
-static inline void save_context( CONTEXT *context, const ucontext_t *sigcontext, WORD fs, WORD gs )
-{
-    FLOATING_SAVE_AREA *fpu = FPU_sig(sigcontext);
-    XMM_SAVE_AREA32 *fpux = FPUX_sig(sigcontext);
-
-    memset(context, 0, sizeof(*context));
-    context->ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS;
-    context->Eax          = EAX_sig(sigcontext);
-    context->Ebx          = EBX_sig(sigcontext);
-    context->Ecx          = ECX_sig(sigcontext);
-    context->Edx          = EDX_sig(sigcontext);
-    context->Esi          = ESI_sig(sigcontext);
-    context->Edi          = EDI_sig(sigcontext);
-    context->Ebp          = EBP_sig(sigcontext);
-    context->EFlags       = EFL_sig(sigcontext);
-    context->Eip          = EIP_sig(sigcontext);
-    context->Esp          = ESP_sig(sigcontext);
-    context->SegCs        = LOWORD(CS_sig(sigcontext));
-    context->SegDs        = LOWORD(DS_sig(sigcontext));
-    context->SegEs        = LOWORD(ES_sig(sigcontext));
-    context->SegFs        = fs;
-    context->SegGs        = gs;
-    context->SegSs        = LOWORD(SS_sig(sigcontext));
-    context->Dr0          = x86_thread_data()->dr0;
-    context->Dr1          = x86_thread_data()->dr1;
-    context->Dr2          = x86_thread_data()->dr2;
-    context->Dr3          = x86_thread_data()->dr3;
-    context->Dr6          = x86_thread_data()->dr6;
-    context->Dr7          = x86_thread_data()->dr7;
-
-    if (fpu)
-    {
-        context->ContextFlags |= CONTEXT_FLOATING_POINT;
-        context->FloatSave = *fpu;
-    }
-    if (fpux)
-    {
-        context->ContextFlags |= CONTEXT_FLOATING_POINT | CONTEXT_EXTENDED_REGISTERS;
-        memcpy( context->ExtendedRegisters, fpux, sizeof(*fpux) );
-        if (!fpu) fpux_to_fpu( &context->FloatSave, fpux );
-    }
-    if (!fpu && !fpux) save_fpu( context );
-}
-
-
-/***********************************************************************
- *           restore_context
- *
- * Restore the signal info from the context.
- */
-static inline void restore_context( const CONTEXT *context, ucontext_t *sigcontext )
-{
-    FLOATING_SAVE_AREA *fpu = FPU_sig(sigcontext);
-    XMM_SAVE_AREA32 *fpux = FPUX_sig(sigcontext);
-
-    x86_thread_data()->dr0 = context->Dr0;
-    x86_thread_data()->dr1 = context->Dr1;
-    x86_thread_data()->dr2 = context->Dr2;
-    x86_thread_data()->dr3 = context->Dr3;
-    x86_thread_data()->dr6 = context->Dr6;
-    x86_thread_data()->dr7 = context->Dr7;
-    EAX_sig(sigcontext) = context->Eax;
-    EBX_sig(sigcontext) = context->Ebx;
-    ECX_sig(sigcontext) = context->Ecx;
-    EDX_sig(sigcontext) = context->Edx;
-    ESI_sig(sigcontext) = context->Esi;
-    EDI_sig(sigcontext) = context->Edi;
-    EBP_sig(sigcontext) = context->Ebp;
-    EFL_sig(sigcontext) = context->EFlags;
-    EIP_sig(sigcontext) = context->Eip;
-    ESP_sig(sigcontext) = context->Esp;
-    CS_sig(sigcontext)  = context->SegCs;
-    DS_sig(sigcontext)  = context->SegDs;
-    ES_sig(sigcontext)  = context->SegEs;
-    SS_sig(sigcontext)  = context->SegSs;
-#ifdef GS_sig
-    GS_sig(sigcontext)  = context->SegGs;
-#else
-    set_gs( context->SegGs );
-#endif
-#ifdef FS_sig
-    FS_sig(sigcontext)  = context->SegFs;
-#else
-    set_fs( context->SegFs );
-#endif
-
-    if (fpu) *fpu = context->FloatSave;
-    if (fpux) memcpy( fpux, context->ExtendedRegisters, sizeof(*fpux) );
-    if (!fpu && !fpux) restore_fpu( context );
 }
 
 
@@ -1224,6 +884,7 @@ __ASM_STDCALL_FUNC( RtlCaptureContext, 4,
                     __ASM_CFI(".cfi_adjust_cfa_offset -4\n\t")
                     "ret $4" )
 
+<<<<<<< HEAD
 /***********************************************************************
  *           set_full_cpu_context
  *
@@ -2814,6 +2475,8 @@ error:
     perror("sigaction");
     exit(1);
 }
+=======
+>>>>>>> master
 
 /*******************************************************************
  *		RtlUnwind (NTDLL.@)
@@ -2876,8 +2539,7 @@ void WINAPI DECLSPEC_HIDDEN __regs_RtlUnwind( EXCEPTION_REGISTRATION_RECORD* pEn
         }
         frame = __wine_pop_frame( frame );
     }
-
-    NtSetContextThread( GetCurrentThread(), context );
+    NtContinue( context, FALSE );
 }
 __ASM_STDCALL_FUNC( RtlUnwind, 16,
                     "pushl %ebp\n\t"
@@ -2902,21 +2564,6 @@ __ASM_STDCALL_FUNC( RtlUnwind, 16,
                     __ASM_CFI(".cfi_def_cfa %esp,4\n\t")
                     __ASM_CFI(".cfi_same_value %ebp\n\t")
                     "ret $16" )  /* actually never returns */
-
-
-/*******************************************************************
- *		NtRaiseException (NTDLL.@)
- */
-NTSTATUS WINAPI NtRaiseException( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance )
-{
-    if (first_chance)
-    {
-        NTSTATUS status = send_debug_event( rec, TRUE, context );
-        if (status == DBG_CONTINUE || status == DBG_EXCEPTION_HANDLED)
-            NtSetContextThread( GetCurrentThread(), context );
-    }
-    return raise_exception( rec, context, first_chance );
-}
 
 
 /*******************************************************************
@@ -2998,212 +2645,39 @@ USHORT WINAPI RtlCaptureStackBackTrace( ULONG skip, ULONG count, PVOID *buffer, 
 }
 
 
-extern void DECLSPEC_NORETURN start_thread( LPTHREAD_START_ROUTINE entry, void *arg, BOOL suspend,
-                                            void *relay );
-__ASM_GLOBAL_FUNC( start_thread,
-                   "pushl %ebp\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
-                   __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")
-                   "movl %esp,%ebp\n\t"
-                   __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")
-                   "pushl %ebx\n\t"
-                   __ASM_CFI(".cfi_rel_offset %ebx,-4\n\t")
-                   "pushl %esi\n\t"
-                   __ASM_CFI(".cfi_rel_offset %esi,-8\n\t")
-                   "pushl %edi\n\t"
-                   __ASM_CFI(".cfi_rel_offset %edi,-12\n\t")
-                   /* store exit frame */
-                   "movl %ebp,%fs:0x1f4\n\t"    /* x86_thread_data()->exit_frame */
-                   /* switch to thread stack */
-                   "movl %fs:4,%eax\n\t"        /* NtCurrentTeb()->StackBase */
-                   "leal -0x1000(%eax),%esp\n\t"
-                   /* attach dlls */
-                   "pushl 20(%ebp)\n\t"         /* relay */
-                   "pushl 16(%ebp)\n\t"         /* suspend */
-                   "pushl 12(%ebp)\n\t"         /* arg */
-                   "pushl 8(%ebp)\n\t"          /* entry */
-                   "xorl %ebp,%ebp\n\t"
-                   "call " __ASM_NAME("attach_thread") "\n\t"
-                   "movl %eax,%esi\n\t"
-                   "leal -12(%eax),%esp\n\t"
-                   /* clear the stack */
-                   "andl $~0xfff,%eax\n\t"  /* round down to page size */
-                   "movl %eax,(%esp)\n\t"
-                   "call " __ASM_NAME("virtual_clear_thread_stack") "\n\t"
-                   /* switch to the initial context */
-                   "movl %esi,(%esp)\n\t"
-                   "call " __ASM_NAME("set_cpu_context") )
-
-extern void DECLSPEC_NORETURN call_thread_exit_func( int status, void (*func)(int) );
-__ASM_GLOBAL_FUNC( call_thread_exit_func,
-                   "movl 8(%esp),%ecx\n\t"
-                   /* fetch exit frame */
-                   "movl %fs:0x1f4,%edx\n\t"    /* x86_thread_data()->exit_frame */
-                   "testl %edx,%edx\n\t"
-                   "jnz 1f\n\t"
-                   "jmp *%ecx\n\t"
-                   /* switch to exit frame stack */
-                   "1:\tmovl 4(%esp),%eax\n\t"
-                   "movl $0,%fs:0x1f4\n\t"
-                   "movl %edx,%ebp\n\t"
-                   __ASM_CFI(".cfi_def_cfa %ebp,4\n\t")
-                   __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")
-                   __ASM_CFI(".cfi_rel_offset %ebx,-4\n\t")
-                   __ASM_CFI(".cfi_rel_offset %esi,-8\n\t")
-                   __ASM_CFI(".cfi_rel_offset %edi,-12\n\t")
-                   "leal -20(%ebp),%esp\n\t"
-                   "pushl %eax\n\t"
-                   "call *%ecx" )
-
-extern void call_thread_entry(void) DECLSPEC_HIDDEN;
-__ASM_GLOBAL_FUNC( call_thread_entry,
-                   "pushl %ebp\n\t"
-                   __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
-                   __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")
-                   "movl %esp,%ebp\n\t"
-                   __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")
-                   "pushl %ebx\n\t"  /* arg */
-                   "pushl %eax\n\t"  /* entry */
-                   "call " __ASM_NAME("call_thread_func") )
-
-/* wrapper for apps that don't declare the thread function correctly */
-extern DWORD call_thread_func_wrapper( LPTHREAD_START_ROUTINE entry, void *arg );
-__ASM_GLOBAL_FUNC(call_thread_func_wrapper,
-                  "pushl %ebp\n\t"
-                  __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t")
-                  __ASM_CFI(".cfi_rel_offset %ebp,0\n\t")
-                  "movl %esp,%ebp\n\t"
-                  __ASM_CFI(".cfi_def_cfa_register %ebp\n\t")
-                  "subl $4,%esp\n\t"
-                  "pushl 12(%ebp)\n\t"
-                  "call *8(%ebp)\n\t"
-                  "leave\n\t"
-                  __ASM_CFI(".cfi_def_cfa %esp,4\n\t")
-                  __ASM_CFI(".cfi_same_value %ebp\n\t")
-                  "ret" )
-
-/***********************************************************************
- *           call_thread_func
- */
-void DECLSPEC_HIDDEN call_thread_func( LPTHREAD_START_ROUTINE entry, void *arg )
-{
-    __TRY
-    {
-        TRACE_(relay)( "\1Starting thread proc %p (arg=%p)\n", entry, arg );
-        RtlExitUserThread( call_thread_func_wrapper( entry, arg ));
-    }
-    __EXCEPT(call_unhandled_exception_filter)
-    {
-        NtTerminateThread( GetCurrentThread(), GetExceptionCode() );
-    }
-    __ENDTRY
-    abort();  /* should not be reached */
-}
-
-
-/***********************************************************************
- *           init_thread_context
- */
-static void init_thread_context( CONTEXT *context, LPTHREAD_START_ROUTINE entry, void *arg, void *relay )
-{
-    context->SegCs  = get_cs();
-    context->SegDs  = get_ds();
-    context->SegEs  = get_ds();
-    context->SegFs  = get_fs();
-    context->SegGs  = get_gs();
-    context->SegSs  = get_ds();
-    context->EFlags = 0x202;
-    context->Eax    = (DWORD)entry;
-    context->Ebx    = (DWORD)arg;
-    context->Esp    = (DWORD)NtCurrentTeb()->Tib.StackBase - 16;
-    context->Eip    = (DWORD)relay;
-    context->FloatSave.ControlWord = 0x27f;
-    ((XMM_SAVE_AREA32 *)context->ExtendedRegisters)->ControlWord = 0x27f;
-    ((XMM_SAVE_AREA32 *)context->ExtendedRegisters)->MxCsr = 0x1f80;
-}
-
-
-/***********************************************************************
- *           attach_thread
- */
-PCONTEXT DECLSPEC_HIDDEN attach_thread( LPTHREAD_START_ROUTINE entry, void *arg,
-                                        BOOL suspend, void *relay )
-{
-    CONTEXT *ctx;
-
-    if (suspend)
-    {
-        CONTEXT context = { CONTEXT_ALL };
-
-        init_thread_context( &context, entry, arg, relay );
-        wait_suspend( &context );
-        ctx = (CONTEXT *)((ULONG_PTR)context.Esp & ~15) - 1;
-        *ctx = context;
-    }
-    else
-    {
-        ctx = (CONTEXT *)((char *)NtCurrentTeb()->Tib.StackBase - 16) - 1;
-        init_thread_context( ctx, entry, arg, relay );
-    }
-    ctx->ContextFlags = CONTEXT_FULL | CONTEXT_FLOATING_POINT | CONTEXT_EXTENDED_REGISTERS;
-    LdrInitializeThunk( ctx, (void **)&ctx->Eax, 0, 0 );
-    return ctx;
-}
-
-
 /***********************************************************************
  *           signal_start_thread
- *
- * Thread startup sequence:
- * signal_start_thread()
- *   -> start_thread()
- *     -> call_thread_entry()
- *       -> call_thread_func()
  */
-void signal_start_thread( LPTHREAD_START_ROUTINE entry, void *arg, BOOL suspend )
-{
-    start_thread( entry, arg, suspend, call_thread_entry );
-}
-
-/**********************************************************************
- *		signal_start_process
- *
- * Process startup sequence:
- * signal_start_process()
- *   -> start_thread()
- *     -> kernel32_start_process()
- */
-void signal_start_process( LPTHREAD_START_ROUTINE entry, BOOL suspend )
-{
-    start_thread( entry, NtCurrentTeb()->Peb, suspend, kernel32_start_process );
-}
-
-
-/***********************************************************************
- *           signal_exit_thread
- */
-void signal_exit_thread( int status )
-{
-    call_thread_exit_func( status, exit_thread );
-}
-
-/***********************************************************************
- *           signal_exit_process
- */
-void signal_exit_process( int status )
-{
-    call_thread_exit_func( status, exit );
-}
+__ASM_GLOBAL_FUNC( signal_start_thread,
+                   "movl 4(%esp),%esi\n\t"   /* context */
+                   "leal -12(%esi),%edi\n\t"
+                   /* clear the thread stack */
+                   "andl $~0xfff,%edi\n\t"   /* round down to page size */
+                   "movl $0xf0000,%ecx\n\t"
+                   "subl %ecx,%edi\n\t"
+                   "movl %edi,%esp\n\t"
+                   "xorl %eax,%eax\n\t"
+                   "shrl $2,%ecx\n\t"
+                   "rep; stosl\n\t"
+                   /* switch to the initial context */
+                   "leal -12(%esi),%esp\n\t"
+                   "movl $1,4(%esp)\n\t"
+                   "movl %esi,(%esp)\n\t"
+                   "call " __ASM_STDCALL("NtContinue", 8) )
 
 /**********************************************************************
  *		DbgBreakPoint   (NTDLL.@)
  */
-__ASM_STDCALL_FUNC( DbgBreakPoint, 0, "int $3; ret")
+__ASM_STDCALL_FUNC( DbgBreakPoint, 0, "int $3; ret"
+                    "\n\tnop; nop; nop; nop; nop; nop; nop; nop"
+                    "\n\tnop; nop; nop; nop; nop; nop" );
 
 /**********************************************************************
  *		DbgUserBreakPoint   (NTDLL.@)
  */
-__ASM_STDCALL_FUNC( DbgUserBreakPoint, 0, "int $3; ret")
+__ASM_STDCALL_FUNC( DbgUserBreakPoint, 0, "int $3; ret"
+                    "\n\tnop; nop; nop; nop; nop; nop; nop; nop"
+                    "\n\tnop; nop; nop; nop; nop; nop" );
 
 /**********************************************************************
  *           NtCurrentTeb   (NTDLL.@)
@@ -3214,7 +2688,7 @@ __ASM_STDCALL_FUNC( NtCurrentTeb, 0, ".byte 0x64\n\tmovl 0x18,%eax\n\tret" )
 /**************************************************************************
  *           _chkstk   (NTDLL.@)
  */
-__ASM_STDCALL_FUNC( _chkstk, 0,
+__ASM_GLOBAL_FUNC( _chkstk,
                    "negl %eax\n\t"
                    "addl %esp,%eax\n\t"
                    "xchgl %esp,%eax\n\t"
@@ -3225,7 +2699,7 @@ __ASM_STDCALL_FUNC( _chkstk, 0,
 /**************************************************************************
  *           _alloca_probe   (NTDLL.@)
  */
-__ASM_STDCALL_FUNC( _alloca_probe, 0,
+__ASM_GLOBAL_FUNC( _alloca_probe,
                    "negl %eax\n\t"
                    "addl %esp,%eax\n\t"
                    "xchgl %esp,%eax\n\t"

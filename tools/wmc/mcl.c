@@ -26,8 +26,8 @@
 #include <assert.h>
 #include <string.h>
 
-#include "utils.h"
 #include "wmc.h"
+#include "utils.h"
 #include "lang.h"
 
 #include "mcy.tab.h"
@@ -85,6 +85,8 @@ static const WCHAR ustr_language[]	= { 'L', 'a', 'n', 'g', 'u', 'a', 'g', 'e', 0
 static const WCHAR ustr_languagenames[]	= { 'L', 'a', 'n', 'g', 'u', 'a', 'g', 'e', 'N', 'a', 'm', 'e', 's', 0};
 static const WCHAR ustr_messageid[]	= { 'M', 'e', 's', 's', 'a', 'g', 'e', 'I', 'd', 0 };
 static const WCHAR ustr_messageidtypedef[] = { 'M', 'e', 's', 's', 'a', 'g', 'e', 'I', 'd', 'T', 'y', 'p', 'e', 'd', 'e', 'f', 0 };
+static const WCHAR ustr_dxgi[]	= { 'D', 'x', 'g', 'i', 0 };
+static const WCHAR ustr_null[]	= { 'N', 'u', 'l', 'l', 0 };
 static const WCHAR ustr_outputbase[]	= { 'O', 'u', 't', 'p', 'u', 't', 'B', 'a', 's', 'e', 0 };
 static const WCHAR ustr_severity[]	= { 'S', 'e', 'v', 'e', 'r', 'i', 't', 'y', 0 };
 static const WCHAR ustr_severitynames[]	= { 'S', 'e', 'v', 'e', 'r', 'i', 't', 'y', 'N', 'a', 'm', 'e', 's', 0 };
@@ -237,7 +239,7 @@ static int fill_inputbuffer(void)
     case INPUT_UNICODE:
         len += fread( inputbuffer + len, sizeof(WCHAR), INPUTBUFFER_SIZE - len, yyin );
         if (!len) break;
-        if (swapped) for (i = 0; i < len; i++) inputbuffer[i] = BYTESWAP_WORD( inputbuffer[i] );
+        if (swapped) for (i = 0; i < len; i++) inputbuffer[i] = (inputbuffer[i] << 8) | (inputbuffer[i] >> 8);
         ninputbuffer = len;
         return 1;
     case INPUT_UNKNOWN:
@@ -484,21 +486,21 @@ static void newline(void)
 
 static int unisort(const void *p1, const void *p2)
 {
-	return unistricmp(((const token_t *)p1)->name, ((const token_t *)p2)->name);
+	return unistricmp(((const struct token *)p1)->name, ((const struct token *)p2)->name);
 }
 
-static token_t *tokentable = NULL;
+static struct token *tokentable = NULL;
 static int ntokentable = 0;
 
-token_t *lookup_token(const WCHAR *s)
+struct token *lookup_token(const WCHAR *s)
 {
-	token_t tok;
+	struct token tok;
 
 	tok.name = s;
-	return (token_t *)bsearch(&tok, tokentable, ntokentable, sizeof(*tokentable), unisort);
+	return (struct token *)bsearch(&tok, tokentable, ntokentable, sizeof(*tokentable), unisort);
 }
 
-void add_token(tok_e type, const WCHAR *name, int tok, int cp, const WCHAR *alias, int fix)
+void add_token(enum tok_enum type, const WCHAR *name, int tok, int cp, const WCHAR *alias, int fix)
 {
 	ntokentable++;
 	tokentable = xrealloc(tokentable, ntokentable * sizeof(*tokentable));
@@ -511,7 +513,7 @@ void add_token(tok_e type, const WCHAR *name, int tok, int cp, const WCHAR *alia
 	qsort(tokentable, ntokentable, sizeof(*tokentable), unisort);
 }
 
-void get_tokentable(token_t **tab, int *len)
+void get_tokentable(struct token **tab, int *len)
 {
 	assert(tab != NULL);
 	assert(len != NULL);
@@ -551,6 +553,8 @@ int mcy_lex(void)
 		add_token(tok_severity,	ustr_success,		0x00,		0, NULL, 0);
 		add_token(tok_facility,	ustr_application,	0xFFF,		0, NULL, 0);
 		add_token(tok_facility,	ustr_system,		0x0FF,		0, NULL, 0);
+		add_token(tok_facility,	ustr_dxgi,   		0x87a,		0, NULL, 0);
+		add_token(tok_facility,	ustr_null,   		0x000,		0, NULL, 0);
 		add_token(tok_language,	ustr_english,		0x409,		437, ustr_msg00001, 0);
 	}
 
@@ -620,7 +624,7 @@ int mcy_lex(void)
 
 			if(char_table[ch] & CH_IDENT)
 			{
-				token_t *tok;
+				struct token *tok;
 				while(isisochar(ch) && (char_table[ch] & (CH_IDENT|CH_NUMBER)))
 				{
 					push_unichar(ch);

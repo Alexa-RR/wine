@@ -971,7 +971,7 @@ static HINSTANCE16 MODULE_LoadModule16( LPCSTR libname, BOOL implicit, BOOL lib_
                 /* if module has a 32-bit owner, match the load order of the owner */
                 if ((main_module = (void *)GetProcAddress( mod32, "__wine_spec_main_module" )))
                 {
-                    LDR_MODULE *ldr;
+                    LDR_DATA_TABLE_ENTRY *ldr;
                     HMODULE main_owner = LoadLibraryA( main_module );
 
                     if (!main_owner)
@@ -1207,8 +1207,13 @@ DWORD NE_StartTask(void)
         if (!(sp = OFFSETOF(pModule->ne_sssp)))
             sp = pSegTable[SELECTOROF(pModule->ne_sssp)-1].minsize + pModule->ne_stack;
         sp &= ~1;
+<<<<<<< HEAD
         sp -= sizeof(STACK16FRAME);
         NtCurrentTeb()->SystemReserved1[0] = (void *)MAKESEGPTR( GlobalHandleToSel16(hInstance), sp );
+=======
+        CURRENT_SS = GlobalHandleToSel16(hInstance);
+        CURRENT_SP = sp - sizeof(STACK16FRAME);
+>>>>>>> master
 
         /* Registers at initialization must be:
          * ax   zero
@@ -1234,10 +1239,15 @@ DWORD NE_StartTask(void)
 
         /* Now call 16-bit entry point */
 
+<<<<<<< HEAD
         TRACE("Starting main program: cs:ip=%04x:%04x ds=%04x ss:sp=%04x:%04x\n",
               context.SegCs, context.Eip, context.SegDs,
               SELECTOROF(NtCurrentTeb()->SystemReserved1[0]),
               OFFSETOF(NtCurrentTeb()->SystemReserved1[0]) );
+=======
+        TRACE("Starting main program: cs:ip=%04lx:%04lx ds=%04lx ss:sp=%04x:%04x\n",
+              context.SegCs, context.Eip, context.SegDs, CURRENT_SS, CURRENT_SP);
+>>>>>>> master
 
         WOWCallback16Ex( 0, WCB16_REGS, 0, NULL, (DWORD *)&context );
         ExitThread( LOWORD(context.Eax) );
@@ -1462,7 +1472,7 @@ HMODULE16 WINAPI GetModuleHandle16( LPCSTR name )
 	    loadedfn--;
 	}
 	/* case insensitive compare ... */
-	if (!_strnicmp(loadedfn, s, -1))
+	if (!stricmp(loadedfn, s))
 	    return hModule;
     }
     return 0;
@@ -1782,7 +1792,7 @@ static HMODULE16 NE_GetModuleByFilename( LPCSTR name )
             loadedfn--;
         }
         /* case insensitive compare ... */
-        if (!_strnicmp(loadedfn, s, -1))
+        if (!stricmp(loadedfn, s))
             return hModule;
     }
     /* If basename (without ext) matches the module name of a module:

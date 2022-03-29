@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include "config.h"
 #include <time.h>
 
 #define NONAMELESSUNION
@@ -142,7 +141,7 @@ static BOOL fetch_thread_info(struct dump_context* dc, int thd_idx,
 
     if ((hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, tid)) == NULL)
     {
-        FIXME("Couldn't open thread %u (%u)\n", tid, GetLastError());
+        FIXME("Couldn't open thread %lu (%lu)\n", tid, GetLastError());
         return FALSE;
     }
     
@@ -327,7 +326,6 @@ static void fetch_module_versioninfo(LPCWSTR filename, VS_FIXEDFILEINFO* ffi)
 {
     DWORD       handle;
     DWORD       sz;
-    static const WCHAR backslashW[] = {'\\', '\0'};
 
     memset(ffi, 0, sizeof(*ffi));
     if ((sz = GetFileVersionInfoSizeW(filename, &handle)))
@@ -338,7 +336,7 @@ static void fetch_module_versioninfo(LPCWSTR filename, VS_FIXEDFILEINFO* ffi)
             VS_FIXEDFILEINFO*   ptr;
             UINT    len;
 
-            if (VerQueryValueW(info, backslashW, (void*)&ptr, &len))
+            if (VerQueryValueW(info, L"\\", (void*)&ptr, &len))
                 memcpy(ffi, ptr, min(len, sizeof(*ffi)));
         }
         HeapFree(GetProcessHeap(), 0, info);
@@ -541,7 +539,8 @@ static  unsigned        dump_modules(struct dump_context* dc, BOOL dump_elf)
             mdModule.ModuleNameRva = dc->rva;
             ms->Length -= sizeof(WCHAR);
             append(dc, ms, sizeof(ULONG) + ms->Length + sizeof(WCHAR));
-            fetch_module_versioninfo(ms->Buffer, &mdModule.VersionInfo);
+            if (!dump_elf) fetch_module_versioninfo(ms->Buffer, &mdModule.VersionInfo);
+            else memset(&mdModule.VersionInfo, 0, sizeof(mdModule.VersionInfo));
             mdModule.CvRecord.DataSize = 0; /* FIXME */
             mdModule.CvRecord.Rva = 0; /* FIXME */
             mdModule.MiscRecord.DataSize = 0; /* FIXME */
@@ -832,9 +831,7 @@ static unsigned         dump_memory_info(struct dump_context* dc)
         for (pos = 0; pos < dc->mem[i].size; pos += sizeof(tmp))
         {
             len = min(dc->mem[i].size - pos, sizeof(tmp));
-            if (ReadProcessMemory(dc->process->handle,
-                                  (void*)(DWORD_PTR)(dc->mem[i].base + pos),
-                                  tmp, len, NULL))
+            if (read_process_memory(dc->process, dc->mem[i].base + pos, tmp, len))
                 WriteFile(dc->hFile, tmp, len, &written, NULL);
         }
         dc->rva += mdMem.Memory.DataSize;
@@ -890,9 +887,7 @@ static unsigned         dump_memory64_info(struct dump_context* dc)
         for (pos = 0; pos < dc->mem64[i].size; pos += sizeof(tmp))
         {
             len = min(dc->mem64[i].size - pos, sizeof(tmp));
-            if (ReadProcessMemory(dc->process->handle,
-                                  (void*)(ULONG_PTR)(dc->mem64[i].base + pos),
-                                  tmp, len, NULL))
+            if (read_process_memory(dc->process, dc->mem64[i].base + pos, tmp, len))
                 WriteFile(dc->hFile, tmp, len, &written, NULL);
         }
         filepos.QuadPart += mdMem64.DataSize;

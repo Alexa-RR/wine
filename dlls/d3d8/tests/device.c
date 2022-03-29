@@ -75,6 +75,14 @@ static int get_refcount(IUnknown *object)
     return IUnknown_Release( object );
 }
 
+static void get_virtual_rect(RECT *rect)
+{
+    rect->left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    rect->top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    rect->right = rect->left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    rect->bottom = rect->top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+}
+
 static HWND create_window(void)
 {
     RECT r = {0, 0, 640, 480};
@@ -104,6 +112,77 @@ static void flush_events(void)
 static BOOL adapter_is_warp(const D3DADAPTER_IDENTIFIER8 *identifier)
 {
     return !strcmp(identifier->Driver, "d3d10warp.dll");
+}
+
+static BOOL equal_mode_rect(const DEVMODEW *mode1, const DEVMODEW *mode2)
+{
+    return mode1->dmPosition.x == mode2->dmPosition.x
+            && mode1->dmPosition.y == mode2->dmPosition.y
+            && mode1->dmPelsWidth == mode2->dmPelsWidth
+            && mode1->dmPelsHeight == mode2->dmPelsHeight;
+}
+
+/* Free original_modes after finished using it */
+static BOOL save_display_modes(DEVMODEW **original_modes, unsigned int *display_count)
+{
+    unsigned int number, size = 2, count = 0, index = 0;
+    DISPLAY_DEVICEW display_device;
+    DEVMODEW *modes, *tmp;
+
+    if (!(modes = heap_alloc(size * sizeof(*modes))))
+        return FALSE;
+
+    display_device.cb = sizeof(display_device);
+    while (EnumDisplayDevicesW(NULL, index++, &display_device, 0))
+    {
+        /* Skip software devices */
+        if (swscanf(display_device.DeviceName, L"\\\\.\\DISPLAY%u", &number) != 1)
+            continue;
+
+        if (!(display_device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP))
+            continue;
+
+        if (count >= size)
+        {
+            size *= 2;
+            if (!(tmp = heap_realloc(modes, size * sizeof(*modes))))
+            {
+                heap_free(modes);
+                return FALSE;
+            }
+            modes = tmp;
+        }
+
+        memset(&modes[count], 0, sizeof(modes[count]));
+        modes[count].dmSize = sizeof(modes[count]);
+        if (!EnumDisplaySettingsW(display_device.DeviceName, ENUM_CURRENT_SETTINGS, &modes[count]))
+        {
+            heap_free(modes);
+            return FALSE;
+        }
+
+        lstrcpyW(modes[count++].dmDeviceName, display_device.DeviceName);
+    }
+
+    *original_modes = modes;
+    *display_count = count;
+    return TRUE;
+}
+
+static BOOL restore_display_modes(DEVMODEW *modes, unsigned int count)
+{
+    unsigned int index;
+    LONG ret;
+
+    for (index = 0; index < count; ++index)
+    {
+        ret = ChangeDisplaySettingsExW(modes[index].dmDeviceName, &modes[index], NULL,
+                CDS_UPDATEREGISTRY | CDS_NORESET, NULL);
+        if (ret != DISP_CHANGE_SUCCESSFUL)
+            return FALSE;
+    }
+    ret = ChangeDisplaySettingsExW(NULL, NULL, NULL, 0, NULL);
+    return ret == DISP_CHANGE_SUCCESSFUL;
 }
 
 static IDirect3DDevice8 *create_device(IDirect3D8 *d3d8, HWND focus_window, const struct device_desc *desc)
@@ -995,11 +1074,19 @@ static void test_cursor(void)
 
     IDirect3DSurface8_Release(cursor);
 
+    /* On the testbot the cursor handle does not behave as expected in rare situations,
+     * leading to random test failures. Either the cursor handle changes before we expect
+     * it to, or it doesn't change afterwards (or already changed before we read the
+     * initial handle?). I was not able to reproduce this on my own machines. Moving the
+     * mouse outside the window results in similar behavior. However, I tested various
+     * obvious failure causes: Was the mouse moved? Was the window hidden or moved? Is
+     * the window in the background? Neither of those applies. Making the window topmost
+     * or using a fullscreen device doesn't improve the test's reliability either. */
     memset(&info, 0, sizeof(info));
     info.cbSize = sizeof(info);
     ok(GetCursorInfo(&info), "GetCursorInfo failed\n");
     ok(info.flags & (CURSOR_SHOWING|CURSOR_SUPPRESSED), "The gdi cursor is hidden (%08x)\n", info.flags);
-    ok(info.hCursor == cur, "The cursor handle is %p\n", info.hCursor); /* unchanged */
+    ok(info.hCursor == cur || broken(1), "The cursor handle is %p\n", info.hCursor); /* unchanged */
 
     /* Still hidden */
     ret = IDirect3DDevice8_ShowCursor(device, TRUE);
@@ -1013,7 +1100,7 @@ static void test_cursor(void)
     info.cbSize = sizeof(info);
     ok(GetCursorInfo(&info), "GetCursorInfo failed\n");
     ok(info.flags & (CURSOR_SHOWING|CURSOR_SUPPRESSED), "The gdi cursor is hidden (%08x)\n", info.flags);
-    ok(info.hCursor != cur, "The cursor handle is %p\n", info.hCursor);
+    ok(info.hCursor != cur || broken(1), "The cursor handle is %p\n", info.hCursor);
 
     /* Cursor dimensions must all be powers of two */
     for (test_idx = 0; test_idx < ARRAY_SIZE(cursor_sizes); ++test_idx)
@@ -1131,6 +1218,7 @@ static void test_cursor_pos(void)
     HWND window;
     HRESULT hr;
     BOOL ret;
+    POINT pt;
 
     /* Note that we don't check for movement we're not supposed to receive.
      * That's because it's hard to distinguish from the user accidentally
@@ -1147,6 +1235,32 @@ static void test_cursor_pos(void)
         {150, 150},
         {0, 0},
     };
+
+    /* Windows 10 1709 is unreliable. One or more of the cursor movements we
+     * expect don't show up. Moving the mouse to a defined position beforehand
+     * seems to get it into better shape - only the final 150x150 move we do
+     * below is missing - it looks as if this Windows version filters redundant
+     * SetCursorPos calls on the user32 level, although I am not entirely sure.
+     *
+     * The weird thing is that the previous test leaves the cursor position
+     * reliably at 512x384 on the testbot. So the 50x50 mouse move shouldn't
+     * be stripped away anyway, but it might be a difference between moving the
+     * cursor through SetCursorPos vs moving it by changing the display mode. */
+    ret = SetCursorPos(99, 99);
+    ok(ret, "Failed to set cursor position.\n");
+    flush_events();
+
+    /* Check if we can move the cursor. If we're running in a virtual desktop
+     * that does not have focus or the mouse is outside the desktop window, some
+     * window managers (e.g. kwin) will refuse to let us steal the pointer. That
+     * is reasonable, but breaks the test. */
+    ret = GetCursorPos(&pt);
+    ok(ret, "Failed to get cursor position.\n");
+    if (pt.x != 99 || pt.y != 99)
+    {
+        skip("Could not warp the cursor (cur pos %ux%u), skipping test.\n", pt.x, pt.y);
+        return;
+    }
 
     wc.lpfnWndProc = test_cursor_proc;
     wc.lpszClassName = "d3d8_test_cursor_wc";
@@ -1180,7 +1294,8 @@ static void test_cursor_pos(void)
 
     IDirect3DDevice8_SetCursorPosition(device, 75, 75, 0);
     flush_events();
-    /* SetCursorPosition() eats duplicates. */
+    /* SetCursorPosition() eats duplicates. FIXME: Since we accept unexpected
+     * mouse moves the test doesn't actually demonstrate that. */
     IDirect3DDevice8_SetCursorPosition(device, 75, 75, 0);
     flush_events();
 
@@ -1201,13 +1316,14 @@ static void test_cursor_pos(void)
 
     IDirect3DDevice8_SetCursorPosition(device, 150, 150, 0);
     flush_events();
-    /* SetCursorPos() doesn't. */
+    /* SetCursorPos() doesn't. Except for Win10 1709. */
     ret = SetCursorPos(150, 150);
     ok(ret, "Failed to set cursor position.\n");
     flush_events();
 
-    ok(!expect_pos->x && !expect_pos->y, "Didn't receive MOUSEMOVE %u (%d, %d).\n",
-       (unsigned)(expect_pos - points), expect_pos->x, expect_pos->y);
+    ok((!expect_pos->x && !expect_pos->y) || broken(expect_pos - points == 7),
+        "Didn't receive MOUSEMOVE %u (%d, %d).\n",
+        (unsigned)(expect_pos - points), expect_pos->x, expect_pos->y);
 
     refcount = IDirect3DDevice8_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
@@ -3353,6 +3469,8 @@ done:
     DestroyWindow(device_window);
     DestroyWindow(focus_window);
     UnregisterClassA("d3d8_test_wndproc_wc", GetModuleHandleA(NULL));
+    change_ret = ChangeDisplaySettingsExW(NULL, NULL, NULL, 0, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
 }
 
 static void test_wndproc_windowed(void)
@@ -4098,13 +4216,17 @@ static void test_unsupported_shaders(void)
 
 static void test_mode_change(void)
 {
+    DEVMODEW old_devmode, devmode, devmode2, *original_modes = NULL;
+    struct device_desc device_desc, device_desc2;
+    WCHAR second_monitor_name[CCHDEVICENAME];
+    IDirect3DDevice8 *device, *device2;
+    unsigned int display_count = 0;
     RECT d3d_rect, focus_rect, r;
-    struct device_desc device_desc;
     IDirect3DSurface8 *backbuffer;
-    IDirect3DDevice8 *device;
+    MONITORINFOEXW monitor_info;
+    HMONITOR second_monitor;
     D3DSURFACE_DESC desc;
     IDirect3D8 *d3d8;
-    DEVMODEW devmode;
     ULONG refcount;
     UINT adapter_mode_count, i;
     HRESULT hr;
@@ -4112,6 +4234,15 @@ static void test_mode_change(void)
     LONG change_ret;
     D3DDISPLAYMODE d3ddm;
     DWORD d3d_width = 0, d3d_height = 0, user32_width = 0, user32_height = 0;
+
+    memset(&devmode, 0, sizeof(devmode));
+    devmode.dmSize = sizeof(devmode);
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode, &registry_mode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(NULL, ENUM_REGISTRY_SETTINGS, &devmode);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode, &registry_mode), "Got a different mode.\n");
 
     d3d8 = Direct3DCreate8(D3D_SDK_VERSION);
     ok(!!d3d8, "Failed to create a D3D object.\n");
@@ -4167,6 +4298,9 @@ static void test_mode_change(void)
         return;
     }
 
+    ret = save_display_modes(&original_modes, &display_count);
+    ok(ret, "Failed to save original display modes.\n");
+
     memset(&devmode, 0, sizeof(devmode));
     devmode.dmSize = sizeof(devmode);
     devmode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
@@ -4193,8 +4327,6 @@ static void test_mode_change(void)
     if (!(device = create_device(d3d8, focus_window, &device_desc)))
     {
         skip("Failed to create a D3D device, skipping tests.\n");
-        change_ret = ChangeDisplaySettingsW(NULL, CDS_FULLSCREEN);
-        ok(change_ret == DISP_CHANGE_SUCCESSFUL, "Failed to change display mode, ret %#x.\n", change_ret);
         goto done;
     }
 
@@ -4231,7 +4363,7 @@ static void test_mode_change(void)
 
     ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
     ok(ret, "Failed to get display mode.\n");
-    todo_wine ok(devmode.dmPelsWidth == registry_mode.dmPelsWidth
+    ok(devmode.dmPelsWidth == registry_mode.dmPelsWidth
             && devmode.dmPelsHeight == registry_mode.dmPelsHeight,
             "Expected resolution %ux%u, got %ux%u.\n",
             registry_mode.dmPelsWidth, registry_mode.dmPelsHeight, devmode.dmPelsWidth, devmode.dmPelsHeight);
@@ -4248,6 +4380,7 @@ static void test_mode_change(void)
     device_desc.flags = CREATE_DEVICE_FULLSCREEN;
     ok(!!(device = create_device(d3d8, focus_window, &device_desc)), "Failed to create a D3D device.\n");
 
+    devmode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
     devmode.dmPelsWidth = user32_width;
     devmode.dmPelsHeight = user32_height;
     change_ret = ChangeDisplaySettingsW(&devmode, CDS_FULLSCREEN);
@@ -4256,17 +4389,319 @@ static void test_mode_change(void)
     refcount = IDirect3DDevice8_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
 
-    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode);
+    memset(&devmode2, 0, sizeof(devmode2));
+    devmode2.dmSize = sizeof(devmode2);
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode2);
     ok(ret, "Failed to get display mode.\n");
-    ok(devmode.dmPelsWidth == registry_mode.dmPelsWidth
-            && devmode.dmPelsHeight == registry_mode.dmPelsHeight,
-            "Expected resolution %ux%u, got %ux%u.\n",
-            registry_mode.dmPelsWidth, registry_mode.dmPelsHeight, devmode.dmPelsWidth, devmode.dmPelsHeight);
+    ok(devmode2.dmPelsWidth == registry_mode.dmPelsWidth
+            && devmode2.dmPelsHeight == registry_mode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", registry_mode.dmPelsWidth,
+            registry_mode.dmPelsHeight, devmode2.dmPelsWidth, devmode2.dmPelsHeight);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test that no mode restorations if no mode changes happened */
+    change_ret = ChangeDisplaySettingsW(&devmode, CDS_UPDATEREGISTRY | CDS_NORESET);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsW failed with %d.\n", change_ret);
+
+    device_desc.adapter_ordinal = D3DADAPTER_DEFAULT;
+    device_desc.device_window = device_window;
+    device_desc.width = d3d_width;
+    device_desc.height = d3d_height;
+    device_desc.flags = 0;
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &registry_mode), "Got a different mode.\n");
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test that mode restorations use display settings in the registry with a fullscreen device */
+    change_ret = ChangeDisplaySettingsW(&devmode, CDS_UPDATEREGISTRY | CDS_NORESET);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsW failed with %d.\n", change_ret);
+
+    device_desc.adapter_ordinal = D3DADAPTER_DEFAULT;
+    device_desc.device_window = device_window;
+    device_desc.width = registry_mode.dmPelsWidth;
+    device_desc.height = registry_mode.dmPelsHeight;
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(NULL, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &devmode), "Got a different mode.\n");
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test that mode restorations use display settings in the registry with a fullscreen device
+     * having the same display mode and then reset to a different mode */
+    change_ret = ChangeDisplaySettingsW(&devmode, CDS_UPDATEREGISTRY | CDS_NORESET);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsW failed with %d.\n", change_ret);
+
+    device_desc.adapter_ordinal = D3DADAPTER_DEFAULT;
+    device_desc.device_window = device_window;
+    device_desc.width = registry_mode.dmPelsWidth;
+    device_desc.height = registry_mode.dmPelsHeight;
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+
+    device_desc.width = d3d_width;
+    device_desc.height = d3d_height;
+    hr = reset_device(device, &device_desc);
+    ok(hr == D3D_OK, "Failed to reset device, hr %#x.\n", hr);
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(devmode2.dmPelsWidth == d3d_width && devmode2.dmPelsHeight == d3d_height,
+            "Expected resolution %ux%u, got %ux%u.\n", d3d_width, d3d_height,
+            devmode2.dmPelsWidth, devmode2.dmPelsHeight);
+
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(NULL, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &devmode), "Got a different mode.\n");
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    if (IDirect3D8_GetAdapterCount(d3d8) < 2)
+    {
+        skip("Following tests require two adapters.\n");
+        goto done;
+    }
+
+    second_monitor = IDirect3D8_GetAdapterMonitor(d3d8, 1);
+    monitor_info.cbSize = sizeof(monitor_info);
+    ret = GetMonitorInfoW(second_monitor, (MONITORINFO *)&monitor_info);
+    ok(ret, "GetMonitorInfoW failed, error %#x.\n", GetLastError());
+    lstrcpyW(second_monitor_name, monitor_info.szDevice);
+
+    memset(&old_devmode, 0, sizeof(old_devmode));
+    old_devmode.dmSize = sizeof(old_devmode);
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &old_devmode);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+
+    i = 0;
+    d3d_width = 0;
+    d3d_height = 0;
+    user32_width = 0;
+    user32_height = 0;
+    while (EnumDisplaySettingsW(second_monitor_name, i++, &devmode))
+    {
+        if (devmode.dmPelsWidth == old_devmode.dmPelsWidth
+                && devmode.dmPelsHeight == old_devmode.dmPelsHeight)
+            continue;
+
+        if (!d3d_width && !d3d_height)
+        {
+            d3d_width = devmode.dmPelsWidth;
+            d3d_height = devmode.dmPelsHeight;
+            continue;
+        }
+
+        if (devmode.dmPelsWidth == d3d_width && devmode.dmPelsHeight == d3d_height)
+            continue;
+
+        user32_width = devmode.dmPelsWidth;
+        user32_height = devmode.dmPelsHeight;
+        break;
+    }
+    if (!user32_width || !user32_height)
+    {
+        skip("Failed to find three different display modes for the second monitor.\n");
+        goto done;
+    }
+
+    /* Test that mode restorations also happen for non-primary monitors on device resets */
+    device_desc.adapter_ordinal = D3DADAPTER_DEFAULT;
+    device_desc.device_window = device_window;
+    device_desc.width = registry_mode.dmPelsWidth;
+    device_desc.height = registry_mode.dmPelsHeight;
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+
+    change_ret = ChangeDisplaySettingsExW(second_monitor_name, &devmode, NULL, CDS_RESET, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    if (devmode2.dmPelsWidth == old_devmode.dmPelsWidth
+            && devmode2.dmPelsHeight == old_devmode.dmPelsHeight)
+    {
+        skip("Failed to change display settings of the second monitor.\n");
+        refcount = IDirect3DDevice8_Release(device);
+        ok(!refcount, "Device has %u references left.\n", refcount);
+        goto done;
+    }
+
+    device_desc.flags = 0;
+    hr = reset_device(device, &device_desc);
+    ok(hr == D3D_OK, "Failed to reset device, hr %#x.\n", hr);
+
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    hr = IDirect3D8_GetAdapterDisplayMode(d3d8, 1, &d3ddm);
+    ok(hr == S_OK, "GetAdapterDisplayMode failed, hr %#x.\n", hr);
+    ok(d3ddm.Width == old_devmode.dmPelsWidth, "Expected width %u, got %u.\n",
+            old_devmode.dmPelsWidth, d3ddm.Width);
+    ok(d3ddm.Height == old_devmode.dmPelsHeight, "Expected height %u, got %u.\n",
+            old_devmode.dmPelsHeight, d3ddm.Height);
+
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test that mode restorations happen for non-primary monitors on device releases */
+    device_desc.adapter_ordinal = D3DADAPTER_DEFAULT;
+    device_desc.device_window = device_window;
+    device_desc.width = registry_mode.dmPelsWidth;
+    device_desc.height = registry_mode.dmPelsHeight;
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+
+    change_ret = ChangeDisplaySettingsExW(second_monitor_name, &devmode, NULL, CDS_RESET, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
+
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    hr = IDirect3D8_GetAdapterDisplayMode(d3d8, 1, &d3ddm);
+    ok(hr == S_OK, "GetAdapterDisplayMode failed, hr %#x.\n", hr);
+    ok(d3ddm.Width == old_devmode.dmPelsWidth, "Expected width %u, got %u.\n",
+            old_devmode.dmPelsWidth, d3ddm.Width);
+    ok(d3ddm.Height == old_devmode.dmPelsHeight, "Expected height %u, got %u.\n",
+            old_devmode.dmPelsHeight, d3ddm.Height);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test that mode restorations for non-primary monitors use display settings in the registry */
+    device = create_device(d3d8, device_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+
+    change_ret = ChangeDisplaySettingsExW(second_monitor_name, &devmode, NULL,
+            CDS_UPDATEREGISTRY | CDS_NORESET, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
+
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(devmode2.dmPelsWidth == devmode.dmPelsWidth && devmode2.dmPelsHeight == devmode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", devmode.dmPelsWidth, devmode.dmPelsHeight,
+            devmode2.dmPelsWidth, devmode2.dmPelsHeight);
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(devmode2.dmPelsWidth == devmode.dmPelsWidth && devmode2.dmPelsHeight == devmode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", devmode.dmPelsWidth, devmode.dmPelsHeight,
+            devmode2.dmPelsWidth, devmode2.dmPelsHeight);
+    hr = IDirect3D8_GetAdapterDisplayMode(d3d8, 1, &d3ddm);
+    ok(hr == S_OK, "GetAdapterDisplayMode failed, hr %#x.\n", hr);
+    ok(d3ddm.Width == devmode.dmPelsWidth && d3ddm.Height == devmode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", devmode.dmPelsWidth, devmode.dmPelsHeight,
+            d3ddm.Width, d3ddm.Height);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test mode restorations when there are two fullscreen devices and one of them got reset */
+    device = create_device(d3d8, focus_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+
+    device_desc2.adapter_ordinal = 1;
+    device_desc2.device_window = device_window;
+    device_desc2.width = d3d_width;
+    device_desc2.height = d3d_height;
+    device_desc2.flags = CREATE_DEVICE_FULLSCREEN;
+    device2 = create_device(d3d8, focus_window, &device_desc2);
+    ok(!!device2, "Failed to create a D3D device.\n");
+
+    change_ret = ChangeDisplaySettingsExW(second_monitor_name, &devmode, NULL, CDS_RESET, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
+
+    device_desc.flags = 0;
+    hr = reset_device(device, &device_desc);
+    ok(hr == D3D_OK, "Failed to reset device, hr %#x.\n", hr);
+
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    hr = IDirect3D8_GetAdapterDisplayMode(d3d8, 1, &d3ddm);
+    ok(hr == S_OK, "GetAdapterDisplayMode failed, hr %#x.\n", hr);
+    ok(d3ddm.Width == old_devmode.dmPelsWidth && d3ddm.Height == old_devmode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", old_devmode.dmPelsWidth,
+            old_devmode.dmPelsHeight, d3ddm.Width, d3ddm.Height);
+
+    refcount = IDirect3DDevice8_Release(device2);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+
+    /* Test mode restoration when there are two fullscreen devices and one of them got released */
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+    device = create_device(d3d8, focus_window, &device_desc);
+    ok(!!device, "Failed to create a D3D device.\n");
+    device2 = create_device(d3d8, focus_window, &device_desc2);
+    ok(!!device2, "Failed to create a D3D device.\n");
+
+    change_ret = ChangeDisplaySettingsExW(second_monitor_name, &devmode, NULL, CDS_RESET, NULL);
+    ok(change_ret == DISP_CHANGE_SUCCESSFUL, "ChangeDisplaySettingsExW failed with %d.\n", change_ret);
+
+    refcount = IDirect3DDevice8_Release(device);
+    ok(!refcount, "Device has %u references left.\n", refcount);
+
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_CURRENT_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    ret = EnumDisplaySettingsW(second_monitor_name, ENUM_REGISTRY_SETTINGS, &devmode2);
+    ok(ret, "EnumDisplaySettingsW failed, error %#x.\n", GetLastError());
+    ok(equal_mode_rect(&devmode2, &old_devmode), "Got a different mode.\n");
+    hr = IDirect3D8_GetAdapterDisplayMode(d3d8, 1, &d3ddm);
+    ok(hr == S_OK, "GetAdapterDisplayMode failed, hr %#x.\n", hr);
+    ok(d3ddm.Width == old_devmode.dmPelsWidth && d3ddm.Height == old_devmode.dmPelsHeight,
+            "Expected resolution %ux%u, got %ux%u.\n", old_devmode.dmPelsWidth,
+            old_devmode.dmPelsHeight, d3ddm.Width, d3ddm.Height);
+
+    refcount = IDirect3DDevice8_Release(device2);
+    ok(!refcount, "Device has %u references left.\n", refcount);
 
 done:
     DestroyWindow(device_window);
     DestroyWindow(focus_window);
     IDirect3D8_Release(d3d8);
+    ret = restore_display_modes(original_modes, display_count);
+    ok(ret, "Failed to restore display modes.\n");
+    heap_free(original_modes);
 }
 
 static void test_device_window_reset(void)
@@ -9778,7 +10213,7 @@ static void test_draw_primitive(void)
     hr = IDirect3DDevice8_SetIndices(device, NULL, 0);
     ok(SUCCEEDED(hr), "SetIndices failed, hr %#x.\n", hr);
     hr = IDirect3DDevice8_DrawIndexedPrimitive(device, D3DPT_TRIANGLELIST, 0, 4, 0, 2);
-    todo_wine ok(SUCCEEDED(hr), "DrawIndexedPrimitive failed, hr %#x.\n", hr);
+    ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
 
     /* Valid index buffer, NULL stream source. */
     hr = IDirect3DDevice8_SetIndices(device, index_buffer, 1);
@@ -9873,13 +10308,20 @@ static void test_draw_primitive(void)
 
 static void test_get_display_mode(void)
 {
+    static const DWORD creation_flags[] = {0, CREATE_DEVICE_FULLSCREEN};
+    unsigned int adapter_idx, adapter_count, mode_idx, test_idx;
+    RECT previous_monitor_rect;
+    unsigned int width, height;
     IDirect3DDevice8 *device;
+    MONITORINFO monitor_info;
     struct device_desc desc;
     D3DDISPLAYMODE mode;
+    HMONITOR monitor;
     IDirect3D8 *d3d;
     ULONG refcount;
     HWND window;
     HRESULT hr;
+    BOOL ret;
 
     window = create_window();
     d3d = Direct3DCreate8(D3D_SDK_VERSION);
@@ -9929,8 +10371,104 @@ static void test_get_display_mode(void)
 
     refcount = IDirect3DDevice8_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
-    IDirect3D8_Release(d3d);
     DestroyWindow(window);
+
+    /* D3D8 uses adapter indices to determine which adapter to use to get the display mode */
+    adapter_count = IDirect3D8_GetAdapterCount(d3d);
+    for (adapter_idx = 0; adapter_idx < adapter_count; ++adapter_idx)
+    {
+        if (!adapter_idx)
+        {
+            desc.width = 640;
+            desc.height = 480;
+        }
+        else
+        {
+            /* Find a mode different than that of the previous adapter, so that tests can be sure
+             * that they are comparing to the current adapter display mode */
+            monitor = IDirect3D8_GetAdapterMonitor(d3d, adapter_idx - 1);
+            ok(!!monitor, "Adapter %u: GetAdapterMonitor failed.\n", adapter_idx - 1);
+            monitor_info.cbSize = sizeof(monitor_info);
+            ret = GetMonitorInfoW(monitor, &monitor_info);
+            ok(ret, "Adapter %u: GetMonitorInfoW failed, error %#x.\n", adapter_idx - 1,
+                    GetLastError());
+            previous_monitor_rect = monitor_info.rcMonitor;
+
+            desc.width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left;
+            desc.height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top;
+            for (mode_idx = 0; SUCCEEDED(IDirect3D8_EnumAdapterModes(d3d, adapter_idx, mode_idx,
+                    &mode)); ++mode_idx)
+            {
+                if (mode.Format != D3DFMT_X8R8G8B8)
+                    continue;
+                if (mode.Width < 640 || mode.Height < 480)
+                    continue;
+                if (mode.Width != desc.width && mode.Height != desc.height)
+                    break;
+            }
+            ok(mode.Width != desc.width && mode.Height != desc.height,
+                    "Adapter %u: Failed to find a different mode than %ux%u.\n", adapter_idx,
+                    desc.width, desc.height);
+            desc.width = mode.Width;
+            desc.height = mode.Height;
+        }
+
+        for (test_idx = 0; test_idx < ARRAY_SIZE(creation_flags); ++test_idx)
+        {
+            window = create_window();
+            desc.adapter_ordinal = adapter_idx;
+            desc.device_window = window;
+            desc.flags = creation_flags[test_idx];
+            if (!(device = create_device(d3d, window, &desc)))
+            {
+                skip("Adapter %u test %u: Failed to create a D3D device.\n", adapter_idx, test_idx);
+                DestroyWindow(window);
+                continue;
+            }
+
+            monitor = IDirect3D8_GetAdapterMonitor(d3d, adapter_idx);
+            ok(!!monitor, "Adapter %u test %u: GetAdapterMonitor failed.\n", adapter_idx, test_idx);
+            monitor_info.cbSize = sizeof(monitor_info);
+            ret = GetMonitorInfoW(monitor, &monitor_info);
+            ok(ret, "Adapter %u test %u: GetMonitorInfoW failed, error %#x.\n", adapter_idx,
+                    test_idx, GetLastError());
+            width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left;
+            height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top;
+
+            if (adapter_idx)
+            {
+                /* Move the device window to the previous monitor to test that the device window
+                 * position doesn't affect which adapter to use to get the display mode */
+                ret = SetWindowPos(window, 0, previous_monitor_rect.left, previous_monitor_rect.top,
+                        0, 0, SWP_NOZORDER | SWP_NOSIZE);
+                ok(ret, "Adapter %u test %u: SetWindowPos failed, error %#x.\n", adapter_idx,
+                        test_idx, GetLastError());
+            }
+
+            hr = IDirect3D8_GetAdapterDisplayMode(d3d, adapter_idx, &mode);
+            ok(hr == D3D_OK, "Adapter %u test %u: GetAdapterDisplayMode failed, hr %#x.\n",
+                    adapter_idx, test_idx, hr);
+            ok(mode.Width == width, "Adapter %u test %u: Expect width %u, got %u.\n", adapter_idx,
+                    test_idx, width, mode.Width);
+            ok(mode.Height == height, "Adapter %u test %u: Expect height %u, got %u.\n",
+                    adapter_idx, test_idx, height, mode.Height);
+
+            hr = IDirect3DDevice8_GetDisplayMode(device, &mode);
+            ok(hr == D3D_OK, "Adapter %u test %u: GetDisplayMode failed, hr %#x.\n", adapter_idx,
+                    test_idx, hr);
+            ok(mode.Width == width, "Adapter %u test %u: Expect width %u, got %u.\n", adapter_idx,
+                    test_idx, width, mode.Width);
+            ok(mode.Height == height, "Adapter %u test %u: Expect height %u, got %u.\n",
+                    adapter_idx, test_idx, height, mode.Height);
+
+            refcount = IDirect3DDevice8_Release(device);
+            ok(!refcount, "Adapter %u test %u: Device has %u references left.\n", adapter_idx,
+                    test_idx, refcount);
+            DestroyWindow(window);
+        }
+    }
+
+    IDirect3D8_Release(d3d);
 }
 
 static void test_multi_adapter(void)
@@ -9954,9 +10492,8 @@ static void test_multi_adapter(void)
     }
 
     adapter_count = IDirect3D8_GetAdapterCount(d3d);
-    todo_wine_if(expected_adapter_count > 1)
-        ok(adapter_count == expected_adapter_count, "Got unexpected adapter count %u, expected %u.\n",
-                adapter_count, expected_adapter_count);
+    ok(adapter_count == expected_adapter_count, "Got unexpected adapter count %u, expected %u.\n",
+            adapter_count, expected_adapter_count);
 
     for (i = 0; i < adapter_count; ++i)
     {
@@ -9964,8 +10501,8 @@ static void test_multi_adapter(void)
         ok(!!monitor, "Adapter %u: Failed to get monitor.\n", i);
 
         monitor_info.cbSize = sizeof(monitor_info);
-        ok(GetMonitorInfoA(monitor, (MONITORINFO *)&monitor_info),
-                "Adapter %u: Failed to get monitor info, error %#x.\n", i, GetLastError());
+        ret = GetMonitorInfoA(monitor, (MONITORINFO *)&monitor_info);
+        ok(ret, "Adapter %u: Failed to get monitor info, error %#x.\n", i, GetLastError());
 
         if (!i)
             ok(monitor_info.dwFlags == MONITORINFOF_PRIMARY,
@@ -10086,6 +10623,166 @@ static void test_creation_parameters(void)
     DestroyWindow(window);
 }
 
+static void test_cursor_clipping(void)
+{
+    unsigned int adapter_idx, adapter_count, mode_idx;
+    D3DDISPLAYMODE mode, current_mode;
+    struct device_desc device_desc;
+    RECT virtual_rect, clip_rect;
+    IDirect3DDevice8 *device;
+    IDirect3D8 *d3d;
+    HWND window;
+    HRESULT hr;
+    BOOL ret;
+
+    window = create_window();
+    ok(!!window, "Failed to create a window.\n");
+    d3d = Direct3DCreate8(D3D_SDK_VERSION);
+    ok(!!d3d, "Failed to create a D3D object.\n");
+
+    device_desc.device_window = window;
+    device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+
+    adapter_count = IDirect3D8_GetAdapterCount(d3d);
+    for (adapter_idx = 0; adapter_idx < adapter_count; ++adapter_idx)
+    {
+        hr = IDirect3D8_GetAdapterDisplayMode(d3d, adapter_idx, &current_mode);
+        ok(hr == D3D_OK, "Adapter %u: GetAdapterDisplayMode failed, hr %#x.\n", adapter_idx, hr);
+        for (mode_idx = 0; SUCCEEDED(IDirect3D8_EnumAdapterModes(d3d, adapter_idx, mode_idx, &mode));
+                ++mode_idx)
+        {
+            if (mode.Format != D3DFMT_X8R8G8B8)
+                continue;
+            if (mode.Width < 640 || mode.Height < 480)
+                continue;
+            if (mode.Width != current_mode.Width && mode.Height != current_mode.Height)
+                break;
+        }
+        ok(mode.Width != current_mode.Width && mode.Height != current_mode.Height,
+                "Adapter %u: Failed to find a different mode than %ux%u.\n", adapter_idx,
+                current_mode.Width, current_mode.Height);
+
+        ret = ClipCursor(NULL);
+        ok(ret, "Adapter %u: ClipCursor failed, error %#x.\n", adapter_idx,
+                GetLastError());
+        get_virtual_rect(&virtual_rect);
+        ret = GetClipCursor(&clip_rect);
+        ok(ret, "Adapter %u: GetClipCursor failed, error %#x.\n", adapter_idx,
+                GetLastError());
+        ok(EqualRect(&clip_rect, &virtual_rect), "Adapter %u: Expect clip rect %s, got %s.\n",
+                adapter_idx, wine_dbgstr_rect(&virtual_rect), wine_dbgstr_rect(&clip_rect));
+
+        device_desc.adapter_ordinal = adapter_idx;
+        device_desc.width = mode.Width;
+        device_desc.height = mode.Height;
+        if (!(device = create_device(d3d, window, &device_desc)))
+        {
+            skip("Adapter %u: Failed to create a D3D device.\n", adapter_idx);
+            break;
+        }
+        flush_events();
+        get_virtual_rect(&virtual_rect);
+        ret = GetClipCursor(&clip_rect);
+        ok(ret, "Adapter %u: GetClipCursor failed, error %#x.\n", adapter_idx,
+                GetLastError());
+        ok(EqualRect(&clip_rect, &virtual_rect), "Adapter %u: Expect clip rect %s, got %s.\n",
+                adapter_idx, wine_dbgstr_rect(&virtual_rect), wine_dbgstr_rect(&clip_rect));
+
+        IDirect3DDevice8_Release(device);
+        flush_events();
+        get_virtual_rect(&virtual_rect);
+        ret = GetClipCursor(&clip_rect);
+        ok(ret, "Adapter %u: GetClipCursor failed, error %#x.\n", adapter_idx,
+                GetLastError());
+        ok(EqualRect(&clip_rect, &virtual_rect), "Adapter %u: Expect clip rect %s, got %s.\n",
+                adapter_idx, wine_dbgstr_rect(&virtual_rect), wine_dbgstr_rect(&clip_rect));
+    }
+
+    IDirect3D8_Release(d3d);
+    DestroyWindow(window);
+}
+
+static void test_window_position(void)
+{
+    unsigned int adapter_idx, adapter_count;
+    struct device_desc device_desc;
+    IDirect3DDevice8 *device;
+    MONITORINFO monitor_info;
+    HMONITOR monitor;
+    RECT window_rect;
+    IDirect3D8 *d3d;
+    HWND window;
+    HRESULT hr;
+    BOOL ret;
+
+    d3d = Direct3DCreate8(D3D_SDK_VERSION);
+    ok(!!d3d, "Failed to create a D3D object.\n");
+
+    adapter_count = IDirect3D8_GetAdapterCount(d3d);
+    for (adapter_idx = 0; adapter_idx < adapter_count; ++adapter_idx)
+    {
+        monitor = IDirect3D8_GetAdapterMonitor(d3d, adapter_idx);
+        ok(!!monitor, "Adapter %u: GetAdapterMonitor failed.\n", adapter_idx);
+        monitor_info.cbSize = sizeof(monitor_info);
+        ret = GetMonitorInfoW(monitor, &monitor_info);
+        ok(ret, "Adapter %u: GetMonitorInfoW failed, error %#x.\n", adapter_idx, GetLastError());
+
+        window = create_window();
+        device_desc.adapter_ordinal = adapter_idx;
+        device_desc.device_window = window;
+        device_desc.width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left;
+        device_desc.height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top;
+        device_desc.flags = CREATE_DEVICE_FULLSCREEN;
+        if (!(device = create_device(d3d, window, &device_desc)))
+        {
+            skip("Adapter %u: Failed to create a D3D device, skipping tests.\n", adapter_idx);
+            DestroyWindow(window);
+            continue;
+        }
+        flush_events();
+        ret = GetWindowRect(window, &window_rect);
+        ok(ret, "Adapter %u: GetWindowRect failed, error %#x.\n", adapter_idx, GetLastError());
+        ok(EqualRect(&window_rect, &monitor_info.rcMonitor),
+                "Adapter %u: Expect window rect %s, got %s.\n", adapter_idx,
+                wine_dbgstr_rect(&monitor_info.rcMonitor), wine_dbgstr_rect(&window_rect));
+
+        /* Device resets should restore the window rectangle to fit the whole monitor */
+        ret = SetWindowPos(window, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+        ok(ret, "Adapter %u: SetWindowPos failed, error %#x.\n", adapter_idx, GetLastError());
+        hr = reset_device(device, &device_desc);
+        ok(hr == D3D_OK, "Adapter %u: Failed to reset device, hr %#x.\n", adapter_idx, hr);
+        flush_events();
+        ret = GetWindowRect(window, &window_rect);
+        ok(ret, "Adapter %u: GetWindowRect failed, error %#x.\n", adapter_idx, GetLastError());
+        ok(EqualRect(&window_rect, &monitor_info.rcMonitor),
+                "Adapter %u: Expect window rect %s, got %s.\n", adapter_idx,
+                wine_dbgstr_rect(&monitor_info.rcMonitor), wine_dbgstr_rect(&window_rect));
+
+        /* Window activation should restore the window rectangle to fit the whole monitor */
+        ret = SetWindowPos(window, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+        ok(ret, "Adapter %u: SetWindowPos failed, error %#x.\n", adapter_idx, GetLastError());
+        ret = SetForegroundWindow(GetDesktopWindow());
+        ok(ret, "Adapter %u: SetForegroundWindow failed, error %#x.\n", adapter_idx, GetLastError());
+        flush_events();
+        ret = ShowWindow(window, SW_RESTORE);
+        ok(ret, "Adapter %u: Failed to restore window, error %#x.\n", adapter_idx, GetLastError());
+        flush_events();
+        ret = SetForegroundWindow(window);
+        ok(ret, "Adapter %u: SetForegroundWindow failed, error %#x.\n", adapter_idx, GetLastError());
+        flush_events();
+        ret = GetWindowRect(window, &window_rect);
+        ok(ret, "Adapter %u: GetWindowRect failed, error %#x.\n", adapter_idx, GetLastError());
+        ok(EqualRect(&window_rect, &monitor_info.rcMonitor),
+                "Adapter %u: Expect window rect %s, got %s.\n", adapter_idx,
+                wine_dbgstr_rect(&monitor_info.rcMonitor), wine_dbgstr_rect(&window_rect));
+
+        IDirect3DDevice8_Release(device);
+        DestroyWindow(window);
+    }
+
+    IDirect3D8_Release(d3d);
+}
+
 START_TEST(device)
 {
     HMODULE d3d8_handle = GetModuleHandleA("d3d8.dll");
@@ -10204,6 +10901,8 @@ START_TEST(device)
     test_get_display_mode();
     test_multi_adapter();
     test_creation_parameters();
+    test_cursor_clipping();
+    test_window_position();
 
     UnregisterClassA("d3d8_test_wc", GetModuleHandleA(NULL));
 }

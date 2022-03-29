@@ -33,6 +33,7 @@
 #include "winnls.h"
 #include "winternl.h"
 #include "winerror.h"
+#include "ddk/wdm.h"
 
 #include "kernelbase.h"
 #include "wine/exception.h"
@@ -73,16 +74,23 @@ SIZE_T WINAPI GetLargePageMinimum(void)
  */
 void WINAPI DECLSPEC_HOTPATCH GetNativeSystemInfo( SYSTEM_INFO *si )
 {
+    USHORT current_machine, native_machine;
+
     GetSystemInfo( si );
-    if (!is_wow64) return;
-    switch (si->u.s.wProcessorArchitecture)
+    RtlWow64GetProcessMachines( GetCurrentProcess(), &current_machine, &native_machine );
+    if (!current_machine) return;
+    switch (native_machine)
     {
-    case PROCESSOR_ARCHITECTURE_INTEL:
+    case IMAGE_FILE_MACHINE_AMD64:
         si->u.s.wProcessorArchitecture = PROCESSOR_ARCHITECTURE_AMD64;
         si->dwProcessorType = PROCESSOR_AMD_X8664;
         break;
+    case IMAGE_FILE_MACHINE_ARM64:
+        si->u.s.wProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+        si->dwProcessorType = 0;
+        break;
     default:
-        FIXME( "Add the proper information for %d in wow64 mode\n", si->u.s.wProcessorArchitecture );
+        FIXME( "Add the proper information for %x in wow64 mode\n", native_machine );
     }
 }
 
@@ -101,7 +109,7 @@ void WINAPI DECLSPEC_HOTPATCH GetSystemInfo( SYSTEM_INFO *si )
                                                  &cpu_info, sizeof(cpu_info), NULL )))
         return;
 
-    si->u.s.wProcessorArchitecture  = cpu_info.Architecture;
+    si->u.s.wProcessorArchitecture  = cpu_info.ProcessorArchitecture;
     si->u.s.wReserved               = 0;
     si->dwPageSize                  = basic_info.PageSize;
     si->lpMinimumApplicationAddress = basic_info.LowestUserAddress;
@@ -109,13 +117,13 @@ void WINAPI DECLSPEC_HOTPATCH GetSystemInfo( SYSTEM_INFO *si )
     si->dwActiveProcessorMask       = basic_info.ActiveProcessorsAffinityMask;
     si->dwNumberOfProcessors        = basic_info.NumberOfProcessors;
     si->dwAllocationGranularity     = basic_info.AllocationGranularity;
-    si->wProcessorLevel             = cpu_info.Level;
-    si->wProcessorRevision          = cpu_info.Revision;
+    si->wProcessorLevel             = cpu_info.ProcessorLevel;
+    si->wProcessorRevision          = cpu_info.ProcessorRevision;
 
-    switch (cpu_info.Architecture)
+    switch (cpu_info.ProcessorArchitecture)
     {
     case PROCESSOR_ARCHITECTURE_INTEL:
-        switch (cpu_info.Level)
+        switch (cpu_info.ProcessorLevel)
         {
         case 3:  si->dwProcessorType = PROCESSOR_INTEL_386;     break;
         case 4:  si->dwProcessorType = PROCESSOR_INTEL_486;     break;
@@ -125,7 +133,7 @@ void WINAPI DECLSPEC_HOTPATCH GetSystemInfo( SYSTEM_INFO *si )
         }
         break;
     case PROCESSOR_ARCHITECTURE_PPC:
-        switch (cpu_info.Level)
+        switch (cpu_info.ProcessorLevel)
         {
         case 1:  si->dwProcessorType = PROCESSOR_PPC_601;       break;
         case 3:
@@ -140,7 +148,7 @@ void WINAPI DECLSPEC_HOTPATCH GetSystemInfo( SYSTEM_INFO *si )
         si->dwProcessorType = PROCESSOR_AMD_X8664;
         break;
     case PROCESSOR_ARCHITECTURE_ARM:
-        switch (cpu_info.Level)
+        switch (cpu_info.ProcessorLevel)
         {
         case 4:  si->dwProcessorType = PROCESSOR_ARM_7TDMI;     break;
         default: si->dwProcessorType = PROCESSOR_ARM920;
@@ -150,7 +158,7 @@ void WINAPI DECLSPEC_HOTPATCH GetSystemInfo( SYSTEM_INFO *si )
         si->dwProcessorType = 0;
         break;
     default:
-        FIXME( "Unknown processor architecture %x\n", cpu_info.Architecture );
+        FIXME( "Unknown processor architecture %x\n", cpu_info.ProcessorArchitecture );
         si->dwProcessorType = 0;
         break;
     }
@@ -252,7 +260,7 @@ UINT WINAPI DECLSPEC_HOTPATCH ResetWriteWatch( void *base, SIZE_T size )
  */
 BOOL WINAPI DECLSPEC_HOTPATCH SetSystemFileCacheSize( SIZE_T mincache, SIZE_T maxcache, DWORD flags )
 {
-    FIXME( "stub: %ld %ld %d\n", mincache, maxcache, flags );
+    FIXME( "stub: %Id %Id %ld\n", mincache, maxcache, flags );
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
     return FALSE;
 }
@@ -295,6 +303,54 @@ LPVOID WINAPI DECLSPEC_HOTPATCH VirtualAllocEx( HANDLE process, void *addr, SIZE
 
     if (!set_ntstatus( NtAllocateVirtualMemory( process, &ret, 0, &size, type, protect ))) return NULL;
     return ret;
+}
+
+
+/***********************************************************************
+ *             VirtualAlloc2   (kernelbase.@)
+ */
+LPVOID WINAPI DECLSPEC_HOTPATCH VirtualAlloc2( HANDLE process, void *addr, SIZE_T size,
+                                               DWORD type, DWORD protect,
+                                               MEM_EXTENDED_PARAMETER *parameters, ULONG count )
+{
+    LPVOID ret = addr;
+
+    if (!set_ntstatus( NtAllocateVirtualMemoryEx( process, &ret, &size, type, protect, parameters, count )))
+        return NULL;
+    return ret;
+}
+
+
+/***********************************************************************
+ *             VirtualAllocFromApp   (kernelbase.@)
+ */
+LPVOID WINAPI DECLSPEC_HOTPATCH VirtualAllocFromApp( void *addr, SIZE_T size,
+                                                DWORD type, DWORD protect )
+{
+    LPVOID ret = addr;
+
+    TRACE_(virtual)( "addr %p, size %p, type %#lx, protect %#lx.\n", addr, (void *)size, type, protect );
+
+    if (protect == PAGE_EXECUTE || protect == PAGE_EXECUTE_READ || protect == PAGE_EXECUTE_READWRITE
+            || protect == PAGE_EXECUTE_WRITECOPY)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    if (!set_ntstatus( NtAllocateVirtualMemory( GetCurrentProcess(), &ret, 0, &size, type, protect ))) return NULL;
+    return ret;
+}
+
+
+/***********************************************************************
+ *             PrefetchVirtualMemory   (kernelbase.@)
+ */
+BOOL WINAPI /* DECLSPEC_HOTPATCH */ PrefetchVirtualMemory( HANDLE process, ULONG_PTR count,
+                                                           WIN32_MEMORY_RANGE_ENTRY *addresses, ULONG flags )
+{
+    FIXME( "process %p, count %p, addresses %p, flags %#lx stub.\n", process, (void *)count, addresses, flags );
+    return TRUE;
 }
 
 
@@ -987,6 +1043,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
     static DWORD last_check;
     SYSTEM_BASIC_INFORMATION basic_info;
     SYSTEM_PERFORMANCE_INFORMATION perf_info;
+    VM_COUNTERS_EX vmc;
 
     if (status->dwLength != sizeof(*status))
     {
@@ -1003,16 +1060,18 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
     if (!set_ntstatus( NtQuerySystemInformation( SystemBasicInformation,
                                                  &basic_info, sizeof(basic_info), NULL )) ||
         !set_ntstatus( NtQuerySystemInformation( SystemPerformanceInformation,
-                                                 &perf_info, sizeof(perf_info), NULL)))
+                                                 &perf_info, sizeof(perf_info), NULL)) ||
+        !set_ntstatus( NtQueryInformationProcess( GetCurrentProcess(), ProcessVmCounters,
+                                                  &vmc, sizeof(vmc), NULL )))
         return FALSE;
 
     status->dwMemoryLoad     = 0;
-    status->ullTotalPhys     = perf_info.TotalCommitLimit;
+    status->ullTotalPhys     = basic_info.MmNumberOfPhysicalPages;
     status->ullAvailPhys     = perf_info.AvailablePages;
-    status->ullTotalPageFile = perf_info.TotalCommitLimit + 1; /* Titan Quest refuses to run if TotalPageFile <= TotalPhys */
+    status->ullTotalPageFile = perf_info.TotalCommitLimit;
     status->ullAvailPageFile = status->ullTotalPageFile - perf_info.TotalCommittedPages;
-    status->ullTotalVirtual  = (ULONG_PTR)basic_info.HighestUserAddress - (ULONG_PTR)basic_info.LowestUserAddress;
-    status->ullAvailVirtual  = status->ullTotalVirtual - 64 * 1024;  /* FIXME */
+    status->ullTotalVirtual  = (ULONG_PTR)basic_info.HighestUserAddress - (ULONG_PTR)basic_info.LowestUserAddress + 1;
+    status->ullAvailVirtual  = status->ullTotalVirtual - (ULONGLONG)vmc.WorkingSetSize /* approximate */;
     status->ullAvailExtendedVirtual = 0;
 
     status->ullTotalPhys     *= basic_info.PageSize;
@@ -1023,7 +1082,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
     if (status->ullTotalPhys)
         status->dwMemoryLoad = (status->ullTotalPhys - status->ullAvailPhys) / (status->ullTotalPhys / 100);
 
-    TRACE_(virtual)( "MemoryLoad %d, TotalPhys %s, AvailPhys %s, TotalPageFile %s,"
+    TRACE_(virtual)( "MemoryLoad %ld, TotalPhys %s, AvailPhys %s, TotalPageFile %s,"
                      "AvailPageFile %s, TotalVirtual %s, AvailVirtual %s\n",
                     status->dwMemoryLoad, wine_dbgstr_longlong(status->ullTotalPhys),
                     wine_dbgstr_longlong(status->ullAvailPhys), wine_dbgstr_longlong(status->ullTotalPageFile),
@@ -1040,7 +1099,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GlobalMemoryStatusEx( MEMORYSTATUSEX *status )
  */
 BOOL WINAPI DECLSPEC_HOTPATCH MapUserPhysicalPages( void *addr, ULONG_PTR page_count, ULONG_PTR *pages )
 {
-    FIXME( "stub: %p %lu %p\n", addr, page_count, pages );
+    FIXME( "stub: %p %Iu %p\n", addr, page_count, pages );
     *pages = 0;
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
     return FALSE;
@@ -1058,7 +1117,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH MapUserPhysicalPages( void *addr, ULONG_PTR page_c
 BOOL WINAPI DECLSPEC_HOTPATCH AllocateUserPhysicalPagesNuma( HANDLE process, ULONG_PTR *pages,
                                                              ULONG_PTR *userarray, DWORD node )
 {
-    if (node) FIXME( "Ignoring preferred node %u\n", node );
+    if (node) FIXME( "Ignoring preferred node %lu\n", node );
     return AllocateUserPhysicalPages( process, pages, userarray );
 }
 
@@ -1070,7 +1129,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateFileMappingNumaW( HANDLE file, LPSECURITY_
                                                         DWORD protect, DWORD size_high, DWORD size_low,
                                                         LPCWSTR name, DWORD node )
 {
-    if (node) FIXME( "Ignoring preferred node %u\n", node );
+    if (node) FIXME( "Ignoring preferred node %lu\n", node );
     return CreateFileMappingW( file, sa, protect, size_high, size_low, name );
 }
 
@@ -1114,6 +1173,33 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetLogicalProcessorInformationEx( LOGICAL_PROCESSO
 }
 
 
+/***********************************************************************
+ *           GetSystemCpuSetInformation   (kernelbase.@)
+ */
+BOOL WINAPI GetSystemCpuSetInformation(SYSTEM_CPU_SET_INFORMATION *info, ULONG buffer_length, ULONG *return_length,
+                                            HANDLE process, ULONG flags)
+{
+    if (flags)
+        FIXME("Unsupported flags %#lx.\n", flags);
+
+    *return_length = 0;
+
+    return set_ntstatus( NtQuerySystemInformationEx( SystemCpuSetInformation, &process, sizeof(process), info,
+            buffer_length, return_length ));
+}
+
+
+/***********************************************************************
+ *           SetThreadSelectedCpuSets   (kernelbase.@)
+ */
+BOOL WINAPI SetThreadSelectedCpuSets(HANDLE thread, const ULONG *cpu_set_ids, ULONG count)
+{
+    FIXME( "thread %p, cpu_set_ids %p, count %lu stub.\n", thread, cpu_set_ids, count );
+
+    return TRUE;
+}
+
+
 /**********************************************************************
  *             GetNumaHighestNodeNumber   (kernelbase.@)
  */
@@ -1153,7 +1239,7 @@ LPVOID WINAPI DECLSPEC_HOTPATCH MapViewOfFileExNuma( HANDLE handle, DWORD access
                                                      DWORD offset_low, SIZE_T count, LPVOID addr,
                                                      DWORD node )
 {
-    if (node) FIXME( "Ignoring preferred node %u\n", node );
+    if (node) FIXME( "Ignoring preferred node %lu\n", node );
     return MapViewOfFileEx( handle, access, offset_high, offset_low, count, addr );
 }
 
@@ -1164,10 +1250,208 @@ LPVOID WINAPI DECLSPEC_HOTPATCH MapViewOfFileExNuma( HANDLE handle, DWORD access
 LPVOID WINAPI DECLSPEC_HOTPATCH VirtualAllocExNuma( HANDLE process, void *addr, SIZE_T size,
                                                     DWORD type, DWORD protect, DWORD node )
 {
-    if (node) FIXME( "Ignoring preferred node %u\n", node );
+    if (node) FIXME( "Ignoring preferred node %lu\n", node );
     return VirtualAllocEx( process, addr, size, type, protect );
 }
 
+
+/***********************************************************************
+ * CPU functions
+ ***********************************************************************/
+
+
+#if defined(__i386__) || defined(__x86_64__)
+/***********************************************************************
+ *             GetEnabledXStateFeatures   (kernelbase.@)
+ */
+DWORD64 WINAPI GetEnabledXStateFeatures(void)
+{
+    TRACE( "\n" );
+    return RtlGetEnabledExtendedFeatures( ~(ULONG64)0 );
+}
+
+
+/***********************************************************************
+ *             InitializeContext2         (kernelbase.@)
+ */
+BOOL WINAPI InitializeContext2( void *buffer, DWORD context_flags, CONTEXT **context, DWORD *length,
+        ULONG64 compaction_mask )
+{
+    ULONG orig_length;
+    NTSTATUS status;
+
+    TRACE( "buffer %p, context_flags %#lx, context %p, ret_length %p, compaction_mask %s.\n",
+            buffer, context_flags, context, length, wine_dbgstr_longlong(compaction_mask) );
+
+    orig_length = *length;
+
+    if ((status = RtlGetExtendedContextLength2( context_flags, length, compaction_mask )))
+    {
+        if (status == STATUS_NOT_SUPPORTED && context_flags & 0x40)
+        {
+            context_flags &= ~0x40;
+            status = RtlGetExtendedContextLength2( context_flags, length, compaction_mask );
+        }
+
+        if (status)
+            return set_ntstatus( status );
+    }
+
+    if (!buffer || orig_length < *length)
+    {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return FALSE;
+    }
+
+    if ((status = RtlInitializeExtendedContext2( buffer, context_flags, (CONTEXT_EX **)context, compaction_mask )))
+        return set_ntstatus( status );
+
+    *context = (CONTEXT *)((BYTE *)*context + (*(CONTEXT_EX **)context)->Legacy.Offset);
+
+    return TRUE;
+}
+
+/***********************************************************************
+ *             InitializeContext               (kernelbase.@)
+ */
+BOOL WINAPI InitializeContext( void *buffer, DWORD context_flags, CONTEXT **context, DWORD *length )
+{
+    return InitializeContext2( buffer, context_flags, context, length, ~(ULONG64)0 );
+}
+
+/***********************************************************************
+ *           CopyContext                       (kernelbase.@)
+ */
+BOOL WINAPI CopyContext( CONTEXT *dst, DWORD context_flags, CONTEXT *src )
+{
+    return set_ntstatus( RtlCopyContext( dst, context_flags, src ));
+}
+#endif
+
+
+#if defined(__x86_64__)
+/***********************************************************************
+ *           LocateXStateFeature   (kernelbase.@)
+ */
+void * WINAPI LocateXStateFeature( CONTEXT *context, DWORD feature_id, DWORD *length )
+{
+    if (!(context->ContextFlags & CONTEXT_AMD64))
+        return NULL;
+
+    if (feature_id >= 2)
+        return ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+                ? RtlLocateExtendedFeature( (CONTEXT_EX *)(context + 1), feature_id, length ) : NULL;
+
+    if (feature_id == 1)
+    {
+        if (length)
+            *length = sizeof(M128A) * 16;
+
+        return &context->u.FltSave.XmmRegisters;
+    }
+
+    if (length)
+        *length = offsetof(XSAVE_FORMAT, XmmRegisters);
+
+    return &context->u.FltSave;
+}
+
+/***********************************************************************
+ *           SetXStateFeaturesMask (kernelbase.@)
+ */
+BOOL WINAPI SetXStateFeaturesMask( CONTEXT *context, DWORD64 feature_mask )
+{
+    if (!(context->ContextFlags & CONTEXT_AMD64))
+        return FALSE;
+
+    if (feature_mask & 0x3)
+        context->ContextFlags |= CONTEXT_FLOATING_POINT;
+
+    if ((context->ContextFlags & CONTEXT_XSTATE) != CONTEXT_XSTATE)
+        return !(feature_mask & ~(DWORD64)3);
+
+    RtlSetExtendedFeaturesMask( (CONTEXT_EX *)(context + 1), feature_mask );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           GetXStateFeaturesMask (kernelbase.@)
+ */
+BOOL WINAPI GetXStateFeaturesMask( CONTEXT *context, DWORD64 *feature_mask )
+{
+    if (!(context->ContextFlags & CONTEXT_AMD64))
+        return FALSE;
+
+    *feature_mask = (context->ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT
+            ? 3 : 0;
+
+    if ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+        *feature_mask |= RtlGetExtendedFeaturesMask( (CONTEXT_EX *)(context + 1) );
+
+    return TRUE;
+}
+#elif defined(__i386__)
+/***********************************************************************
+ *           LocateXStateFeature   (kernelbase.@)
+ */
+void * WINAPI LocateXStateFeature( CONTEXT *context, DWORD feature_id, DWORD *length )
+{
+    if (!(context->ContextFlags & CONTEXT_i386))
+        return NULL;
+
+    if (feature_id >= 2)
+        return ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+                ? RtlLocateExtendedFeature( (CONTEXT_EX *)(context + 1), feature_id, length ) : NULL;
+
+    if (feature_id == 1)
+    {
+        if (length)
+            *length = sizeof(M128A) * 8;
+
+        return (BYTE *)&context->ExtendedRegisters + offsetof(XSAVE_FORMAT, XmmRegisters);
+    }
+
+    if (length)
+        *length = offsetof(XSAVE_FORMAT, XmmRegisters);
+
+    return &context->ExtendedRegisters;
+}
+
+/***********************************************************************
+ *           SetXStateFeaturesMask (kernelbase.@)
+ */
+BOOL WINAPI SetXStateFeaturesMask( CONTEXT *context, DWORD64 feature_mask )
+{
+    if (!(context->ContextFlags & CONTEXT_i386))
+        return FALSE;
+
+    if (feature_mask & 0x3)
+        context->ContextFlags |= CONTEXT_EXTENDED_REGISTERS;
+
+    if ((context->ContextFlags & CONTEXT_XSTATE) != CONTEXT_XSTATE)
+        return !(feature_mask & ~(DWORD64)3);
+
+    RtlSetExtendedFeaturesMask( (CONTEXT_EX *)(context + 1), feature_mask );
+    return TRUE;
+}
+
+/***********************************************************************
+ *           GetXStateFeaturesMask (kernelbase.@)
+ */
+BOOL WINAPI GetXStateFeaturesMask( CONTEXT *context, DWORD64 *feature_mask )
+{
+    if (!(context->ContextFlags & CONTEXT_i386))
+        return FALSE;
+
+    *feature_mask = (context->ContextFlags & CONTEXT_EXTENDED_REGISTERS) == CONTEXT_EXTENDED_REGISTERS
+            ? 3 : 0;
+
+    if ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+        *feature_mask |= RtlGetExtendedFeaturesMask( (CONTEXT_EX *)(context + 1) );
+
+    return TRUE;
+}
+#endif
 
 /***********************************************************************
  * Firmware functions
@@ -1179,7 +1463,7 @@ LPVOID WINAPI DECLSPEC_HOTPATCH VirtualAllocExNuma( HANDLE process, void *addr, 
  */
 UINT WINAPI EnumSystemFirmwareTables( DWORD provider, void *buffer, DWORD size )
 {
-    FIXME( "(0x%08x, %p, %d)\n", provider, buffer, size );
+    FIXME( "(0x%08lx, %p, %ld)\n", provider, buffer, size );
     return 0;
 }
 
@@ -1192,7 +1476,7 @@ UINT WINAPI GetSystemFirmwareTable( DWORD provider, DWORD id, void *buffer, DWOR
     SYSTEM_FIRMWARE_TABLE_INFORMATION *info;
     ULONG buffer_size = offsetof( SYSTEM_FIRMWARE_TABLE_INFORMATION, TableBuffer ) + size;
 
-    TRACE( "(0x%08x, 0x%08x, %p, %d)\n", provider, id, buffer, size );
+    TRACE( "(0x%08lx, 0x%08lx, %p, %ld)\n", provider, id, buffer, size );
 
     if (!(info = RtlAllocateHeap( GetProcessHeap(), 0, buffer_size )))
     {

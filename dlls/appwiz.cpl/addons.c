@@ -33,6 +33,7 @@
 #include "commctrl.h"
 #include "advpub.h"
 #include "wininet.h"
+#include "pathcch.h"
 #include "shellapi.h"
 #include "urlmon.h"
 #include "msi.h"
@@ -45,21 +46,26 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(appwizcpl);
 
-#define GECKO_VERSION "2.47.1"
-
+#define GECKO_VERSION "2.47.2"
 #ifdef __i386__
-#define ARCH_STRING "x86"
-#define GECKO_SHA "f00b0e2892404827e8ce6811dedfc25ae699a09955bb3df1bbb31753e51da051"
+#define GECKO_ARCH "x86"
+#define GECKO_SHA "e520ce7336cd420cd09c91337d87e74bb420300fd5cbc6f724c1802766b6a61d"
 #elif defined(__x86_64__)
-#define ARCH_STRING "x86_64"
-#define GECKO_SHA "69312e79a988da3e7d292382005e92bc4d4b2a52a23c34440ae3007feb57474a"
+#define GECKO_ARCH "x86_64"
+#define GECKO_SHA "0596761024823ff3c21f13e1cd5cd3e89dccc698294d62974d8930aeda86ce45"
 #else
-#define ARCH_STRING ""
+#define GECKO_ARCH ""
 #define GECKO_SHA "???"
 #endif
 
-#define MONO_VERSION "4.9.4"
-#define MONO_SHA "51a6ff38323fcda71d70ead90c252b5eaeacec542ba737dbd1d676787b210fdd"
+#define MONO_VERSION "7.1.1"
+#if defined(__i386__) || defined(__x86_64__)
+#define MONO_ARCH "x86"
+#define MONO_SHA "9dc8e5603b7bc64354eb94ae4ea0f6821424767a3ff44ff0d19e346a490c11ea"
+#else
+#define MONO_ARCH ""
+#define MONO_SHA "???"
+#endif
 
 typedef struct {
     const char *version;
@@ -79,7 +85,7 @@ typedef struct {
 static const addon_info_t addons_info[] = {
     {
         GECKO_VERSION,
-        L"wine-gecko-" GECKO_VERSION "-" ARCH_STRING ".msi",
+        L"wine-gecko-" GECKO_VERSION "-" GECKO_ARCH ".msi",
         L"gecko",
         GECKO_SHA,
         "http://source.winehq.org/winegecko.php",
@@ -88,7 +94,7 @@ static const addon_info_t addons_info[] = {
     },
     {
         MONO_VERSION,
-        L"wine-mono-" MONO_VERSION ".msi",
+        L"wine-mono-" MONO_VERSION "-" MONO_ARCH ".msi",
         L"mono",
         MONO_SHA,
         "http://source.winehq.org/winemono.php",
@@ -104,14 +110,9 @@ static LPWSTR url = NULL;
 static IBinding *dwl_binding;
 static WCHAR *msi_file;
 
-static const WCHAR winehomedirW[] = {'W','I','N','E','H','O','M','E','D','I','R',0};
-static const WCHAR winedatadirW[] = {'W','I','N','E','D','A','T','A','D','I','R',0};
-static const WCHAR winebuilddirW[] = {'W','I','N','E','B','U','I','L','D','D','I','R',0};
-
 extern const char * CDECL wine_get_version(void);
 
 static WCHAR * (CDECL *p_wine_get_dos_file_name)(const char*);
-static const WCHAR kernel32_dllW[] = {'k','e','r','n','e','l','3','2','.','d','l','l',0};
 
 static BOOL sha_check(const WCHAR *file_name)
 {
@@ -126,7 +127,7 @@ static BOOL sha_check(const WCHAR *file_name)
 
     file = CreateFileW(file_name, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
     if(file == INVALID_HANDLE_VALUE) {
-        WARN("Could not open file: %u\n", GetLastError());
+        WARN("Could not open file: %lu\n", GetLastError());
         return FALSE;
     }
 
@@ -182,16 +183,13 @@ enum install_res {
 
 static enum install_res install_file(const WCHAR *file_name)
 {
-    static const WCHAR update_cmd[] = {
-        'R','E','I','N','S','T','A','L','L','=','A','L','L',' ',
-        'R','E','I','N','S','T','A','L','L','M','O','D','E','=','v','o','m','u','s',0};
     ULONG res;
 
     res = MsiInstallProductW(file_name, NULL);
     if(res == ERROR_PRODUCT_VERSION)
-        res = MsiInstallProductW(file_name, update_cmd);
+        res = MsiInstallProductW(file_name, L"REINSTALL=ALL REINSTALLMODE=vomus");
     if(res != ERROR_SUCCESS) {
-        ERR("MsiInstallProduct failed: %u\n", res);
+        ERR("MsiInstallProduct failed: %lu\n", res);
         return INSTALL_FAILED;
     }
 
@@ -200,10 +198,11 @@ static enum install_res install_file(const WCHAR *file_name)
 
 static enum install_res install_from_dos_file(const WCHAR *dir, const WCHAR *subdir, const WCHAR *file_name)
 {
-    WCHAR *path;
+    WCHAR *path, *canonical_path;
     enum install_res ret;
     int len = lstrlenW( dir );
     int size = len + 1;
+    HRESULT hr;
 
     size += lstrlenW( subdir ) + lstrlenW( file_name ) + 2;
     if (!(path = heap_alloc( size * sizeof(WCHAR) ))) return INSTALL_FAILED;
@@ -216,16 +215,25 @@ static enum install_res install_from_dos_file(const WCHAR *dir, const WCHAR *sub
     lstrcatW( path, L"\\" );
     lstrcatW( path, file_name );
 
-    if (GetFileAttributesW( path ) == INVALID_FILE_ATTRIBUTES)
+    hr = PathAllocCanonicalize( path, PATHCCH_ALLOW_LONG_PATHS, &canonical_path );
+    if (FAILED( hr ))
     {
-        TRACE( "%s not found\n", debugstr_w(path) );
+        ERR( "Failed to canonicalize %s, hr %#lx\n", debugstr_w(path), hr );
         heap_free( path );
         return INSTALL_NEXT;
     }
-
-    ret = install_file( path );
-
     heap_free( path );
+
+    if (GetFileAttributesW( canonical_path ) == INVALID_FILE_ATTRIBUTES)
+    {
+        TRACE( "%s not found\n", debugstr_w(canonical_path) );
+        LocalFree( canonical_path );
+        return INSTALL_NEXT;
+    }
+
+    ret = install_file( canonical_path );
+
+    LocalFree( canonical_path );
     return ret;
 }
 
@@ -247,10 +255,8 @@ static HKEY open_config_key(void)
     HKEY hkey, ret;
     DWORD res;
 
-    static const WCHAR wine_keyW[] = {'S','o','f','t','w','a','r','e','\\','W','i','n','e',0};
-
     /* @@ Wine registry key: HKCU\Software\Wine\$config_key */
-    res = RegOpenKeyW(HKEY_CURRENT_USER, wine_keyW, &hkey);
+    res = RegOpenKeyW(HKEY_CURRENT_USER, L"Software\\Wine", &hkey);
     if(res != ERROR_SUCCESS)
         return NULL;
 
@@ -293,19 +299,18 @@ static enum install_res install_from_registered_dir(void)
 
 static enum install_res install_from_default_dir(void)
 {
-    static const WCHAR dotdotW[] = {'\\','.','.','\\',0};
     const WCHAR *package_dir;
     WCHAR *dir_buf = NULL;
     enum install_res ret = INSTALL_NEXT;
 
-    if ((package_dir = _wgetenv( winebuilddirW )))
+    if ((package_dir = _wgetenv( L"WINEBUILDDIR" )))
     {
-        dir_buf = heap_alloc( lstrlenW(package_dir) * sizeof(WCHAR) + sizeof(dotdotW));
+        dir_buf = heap_alloc( lstrlenW(package_dir) * sizeof(WCHAR) + sizeof(L"\\..\\") );
         lstrcpyW( dir_buf, package_dir );
-        lstrcatW( dir_buf, dotdotW );
+        lstrcatW( dir_buf, L"\\..\\" );
         package_dir = dir_buf;
     }
-    else package_dir = _wgetenv( winedatadirW );
+    else package_dir = _wgetenv( L"WINEDATADIR" );
 
     if (package_dir)
     {
@@ -315,7 +320,7 @@ static enum install_res install_from_default_dir(void)
 
     if (ret == INSTALL_NEXT)
         ret = install_from_unix_file(INSTALL_DATADIR "/wine/", addon->subdir_name, addon->file_name);
-    if (ret == INSTALL_NEXT && strcmp(INSTALL_DATADIR, "/usr/share"))
+    if (ret == INSTALL_NEXT && strcmp(INSTALL_DATADIR, "/usr/share") != 0)
         ret = install_from_unix_file("/usr/share/wine/", addon->subdir_name, addon->file_name);
     if (ret == INSTALL_NEXT)
         ret = install_from_unix_file("/opt/wine/", addon->subdir_name, addon->file_name);
@@ -324,8 +329,6 @@ static enum install_res install_from_default_dir(void)
 
 static WCHAR *get_cache_file_name(BOOL ensure_exists)
 {
-    static const WCHAR cacheW[] = {'\\','.','c','a','c','h','e',0};
-    static const WCHAR wineW[] = {'\\','w','i','n','e',0};
     const char *xdg_dir;
     const WCHAR *home_dir;
     WCHAR *cache_dir, *ret;
@@ -336,35 +339,35 @@ static WCHAR *get_cache_file_name(BOOL ensure_exists)
     {
         if (!(cache_dir = p_wine_get_dos_file_name( xdg_dir ))) return NULL;
     }
-    else if ((home_dir = _wgetenv( winehomedirW )))
+    else if ((home_dir = _wgetenv( L"WINEHOMEDIR" )))
     {
-        if (!(cache_dir = heap_alloc( lstrlenW(home_dir) * sizeof(WCHAR) + sizeof(cacheW) ))) return NULL;
+        if (!(cache_dir = heap_alloc( lstrlenW(home_dir) * sizeof(WCHAR) + sizeof(L"\\.cache") ))) return NULL;
         lstrcpyW( cache_dir, home_dir );
-        lstrcatW( cache_dir, cacheW );
+        lstrcatW( cache_dir, L"\\.cache" );
         cache_dir[1] = '\\';  /* change \??\ into \\?\ */
     }
     else return NULL;
 
     if (ensure_exists && !CreateDirectoryW( cache_dir, NULL ) && GetLastError() != ERROR_ALREADY_EXISTS)
     {
-        WARN( "%s does not exist and could not be created (%u)\n", debugstr_w(cache_dir), GetLastError() );
+        WARN( "%s does not exist and could not be created (%lu)\n", debugstr_w(cache_dir), GetLastError() );
         heap_free( cache_dir );
         return NULL;
     }
 
-    size = lstrlenW( cache_dir ) + ARRAY_SIZE(wineW) + lstrlenW( addon->file_name ) + 1;
+    size = lstrlenW( cache_dir ) + ARRAY_SIZE(L"\\wine") + lstrlenW( addon->file_name ) + 1;
     if (!(ret = heap_alloc( size * sizeof(WCHAR) )))
     {
         heap_free( cache_dir );
         return NULL;
     }
     lstrcpyW( ret, cache_dir );
-    lstrcatW( ret, wineW );
+    lstrcatW( ret, L"\\wine" );
     heap_free( cache_dir );
 
     if (ensure_exists && !CreateDirectoryW( ret, NULL ) && GetLastError() != ERROR_ALREADY_EXISTS)
     {
-        WARN( "%s does not exist and could not be created (%u)\n", debugstr_w(ret), GetLastError() );
+        WARN( "%s does not exist and could not be created (%lu)\n", debugstr_w(ret), GetLastError() );
         heap_free( ret );
         return NULL;
     }
@@ -474,7 +477,7 @@ static HRESULT WINAPI InstallCallback_OnStopBinding(IBindStatusCallback *iface,
         if(hresult == E_ABORT)
             TRACE("Binding aborted\n");
         else
-            ERR("Binding failed %08x\n", hresult);
+            ERR("Binding failed %08lx\n", hresult);
         return S_OK;
     }
 
@@ -578,18 +581,15 @@ static HRESULT WINAPI InstallCallbackBindInfo_GetBindInfo(IInternetBindInfo *ifa
 static HRESULT WINAPI InstallCallbackBindInfo_GetBindString(IInternetBindInfo *iface, ULONG string_type,
         WCHAR **strs, ULONG cnt, ULONG *fetched)
 {
-    static const WCHAR wine_addon_downloaderW[] =
-        {'W','i','n','e',' ','A','d','d','o','n',' ','D','o','w','n','l','o','a','d','e','r',0};
-
     switch(string_type) {
     case BINDSTRING_USER_AGENT:
         TRACE("BINDSTRING_USER_AGENT\n");
 
-        *strs = CoTaskMemAlloc(sizeof(wine_addon_downloaderW));
+        *strs = CoTaskMemAlloc(sizeof(L"Wine Addon Downloader"));
         if(!*strs)
             return E_OUTOFMEMORY;
 
-        memcpy(*strs, wine_addon_downloaderW, sizeof(wine_addon_downloaderW));
+        lstrcpyW(*strs, L"Wine Addon Downloader");
         *fetched = 1;
         return S_OK;
     }
@@ -609,21 +609,18 @@ static IInternetBindInfo InstallCallbackBindInfo = { &InstallCallbackBindInfoVtb
 
 static void append_url_params( WCHAR *url )
 {
-    static const WCHAR arch_formatW[] = {'?','a','r','c','h','='};
-    static const WCHAR v_formatW[] = {'&','v','='};
-    static const WCHAR winevW[] = {'&','w','i','n','e','v','='};
     DWORD size = INTERNET_MAX_URL_LENGTH * sizeof(WCHAR);
     DWORD len = lstrlenW(url);
 
-    memcpy(url+len, arch_formatW, sizeof(arch_formatW));
-    len += ARRAY_SIZE(arch_formatW);
-    len += MultiByteToWideChar(CP_ACP, 0, ARCH_STRING, sizeof(ARCH_STRING),
+    lstrcpyW(url+len, L"?arch=");
+    len += lstrlenW(L"?arch=");
+    len += MultiByteToWideChar(CP_ACP, 0, GECKO_ARCH, sizeof(GECKO_ARCH),
                                url+len, size/sizeof(WCHAR)-len)-1;
-    memcpy(url+len, v_formatW, sizeof(v_formatW));
-    len += ARRAY_SIZE(v_formatW);
+    lstrcpyW(url+len, L"&v=");
+    len += lstrlenW(L"&v=");
     len += MultiByteToWideChar(CP_ACP, 0, addon->version, -1, url+len, size/sizeof(WCHAR)-len)-1;
-    memcpy(url+len, winevW, sizeof(winevW));
-    len += ARRAY_SIZE(winevW);
+    lstrcpyW(url+len, L"&winev=");
+    len += lstrlenW(L"&winev=");
     MultiByteToWideChar(CP_ACP, 0, wine_get_version(), -1, url+len, size/sizeof(WCHAR)-len);
 }
 
@@ -693,13 +690,11 @@ static void run_winebrowser(const WCHAR *url)
     WCHAR *args;
     BOOL ret;
 
-    static const WCHAR winebrowserW[] = {'\\','w','i','n','e','b','r','o','w','s','e','r','.','e','x','e',0};
-
     url_len = lstrlenW(url);
 
-    len = GetSystemDirectoryW(app, MAX_PATH - ARRAY_SIZE(winebrowserW));
-    memcpy(app+len, winebrowserW, sizeof(winebrowserW));
-    len += ARRAY_SIZE(winebrowserW) - 1;
+    len = GetSystemDirectoryW(app, MAX_PATH - ARRAY_SIZE(L"\\winebrowser.exe"));
+    lstrcpyW(app+len, L"\\winebrowser.exe");
+    len += ARRAY_SIZE(L"\\winebrowser.exe") - 1;
 
     args = heap_alloc((len+1+url_len)*sizeof(WCHAR));
     if(!args)
@@ -761,12 +756,12 @@ static INT_PTR CALLBACK installer_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
 BOOL install_addon(addon_t addon_type)
 {
-    if(!*ARCH_STRING)
+    if(!*GECKO_ARCH)
         return FALSE;
 
     addon = addons_info+addon_type;
 
-    p_wine_get_dos_file_name = (void*)GetProcAddress(GetModuleHandleW(kernel32_dllW), "wine_get_dos_file_name");
+    p_wine_get_dos_file_name = (void *)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "wine_get_dos_file_name");
 
     /*
      * Try to find addon .msi file in following order:

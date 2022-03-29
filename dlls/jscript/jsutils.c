@@ -51,11 +51,6 @@ const char *debugstr_jsval(const jsval_t v)
     return NULL;
 }
 
-BOOL is_finite(double n)
-{
-    return !isnan(n) && !isinf(n);
-}
-
 #define MIN_BLOCK_SIZE  128
 #define ARENA_FREE_FILLER  0xaa
 
@@ -188,8 +183,7 @@ void jsval_release(jsval_t val)
 {
     switch(jsval_type(val)) {
     case JSV_OBJECT:
-        if(get_object(val))
-            IDispatch_Release(get_object(val));
+        IDispatch_Release(get_object(val));
         break;
     case JSV_STRING:
         jsstr_release(get_string(val));
@@ -234,8 +228,7 @@ HRESULT jsval_copy(jsval_t v, jsval_t *r)
         *r = v;
         return S_OK;
     case JSV_OBJECT:
-        if(get_object(v))
-            IDispatch_AddRef(get_object(v));
+        IDispatch_AddRef(get_object(v));
         *r = v;
         return S_OK;
     case JSV_STRING: {
@@ -287,8 +280,11 @@ HRESULT variant_to_jsval(VARIANT *var, jsval_t *r)
         return S_OK;
     }
     case VT_DISPATCH: {
-        if(V_DISPATCH(var))
-            IDispatch_AddRef(V_DISPATCH(var));
+        if(!V_DISPATCH(var)) {
+            *r = jsval_null_disp();
+            return S_OK;
+        }
+        IDispatch_AddRef(V_DISPATCH(var));
         *r = jsval_disp(V_DISPATCH(var));
         return S_OK;
     }
@@ -320,6 +316,12 @@ HRESULT variant_to_jsval(VARIANT *var, jsval_t *r)
     case VT_R4:
         *r = jsval_number(V_R4(var));
         return S_OK;
+    case VT_CY:
+        /* FIXME: Native converts VT_CY to a special kind number type, which is
+         * never converted to VT_I4 when it's converted back to VARIANT. */
+        *r = jsval_number((double)V_CY(var).int64 / 10000.0);
+        WARN("VT_CY: %lf\n", get_number(*r));
+        return S_OK;
     case VT_UNKNOWN:
         if(V_UNKNOWN(var)) {
             IDispatch *disp;
@@ -331,7 +333,7 @@ HRESULT variant_to_jsval(VARIANT *var, jsval_t *r)
                 return S_OK;
             }
         }else {
-            *r = jsval_disp(NULL);
+            *r = jsval_null_disp();
             return S_OK;
         }
         /* fall through */
@@ -347,13 +349,17 @@ HRESULT jsval_to_variant(jsval_t val, VARIANT *retv)
         V_VT(retv) = VT_EMPTY;
         return S_OK;
     case JSV_NULL:
+        if(get_bool(val)) {
+            V_VT(retv) = VT_DISPATCH;
+            V_DISPATCH(retv) = NULL;
+            return S_OK;
+        }
         V_VT(retv) = VT_NULL;
         return S_OK;
     case JSV_OBJECT:
         V_VT(retv) = VT_DISPATCH;
-        if(get_object(val))
-            IDispatch_AddRef(get_object(val));
         V_DISPATCH(retv) = get_object(val);
+        IDispatch_AddRef(get_object(val));
         return S_OK;
     case JSV_STRING:
         V_VT(retv) = VT_BSTR;
@@ -393,14 +399,6 @@ HRESULT to_primitive(script_ctx_t *ctx, jsval_t val, jsval_t *ret, hint_t hint)
         DISPID id;
         HRESULT hres;
 
-        static const WCHAR toStringW[] = {'t','o','S','t','r','i','n','g',0};
-        static const WCHAR valueOfW[] = {'v','a','l','u','e','O','f',0};
-
-        if(!get_object(val)) {
-            *ret = jsval_null();
-            return S_OK;
-        }
-
         jsdisp = iface_to_jsdisp(get_object(val));
         if(!jsdisp)
             return disp_propget(ctx, get_object(val), DISPID_VALUE, ret);
@@ -410,7 +408,7 @@ HRESULT to_primitive(script_ctx_t *ctx, jsval_t val, jsval_t *ret, hint_t hint)
 
         /* Native implementation doesn't throw TypeErrors, returns strange values */
 
-        hres = jsdisp_get_id(jsdisp, hint == HINT_STRING ? toStringW : valueOfW, 0, &id);
+        hres = jsdisp_get_id(jsdisp, hint == HINT_STRING ? L"toString" : L"valueOf", 0, &id);
         if(SUCCEEDED(hres)) {
             hres = jsdisp_call(jsdisp, id, DISPATCH_METHOD, 0, NULL, &prim);
             if(FAILED(hres)) {
@@ -426,7 +424,7 @@ HRESULT to_primitive(script_ctx_t *ctx, jsval_t val, jsval_t *ret, hint_t hint)
             }
         }
 
-        hres = jsdisp_get_id(jsdisp, hint == HINT_STRING ? valueOfW : toStringW, 0, &id);
+        hres = jsdisp_get_id(jsdisp, hint == HINT_STRING ? L"valueOf" : L"toString", 0, &id);
         if(SUCCEEDED(hres)) {
             hres = jsdisp_call(jsdisp, id, DISPATCH_METHOD, 0, NULL, &prim);
             if(FAILED(hres)) {
@@ -461,7 +459,7 @@ HRESULT to_boolean(jsval_t val, BOOL *ret)
         *ret = FALSE;
         return S_OK;
     case JSV_OBJECT:
-        *ret = get_object(val) != NULL;
+        *ret = TRUE;
         return S_OK;
     case JSV_STRING:
         *ret = jsstr_length(get_string(val)) != 0;
@@ -502,7 +500,7 @@ static HRESULT str_to_number(jsstr_t *str, double *ret)
     BOOL neg = FALSE;
     DOUBLE d = 0.0;
 
-    static const WCHAR infinityW[] = {'I','n','f','i','n','i','t','y'};
+    static const WCHAR infinityW[] = L"Infinity";
 
     ptr = jsstr_flatten(str);
     if(!ptr)
@@ -518,8 +516,8 @@ static HRESULT str_to_number(jsstr_t *str, double *ret)
         ptr++;
     }
 
-    if(!wcsncmp(ptr, infinityW, ARRAY_SIZE(infinityW))) {
-        ptr += ARRAY_SIZE(infinityW);
+    if(!wcsncmp(ptr, infinityW, ARRAY_SIZE(infinityW)-1)) {
+        ptr += ARRAY_SIZE(infinityW) - 1;
         while(*ptr && iswspace(*ptr))
             ptr++;
 
@@ -619,9 +617,16 @@ HRESULT to_number(script_ctx_t *ctx, jsval_t val, double *ret)
     case JSV_BOOL:
         *ret = get_bool(val) ? 1 : 0;
         return S_OK;
-    case JSV_VARIANT:
-        FIXME("unimplemented for variant %s\n", debugstr_variant(get_variant(val)));
-        return E_NOTIMPL;
+    case JSV_VARIANT: {
+        const VARIANT *v = get_variant(val);
+        switch(V_VT(v)) {
+        case VT_DATE:
+            return variant_date_to_number(V_DATE(v), ret);
+        default:
+            FIXME("unimplemented for variant %s\n", debugstr_variant(v));
+            return E_NOTIMPL;
+        }
+    }
     };
 
     assert(0);
@@ -701,6 +706,11 @@ HRESULT to_int32(script_ctx_t *ctx, jsval_t v, INT *ret)
     return S_OK;
 }
 
+HRESULT to_long(script_ctx_t *ctx, jsval_t v, LONG *ret)
+{
+    return to_int32(ctx, v, (INT*)ret);
+}
+
 /* ECMA-262 3rd Edition    9.6 */
 HRESULT to_uint32(script_ctx_t *ctx, jsval_t val, UINT32 *ret)
 {
@@ -717,12 +727,10 @@ HRESULT to_uint32(script_ctx_t *ctx, jsval_t val, UINT32 *ret)
 
 HRESULT double_to_string(double n, jsstr_t **str)
 {
-    static const WCHAR InfinityW[] = {'-','I','n','f','i','n','i','t','y',0};
-
     if(isnan(n)) {
         *str = jsstr_nan();
     }else if(isinf(n)) {
-        *str = jsstr_alloc(n<0 ? InfinityW : InfinityW+1);
+        *str = jsstr_alloc(n<0 ? L"-Infinity" : L"Infinity");
     }else if(is_int32(n)) {
         WCHAR buf[12];
         _ltow_s(n, buf, ARRAY_SIZE(buf), 10);
@@ -749,16 +757,12 @@ HRESULT double_to_string(double n, jsstr_t **str)
 /* ECMA-262 3rd Edition    9.8 */
 HRESULT to_string(script_ctx_t *ctx, jsval_t val, jsstr_t **str)
 {
-    static const WCHAR nullW[] = {'n','u','l','l',0};
-    static const WCHAR trueW[] = {'t','r','u','e',0};
-    static const WCHAR falseW[] = {'f','a','l','s','e',0};
-
     switch(jsval_type(val)) {
     case JSV_UNDEFINED:
         *str = jsstr_undefined();
         return S_OK;
     case JSV_NULL:
-        *str = jsstr_alloc(nullW);
+        *str = jsstr_alloc(L"null");
         break;
     case JSV_NUMBER:
         return double_to_string(get_number(val), str);
@@ -778,11 +782,19 @@ HRESULT to_string(script_ctx_t *ctx, jsval_t val, jsstr_t **str)
         return hres;
     }
     case JSV_BOOL:
-        *str = jsstr_alloc(get_bool(val) ? trueW : falseW);
+        *str = jsstr_alloc(get_bool(val) ? L"true" : L"false");
         break;
-    default:
-        FIXME("unsupported %s\n", debugstr_jsval(val));
-        return E_NOTIMPL;
+    default: {
+        const VARIANT *v = get_variant(val);
+        switch(V_VT(v))
+        {
+        case VT_DATE:
+            return variant_date_to_string(ctx, V_DATE(v), str);
+        default:
+            FIXME("unsupported %s\n", debugstr_variant(v));
+            return E_NOTIMPL;
+        }
+    }
     }
 
     return *str ? S_OK : E_OUTOFMEMORY;
@@ -827,18 +839,8 @@ HRESULT to_object(script_ctx_t *ctx, jsval_t val, IDispatch **disp)
         *disp = to_disp(dispex);
         break;
     case JSV_OBJECT:
-        if(get_object(val)) {
-            *disp = get_object(val);
-            IDispatch_AddRef(*disp);
-        }else {
-            jsdisp_t *obj;
-
-            hres = create_object(ctx, NULL, &obj);
-            if(FAILED(hres))
-                return hres;
-
-            *disp = to_disp(obj);
-        }
+        *disp = get_object(val);
+        IDispatch_AddRef(*disp);
         break;
     case JSV_BOOL:
         hres = create_bool(ctx, get_bool(val), &dispex);
@@ -847,8 +849,11 @@ HRESULT to_object(script_ctx_t *ctx, jsval_t val, IDispatch **disp)
 
         *disp = to_disp(dispex);
         break;
-    case JSV_UNDEFINED:
     case JSV_NULL:
+        if(is_null_disp(val))
+            return JS_E_OBJECT_REQUIRED;
+        /* fall through */
+    case JSV_UNDEFINED:
         WARN("object expected\n");
         return JS_E_OBJECT_EXPECTED;
     case JSV_VARIANT:
@@ -988,7 +993,7 @@ static ULONG WINAPI JSCaller_AddRef(IServiceProvider *iface)
     JSCaller *This = impl_from_IServiceProvider(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -998,7 +1003,7 @@ static ULONG WINAPI JSCaller_Release(IServiceProvider *iface)
     JSCaller *This = impl_from_IServiceProvider(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref) {
         assert(!This->ctx);

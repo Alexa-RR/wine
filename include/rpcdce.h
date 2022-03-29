@@ -33,6 +33,8 @@ extern "C" {
 #define OPTIONAL
 #endif
 
+#include <specstrings.h>
+
 #ifndef GUID_DEFINED
 #include <guiddef.h>
 #endif
@@ -592,6 +594,9 @@ RPCRTAPI RPC_STATUS RPC_ENTRY
 RPCRTAPI RPC_STATUS RPC_ENTRY
   RpcStringFreeW(RPC_WSTR* String);
 #define RpcStringFree WINELIB_NAME_AW(RpcStringFree)
+
+RPCRTAPI RPC_STATUS RPC_ENTRY
+  RpcIfInqId( RPC_IF_HANDLE RpcIfHandle, RPC_IF_ID *RpcIfId );
 
 RPCRTAPI RPC_STATUS RPC_ENTRY
   UuidToStringA( UUID* Uuid, RPC_CSTR* StringUuid );

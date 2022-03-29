@@ -38,11 +38,9 @@ static BOOL get_func_id(vbdisp_t *This, const WCHAR *name, vbdisp_invoke_type_t 
 {
     unsigned i;
 
-    for(i = invoke_type == VBDISP_ANY ? 0 : 1; i < This->desc->func_cnt; i++) {
+    for(i = 0; i < This->desc->func_cnt; i++) {
         if(invoke_type == VBDISP_ANY) {
             if(!search_private && !This->desc->funcs[i].is_public)
-                continue;
-            if(!i && !This->desc->funcs[0].name) /* default value may not exist */
                 continue;
         }else {
             if(!This->desc->funcs[i].entries[invoke_type]
@@ -50,7 +48,7 @@ static BOOL get_func_id(vbdisp_t *This, const WCHAR *name, vbdisp_invoke_type_t 
                 continue;
         }
 
-        if(!wcsicmp(This->desc->funcs[i].name, name)) {
+        if(This->desc->funcs[i].name && !wcsicmp(This->desc->funcs[i].name, name)) {
             *id = i;
             return TRUE;
         }
@@ -177,7 +175,7 @@ static HRESULT invoke_vbdisp(vbdisp_t *This, DISPID id, DWORD flags, BOOL extern
         switch(flags) {
         case DISPATCH_PROPERTYGET:
             func = This->desc->funcs[id].entries[VBDISP_CALLGET];
-            if(!func || (func->type != FUNC_PROPGET && func->type != FUNC_DEFGET)) {
+            if(!func || func->type != FUNC_PROPGET) {
                 WARN("no getter\n");
                 return DISP_E_MEMBERNOTFOUND;
             }
@@ -199,32 +197,47 @@ static HRESULT invoke_vbdisp(vbdisp_t *This, DISPID id, DWORD flags, BOOL extern
         case DISPATCH_PROPERTYPUT|DISPATCH_PROPERTYPUTREF: {
             DISPPARAMS dp = {NULL, NULL, 1, 0};
             BOOL needs_release;
-            VARIANT put_val;
+            VARIANT buf[6];
             HRESULT hres;
+            INT i;
 
-            if(arg_cnt(params)) {
-                FIXME("arguments not implemented\n");
-                return E_NOTIMPL;
+            dp.cArgs = arg_cnt(params) + 1;
+            if(dp.cArgs > ARRAY_SIZE(buf)) {
+                dp.rgvarg = heap_alloc(dp.cArgs*sizeof(VARIANT));
+                if(!dp.rgvarg)
+                    return E_OUTOFMEMORY;
+            }else {
+                dp.rgvarg = buf;
             }
 
-            hres = get_propput_arg(This->desc->ctx, params, flags, &put_val, &needs_release);
-            if(FAILED(hres))
+            hres = get_propput_arg(This->desc->ctx, params, flags, dp.rgvarg, &needs_release);
+            if(FAILED(hres)) {
+                if(dp.rgvarg != buf)
+                    heap_free(dp.rgvarg);
                 return hres;
+            }
 
-            dp.rgvarg = &put_val;
-            func = This->desc->funcs[id].entries[V_VT(&put_val) == VT_DISPATCH ? VBDISP_SET : VBDISP_LET];
+            func = This->desc->funcs[id].entries[V_VT(dp.rgvarg) == VT_DISPATCH ? VBDISP_SET : VBDISP_LET];
             if(!func) {
                 FIXME("no letter/setter\n");
+                if(dp.rgvarg != buf)
+                    heap_free(dp.rgvarg);
                 return DISP_E_MEMBERNOTFOUND;
+            }
+
+            for(i=1; i < dp.cArgs; i++) {
+                dp.rgvarg[i]=params->rgvarg[params->cNamedArgs+i-1];
             }
 
             hres = exec_script(This->desc->ctx, extern_caller, func, This, &dp, NULL);
             if(needs_release)
-                VariantClear(&put_val);
+                VariantClear(dp.rgvarg);
+            if(dp.rgvarg != buf)
+                heap_free(dp.rgvarg);
             return hres;
         }
         default:
-            FIXME("flags %x\n", flags);
+            FIXME("flags %lx\n", flags);
             return DISP_E_MEMBERNOTFOUND;
         }
     }
@@ -304,7 +317,7 @@ static ULONG WINAPI DispatchEx_AddRef(IDispatchEx *iface)
     vbdisp_t *This = impl_from_IDispatchEx(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -314,7 +327,7 @@ static ULONG WINAPI DispatchEx_Release(IDispatchEx *iface)
     vbdisp_t *This = impl_from_IDispatchEx(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref && run_terminator(This)) {
         clean_props(This);
@@ -340,7 +353,7 @@ static HRESULT WINAPI DispatchEx_GetTypeInfo(IDispatchEx *iface, UINT iTInfo, LC
                                               ITypeInfo **ppTInfo)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%u %u %p)\n", This, iTInfo, lcid, ppTInfo);
+    FIXME("(%p)->(%u %lu %p)\n", This, iTInfo, lcid, ppTInfo);
     return E_NOTIMPL;
 }
 
@@ -349,7 +362,7 @@ static HRESULT WINAPI DispatchEx_GetIDsOfNames(IDispatchEx *iface, REFIID riid,
                                                 DISPID *rgDispId)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
+    FIXME("(%p)->(%s %p %u %lu %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
     return E_NOTIMPL;
 }
@@ -360,7 +373,7 @@ static HRESULT WINAPI DispatchEx_Invoke(IDispatchEx *iface, DISPID dispIdMember,
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
 
-    TRACE("(%p)->(%d %s %d %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
+    TRACE("(%p)->(%ld %s %ld %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
           lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     return IDispatchEx_InvokeEx(&This->IDispatchEx_iface, dispIdMember, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, NULL);
@@ -370,7 +383,7 @@ static HRESULT WINAPI DispatchEx_GetDispID(IDispatchEx *iface, BSTR bstrName, DW
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
 
-    TRACE("(%p)->(%s %x %p)\n", This, debugstr_w(bstrName), grfdex, pid);
+    TRACE("(%p)->(%s %lx %p)\n", This, debugstr_w(bstrName), grfdex, pid);
 
     grfdex &= ~FDEX_VERSION_MASK;
 
@@ -380,7 +393,7 @@ static HRESULT WINAPI DispatchEx_GetDispID(IDispatchEx *iface, BSTR bstrName, DW
     /* Tests show that fdexNameCaseSensitive is ignored */
 
     if(grfdex & ~(fdexNameEnsure|fdexNameCaseInsensitive|fdexNameCaseSensitive)) {
-        FIXME("unsupported flags %x\n", grfdex);
+        FIXME("unsupported flags %lx\n", grfdex);
         return E_NOTIMPL;
     }
 
@@ -392,7 +405,7 @@ static HRESULT WINAPI DispatchEx_InvokeEx(IDispatchEx *iface, DISPID id, LCID lc
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
 
-    TRACE("(%p)->(%x %x %x %p %p %p %p)\n", This, id, lcid, wFlags, pdp, pvarRes, pei, pspCaller);
+    TRACE("(%p)->(%lx %lx %x %p %p %p %p)\n", This, id, lcid, wFlags, pdp, pvarRes, pei, pspCaller);
 
     if(!This->desc)
         return E_UNEXPECTED;
@@ -406,35 +419,35 @@ static HRESULT WINAPI DispatchEx_InvokeEx(IDispatchEx *iface, DISPID id, LCID lc
 static HRESULT WINAPI DispatchEx_DeleteMemberByName(IDispatchEx *iface, BSTR bstrName, DWORD grfdex)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%s %x)\n", This, debugstr_w(bstrName), grfdex);
+    FIXME("(%p)->(%s %lx)\n", This, debugstr_w(bstrName), grfdex);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI DispatchEx_DeleteMemberByDispID(IDispatchEx *iface, DISPID id)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x)\n", This, id);
+    FIXME("(%p)->(%lx)\n", This, id);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI DispatchEx_GetMemberProperties(IDispatchEx *iface, DISPID id, DWORD grfdexFetch, DWORD *pgrfdex)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %x %p)\n", This, id, grfdexFetch, pgrfdex);
+    FIXME("(%p)->(%lx %lx %p)\n", This, id, grfdexFetch, pgrfdex);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI DispatchEx_GetMemberName(IDispatchEx *iface, DISPID id, BSTR *pbstrName)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %p)\n", This, id, pbstrName);
+    FIXME("(%p)->(%lx %p)\n", This, id, pbstrName);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI DispatchEx_GetNextDispID(IDispatchEx *iface, DWORD grfdex, DISPID id, DISPID *pid)
 {
     vbdisp_t *This = impl_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %x %p)\n", This, grfdex, id, pid);
+    FIXME("(%p)->(%lx %lx %p)\n", This, grfdex, id, pid);
     return E_NOTIMPL;
 }
 
@@ -601,7 +614,7 @@ static ULONG WINAPI ScriptTypeInfo_AddRef(ITypeInfo *iface)
     ScriptTypeInfo *This = ScriptTypeInfo_from_ITypeInfo(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -612,7 +625,7 @@ static ULONG WINAPI ScriptTypeInfo_Release(ITypeInfo *iface)
     LONG ref = InterlockedDecrement(&This->ref);
     UINT i;
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if (!ref)
     {
@@ -732,7 +745,7 @@ static HRESULT WINAPI ScriptTypeInfo_GetNames(ITypeInfo *iface, MEMBERID memid, 
     HRESULT hr;
     UINT i = 0;
 
-    TRACE("(%p)->(%d %p %u %p)\n", This, memid, rgBstrNames, cMaxNames, pcNames);
+    TRACE("(%p)->(%ld %p %u %p)\n", This, memid, rgBstrNames, cMaxNames, pcNames);
 
     if (!rgBstrNames || !pcNames) return E_INVALIDARG;
     if (memid <= 0) return TYPE_E_ELEMENTNOTFOUND;
@@ -862,7 +875,7 @@ static HRESULT WINAPI ScriptTypeInfo_Invoke(ITypeInfo *iface, PVOID pvInstance, 
     IDispatch *disp;
     HRESULT hr;
 
-    TRACE("(%p)->(%p %d %d %p %p %p %p)\n", This, pvInstance, memid, wFlags,
+    TRACE("(%p)->(%p %ld %d %p %p %p %p)\n", This, pvInstance, memid, wFlags,
           pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     if (!pvInstance) return E_INVALIDARG;
@@ -895,7 +908,7 @@ static HRESULT WINAPI ScriptTypeInfo_GetDocumentation(ITypeInfo *iface, MEMBERID
     function_t *func;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %p %p %p %p)\n", This, memid, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile);
+    TRACE("(%p)->(%ld %p %p %p %p)\n", This, memid, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile);
 
     if (pBstrDocString) *pBstrDocString = NULL;
     if (pdwHelpContext) *pdwHelpContext = 0;
@@ -940,7 +953,7 @@ static HRESULT WINAPI ScriptTypeInfo_GetDllEntry(ITypeInfo *iface, MEMBERID memi
     ITypeInfo *disp_typeinfo;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %d %p %p %p)\n", This, memid, invKind, pBstrDllName, pBstrName, pwOrdinal);
+    TRACE("(%p)->(%ld %d %p %p %p)\n", This, memid, invKind, pBstrDllName, pBstrName, pwOrdinal);
 
     if (pBstrDllName) *pBstrDllName = NULL;
     if (pBstrName) *pBstrName = NULL;
@@ -961,7 +974,7 @@ static HRESULT WINAPI ScriptTypeInfo_GetRefTypeInfo(ITypeInfo *iface, HREFTYPE h
     ScriptTypeInfo *This = ScriptTypeInfo_from_ITypeInfo(iface);
     HRESULT hr;
 
-    TRACE("(%p)->(%x %p)\n", This, hRefType, ppTInfo);
+    TRACE("(%p)->(%lx %p)\n", This, hRefType, ppTInfo);
 
     if (!ppTInfo || (INT)hRefType < 0) return E_INVALIDARG;
 
@@ -984,7 +997,7 @@ static HRESULT WINAPI ScriptTypeInfo_AddressOfMember(ITypeInfo *iface, MEMBERID 
     ITypeInfo *disp_typeinfo;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %d %p)\n", This, memid, invKind, ppv);
+    TRACE("(%p)->(%ld %d %p)\n", This, memid, invKind, ppv);
 
     if (!ppv) return E_INVALIDARG;
     *ppv = NULL;
@@ -1017,7 +1030,7 @@ static HRESULT WINAPI ScriptTypeInfo_GetMops(ITypeInfo *iface, MEMBERID memid, B
     ITypeInfo *disp_typeinfo;
     HRESULT hr;
 
-    TRACE("(%p)->(%d %p)\n", This, memid, pBstrMops);
+    TRACE("(%p)->(%ld %p)\n", This, memid, pBstrMops);
 
     if (!pBstrMops) return E_INVALIDARG;
 
@@ -1122,7 +1135,7 @@ static HRESULT WINAPI ScriptTypeComp_Bind(ITypeComp *iface, LPOLESTR szName, ULO
     HRESULT hr;
     UINT i;
 
-    TRACE("(%p)->(%s %08x %d %p %p %p)\n", This, debugstr_w(szName), lHashVal,
+    TRACE("(%p)->(%s %08lx %d %p %p %p)\n", This, debugstr_w(szName), lHashVal,
           wFlags, ppTInfo, pDescKind, pBindPtr);
 
     if (!szName || !ppTInfo || !pDescKind || !pBindPtr)
@@ -1176,7 +1189,7 @@ static HRESULT WINAPI ScriptTypeComp_BindType(ITypeComp *iface, LPOLESTR szName,
     ITypeComp *disp_typecomp;
     HRESULT hr;
 
-    TRACE("(%p)->(%s %08x %p %p)\n", This, debugstr_w(szName), lHashVal, ppTInfo, ppTComp);
+    TRACE("(%p)->(%s %08lx %p %p)\n", This, debugstr_w(szName), lHashVal, ppTInfo, ppTComp);
 
     if (!szName || !ppTInfo || !ppTComp)
         return E_INVALIDARG;
@@ -1234,7 +1247,7 @@ static ULONG WINAPI ScriptDisp_AddRef(IDispatchEx *iface)
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     return ref;
 }
@@ -1245,7 +1258,7 @@ static ULONG WINAPI ScriptDisp_Release(IDispatchEx *iface)
     LONG ref = InterlockedDecrement(&This->ref);
     unsigned i;
 
-    TRACE("(%p) ref=%d\n", This, ref);
+    TRACE("(%p) ref=%ld\n", This, ref);
 
     if(!ref) {
         assert(!This->ctx);
@@ -1279,7 +1292,7 @@ static HRESULT WINAPI ScriptDisp_GetTypeInfo(IDispatchEx *iface, UINT iTInfo, LC
     UINT num_funcs = 0;
     unsigned i, j;
 
-    TRACE("(%p)->(%u %u %p)\n", This, iTInfo, lcid, ret);
+    TRACE("(%p)->(%u %lu %p)\n", This, iTInfo, lcid, ret);
 
     if(iTInfo)
         return DISP_E_BADINDEX;
@@ -1328,16 +1341,24 @@ static HRESULT WINAPI ScriptDisp_GetIDsOfNames(IDispatchEx *iface, REFIID riid,
     UINT i;
     HRESULT hres;
 
-    TRACE("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
+    TRACE("(%p)->(%s %p %u %lu %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
 
-    for(i=0; i < cNames; i++) {
-        hres = IDispatchEx_GetDispID(&This->IDispatchEx_iface, rgszNames[i], 0, rgDispId+i);
-        if(FAILED(hres))
-            return hres;
+    if(cNames == 0)
+        return S_OK;
+
+    hres = IDispatchEx_GetDispID(&This->IDispatchEx_iface, rgszNames[0], 0, rgDispId);
+    if(FAILED(hres))
+        return hres;
+
+    /* DISPIDs for parameters don't seem to be supported */
+    if(cNames > 1) {
+        for(i = 1; i < cNames; i++)
+            rgDispId[i] = DISPID_UNKNOWN;
+        hres = DISP_E_UNKNOWNNAME;
     }
 
-    return S_OK;
+    return hres;
 }
 
 static HRESULT WINAPI ScriptDisp_Invoke(IDispatchEx *iface, DISPID dispIdMember, REFIID riid, LCID lcid,
@@ -1345,7 +1366,7 @@ static HRESULT WINAPI ScriptDisp_Invoke(IDispatchEx *iface, DISPID dispIdMember,
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
 
-    TRACE("(%p)->(%d %s %d %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
+    TRACE("(%p)->(%ld %s %ld %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
           lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     return IDispatchEx_InvokeEx(&This->IDispatchEx_iface, dispIdMember, lcid, wFlags,
@@ -1357,7 +1378,7 @@ static HRESULT WINAPI ScriptDisp_GetDispID(IDispatchEx *iface, BSTR bstrName, DW
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
     unsigned i;
 
-    TRACE("(%p)->(%s %x %p)\n", This, debugstr_w(bstrName), grfdex, pid);
+    TRACE("(%p)->(%s %lx %p)\n", This, debugstr_w(bstrName), grfdex, pid);
 
     if(!This->ctx)
         return E_UNEXPECTED;
@@ -1386,7 +1407,7 @@ static HRESULT WINAPI ScriptDisp_InvokeEx(IDispatchEx *iface, DISPID id, LCID lc
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
     HRESULT hres;
 
-    TRACE("(%p)->(%x %x %x %p %p %p %p)\n", This, id, lcid, wFlags, pdp, pvarRes, pei, pspCaller);
+    TRACE("(%p)->(%lx %lx %x %p %p %p %p)\n", This, id, lcid, wFlags, pdp, pvarRes, pei, pspCaller);
 
     if (!This->ctx)
         return E_UNEXPECTED;
@@ -1426,35 +1447,35 @@ static HRESULT WINAPI ScriptDisp_InvokeEx(IDispatchEx *iface, DISPID id, LCID lc
 static HRESULT WINAPI ScriptDisp_DeleteMemberByName(IDispatchEx *iface, BSTR bstrName, DWORD grfdex)
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
-    FIXME("(%p)->(%s %x)\n", This, debugstr_w(bstrName), grfdex);
+    FIXME("(%p)->(%s %lx)\n", This, debugstr_w(bstrName), grfdex);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ScriptDisp_DeleteMemberByDispID(IDispatchEx *iface, DISPID id)
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x)\n", This, id);
+    FIXME("(%p)->(%lx)\n", This, id);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ScriptDisp_GetMemberProperties(IDispatchEx *iface, DISPID id, DWORD grfdexFetch, DWORD *pgrfdex)
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %x %p)\n", This, id, grfdexFetch, pgrfdex);
+    FIXME("(%p)->(%lx %lx %p)\n", This, id, grfdexFetch, pgrfdex);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ScriptDisp_GetMemberName(IDispatchEx *iface, DISPID id, BSTR *pbstrName)
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %p)\n", This, id, pbstrName);
+    FIXME("(%p)->(%lx %p)\n", This, id, pbstrName);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ScriptDisp_GetNextDispID(IDispatchEx *iface, DWORD grfdex, DISPID id, DISPID *pid)
 {
     ScriptDisp *This = ScriptDisp_from_IDispatchEx(iface);
-    FIXME("(%p)->(%x %x %p)\n", This, grfdex, id, pid);
+    FIXME("(%p)->(%lx %lx %p)\n", This, grfdex, id, pid);
     return E_NOTIMPL;
 }
 
@@ -1662,7 +1683,7 @@ HRESULT disp_propput(script_ctx_t *ctx, IDispatch *disp, DISPID id, WORD flags, 
         hres = IDispatchEx_InvokeEx(dispex, id, ctx->lcid, flags, dp, NULL, &ei, NULL /* FIXME! */);
         IDispatchEx_Release(dispex);
     }else {
-        ULONG err = 0;
+        UINT err = 0;
 
         TRACE("using IDispatch\n");
         hres = IDispatch_Invoke(disp, id, &IID_NULL, ctx->lcid, flags, dp, NULL, &ei, &err);

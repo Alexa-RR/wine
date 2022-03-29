@@ -32,7 +32,7 @@ static void _expect_ref(IUnknown* obj, ULONG ref, int line)
     ULONG rc;
     IUnknown_AddRef(obj);
     rc = IUnknown_Release(obj);
-    ok_(__FILE__,line)(rc == ref, "expected refcount %d, got %d\n", ref, rc);
+    ok_(__FILE__,line)(rc == ref, "expected refcount %ld, got %ld\n", ref, rc);
 }
 
 #define IFD_BYTE 1
@@ -302,6 +302,47 @@ static const struct tiff_24bpp_data
     { 900, 3 },
     { 0x11, 0x22, 0x33 }
 };
+
+static const struct tiff_4bps_bgra
+{
+    USHORT byte_order;
+    USHORT version;
+    ULONG  dir_offset;
+    USHORT number_of_entries;
+    struct IFD_entry entry[14];
+    ULONG next_IFD;
+    struct IFD_rational res;
+    BYTE pixel_data[4];
+} tiff_4bps_bgra =
+{
+#ifdef WORDS_BIGENDIAN
+    'M' | 'M' << 8,
+#else
+    'I' | 'I' << 8,
+#endif
+    42,
+    FIELD_OFFSET(struct tiff_4bps_bgra, number_of_entries),
+    14,
+    {
+        { 0xff, IFD_SHORT, 1, 0 }, /* SUBFILETYPE */
+        { 0x100, IFD_LONG, 1, 3 }, /* IMAGEWIDTH */
+        { 0x101, IFD_LONG, 1, 2 }, /* IMAGELENGTH */
+        { 0x102, IFD_SHORT, 1, 1 }, /* BITSPERSAMPLE */
+        { 0x103, IFD_SHORT, 1, 1 }, /* COMPRESSION */
+        { 0x106, IFD_SHORT, 1, 2 }, /* PHOTOMETRIC */
+        { 0x111, IFD_LONG, 1, FIELD_OFFSET(struct tiff_4bps_bgra, pixel_data) }, /* STRIPOFFSETS */
+        { 0x115, IFD_SHORT, 1, 4 }, /* SAMPLESPERPIXEL */
+        { 0x116, IFD_LONG, 1, 2 }, /* ROWSPERSTRIP */
+        { 0x117, IFD_LONG, 1, 4 }, /* STRIPBYTECOUNT */
+        { 0x11a, IFD_RATIONAL, 1, FIELD_OFFSET(struct tiff_4bps_bgra, res) }, /* XRESOLUTION */
+        { 0x11b, IFD_RATIONAL, 1, FIELD_OFFSET(struct tiff_4bps_bgra, res) }, /* YRESOLUTION */
+        { 0x11c, IFD_SHORT, 1, 1 }, /* PLANARCONFIGURATION */
+        { 0x128, IFD_SHORT, 1, 2 } /* RESOLUTIONUNIT */
+    },
+    0,
+    { 96, 1 },
+    { 0x12,0x30, 0x47,0xe0 }
+};
 #include "poppack.h"
 
 static IWICImagingFactory *factory;
@@ -322,7 +363,7 @@ static IStream *create_stream(const void *data, int data_size)
     GlobalUnlock(hdata);
 
     hr = CreateStreamOnHGlobal(hdata, TRUE, &stream);
-    ok(hr == S_OK, "CreateStreamOnHGlobal failed, hr=%x\n", hr);
+    ok(hr == S_OK, "CreateStreamOnHGlobal failed, hr=%lx\n", hr);
 
     return stream;
 }
@@ -344,13 +385,13 @@ static HRESULT create_decoder(const void *image_data, UINT image_size, IWICBitma
     GlobalUnlock(hmem);
 
     hr = CreateStreamOnHGlobal(hmem, TRUE, &stream);
-    ok(hr == S_OK, "CreateStreamOnHGlobal error %#x\n", hr);
+    ok(hr == S_OK, "CreateStreamOnHGlobal error %#lx\n", hr);
 
     hr = IWICImagingFactory_CreateDecoderFromStream(factory, stream, NULL, 0, decoder);
     if (hr == S_OK)
     {
         hr = IWICBitmapDecoder_GetContainerFormat(*decoder, &format);
-        ok(hr == S_OK, "GetContainerFormat error %#x\n", hr);
+        ok(hr == S_OK, "GetContainerFormat error %#lx\n", hr);
         ok(IsEqualGUID(&format, &GUID_ContainerFormatTiff),
            "wrong container format %s\n", wine_dbgstr_guid(&format));
 
@@ -361,30 +402,49 @@ static HRESULT create_decoder(const void *image_data, UINT image_size, IWICBitma
     return hr;
 }
 
+<<<<<<< HEAD
 static HRESULT get_pixelformat_info(const GUID *format, UINT *bpp, UINT *channels, BOOL *trasparency)
+=======
+static HRESULT get_pixelformat_info(const GUID *format, UINT *bpp, UINT *channels, BOOL *transparency)
+>>>>>>> master
 {
     HRESULT hr;
     IWICComponentInfo *info;
     IWICPixelFormatInfo2 *formatinfo;
 
     hr = IWICImagingFactory_CreateComponentInfo(factory, format, &info);
+<<<<<<< HEAD
     ok(hr == S_OK, "CreateComponentInfo(%s) error %#x\n", wine_dbgstr_guid(format), hr);
+=======
+    ok(hr == S_OK, "CreateComponentInfo(%s) error %#lx\n", wine_dbgstr_guid(format), hr);
+>>>>>>> master
     if (hr == S_OK)
     {
         hr = IWICComponentInfo_QueryInterface(info, &IID_IWICPixelFormatInfo2, (void **)&formatinfo);
         if (hr == S_OK)
         {
+<<<<<<< HEAD
             hr = IWICPixelFormatInfo2_SupportsTransparency(formatinfo, trasparency);
             ok(hr == S_OK, "SupportsTransparency error %#x\n", hr);
+=======
+            hr = IWICPixelFormatInfo2_SupportsTransparency(formatinfo, transparency);
+            ok(hr == S_OK, "SupportsTransparency error %#lx\n", hr);
+>>>>>>> master
             IWICPixelFormatInfo2_Release(formatinfo);
         }
         hr = IWICComponentInfo_QueryInterface(info, &IID_IWICPixelFormatInfo, (void **)&formatinfo);
         if (hr == S_OK)
         {
             hr = IWICPixelFormatInfo2_GetBitsPerPixel(formatinfo, bpp);
+<<<<<<< HEAD
             ok(hr == S_OK, "GetBitsPerPixel error %#x\n", hr);
             hr = IWICPixelFormatInfo2_GetChannelCount(formatinfo, channels);
             ok(hr == S_OK, "GetChannelCount error %#x\n", hr);
+=======
+            ok(hr == S_OK, "GetBitsPerPixel error %#lx\n", hr);
+            hr = IWICPixelFormatInfo2_GetChannelCount(formatinfo, channels);
+            ok(hr == S_OK, "GetChannelCount error %#lx\n", hr);
+>>>>>>> master
             IWICPixelFormatInfo2_Release(formatinfo);
         }
         IWICComponentInfo_Release(info);
@@ -404,7 +464,11 @@ static void dump_tiff(void *buf)
 
     for (i = 0; i < count; i++)
     {
+<<<<<<< HEAD
         printf("tag %u: id %04x, type %04x, count %u, value %d",
+=======
+        printf("tag %u: id %04x, type %04x, count %lu, value %ld",
+>>>>>>> master
                 i, tag[i].id, tag[i].type, tag[i].count, tag[i].value);
         if (tag[i].id == 0x102 && tag[i].count > 2)
         {
@@ -425,22 +489,22 @@ static void test_tiff_1bpp_palette(void)
     GUID format;
 
     hr = create_decoder(&tiff_1bpp_data, sizeof(tiff_1bpp_data), &decoder);
-    ok(hr == S_OK, "Failed to load TIFF image data %#x\n", hr);
+    ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
     if (hr != S_OK) return;
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
 
     hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
-    ok(hr == S_OK, "GetPixelFormat error %#x\n", hr);
+    ok(hr == S_OK, "GetPixelFormat error %#lx\n", hr);
     ok(IsEqualGUID(&format, &GUID_WICPixelFormatBlackWhite),
        "got wrong format %s\n", wine_dbgstr_guid(&format));
 
     hr = IWICImagingFactory_CreatePalette(factory, &palette);
-    ok(hr == S_OK, "CreatePalette error %#x\n", hr);
+    ok(hr == S_OK, "CreatePalette error %#lx\n", hr);
     hr = IWICBitmapFrameDecode_CopyPalette(frame, palette);
     ok(hr == WINCODEC_ERR_PALETTEUNAVAILABLE,
-       "expected WINCODEC_ERR_PALETTEUNAVAILABLE, got %#x\n", hr);
+       "expected WINCODEC_ERR_PALETTEUNAVAILABLE, got %#lx\n", hr);
 
     IWICPalette_Release(palette);
     IWICBitmapFrameDecode_Release(frame);
@@ -466,77 +530,77 @@ static void test_QueryCapability(void)
     if (!stream) return;
 
     hr = IWICImagingFactory_CreateDecoder(factory, &GUID_ContainerFormatTiff, NULL, &decoder);
-    ok(hr == S_OK, "CreateDecoder error %#x\n", hr);
+    ok(hr == S_OK, "CreateDecoder error %#lx\n", hr);
     if (FAILED(hr)) return;
 
     frame_count = 0xdeadbeef;
     hr = IWICBitmapDecoder_GetFrameCount(decoder, &frame_count);
-    ok(hr == S_OK || broken(hr == E_POINTER) /* XP */, "GetFrameCount error %#x\n", hr);
+    ok(hr == S_OK || broken(hr == E_POINTER) /* XP */, "GetFrameCount error %#lx\n", hr);
     ok(frame_count == 0, "expected 0, got %u\n", frame_count);
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == WINCODEC_ERR_FRAMEMISSING || broken(hr == E_POINTER) /* XP */, "expected WINCODEC_ERR_FRAMEMISSING, got %#x\n", hr);
+    ok(hr == WINCODEC_ERR_FRAMEMISSING || broken(hr == E_POINTER) /* XP */, "expected WINCODEC_ERR_FRAMEMISSING, got %#lx\n", hr);
 
     pos.QuadPart = 4;
     hr = IStream_Seek(stream, pos, SEEK_SET, NULL);
-    ok(hr == S_OK, "IStream_Seek error %#x\n", hr);
+    ok(hr == S_OK, "IStream_Seek error %#lx\n", hr);
 
     capability = 0xdeadbeef;
     hr = IWICBitmapDecoder_QueryCapability(decoder, stream, &capability);
-    ok(hr == S_OK, "QueryCapability error %#x\n", hr);
+    ok(hr == S_OK, "QueryCapability error %#lx\n", hr);
     ok(capability == exp_caps || capability == exp_caps_xp,
-       "expected %#x, got %#x\n", exp_caps, capability);
+       "expected %#lx, got %#lx\n", exp_caps, capability);
 
     frame_count = 0xdeadbeef;
     hr = IWICBitmapDecoder_GetFrameCount(decoder, &frame_count);
-    ok(hr == S_OK, "GetFrameCount error %#x\n", hr);
+    ok(hr == S_OK, "GetFrameCount error %#lx\n", hr);
     ok(frame_count == 1, "expected 1, got %u\n", frame_count);
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
     IWICBitmapFrameDecode_Release(frame);
 
     pos.QuadPart = 5;
     hr = IStream_Seek(stream, pos, SEEK_SET, NULL);
-    ok(hr == S_OK, "IStream_Seek error %#x\n", hr);
+    ok(hr == S_OK, "IStream_Seek error %#lx\n", hr);
 
     hr = IWICBitmapDecoder_QueryCapability(decoder, stream, &capability);
-    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#x\n", hr);
+    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#lx\n", hr);
 
     hr = IWICBitmapDecoder_Initialize(decoder, stream, WICDecodeMetadataCacheOnDemand);
-    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#x\n", hr);
+    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#lx\n", hr);
 
     IWICBitmapDecoder_Release(decoder);
 
     /* CreateDecoderFromStream fails if seeked past the start */
     hr = IWICImagingFactory_CreateDecoderFromStream(factory, stream, NULL, 0, &decoder);
-todo_wine
-    ok(hr == WINCODEC_ERR_COMPONENTNOTFOUND, "expected WINCODEC_ERR_COMPONENTNOTFOUND, got %#x\n", hr);
+    todo_wine
+    ok(hr == WINCODEC_ERR_COMPONENTNOTFOUND, "expected WINCODEC_ERR_COMPONENTNOTFOUND, got %#lx\n", hr);
 
     if (SUCCEEDED(hr))
         IWICBitmapDecoder_Release(decoder);
 
     pos.QuadPart = 0;
     hr = IStream_Seek(stream, pos, SEEK_SET, NULL);
-    ok(hr == S_OK, "IStream_Seek error %#x\n", hr);
+    ok(hr == S_OK, "IStream_Seek error %#lx\n", hr);
 
     hr = IWICImagingFactory_CreateDecoderFromStream(factory, stream, NULL, 0, &decoder);
-    ok(hr == S_OK, "CreateDecoderFromStream error %#x\n", hr);
+    ok(hr == S_OK, "CreateDecoderFromStream error %#lx\n", hr);
 
     frame_count = 0xdeadbeef;
     hr = IWICBitmapDecoder_GetFrameCount(decoder, &frame_count);
-    ok(hr == S_OK, "GetFrameCount error %#x\n", hr);
+    ok(hr == S_OK, "GetFrameCount error %#lx\n", hr);
     ok(frame_count == 1, "expected 1, got %u\n", frame_count);
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
     IWICBitmapFrameDecode_Release(frame);
 
     hr = IWICBitmapDecoder_Initialize(decoder, stream, WICDecodeMetadataCacheOnDemand);
-    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#x\n", hr);
+    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#lx\n", hr);
 
     hr = IWICBitmapDecoder_QueryCapability(decoder, stream, &capability);
-    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#x\n", hr);
+    ok(hr == WINCODEC_ERR_WRONGSTATE, "expected WINCODEC_ERR_WRONGSTATE, got %#lx\n", hr);
 
     IWICBitmapDecoder_Release(decoder);
     IStream_Release(stream);
@@ -557,39 +621,39 @@ static void test_tiff_8bpp_alpha(void)
                                             0x55,0x55,0x55,0x66,0x77,0x77,0x77,0x88 };
 
     hr = create_decoder(&tiff_8bpp_alpha, sizeof(tiff_8bpp_alpha), &decoder);
-    ok(hr == S_OK, "Failed to load TIFF image data %#x\n", hr);
+    ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
     if (hr != S_OK) return;
 
     hr = IWICBitmapDecoder_GetFrameCount(decoder, &frame_count);
-    ok(hr == S_OK, "GetFrameCount error %#x\n", hr);
+    ok(hr == S_OK, "GetFrameCount error %#lx\n", hr);
     ok(frame_count == 1, "expected 1, got %u\n", frame_count);
 
     EXPECT_REF(decoder, 1);
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
     EXPECT_REF(decoder, 2);
     IWICBitmapDecoder_Release(decoder);
 
     hr = IWICBitmapFrameDecode_GetSize(frame, &width, &height);
-    ok(hr == S_OK, "GetSize error %#x\n", hr);
+    ok(hr == S_OK, "GetSize error %#lx\n", hr);
     ok(width == 2, "expected 2, got %u\n", width);
     ok(height == 2, "expected 2, got %u\n", height);
 
     hr = IWICBitmapFrameDecode_GetResolution(frame, &dpi_x, &dpi_y);
-    ok(hr == S_OK, "GetResolution error %#x\n", hr);
+    ok(hr == S_OK, "GetResolution error %#lx\n", hr);
     ok(dpi_x == 96.0, "expected 96.0, got %f\n", dpi_x);
     ok(dpi_y == 96.0, "expected 96.0, got %f\n", dpi_y);
 
     hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
-    ok(hr == S_OK, "GetPixelFormat error %#x\n", hr);
+    ok(hr == S_OK, "GetPixelFormat error %#lx\n", hr);
     ok(IsEqualGUID(&format, &GUID_WICPixelFormat32bppPBGRA),
        "got wrong format %s\n", wine_dbgstr_guid(&format));
 
     hr = IWICImagingFactory_CreatePalette(factory, &palette);
-    ok(hr == S_OK, "CreatePalette error %#x\n", hr);
+    ok(hr == S_OK, "CreatePalette error %#lx\n", hr);
     hr = IWICBitmapFrameDecode_CopyPalette(frame, palette);
     ok(hr == WINCODEC_ERR_PALETTEUNAVAILABLE,
-       "expected WINCODEC_ERR_PALETTEUNAVAILABLE, got %#x\n", hr);
+       "expected WINCODEC_ERR_PALETTEUNAVAILABLE, got %#lx\n", hr);
     IWICPalette_Release(palette);
 
     rc.X = 0;
@@ -597,7 +661,7 @@ static void test_tiff_8bpp_alpha(void)
     rc.Width = 2;
     rc.Height = 2;
     hr = IWICBitmapFrameDecode_CopyPixels(frame, &rc, 8, sizeof(data), data);
-    ok(hr == S_OK, "CopyPixels error %#x\n", hr);
+    ok(hr == S_OK, "CopyPixels error %#lx\n", hr);
 
     for (i = 0; i < sizeof(data); i++)
         ok(data[i] == expected_data[i], "%u: expected %02x, got %02x\n", i, expected_data[i], data[i]);
@@ -650,28 +714,28 @@ static void test_tiff_8bpp_palette(void)
     generate_tiff_palette(buf + FIELD_OFFSET(struct tiff_8bpp_data, palette_data), 256);
 
     hr = create_decoder(buf, sizeof(buf), &decoder);
-    ok(hr == S_OK, "Failed to load TIFF image data %#x\n", hr);
+    ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
     if (hr != S_OK) return;
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
 
     hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
-    ok(hr == S_OK, "GetPixelFormat error %#x\n", hr);
+    ok(hr == S_OK, "GetPixelFormat error %#lx\n", hr);
     ok(IsEqualGUID(&format, &GUID_WICPixelFormat8bppIndexed),
        "expected GUID_WICPixelFormat8bppIndexed, got %s\n", wine_dbgstr_guid(&format));
 
     hr = IWICImagingFactory_CreatePalette(factory, &palette);
-    ok(hr == S_OK, "CreatePalette error %#x\n", hr);
+    ok(hr == S_OK, "CreatePalette error %#lx\n", hr);
     hr = IWICBitmapFrameDecode_CopyPalette(frame, palette);
-    ok(hr == S_OK, "CopyPalette error %#x\n", hr);
+    ok(hr == S_OK, "CopyPalette error %#lx\n", hr);
 
     hr = IWICPalette_GetColorCount(palette, &count);
-    ok(hr == S_OK, "GetColorCount error %#x\n", hr);
+    ok(hr == S_OK, "GetColorCount error %#lx\n", hr);
     ok(count == 256, "expected 256, got %u\n", count);
 
     hr = IWICPalette_GetColors(palette, 256, color, &ret);
-    ok(hr == S_OK, "GetColors error %#x\n", hr);
+    ok(hr == S_OK, "GetColors error %#lx\n", hr);
     ok(ret == count, "expected %u, got %u\n", count, ret);
     ok(color[0] == 0xff112233, "got %#x\n", color[0]);
     ok(color[1] == 0xff445566, "got %#x\n", color[1]);
@@ -699,14 +763,14 @@ static void test_tiff_resolution(void)
         tiff_resolution_image_data.entry[12].value = test_data->resolution_unit;
 
         hr = create_decoder(&tiff_resolution_image_data, sizeof(tiff_resolution_image_data), &decoder);
-        ok(hr == S_OK, "Failed to load TIFF image data %#x\n", hr);
+        ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
         if (hr != S_OK) return;
 
         hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-        ok(hr == S_OK, "%d: GetFrame error %#x\n", i, hr);
+        ok(hr == S_OK, "%d: GetFrame error %#lx\n", i, hr);
 
         hr = IWICBitmapFrameDecode_GetResolution(frame, &dpi_x, &dpi_y);
-        ok(hr == S_OK, "%d: GetResolution error %#x\n", i, hr);
+        ok(hr == S_OK, "%d: GetResolution error %#lx\n", i, hr);
 
         if (test_data->broken_dpi_x != 0)
         {
@@ -748,29 +812,29 @@ static void test_tiff_24bpp(void)
     static const BYTE expected_data[] = { 0x33,0x22,0x11 };
 
     hr = create_decoder(&tiff_24bpp_data, sizeof(tiff_24bpp_data), &decoder);
-    ok(hr == S_OK, "Failed to load TIFF image data %#x\n", hr);
+    ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
     if (hr != S_OK) return;
     ok(decoder != NULL, "Failed to load TIFF image data\n");
 
     hr = IWICBitmapDecoder_GetFrameCount(decoder, &count);
-    ok(hr == S_OK, "GetFrameCount error %#x\n", hr);
+    ok(hr == S_OK, "GetFrameCount error %#lx\n", hr);
     ok(count == 1, "got %u\n", count);
 
     hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
-    ok(hr == S_OK, "GetFrame error %#x\n", hr);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
 
     hr = IWICBitmapFrameDecode_GetSize(frame, &width, &height);
-    ok(hr == S_OK, "GetSize error %#x\n", hr);
+    ok(hr == S_OK, "GetSize error %#lx\n", hr);
     ok(width == 1, "got %u\n", width);
     ok(height == 1, "got %u\n", height);
 
     hr = IWICBitmapFrameDecode_GetResolution(frame, &dpi_x, &dpi_y);
-    ok(hr == S_OK, "GetResolution error %#x\n", hr);
+    ok(hr == S_OK, "GetResolution error %#lx\n", hr);
     ok(dpi_x == 300.0, "got %f\n", dpi_x);
     ok(dpi_y == 300.0, "got %f\n", dpi_y);
 
     hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
-    ok(hr == S_OK, "GetPixelFormat error %#x\n", hr);
+    ok(hr == S_OK, "GetPixelFormat error %#lx\n", hr);
     ok(IsEqualGUID(&format, &GUID_WICPixelFormat24bppBGR),
        "got wrong format %s\n", wine_dbgstr_guid(&format));
 
@@ -783,10 +847,10 @@ static void test_tiff_24bpp(void)
         rc.Height = 1;
         hr = IWICBitmapFrameDecode_CopyPixels(frame, &rc, stride, sizeof(data), data);
         if (stride < 3)
-            ok(hr == E_INVALIDARG, "CopyPixels(%u) should fail: %#x\n", stride, hr);
+            ok(hr == E_INVALIDARG, "CopyPixels(%u) should fail: %#lx\n", stride, hr);
         else
         {
-            ok(hr == S_OK, "CopyPixels(%u) error %#x\n", stride, hr);
+            ok(hr == S_OK, "CopyPixels(%u) error %#lx\n", stride, hr);
 
             for (i = 0; i < sizeof(data); i++)
                 ok(data[i] == expected_data[i], "%u: expected %02x, got %02x\n", i, expected_data[i], data[i]);
@@ -804,7 +868,11 @@ static const struct tiff_1x1_data
     USHORT version;
     ULONG  dir_offset;
     USHORT number_of_entries;
+<<<<<<< HEAD
     struct IFD_entry entry[12];
+=======
+    struct IFD_entry entry[13];
+>>>>>>> master
     ULONG next_IFD;
     struct IFD_rational res;
     short palette_data[3][256];
@@ -819,7 +887,11 @@ static const struct tiff_1x1_data
 #endif
     42,
     FIELD_OFFSET(struct tiff_1x1_data, number_of_entries),
+<<<<<<< HEAD
     12,
+=======
+    13,
+>>>>>>> master
     {
         { 0xff, IFD_SHORT, 1, 0 }, /* SUBFILETYPE */
         { 0x100, IFD_LONG, 1, 1 }, /* IMAGEWIDTH */
@@ -832,7 +904,12 @@ static const struct tiff_1x1_data
         { 0x11a, IFD_RATIONAL, 1, FIELD_OFFSET(struct tiff_1x1_data, res) },
         { 0x11b, IFD_RATIONAL, 1, FIELD_OFFSET(struct tiff_1x1_data, res) },
         { 0x128, IFD_SHORT, 1, 2 }, /* RESOLUTIONUNIT */
+<<<<<<< HEAD
         { 0x140, IFD_SHORT, 256*3, FIELD_OFFSET(struct tiff_1x1_data, palette_data) } /* COLORMAP */
+=======
+        { 0x140, IFD_SHORT, 256*3, FIELD_OFFSET(struct tiff_1x1_data, palette_data) }, /* COLORMAP */
+        { 0x152, IFD_SHORT, 1, 1 } /* EXTRASAMPLES: 1 - Associated alpha with pre-multiplied color */
+>>>>>>> master
     },
     0,
     { 96, 1 },
@@ -882,21 +959,49 @@ static void test_color_formats(void)
     {
         32, 5, 2, &GUID_WICPixelFormat32bppBGRA, bits_1bpsBGRA
     };
+<<<<<<< HEAD
+=======
+    static const struct bitmap_data data_1bpsPBGRA =
+    {
+        32, 5, 2, &GUID_WICPixelFormat32bppPBGRA, bits_1bpsBGRA
+    };
+>>>>>>> master
     static const BYTE bits_4bpsBGRA[] = { 204,85,85,51,85,136,187,85,0,68,0,85,0,102,0,119,0,136,0,153,0,0,0,17,0,34,0,51 };
     static const struct bitmap_data data_4bpsBGRA =
     {
         32, 5, 2, &GUID_WICPixelFormat32bppBGRA, bits_4bpsBGRA
     };
+<<<<<<< HEAD
+=======
+    static const struct bitmap_data data_4bpsPBGRA =
+    {
+        32, 5, 2, &GUID_WICPixelFormat32bppPBGRA, bits_4bpsBGRA
+    };
+>>>>>>> master
     static const BYTE bits_8bpsBGRA[] = { 2,0,1,3,6,5,4,7,0,9,8,1,4,3,2,5 };
     static const struct bitmap_data data_8bpsBGRA =
     {
         32, 4, 1, &GUID_WICPixelFormat32bppBGRA, bits_8bpsBGRA
     };
+<<<<<<< HEAD
+=======
+    static const struct bitmap_data data_8bpsPBGRA =
+    {
+        32, 4, 1, &GUID_WICPixelFormat32bppPBGRA, bits_8bpsBGRA
+    };
+>>>>>>> master
     static const BYTE bits_64bppRGBA[] = { 1,0,2,3,4,5,6,7,8,9,0,1,2,3,4,5 };
     static const struct bitmap_data data_64bppRGBA =
     {
         64, 2, 1, &GUID_WICPixelFormat64bppRGBA, bits_64bppRGBA
     };
+<<<<<<< HEAD
+=======
+    static const struct bitmap_data data_64bppPRGBA =
+    {
+        64, 2, 1, &GUID_WICPixelFormat64bppPRGBA, bits_64bppRGBA
+    };
+>>>>>>> master
     static const BYTE bits_BlackWhite[] = { 85,195,184,85 };
     static const struct bitmap_data data_BlackWhite =
     {
@@ -932,6 +1037,7 @@ static void test_color_formats(void)
     {
         32, 3, 1, &GUID_WICPixelFormat32bppGrayFloat, bits_32bppGrayFloat
     };
+<<<<<<< HEAD
 #if 0 /* FIXME */
     static const BYTE bits_96bpp3Channels[] = { 0 };
     static const struct bitmap_data data_96bpp3Channels =
@@ -939,11 +1045,25 @@ static void test_color_formats(void)
         64, 1, 1, &GUID_WICPixelFormat96bpp3Channels, bits_96bpp3Channels
     };
 #endif
+=======
+    static const BYTE bits_96bppRGBFloat[] = { 1,0,2,3,4,5,6,7,8,9,0,1 };
+    static const struct bitmap_data data_96bppRGBFloat =
+    {
+        96, 1, 1, &GUID_WICPixelFormat96bppRGBFloat, bits_96bppRGBFloat
+    };
+>>>>>>> master
     static const BYTE bits_128bppRGBAFloat[] = { 1,0,2,3,4,5,6,7,8,9,0,1,2,3,4,5 };
     static const struct bitmap_data data_128bppRGBAFloat =
     {
         128, 1, 1, &GUID_WICPixelFormat128bppRGBAFloat, bits_128bppRGBAFloat
     };
+<<<<<<< HEAD
+=======
+    static const struct bitmap_data data_128bppPRGBAFloat =
+    {
+        128, 1, 1, &GUID_WICPixelFormat128bppPRGBAFloat, bits_128bppRGBAFloat
+    };
+>>>>>>> master
     static const BYTE bits_1bppIndexed[] = { 85,195,184,85 };
     static const struct bitmap_data data_1bppIndexed =
     {
@@ -979,11 +1099,16 @@ static void test_color_formats(void)
         int photometric; /* PhotometricInterpretation */
         int samples; /* SamplesPerPixel */
         int bps; /* BitsPerSample */
+<<<<<<< HEAD
+=======
+        int extra_samples; /* ExtraSamples */
+>>>>>>> master
         const struct bitmap_data *data;
         const struct bitmap_data *alt_data;
     } td[] =
     {
         /* 2 - RGB */
+<<<<<<< HEAD
         { 2, 3, 1, &data_1bpsBGR },
         { 2, 3, 4, &data_4bpsBGR },
         { 2, 3, 8, &data_8bpsBGR },
@@ -1021,6 +1146,48 @@ static void test_color_formats(void)
         { 5, 4, 16, &data_64bppCMYK },
         { 5, 4, 24, NULL },
         { 5, 4, 32, NULL },
+=======
+        { 2, 3, 1, 0, &data_1bpsBGR },
+        { 2, 3, 4, 0, &data_4bpsBGR },
+        { 2, 3, 8, 0, &data_8bpsBGR },
+        { 2, 3, 16, 0, &data_48bppRGB },
+        { 2, 3, 24, 0, NULL },
+        { 2, 3, 32, 0, &data_96bppRGBFloat },
+        { 2, 4, 1, 0, &data_1bpsBGRA },
+        { 2, 4, 1, 1, &data_1bpsPBGRA },
+        { 2, 4, 4, 0, &data_4bpsBGRA },
+        { 2, 4, 4, 1, &data_4bpsPBGRA },
+        { 2, 4, 8, 0, &data_8bpsBGRA },
+        { 2, 4, 8, 1, &data_8bpsPBGRA },
+        { 2, 4, 16, 0, &data_64bppRGBA },
+        { 2, 4, 16, 1, &data_64bppPRGBA },
+        { 2, 4, 24, 0, NULL },
+        { 2, 4, 32, 0, &data_128bppRGBAFloat },
+        { 2, 4, 32, 1, &data_128bppPRGBAFloat },
+        /* 1 - BlackIsZero (Bilevel) */
+        { 1, 1, 1, 0, &data_BlackWhite, &data_BlackWhite_xp },
+        { 1, 1, 4, 0, &data_4bppGray, &data_4bppGray_xp },
+        { 1, 1, 8, 0, &data_8bppGray },
+        { 1, 1, 16, 0, &data_16bppGray },
+        { 1, 1, 24, 0, NULL },
+        { 1, 1, 32, 0, &data_32bppGrayFloat },
+        /* 3 - Palette Color */
+        { 3, 1, 1, 0, &data_1bppIndexed },
+        { 3, 1, 4, 0, &data_4bppIndexed, &data_4bppIndexed_xp },
+        { 3, 1, 8, 0, &data_8bppIndexed },
+#if 0 /* FIXME: for some reason libtiff replaces photometric 3 by 1 for bps > 8 */
+        { 3, 1, 16, 0, &data_8bppIndexed },
+        { 3, 1, 24, 0, &data_8bppIndexed },
+        { 3, 1, 32, 0, &data_8bppIndexed },
+#endif
+        /* 5 - Separated */
+        { 5, 4, 1, 0, NULL },
+        { 5, 4, 4, 0, NULL },
+        { 5, 4, 8, 0, &data_32bppCMYK },
+        { 5, 4, 16, 0, &data_64bppCMYK },
+        { 5, 4, 24, 0, NULL },
+        { 5, 4, 32, 0, NULL },
+>>>>>>> master
     };
     BYTE buf[sizeof(tiff_1x1_data)];
     BYTE pixels[256];
@@ -1029,9 +1196,15 @@ static void test_color_formats(void)
     IWICBitmapFrameDecode *frame;
     GUID format;
     UINT count, i, bpp, channels, ret;
+<<<<<<< HEAD
     BOOL trasparency;
     struct IFD_entry *tag, *tag_photo = NULL, *tag_bps = NULL, *tag_samples = NULL, *tag_colormap = NULL;
     struct IFD_entry *tag_width = NULL, *tag_height = NULL;
+=======
+    BOOL transparency;
+    struct IFD_entry *tag, *tag_photo = NULL, *tag_bps = NULL, *tag_samples = NULL, *tag_colormap = NULL;
+    struct IFD_entry *tag_width = NULL, *tag_height = NULL, *tag_extra_samples = NULL;
+>>>>>>> master
     short *bps;
 
     memcpy(buf, &tiff_1x1_data, sizeof(tiff_1x1_data));
@@ -1055,23 +1228,41 @@ static void test_color_formats(void)
             tag_samples = &tag[i];
         else if (tag[i].id == 0x140) /* ColorMap */
             tag_colormap = &tag[i];
+<<<<<<< HEAD
     }
 
     ok(tag_bps && tag_photo && tag_samples && tag_colormap, "tag 0x102,0x106,0x115 or 0x140 is missing\n");
     if (!tag_bps || !tag_photo || !tag_samples || !tag_colormap) return;
+=======
+        else if (tag[i].id == 0x152) /* ExtraSamples */
+            tag_extra_samples = &tag[i];
+    }
+
+    ok(tag_bps && tag_photo && tag_samples && tag_colormap && tag_extra_samples, "tag 0x102,0x106,0x115,0x140 or 0x152 is missing\n");
+    if (!tag_bps || !tag_photo || !tag_samples || !tag_colormap || !tag_extra_samples) return;
+>>>>>>> master
 
     ok(tag_bps->type == IFD_SHORT, "tag 0x102 should have type IFD_SHORT\n");
     bps = (short *)(buf + tag_bps->value);
     ok(bps[0] == 8 && bps[1] == 8 && bps[2] == 8 && bps[3] == 0,
        "expected bps 8,8,8,0 got %d,%d,%d,%d\n", bps[0], bps[1], bps[2], bps[3]);
 
+<<<<<<< HEAD
     for (i = 0; i < sizeof(td)/sizeof(td[0]); i++)
+=======
+    for (i = 0; i < ARRAY_SIZE(td); i++)
+>>>>>>> master
     {
         if (td[i].data)
         {
             bpp = td[i].samples * td[i].bps;
             if (winetest_debug > 1)
+<<<<<<< HEAD
                 trace("samples %u, bps %u, bpp %u, width %u => width_bytes %u\n", td[i].samples, td[i].bps, bpp,
+=======
+                trace("photometric %d, samples %d, extra samples %d, bps %d, bpp %u, width %u => width_bytes %u\n",
+                      td[i].photometric, td[i].samples, td[i].extra_samples, td[i].bps, bpp,
+>>>>>>> master
                       td[i].data->width, width_bytes(td[i].data->width, bpp));
             tag_width->value = td[i].data->width;
             tag_height->value = td[i].data->height;
@@ -1123,11 +1314,30 @@ static void test_color_formats(void)
             continue;
         }
 
+<<<<<<< HEAD
         hr = create_decoder(buf, sizeof(buf), &decoder);
         if (!td[i].data)
         {
             ok(hr == WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT || hr == WINCODEC_ERR_COMPONENTNOTFOUND /* win8+ */ || WINCODEC_ERR_BADIMAGE /* XP */,
                "%u: (%d,%d,%d) wrong error %#x\n", i, td[i].photometric, td[i].samples, td[i].bps, hr);
+=======
+        if (td[i].extra_samples)
+        {
+            tag_extra_samples->id = 0x152; /* ExtraSamples */
+            tag_extra_samples->value = td[i].extra_samples;
+        }
+        else /* remove ExtraSamples tag */
+        {
+            tag_extra_samples->id = 0x14e; /* NumberOfInks */
+            tag_extra_samples->value = td[i].samples;
+        }
+
+        hr = create_decoder(buf, sizeof(buf), &decoder);
+        if (!td[i].data)
+        {
+            ok(hr == WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT || hr == WINCODEC_ERR_COMPONENTNOTFOUND /* win8+ */ || hr == WINCODEC_ERR_BADIMAGE /* XP */,
+               "%u: (%d,%d,%d,%d) wrong error %#lx\n", i, td[i].photometric, td[i].samples, td[i].extra_samples, td[i].bps, hr);
+>>>>>>> master
             if (hr == S_OK)
             {
                 IWICBitmapDecoder_Release(decoder);
@@ -1137,6 +1347,7 @@ static void test_color_formats(void)
         }
         else
             ok(hr == S_OK || broken(hr == WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT || hr == WINCODEC_ERR_BADIMAGE) /* XP */,
+<<<<<<< HEAD
                "%u: failed to load TIFF image data (%d,%d,%d) %#x\n",
                i, td[i].photometric, td[i].samples, td[i].bps, hr);
         if (hr != S_OK) continue;
@@ -1165,6 +1376,43 @@ static void test_color_formats(void)
         if (ret && td[i].alt_data)
             ret = memcmp(pixels, td[i].alt_data->bits, width_bytes(td[i].data->width, bpp));
         ok(ret == 0, "%u: (%d,%d,%d) wrong pixel data\n", i, td[i].photometric, td[i].samples, td[i].bps);
+=======
+               "%u: failed to load TIFF image data (%d,%d,%d,%d) %#lx\n",
+               i, td[i].photometric, td[i].samples, td[i].extra_samples, td[i].bps, hr);
+        if (hr != S_OK) continue;
+
+        hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
+        ok(hr == S_OK, "%u: GetFrame error %#lx\n", i, hr);
+
+        hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
+        ok(hr == S_OK, "%u: GetPixelFormat error %#lx\n", i, hr);
+        if (IsEqualGUID(td[i].data->format, &GUID_WICPixelFormat96bppRGBFloat) && IsEqualGUID(&format, &GUID_WICPixelFormat128bppRGBFloat))
+        {
+            win_skip("Windows Server 2008 misinterprets 96bppRGBFloat as 128bppRGBFloat, skipping the tests\n");
+            IWICBitmapFrameDecode_Release(frame);
+            IWICBitmapDecoder_Release(decoder);
+            continue;
+        }
+        ok(IsEqualGUID(&format, td[i].data->format),
+           "%u (%d,%d,%d,%d): expected %s, got %s\n",
+            i, td[i].photometric, td[i].samples, td[i].extra_samples, td[i].bps,
+            wine_dbgstr_guid(td[i].data->format), wine_dbgstr_guid(&format));
+
+        transparency = (td[i].photometric == 2 && td[i].samples == 4); /* for XP */
+        hr = get_pixelformat_info(&format, &bpp, &channels, &transparency);
+        ok(hr == S_OK, "%u: get_pixelformat_bpp error %#lx\n", i, hr);
+        ok(bpp == td[i].data->bpp, "%u: expected %u, got %u\n", i, td[i].data->bpp, bpp);
+        ok(channels == td[i].samples, "%u: expected %u, got %u\n", i, td[i].samples, channels);
+        ok(transparency == (td[i].photometric == 2 && td[i].samples == 4), "%u: got %u\n", i, transparency);
+
+        memset(pixels, 0, sizeof(pixels));
+        hr = IWICBitmapFrameDecode_CopyPixels(frame, NULL, width_bytes(td[i].data->width, bpp), sizeof(pixels), pixels);
+        ok(hr == S_OK, "%u: CopyPixels error %#lx\n", i, hr);
+        ret = memcmp(pixels, td[i].data->bits, width_bytes(td[i].data->width, bpp));
+        if (ret && td[i].alt_data)
+            ret = memcmp(pixels, td[i].alt_data->bits, width_bytes(td[i].data->width, bpp));
+        ok(ret == 0, "%u: (%d,%d,%d,%d) wrong pixel data\n", i, td[i].photometric, td[i].samples, td[i].extra_samples, td[i].bps);
+>>>>>>> master
         if (ret)
         {
             UINT j, n = width_bytes(td[i].data->width, bpp);
@@ -1177,6 +1425,71 @@ static void test_color_formats(void)
     }
 }
 
+<<<<<<< HEAD
+=======
+static void test_tiff_4bps_bgra(void)
+{
+    HRESULT hr;
+    IWICBitmapDecoder *decoder;
+    IWICBitmapFrameDecode *frame;
+    UINT frame_count, width, height, i;
+    double dpi_x, dpi_y;
+    IWICPalette *palette;
+    GUID format;
+    WICRect rc;
+    BYTE data[24];
+    static const BYTE expected_data[24] = { 0,0,0,0xff, 0xff,0,0,0, 0xff,0,0,0xff,
+                                            0,0xff,0,0, 0xff,0xff,0,0xff, 0xff,0xff,0xff,0 };
+
+    hr = create_decoder(&tiff_4bps_bgra, sizeof(tiff_4bps_bgra), &decoder);
+    ok(hr == S_OK, "Failed to load TIFF image data %#lx\n", hr);
+    if (hr != S_OK) return;
+
+    hr = IWICBitmapDecoder_GetFrameCount(decoder, &frame_count);
+    ok(hr == S_OK, "GetFrameCount error %#lx\n", hr);
+    ok(frame_count == 1, "expected 1, got %u\n", frame_count);
+
+    hr = IWICBitmapDecoder_GetFrame(decoder, 0, &frame);
+    ok(hr == S_OK, "GetFrame error %#lx\n", hr);
+
+    hr = IWICBitmapFrameDecode_GetSize(frame, &width, &height);
+    ok(hr == S_OK, "GetSize error %#lx\n", hr);
+    ok(width == 3, "got %u\n", width);
+    ok(height == 2, "got %u\n", height);
+
+    hr = IWICBitmapFrameDecode_GetResolution(frame, &dpi_x, &dpi_y);
+    ok(hr == S_OK, "GetResolution error %#lx\n", hr);
+    ok(dpi_x == 96.0, "expected 96.0, got %f\n", dpi_x);
+    ok(dpi_y == 96.0, "expected 96.0, got %f\n", dpi_y);
+
+    hr = IWICBitmapFrameDecode_GetPixelFormat(frame, &format);
+    ok(hr == S_OK, "GetPixelFormat error %#lx\n", hr);
+    ok(IsEqualGUID(&format, &GUID_WICPixelFormat32bppBGRA),
+       "got wrong format %s\n", wine_dbgstr_guid(&format));
+
+    hr = IWICImagingFactory_CreatePalette(factory, &palette);
+    ok(hr == S_OK, "CreatePalette error %#lx\n", hr);
+    hr = IWICBitmapFrameDecode_CopyPalette(frame, palette);
+    ok(hr == WINCODEC_ERR_PALETTEUNAVAILABLE,
+       "expected WINCODEC_ERR_PALETTEUNAVAILABLE, got %#lx\n", hr);
+    IWICPalette_Release(palette);
+
+    memset(data, 0xaa, sizeof(data));
+    rc.X = 0;
+    rc.Y = 0;
+    rc.Width = 3;
+    rc.Height = 2;
+    hr = IWICBitmapFrameDecode_CopyPixels(frame, &rc, 12, sizeof(data), data);
+    ok(hr == S_OK, "CopyPixels error %#lx\n", hr);
+
+    for (i = 0; i < sizeof(data); i++)
+        ok(data[i] == expected_data[i], "%u: expected %02x, got %02x\n", i, expected_data[i], data[i]);
+
+    IWICBitmapFrameDecode_Release(frame);
+    IWICBitmapDecoder_Release(decoder);
+}
+
+>>>>>>> master
 START_TEST(tiffformat)
 {
     HRESULT hr;
@@ -1185,9 +1498,13 @@ START_TEST(tiffformat)
 
     hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
                           &IID_IWICImagingFactory, (void **)&factory);
-    ok(hr == S_OK, "CoCreateInstance error %#x\n", hr);
+    ok(hr == S_OK, "CoCreateInstance error %#lx\n", hr);
     if (FAILED(hr)) return;
 
+<<<<<<< HEAD
+=======
+    test_tiff_4bps_bgra();
+>>>>>>> master
     test_color_formats();
     test_tiff_1bpp_palette();
     test_tiff_8bpp_palette();

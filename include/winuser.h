@@ -1217,9 +1217,9 @@ typedef struct tagSTYLESTRUCT {
   /* Offsets for GetWindowLong() and GetWindowWord() */
 #define GWL_EXSTYLE         (-20)
 #define GWL_STYLE           (-16)
+#define GWL_ID              (-12)
 #if !defined _WIN64 && !defined __WINESRC__
 # define GWL_USERDATA        (-21)
-# define GWL_ID              (-12)
 # define GWL_HWNDPARENT      (-8)
 # define GWL_HINSTANCE       (-6)
 # define GWL_WNDPROC         (-4)
@@ -3114,7 +3114,9 @@ typedef struct tagTRACKMOUSEEVENT {
 typedef  PVOID           HDEVNOTIFY;
 typedef  HDEVNOTIFY     *PHDEVNOTIFY;
 
-#define DEVICE_NOTIFY_WINDOW_HANDLE     0x00000000
+#define DEVICE_NOTIFY_WINDOW_HANDLE         0x00000000
+#define DEVICE_NOTIFY_SERVICE_HANDLE        0x00000001
+#define DEVICE_NOTIFY_ALL_INTERFACE_CLASSES 0x00000004
 
 /* used for GetWindowInfo() */
 
@@ -3254,6 +3256,7 @@ typedef struct
 #define EVENT_OBJECT_HELPCHANGE        0x8010
 #define EVENT_OBJECT_DEFACTIONCHANGE   0x8011
 #define EVENT_OBJECT_ACCELERATORCHANGE 0x8012
+#define EVENT_OBJECT_INVOKED           0x8013
 
 /* Sound events */
 #define SOUND_SYSTEM_STARTUP      1
@@ -3397,6 +3400,18 @@ typedef struct tagTOUCHINPUT {
     DWORD     cyContact;
 } TOUCHINPUT, *PTOUCHINPUT;
 typedef TOUCHINPUT const * PCTOUCHINPUT;
+
+#define TOUCHEVENTF_MOVE        0x0001
+#define TOUCHEVENTF_DOWN        0x0002
+#define TOUCHEVENTF_UP          0x0004
+#define TOUCHEVENTF_INRANGE     0x0008
+#define TOUCHEVENTF_PRIMARY     0x0010
+#define TOUCHEVENTF_NOCOALESCE  0x0020
+#define TOUCHEVENTF_PEN         0x0040
+#define TOUCHEVENTF_PALM        0x0080
+
+#define TWF_FINETOUCH  0x0001
+#define TWF_WANTPALM   0x0002
 
 /* Gesture definitions */
 DECLARE_HANDLE(HGESTUREINFO);
@@ -4392,7 +4407,47 @@ static inline BOOL WINAPI SetRectEmpty(LPRECT rect)
 WORD        WINAPI SYSTEM_KillSystemTimer( WORD );
 
 #ifdef __WINESRC__
+<<<<<<< HEAD
 WINUSERAPI BOOL CDECL __wine_send_input( HWND hwnd, const INPUT *input, UINT flags );
+=======
+WINUSERAPI BOOL CDECL __wine_send_input( HWND hwnd, const INPUT *input, const RAWINPUT *rawinput );
+
+/* Uxtheme hook functions and struct */
+
+/* Scroll bar hit testing */
+enum SCROLL_HITTEST
+{
+    SCROLL_NOWHERE,      /* Outside the scroll bar */
+    SCROLL_TOP_ARROW,    /* Top or left arrow */
+    SCROLL_TOP_RECT,     /* Rectangle between the top arrow and the thumb */
+    SCROLL_THUMB,        /* Thumb rectangle */
+    SCROLL_BOTTOM_RECT,  /* Rectangle between the thumb and the bottom arrow */
+    SCROLL_BOTTOM_ARROW  /* Bottom or right arrow */
+};
+
+/* Scroll bar tracking information */
+struct SCROLL_TRACKING_INFO
+{
+    HWND win;                       /* Tracking window */
+    INT bar;                        /* SB_HORZ/SB_VERT/SB_CTL */
+    INT thumb_pos;                  /* Thumb position */
+    INT thumb_val;                  /* Current thumb value from thumb position */
+    BOOL vertical;                  /* Is scroll bar vertical */
+    enum SCROLL_HITTEST hit_test;   /* Hit Test code of the last button-down event */
+};
+
+struct user_api_hook
+{
+    LRESULT (WINAPI *pDefDlgProc)(HWND, UINT, WPARAM, LPARAM, BOOL);
+    void (WINAPI *pScrollBarDraw)(HWND, HDC, INT, enum SCROLL_HITTEST,
+                                  const struct SCROLL_TRACKING_INFO *, BOOL, BOOL, RECT *, INT, INT,
+                                  INT, BOOL);
+    LRESULT (WINAPI *pScrollBarWndProc)(HWND, UINT, WPARAM, LPARAM, BOOL);
+};
+
+WINUSERAPI BOOL WINAPI RegisterUserApiHook(const struct user_api_hook *new, struct user_api_hook *old);
+WINUSERAPI void WINAPI UnregisterUserApiHook(void);
+>>>>>>> master
 #endif
 
 #ifdef __cplusplus

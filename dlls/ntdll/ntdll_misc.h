@@ -20,20 +20,27 @@
 #define __WINE_NTDLL_MISC_H
 
 #include <stdarg.h>
-#include <signal.h>
 #include <sys/types.h>
-#include <pthread.h>
 
 #include "windef.h"
 #include "winnt.h"
 #include "winternl.h"
+<<<<<<< HEAD
 #include "wine/debug.h"
 #include "wine/server.h"
+=======
+#include "unixlib.h"
+>>>>>>> master
 #include "wine/asm.h"
 
-#define MAX_NT_PATH_LENGTH 277
+#define DECLARE_CRITICAL_SECTION(cs) \
+    static RTL_CRITICAL_SECTION cs; \
+    static RTL_CRITICAL_SECTION_DEBUG cs##_debug = \
+    { 0, 0, &cs, { &cs##_debug.ProcessLocksList, &cs##_debug.ProcessLocksList }, \
+      0, 0, { (DWORD_PTR)(__FILE__ ": " # cs) }}; \
+    static RTL_CRITICAL_SECTION cs = { &cs##_debug, -1, 0, 0, 0, 0 };
 
-#define MAX_DOS_DRIVES 26
+#define MAX_NT_PATH_LENGTH 277
 
 #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
 static const UINT_PTR page_size = 0x1000;
@@ -41,36 +48,27 @@ static const UINT_PTR page_size = 0x1000;
 extern UINT_PTR page_size DECLSPEC_HIDDEN;
 #endif
 
-struct drive_info
-{
-    dev_t dev;
-    ino_t ino;
-};
-
-extern NTSTATUS close_handle( HANDLE ) DECLSPEC_HIDDEN;
-extern ULONG_PTR get_system_affinity_mask(void) DECLSPEC_HIDDEN;
-
 /* exceptions */
-extern void wait_suspend( CONTEXT *context ) DECLSPEC_HIDDEN;
-extern NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, int first_chance, CONTEXT *context ) DECLSPEC_HIDDEN;
 extern LONG call_vectored_handlers( EXCEPTION_RECORD *rec, CONTEXT *context ) DECLSPEC_HIDDEN;
-extern void raise_status( NTSTATUS status, EXCEPTION_RECORD *rec ) DECLSPEC_NORETURN DECLSPEC_HIDDEN;
-extern NTSTATUS context_to_server( context_t *to, const CONTEXT *from ) DECLSPEC_HIDDEN;
-extern NTSTATUS context_from_server( CONTEXT *to, const context_t *from ) DECLSPEC_HIDDEN;
-extern NTSTATUS set_thread_context( HANDLE handle, const context_t *context, BOOL *self ) DECLSPEC_HIDDEN;
-extern NTSTATUS get_thread_context( HANDLE handle, context_t *context, unsigned int flags, BOOL *self ) DECLSPEC_HIDDEN;
-extern NTSTATUS get_thread_ldt_entry( HANDLE handle, void *data, ULONG len, ULONG *ret_len ) DECLSPEC_HIDDEN;
+extern void DECLSPEC_NORETURN raise_status( NTSTATUS status, EXCEPTION_RECORD *rec ) DECLSPEC_HIDDEN;
 extern LONG WINAPI call_unhandled_exception_filter( PEXCEPTION_POINTERS eptr ) DECLSPEC_HIDDEN;
 
+extern void WINAPI LdrInitializeThunk(CONTEXT*,ULONG_PTR,ULONG_PTR,ULONG_PTR) DECLSPEC_HIDDEN;
+extern NTSTATUS WINAPI KiUserExceptionDispatcher(EXCEPTION_RECORD*,CONTEXT*) DECLSPEC_HIDDEN;
+extern void WINAPI KiUserApcDispatcher(CONTEXT*,ULONG_PTR,ULONG_PTR,ULONG_PTR,PNTAPCFUNC) DECLSPEC_HIDDEN;
+extern void WINAPI KiUserCallbackDispatcher(ULONG,void*,ULONG) DECLSPEC_HIDDEN;
+extern void (WINAPI *pWow64PrepareForException)( EXCEPTION_RECORD *rec, CONTEXT *context ) DECLSPEC_HIDDEN;
+
 #if defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
-extern RUNTIME_FUNCTION *lookup_function_info( ULONG_PTR pc, ULONG_PTR *base, LDR_MODULE **module ) DECLSPEC_HIDDEN;
+extern RUNTIME_FUNCTION *lookup_function_info( ULONG_PTR pc, ULONG_PTR *base, LDR_DATA_TABLE_ENTRY **module ) DECLSPEC_HIDDEN;
 #endif
 
 /* debug helpers */
 extern LPCSTR debugstr_us( const UNICODE_STRING *str ) DECLSPEC_HIDDEN;
-extern LPCSTR debugstr_ObjectAttributes(const OBJECT_ATTRIBUTES *oa) DECLSPEC_HIDDEN;
+extern const char *debugstr_exception_code( DWORD code ) DECLSPEC_HIDDEN;
 
 /* init routines */
+<<<<<<< HEAD
 extern NTSTATUS signal_alloc_thread( TEB **teb ) DECLSPEC_HIDDEN;
 extern void signal_free_thread( TEB *teb ) DECLSPEC_HIDDEN;
 extern void signal_init_thread( TEB *teb ) DECLSPEC_HIDDEN;
@@ -80,10 +78,12 @@ extern void signal_start_thread( LPTHREAD_START_ROUTINE entry, void *arg, BOOL s
 extern void signal_start_process( LPTHREAD_START_ROUTINE entry, BOOL suspend ) DECLSPEC_HIDDEN;
 extern void DECLSPEC_NORETURN signal_exit_thread( int status ) DECLSPEC_HIDDEN;
 extern void DECLSPEC_NORETURN signal_exit_process( int status ) DECLSPEC_HIDDEN;
+=======
+>>>>>>> master
 extern void version_init(void) DECLSPEC_HIDDEN;
 extern void debug_init(void) DECLSPEC_HIDDEN;
-extern TEB *thread_init(void) DECLSPEC_HIDDEN;
 extern void actctx_init(void) DECLSPEC_HIDDEN;
+<<<<<<< HEAD
 extern void virtual_init(void) DECLSPEC_HIDDEN;
 extern void virtual_init_threading(void) DECLSPEC_HIDDEN;
 extern void fill_cpu_info(void) DECLSPEC_HIDDEN;
@@ -124,6 +124,11 @@ extern NTSTATUS validate_open_object_attributes( const OBJECT_ATTRIBUTES *attr )
 extern int wait_select_reply( void *cookie ) DECLSPEC_HIDDEN;
 extern void invoke_apc( const apc_call_t *call, apc_result_t *result ) DECLSPEC_HIDDEN;
 extern void *server_get_shared_memory( HANDLE thread ) DECLSPEC_HIDDEN;
+=======
+extern void locale_init(void) DECLSPEC_HIDDEN;
+extern void init_user_process_params(void) DECLSPEC_HIDDEN;
+extern void CDECL DECLSPEC_NORETURN signal_start_thread( CONTEXT *ctx ) DECLSPEC_HIDDEN;
+>>>>>>> master
 
 /* module handling */
 extern LIST_ENTRY tls_links DECLSPEC_HIDDEN;
@@ -133,11 +138,13 @@ extern FARPROC SNOOP_GetProcAddress( HMODULE hmod, const IMAGE_EXPORT_DIRECTORY 
                                      FARPROC origfun, DWORD ordinal, const WCHAR *user ) DECLSPEC_HIDDEN;
 extern void RELAY_SetupDLL( HMODULE hmod ) DECLSPEC_HIDDEN;
 extern void SNOOP_SetupDLL( HMODULE hmod ) DECLSPEC_HIDDEN;
+extern const WCHAR windows_dir[] DECLSPEC_HIDDEN;
 extern const WCHAR system_dir[] DECLSPEC_HIDDEN;
-extern const WCHAR syswow64_dir[] DECLSPEC_HIDDEN;
 
-extern void (WINAPI *kernel32_start_process)(LPTHREAD_START_ROUTINE,void*) DECLSPEC_HIDDEN;
+extern void (FASTCALL *pBaseThreadInitThunk)(DWORD,LPTHREAD_START_ROUTINE,void *) DECLSPEC_HIDDEN;
+extern const struct unix_funcs *unix_funcs DECLSPEC_HIDDEN;
 
+<<<<<<< HEAD
 /* Device IO */
 extern NTSTATUS CDROM_DeviceIoControl(HANDLE hDevice, 
                                       HANDLE hEvent, PIO_APC_ROUTINE UserApcRoutine,
@@ -207,15 +214,17 @@ extern void virtual_release_address_space(void) DECLSPEC_HIDDEN;
 extern void virtual_set_large_address_space(void) DECLSPEC_HIDDEN;
 extern void virtual_fill_image_information( const pe_image_info_t *pe_info,
                                             SECTION_IMAGE_INFORMATION *info ) DECLSPEC_HIDDEN;
+=======
+>>>>>>> master
 extern struct _KUSER_SHARED_DATA *user_shared_data DECLSPEC_HIDDEN;
 extern struct _KUSER_SHARED_DATA *user_shared_data_external DECLSPEC_HIDDEN;
 extern void create_user_shared_data_thread(void) DECLSPEC_HIDDEN;
 extern BYTE* CDECL __wine_user_shared_data(void);
 
-/* completion */
-extern NTSTATUS NTDLL_AddCompletion( HANDLE hFile, ULONG_PTR CompletionValue,
-                                     NTSTATUS CompletionStatus, ULONG Information, BOOL async) DECLSPEC_HIDDEN;
+extern int CDECL NTDLL__vsnprintf( char *str, SIZE_T len, const char *format, va_list args ) DECLSPEC_HIDDEN;
+extern int CDECL NTDLL__vsnwprintf( WCHAR *str, SIZE_T len, const WCHAR *format, va_list args ) DECLSPEC_HIDDEN;
 
+<<<<<<< HEAD
 /* locale */
 extern LCID user_lcid, system_lcid;
 extern DWORD ntdll_umbstowcs( const char* src, DWORD srclen, WCHAR* dst, DWORD dstlen ) DECLSPEC_HIDDEN;
@@ -264,18 +273,24 @@ static inline void leave_critical_section( RTL_CRITICAL_SECTION *crit )
 /* load order */
 
 enum loadorder
+=======
+struct dllredirect_data
+>>>>>>> master
 {
-    LO_INVALID,
-    LO_DISABLED,
-    LO_NATIVE,
-    LO_BUILTIN,
-    LO_NATIVE_BUILTIN,  /* native then builtin */
-    LO_BUILTIN_NATIVE,  /* builtin then native */
-    LO_DEFAULT          /* nothing specified, use default strategy */
+    ULONG size;
+    ULONG flags;
+    ULONG total_len;
+    ULONG paths_count;
+    ULONG paths_offset;
+    struct { ULONG len; ULONG offset; } paths[1];
 };
 
-extern enum loadorder get_load_order( const WCHAR *app_name, const UNICODE_STRING *nt_name ) DECLSPEC_HIDDEN;
+#define DLL_REDIRECT_PATH_INCLUDES_BASE_NAME                      1
+#define DLL_REDIRECT_PATH_OMITS_ASSEMBLY_ROOT                     2
+#define DLL_REDIRECT_PATH_EXPAND                                  4
+#define DLL_REDIRECT_PATH_SYSTEM_DEFAULT_REDIRECTED_SYSTEM32_DLL  8
 
+<<<<<<< HEAD
 struct debug_info
 {
     unsigned int str_pos;       /* current position in strings buffer */
@@ -316,12 +331,20 @@ static inline int get_unix_exit_code( NTSTATUS status )
 extern mode_t FILE_umask DECLSPEC_HIDDEN;
 extern HANDLE keyed_event DECLSPEC_HIDDEN;
 extern SYSTEM_CPU_INFORMATION cpu_info DECLSPEC_HIDDEN;
+=======
+#ifdef _WIN64
+static inline TEB64 *NtCurrentTeb64(void) { return NULL; }
+#else
+static inline TEB64 *NtCurrentTeb64(void) { return (TEB64 *)NtCurrentTeb()->GdiBatchCount; }
+#endif
+>>>>>>> master
 
 #define HASH_STRING_ALGORITHM_DEFAULT  0
 #define HASH_STRING_ALGORITHM_X65599   1
 #define HASH_STRING_ALGORITHM_INVALID  0xffffffff
 
 NTSTATUS WINAPI RtlHashUnicodeString(PCUNICODE_STRING,BOOLEAN,ULONG,ULONG*);
+<<<<<<< HEAD
 void     WINAPI LdrInitializeThunk(CONTEXT*,void**,ULONG_PTR,ULONG_PTR);
 
 /* version */
@@ -377,6 +400,8 @@ int    WINAPIV NTDLL_swprintf( WCHAR *str, const WCHAR *format, ... );
 #define wcsspn(s,a) NTDLL_wcsspn(s,a)
 #define wcscmp(s1,s2) NTDLL_wcscmp(s1,s2)
 #define wcsncmp(s1,s2,n) NTDLL_wcsncmp(s1,s2,n)
+=======
+>>>>>>> master
 
 /* convert from straight ASCII to Unicode without depending on the current codepage */
 static inline void ascii_to_unicode( WCHAR *dst, const char *src, size_t len )
@@ -384,6 +409,7 @@ static inline void ascii_to_unicode( WCHAR *dst, const char *src, size_t len )
     while (len--) *dst++ = (unsigned char)*src++;
 }
 
+<<<<<<< HEAD
 #if defined(__i386__) || defined(__x86_64__)
 NTSTATUS WINAPI __syscall_NtOpenFile( PHANDLE handle, ACCESS_MASK access,
                             POBJECT_ATTRIBUTES attr, PIO_STATUS_BLOCK io,
@@ -391,5 +417,9 @@ NTSTATUS WINAPI __syscall_NtOpenFile( PHANDLE handle, ACCESS_MASK access,
 #else
 #define __syscall_NtOpenFile NtOpenFile
 #endif
+=======
+/* FLS data */
+extern TEB_FLS_DATA *fls_alloc_data(void) DECLSPEC_HIDDEN;
+>>>>>>> master
 
 #endif

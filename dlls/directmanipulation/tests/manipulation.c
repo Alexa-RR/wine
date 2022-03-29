@@ -39,10 +39,17 @@ static void test_IDirectManipulationManager2(void)
         win_skip("Failed to create XMLView instance\n");
         return;
     }
+<<<<<<< HEAD
     ok(hres == S_OK, "CoCreateInstance returned %x, expected S_OK\n", hres);
 
     hres = IDirectManipulationManager2_GetUpdateManager(manager2, &IID_IDirectManipulationUpdateManager, (void**)&update);
     ok(hres == S_OK, "returned %x, expected S_OK\n", hres);
+=======
+    ok(hres == S_OK, "CoCreateInstance returned %lx, expected S_OK\n", hres);
+
+    hres = IDirectManipulationManager2_GetUpdateManager(manager2, &IID_IDirectManipulationUpdateManager, (void**)&update);
+    ok(hres == S_OK, "returned %lx, expected S_OK\n", hres);
+>>>>>>> master
 
     if(update)
         IDirectManipulationUpdateManager_Release(update);

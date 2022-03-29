@@ -39,11 +39,6 @@ static const char *debugstr_hstring(HSTRING hstr)
 
 static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
 {
-    static const WCHAR classkeyW[] = {'S','o','f','t','w','a','r','e','\\',
-                                      'M','i','c','r','o','s','o','f','t','\\',
-                                      'W','i','n','d','o','w','s','R','u','n','t','i','m','e','\\',
-                                      'A','c','t','i','v','a','t','a','b','l','e','C','l','a','s','s','I','d',0};
-    static const WCHAR dllpathW[] = {'D','l','l','P','a','t','h',0};
     HKEY hkey_root, hkey_class;
     DWORD type, size;
     HRESULT hr;
@@ -52,7 +47,8 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
     *out = NULL;
 
     /* load class registry key */
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, classkeyW, 0, KEY_READ, &hkey_root))
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\WindowsRuntime\\ActivatableClassId",
+                      0, KEY_READ, &hkey_root))
         return REGDB_E_READREGDB;
     if (RegOpenKeyExW(hkey_root, classid, 0, KEY_READ, &hkey_class))
     {
@@ -63,7 +59,7 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
     RegCloseKey(hkey_root);
 
     /* load (and expand) DllPath registry value */
-    if (RegQueryValueExW(hkey_class, dllpathW, NULL, &type, NULL, &size))
+    if (RegQueryValueExW(hkey_class, L"DllPath", NULL, &type, NULL, &size))
     {
         hr = REGDB_E_READREGDB;
         goto done;
@@ -78,7 +74,7 @@ static HRESULT get_library_for_classid(const WCHAR *classid, WCHAR **out)
         hr = E_OUTOFMEMORY;
         goto done;
     }
-    if (RegQueryValueExW(hkey_class, dllpathW, NULL, NULL, (BYTE *)buf, &size))
+    if (RegQueryValueExW(hkey_class, L"DllPath", NULL, NULL, (BYTE *)buf, &size))
     {
         hr = REGDB_E_READREGDB;
         goto done;
@@ -290,8 +286,26 @@ HRESULT WINAPI GetRestrictedErrorInfo(IRestrictedErrorInfo **info)
  */
 BOOL WINAPI RoOriginateLanguageException(HRESULT error, HSTRING message, IUnknown *language_exception)
 {
-    FIXME("(%x %s %p) stub\n", error, debugstr_hstring(message), language_exception);
+    FIXME("%#lx, %s, %p: stub\n", error, debugstr_hstring(message), language_exception);
     return FALSE;
+}
+
+/***********************************************************************
+ *      RoOriginateError (combase.@)
+ */
+BOOL WINAPI RoOriginateError(HRESULT error, HSTRING message)
+{
+    FIXME("%#lx, %s: stub\n", error, debugstr_hstring(message));
+    return FALSE;
+}
+
+/***********************************************************************
+ *      RoSetErrorReportingFlags (combase.@)
+ */
+HRESULT WINAPI RoSetErrorReportingFlags(UINT32 flags)
+{
+    FIXME("(%08x): stub\n", flags);
+    return S_OK;
 }
 
 /***********************************************************************

@@ -26,6 +26,7 @@
 #include "windef.h"
 #include "winbase.h"
 #include "iads.h"
+#include "adserr.h"
 
 #include "wine/heap.h"
 #include "wine/debug.h"
@@ -39,7 +40,7 @@ typedef struct
 {
     IADsPathname IADsPathname_iface;
     LONG ref;
-    BSTR adspath;
+    BSTR provider, server, dn;
 } Pathname;
 
 static inline Pathname *impl_from_IADsPathname(IADsPathname *iface)
@@ -80,6 +81,9 @@ static ULONG WINAPI path_Release(IADsPathname *iface)
     if (!ref)
     {
         TRACE("destroying %p\n", iface);
+        SysFreeString(path->provider);
+        SysFreeString(path->server);
+        SysFreeString(path->dn);
         heap_free(path);
     }
 
@@ -94,65 +98,252 @@ static HRESULT WINAPI path_GetTypeInfoCount(IADsPathname *iface, UINT *count)
 
 static HRESULT WINAPI path_GetTypeInfo(IADsPathname *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%#x,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%#lx,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI path_GetIDsOfNames(IADsPathname *iface, REFIID riid, LPOLESTR *names,
                                          UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI path_Invoke(IADsPathname *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                   DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
+}
+
+static HRESULT parse_path(BSTR path, BSTR *provider, BSTR *server, BSTR *dn)
+{
+    WCHAR *p, *p_server;
+    int server_len;
+
+    *provider = NULL;
+    *server = NULL;
+    *dn = NULL;
+
+    if (wcsnicmp(path, L"LDAP:", 5) != 0)
+        return E_ADS_BAD_PATHNAME;
+
+    *provider = SysAllocStringLen(path, 4);
+    if (!*provider) return E_OUTOFMEMORY;
+
+    p = path + 5;
+    if (!*p) return S_OK;
+
+    if (*p++ != '/' || *p++ != '/' || !*p)
+        return E_ADS_BAD_PATHNAME;
+
+    p_server = p;
+    server_len = 0;
+    while (*p && *p != '/')
+    {
+        p++;
+        server_len++;
+    }
+    if (server_len == 0) return E_ADS_BAD_PATHNAME;
+
+    *server = SysAllocStringLen(p_server, server_len);
+    if (!*server)
+    {
+        SysFreeString(*provider);
+        return E_OUTOFMEMORY;
+    }
+
+    if (!*p) return S_OK;
+
+    if (*p++ != '/' || !*p)
+    {
+        SysFreeString(*provider);
+        SysFreeString(*server);
+        return E_ADS_BAD_PATHNAME;
+    }
+
+    *dn = SysAllocString(p);
+    if (!*dn)
+    {
+        SysFreeString(*provider);
+        SysFreeString(*server);
+        return E_OUTOFMEMORY;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI path_Set(IADsPathname *iface, BSTR adspath, LONG type)
 {
     Pathname *path = impl_from_IADsPathname(iface);
+    HRESULT hr;
+    BSTR provider, server, dn;
 
-    FIXME("%p,%s,%d: stub\n", iface, debugstr_w(adspath), type);
+    TRACE("%p,%s,%ld\n", iface, debugstr_w(adspath), type);
 
     if (!adspath) return E_INVALIDARG;
 
-    path->adspath = SysAllocString(adspath);
-    return path->adspath ? S_OK : E_OUTOFMEMORY;
+    if (type == ADS_SETTYPE_PROVIDER)
+    {
+        SysFreeString(path->provider);
+        path->provider = SysAllocString(adspath);
+        return path->provider ? S_OK : E_OUTOFMEMORY;
+    }
+
+    if (type == ADS_SETTYPE_SERVER)
+    {
+        SysFreeString(path->server);
+        path->server = SysAllocString(adspath);
+        return path->server ? S_OK : E_OUTOFMEMORY;
+    }
+
+    if (type == ADS_SETTYPE_DN)
+    {
+        SysFreeString(path->dn);
+        path->dn = SysAllocString(adspath);
+        return path->dn ? S_OK : E_OUTOFMEMORY;
+    }
+
+    if (type != ADS_SETTYPE_FULL)
+    {
+        FIXME("type %ld not implemented\n", type);
+        return E_INVALIDARG;
+    }
+
+    hr = parse_path(adspath, &provider, &server, &dn);
+    if (hr == S_OK)
+    {
+        SysFreeString(path->provider);
+        SysFreeString(path->server);
+        SysFreeString(path->dn);
+
+        path->provider = provider;
+        path->server = server;
+        path->dn = dn;
+    }
+    return hr;
 }
 
 static HRESULT WINAPI path_SetDisplayType(IADsPathname *iface, LONG type)
 {
-    FIXME("%p,%d: stub\n", iface, type);
+    FIXME("%p,%ld: stub\n", iface, type);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI path_Retrieve(IADsPathname *iface, LONG type, BSTR *adspath)
 {
     Pathname *path = impl_from_IADsPathname(iface);
+    int len;
 
-    FIXME("%p,%d,%p: stub\n", iface, type, adspath);
+    TRACE("%p,%ld,%p\n", iface, type, adspath);
 
     if (!adspath) return E_INVALIDARG;
 
-    *adspath = SysAllocString(path->adspath);
+    switch (type)
+    {
+    default:
+        FIXME("type %ld not implemented\n", type);
+        /* fall through */
+
+    case ADS_FORMAT_X500:
+        len = wcslen(path->provider) + 3;
+        if (path->server) len += wcslen(path->server) + 1;
+        if (path->dn) len += wcslen(path->dn);
+
+        *adspath = SysAllocStringLen(NULL, len);
+        if (!*adspath) break;
+
+        wcscpy(*adspath, path->provider);
+        wcscat(*adspath, L"://");
+        if (path->server)
+        {
+            wcscat(*adspath, path->server);
+            wcscat(*adspath, L"/");
+        }
+        if (path->dn) wcscat(*adspath, path->dn);
+        break;
+
+    case ADS_FORMAT_PROVIDER:
+        *adspath = SysAllocString(path->provider);
+        break;
+
+    case ADS_FORMAT_SERVER:
+        *adspath = path->provider ? SysAllocString(path->server) : SysAllocStringLen(NULL, 0);
+        break;
+
+    case ADS_FORMAT_X500_DN:
+        *adspath = path->dn ? SysAllocString(path->dn) : SysAllocStringLen(NULL, 0);
+        break;
+
+    case ADS_FORMAT_LEAF:
+        if (!path->dn)
+            *adspath = SysAllocStringLen(NULL, 0);
+        else
+        {
+            WCHAR *p = wcschr(path->dn, ',');
+            *adspath = p ? SysAllocStringLen(path->dn, p - path->dn) : SysAllocString(path->dn);
+        }
+        break;
+    }
+
+    TRACE("=> %s\n", debugstr_w(*adspath));
     return *adspath ? S_OK : E_OUTOFMEMORY;
 }
 
 static HRESULT WINAPI path_GetNumElements(IADsPathname *iface, LONG *count)
 {
-    FIXME("%p,%p: stub\n", iface, count);
-    return E_NOTIMPL;
+    Pathname *path = impl_from_IADsPathname(iface);
+    WCHAR *p;
+
+    TRACE("%p,%p\n", iface, count);
+
+    if (!count) return E_INVALIDARG;
+
+    *count = 0;
+
+    p = path->dn;
+    while (p)
+    {
+        *count += 1;
+        p = wcschr(p, ',');
+        if (p) p++;
+    }
+
+    return S_OK;
 }
 
 static HRESULT WINAPI path_GetElement(IADsPathname *iface, LONG index, BSTR *element)
 {
-    FIXME("%p,%d,%p: stub\n", iface, index, element);
-    return E_NOTIMPL;
+    Pathname *path = impl_from_IADsPathname(iface);
+    HRESULT hr;
+    WCHAR *p, *end;
+    LONG count;
+
+    TRACE("%p,%ld,%p\n", iface, index, element);
+
+    if (!element) return E_INVALIDARG;
+
+    count = 0;
+    hr = HRESULT_FROM_WIN32(ERROR_INVALID_INDEX);
+
+    p = path->dn;
+    while (p)
+    {
+        end = wcschr(p, ',');
+
+        if (index == count)
+        {
+            *element = end ? SysAllocStringLen(p, end - p) : SysAllocString(p);
+            hr = *element ? S_OK : E_OUTOFMEMORY;
+            break;
+        }
+
+        p = end ? end + 1 : NULL;
+        count++;
+    }
+
+    return hr;
 }
 
 static HRESULT WINAPI path_AddLeafElement(IADsPathname *iface, BSTR element)
@@ -175,7 +366,7 @@ static HRESULT WINAPI path_CopyPath(IADsPathname *iface, IDispatch **path)
 
 static HRESULT WINAPI path_GetEscapedElement(IADsPathname *iface, LONG reserved, BSTR element, BSTR *str)
 {
-    FIXME("%p,%d,%s,%p: stub\n", iface, reserved, debugstr_w(element), str);
+    FIXME("%p,%ld,%s,%p: stub\n", iface, reserved, debugstr_w(element), str);
     return E_NOTIMPL;
 }
 
@@ -187,7 +378,7 @@ static HRESULT WINAPI path_get_EscapedMode(IADsPathname *iface, LONG *mode)
 
 static HRESULT WINAPI path_put_EscapedMode(IADsPathname *iface, LONG mode)
 {
-    FIXME("%p,%d: stub\n", iface, mode);
+    FIXME("%p,%ld: stub\n", iface, mode);
     return E_NOTIMPL;
 }
 
@@ -223,7 +414,9 @@ static HRESULT Pathname_create(REFIID riid, void **obj)
 
     path->IADsPathname_iface.lpVtbl = &IADsPathname_vtbl;
     path->ref = 1;
-    path->adspath = NULL;
+    path->provider = SysAllocString(L"LDAP");
+    path->server = NULL;
+    path->dn = NULL;
 
     hr = IADsPathname_QueryInterface(&path->IADsPathname_iface, riid, obj);
     IADsPathname_Release(&path->IADsPathname_iface);
@@ -276,7 +469,7 @@ static ULONG WINAPI factory_AddRef(IClassFactory *iface)
     class_factory *factory = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedIncrement(&factory->ref);
 
-    TRACE("(%p) ref %u\n", iface, ref);
+    TRACE("(%p) ref %lu\n", iface, ref);
 
     return ref;
 }
@@ -286,7 +479,7 @@ static ULONG WINAPI factory_Release(IClassFactory *iface)
     class_factory *factory = impl_from_IClassFactory(iface);
     ULONG ref = InterlockedDecrement(&factory->ref);
 
-    TRACE("(%p) ref %u\n", iface, ref);
+    TRACE("(%p) ref %lu\n", iface, ref);
 
     if (!ref)
         heap_free(factory);

@@ -292,7 +292,7 @@ static HRESULT validateSTGM(DWORD stgm)
 
   if (stgm&~STGM_KNOWN_FLAGS)
   {
-    ERR("unknown flags %08x\n", stgm);
+    ERR("unknown flags %#lx\n", stgm);
     return E_FAIL;
   }
 
@@ -463,7 +463,7 @@ static ULONG WINAPI directwriterlock_Release(IDirectWriterLock *iface)
 static HRESULT WINAPI directwriterlock_WaitForWriteAccess(IDirectWriterLock *iface, DWORD timeout)
 {
   StorageBaseImpl *This = impl_from_IDirectWriterLock(iface);
-  FIXME("(%p)->(%d): stub\n", This, timeout);
+  FIXME("%p, %ld: stub\n", This, timeout);
   return E_NOTIMPL;
 }
 
@@ -995,7 +995,7 @@ static HRESULT IEnumSTATSTGImpl_GetNextRef(
       memcpy(This->name, result_name, sizeof(result_name));
   }
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -1013,7 +1013,7 @@ static HRESULT WINAPI IEnumSTATSTGImpl_Next(
   DirRef      currentSearchNode;
   HRESULT     hr=S_OK;
 
-  TRACE("%p,%u,%p,%p\n", iface, celt, rgelt, pceltFetched);
+  TRACE("%p, %lu, %p, %p.\n", iface, celt, rgelt, pceltFetched);
 
   if ( (rgelt==0) || ( (celt!=1) && (pceltFetched==0) ) )
     return E_INVALIDARG;
@@ -1073,7 +1073,7 @@ static HRESULT WINAPI IEnumSTATSTGImpl_Next(
   if (SUCCEEDED(hr) && *pceltFetched != celt)
     hr = S_FALSE;
 
-  TRACE("<-- %08x (asked %u, got %u)\n", hr, celt, *pceltFetched);
+  TRACE("<-- %#lx (asked %lu, got %lu)\n", hr, celt, *pceltFetched);
   return hr;
 }
 
@@ -1088,7 +1088,7 @@ static HRESULT WINAPI IEnumSTATSTGImpl_Skip(
   DirRef      currentSearchNode;
   HRESULT     hr=S_OK;
 
-  TRACE("%p,%u\n", iface, celt);
+  TRACE("%p, %lu.\n", iface, celt);
 
   if (This->parentStorage->reverted)
   {
@@ -1109,7 +1109,7 @@ static HRESULT WINAPI IEnumSTATSTGImpl_Skip(
   if (SUCCEEDED(hr) && objectFetched != celt)
     return S_FALSE;
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -1282,7 +1282,7 @@ static ULONG WINAPI StorageBaseImpl_AddRef(
   StorageBaseImpl *This = impl_from_IStorage(iface);
   ULONG ref = InterlockedIncrement(&This->ref);
 
-  TRACE("(%p) AddRef to %d\n", This, ref);
+  TRACE("%p, refcount %lu.\n", iface, ref);
 
   return ref;
 }
@@ -1302,7 +1302,7 @@ static ULONG WINAPI StorageBaseImpl_Release(
 
   ULONG ref = InterlockedDecrement(&This->ref);
 
-  TRACE("(%p) ReleaseRef to %d\n", This, ref);
+  TRACE("%p, refcount %lu.\n", iface, ref);
 
   if (ref == 0)
   {
@@ -1447,7 +1447,7 @@ static HRESULT StorageBaseImpl_CopyChildEntryTo(StorageBaseImpl *This,
     hr = StorageBaseImpl_CopyChildEntryTo( This, data.rightChild, skip_storage,
                                            skip_stream, snbExclude, pstgDest );
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -1455,7 +1455,7 @@ static BOOL StorageBaseImpl_IsStreamOpen(StorageBaseImpl * stg, DirRef streamEnt
 {
   StgStreamImpl *strm;
 
-  TRACE("%p,%d\n", stg, streamEntry);
+  TRACE("%p, %ld.\n", stg, streamEntry);
 
   LIST_FOR_EACH_ENTRY(strm, &stg->strmHead, StgStreamImpl, StrmListEntry)
   {
@@ -1472,7 +1472,7 @@ static BOOL StorageBaseImpl_IsStorageOpen(StorageBaseImpl * stg, DirRef storageE
 {
   StorageInternalImpl *childstg;
 
-  TRACE("%p,%d\n", stg, storageEntry);
+  TRACE("%p, %ld.\n", stg, storageEntry);
 
   LIST_FOR_EACH_ENTRY(childstg, &stg->storageHead, StorageInternalImpl, ParentListEntry)
   {
@@ -1506,8 +1506,7 @@ static HRESULT WINAPI StorageBaseImpl_OpenStream(
   DirRef            streamEntryRef;
   HRESULT           res = STG_E_UNKNOWN;
 
-  TRACE("(%p, %s, %p, %x, %d, %p)\n",
-	iface, debugstr_w(pwcsName), reserved1, grfMode, reserved2, ppstm);
+  TRACE("%p, %s, %p, %#lx, %ld, %p.\n", iface, debugstr_w(pwcsName), reserved1, grfMode, reserved2, ppstm);
 
   if ( (pwcsName==NULL) || (ppstm==0) )
   {
@@ -1595,7 +1594,7 @@ static HRESULT WINAPI StorageBaseImpl_OpenStream(
 end:
   if (res == S_OK)
     TRACE("<-- IStream %p\n", *ppstm);
-  TRACE("<-- %08x\n", res);
+  TRACE("<-- %#lx\n", res);
   return res;
 }
 
@@ -1622,9 +1621,8 @@ static HRESULT WINAPI StorageBaseImpl_OpenStorage(
   DirRef                 storageEntryRef;
   HRESULT                res = STG_E_UNKNOWN;
 
-  TRACE("(%p, %s, %p, %x, %p, %d, %p)\n",
-	iface, debugstr_w(pwcsName), pstgPriority,
-	grfMode, snbExclude, reserved, ppstg);
+  TRACE("%p, %s, %p, %#lx, %p, %ld, %p.\n", iface, debugstr_w(pwcsName), pstgPriority,
+      grfMode, snbExclude, reserved, ppstg);
 
   if ((pwcsName==NULL) || (ppstg==0) )
   {
@@ -1732,7 +1730,7 @@ static HRESULT WINAPI StorageBaseImpl_OpenStorage(
   res = STG_E_FILENOTFOUND;
 
 end:
-  TRACE("<-- %08x\n", res);
+  TRACE("<-- %#lx\n", res);
   return res;
 }
 
@@ -1754,8 +1752,7 @@ static HRESULT WINAPI StorageBaseImpl_EnumElements(
   StorageBaseImpl *This = impl_from_IStorage(iface);
   IEnumSTATSTGImpl* newEnum;
 
-  TRACE("(%p, %d, %p, %d, %p)\n",
-	iface, reserved1, reserved2, reserved3, ppenum);
+  TRACE("%p, %ld, %p, %ld, %p.\n", iface, reserved1, reserved2, reserved3, ppenum);
 
   if (!ppenum)
     return E_INVALIDARG;
@@ -1792,8 +1789,7 @@ static HRESULT WINAPI StorageBaseImpl_Stat(
   DirEntry       currentEntry;
   HRESULT        res = STG_E_UNKNOWN;
 
-  TRACE("(%p, %p, %x)\n",
-	iface, pstatstg, grfStatFlag);
+  TRACE("%p, %p, %#lx.\n", iface, pstatstg, grfStatFlag);
 
   if (!pstatstg)
   {
@@ -1827,9 +1823,9 @@ static HRESULT WINAPI StorageBaseImpl_Stat(
 end:
   if (res == S_OK)
   {
-    TRACE("<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n", debugstr_w(pstatstg->pwcsName), pstatstg->type, pstatstg->cbSize.u.LowPart, pstatstg->cbSize.u.HighPart, pstatstg->grfMode, pstatstg->grfLocksSupported, pstatstg->grfStateBits);
+    TRACE("<-- STATSTG: pwcsName: %s, type: %ld, cbSize.Low/High: %ld/%ld, grfMode: %#lx, grfLocksSupported: %ld, grfStateBits: %#lx\n", debugstr_w(pstatstg->pwcsName), pstatstg->type, pstatstg->cbSize.u.LowPart, pstatstg->cbSize.u.HighPart, pstatstg->grfMode, pstatstg->grfLocksSupported, pstatstg->grfStateBits);
   }
-  TRACE("<-- %08x\n", res);
+  TRACE("<-- %#lx\n", res);
   return res;
 }
 
@@ -1935,9 +1931,7 @@ static HRESULT WINAPI StorageBaseImpl_CreateStream(
   DirRef            currentEntryRef, newStreamEntryRef;
   HRESULT hr;
 
-  TRACE("(%p, %s, %x, %d, %d, %p)\n",
-	iface, debugstr_w(pwcsName), grfMode,
-	reserved1, reserved2, ppstm);
+  TRACE("%p, %s, %#lx, %ld, %ld, %p.\n", iface, debugstr_w(pwcsName), grfMode, reserved1, reserved2, ppstm);
 
   if (ppstm == 0)
     return STG_E_INVALIDPOINTER;
@@ -2130,9 +2124,8 @@ static HRESULT WINAPI StorageBaseImpl_CreateStorage(
   DirRef           newEntryRef;
   HRESULT          hr;
 
-  TRACE("(%p, %s, %x, %d, %d, %p)\n",
-	iface, debugstr_w(pwcsName), grfMode,
-	reserved1, reserved2, ppstg);
+  TRACE("%p, %s, %#lx, %ld, %ld, %p.\n", iface, debugstr_w(pwcsName), grfMode,
+      reserved1, reserved2, ppstg);
 
   if (ppstg == 0)
     return STG_E_INVALIDPOINTER;
@@ -2150,7 +2143,7 @@ static HRESULT WINAPI StorageBaseImpl_CreateStorage(
   if ( FAILED( validateSTGM(grfMode) ) ||
        (grfMode & STGM_DELETEONRELEASE) )
   {
-    WARN("bad grfMode: 0x%x\n", grfMode);
+    WARN("bad grfMode: %#lx\n", grfMode);
     return STG_E_INVALIDFLAG;
   }
 
@@ -2278,7 +2271,7 @@ static HRESULT StorageBaseImpl_CopyStorageEntryTo(StorageBaseImpl *This,
     hr = StorageBaseImpl_CopyChildEntryTo( This, data.dirRootEntry, skip_storage,
       skip_stream, snbExclude, pstgDest );
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -2297,9 +2290,7 @@ static HRESULT WINAPI StorageBaseImpl_CopyTo(
   BOOL         skip_storage = FALSE, skip_stream = FALSE;
   DWORD        i;
 
-  TRACE("(%p, %d, %p, %p, %p)\n",
-	iface, ciidExclude, rgiidExclude,
-	snbExclude, pstgDest);
+  TRACE("%p, %ld, %p, %p, %p.\n", iface, ciidExclude, rgiidExclude, snbExclude, pstgDest);
 
   if ( pstgDest == 0 )
     return STG_E_INVALIDPOINTER;
@@ -2381,9 +2372,8 @@ static HRESULT WINAPI StorageBaseImpl_MoveElementTo(
   const OLECHAR *pwcsNewName,/* [string][in] */
   DWORD           grfFlags)    /* [in] */
 {
-  FIXME("(%p %s %p %s %u): stub\n", iface,
-         debugstr_w(pwcsName), pstgDest,
-         debugstr_w(pwcsNewName), grfFlags);
+  FIXME("%p, %s, %p, %s, %#lx: stub\n", iface, debugstr_w(pwcsName), pstgDest,
+      debugstr_w(pwcsNewName), grfFlags);
   return E_NOTIMPL;
 }
 
@@ -2400,7 +2390,7 @@ static HRESULT WINAPI StorageBaseImpl_Commit(
   DWORD         grfCommitFlags)/* [in] */
 {
   StorageBaseImpl* This = impl_from_IStorage(iface);
-  TRACE("(%p %d)\n", iface, grfCommitFlags);
+  TRACE("%p, %#lx.\n", iface, grfCommitFlags);
   return StorageBaseImpl_Flush(This);
 }
 
@@ -2435,7 +2425,7 @@ static HRESULT deleteStorageContents(
   HRESULT      destroyHr = S_OK;
   StorageInternalImpl *stg, *stg2;
 
-  TRACE("%p,%d\n", parentStorage, indexToDelete);
+  TRACE("%p, %ld.\n", parentStorage, indexToDelete);
 
   /* Invalidate any open storage objects. */
   LIST_FOR_EACH_ENTRY_SAFE(stg, stg2, &parentStorage->storageHead, StorageInternalImpl, ParentListEntry)
@@ -2460,7 +2450,7 @@ static HRESULT deleteStorageContents(
 
   if (hr != S_OK)
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -2471,7 +2461,7 @@ static HRESULT deleteStorageContents(
   if (FAILED(hr))
   {
     IStorage_Release(childStorage);
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -2499,7 +2489,7 @@ static HRESULT deleteStorageContents(
   IStorage_Release(childStorage);
   IEnumSTATSTG_Release(elements);
 
-  TRACE("%08x\n", hr);
+  TRACE("%#lx\n", hr);
   return destroyHr;
 }
 
@@ -2539,7 +2529,7 @@ static HRESULT deleteStreamContents(
 
   if (hr!=S_OK)
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return(hr);
   }
 
@@ -2550,7 +2540,7 @@ static HRESULT deleteStreamContents(
 
   if(hr != S_OK)
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -2558,7 +2548,7 @@ static HRESULT deleteStreamContents(
    * Release the stream object.
    */
   IStream_Release(pis);
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return S_OK;
 }
 
@@ -2625,7 +2615,7 @@ static HRESULT WINAPI StorageBaseImpl_DestroyElement(
 
   if (hr!=S_OK)
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -2646,7 +2636,7 @@ static HRESULT WINAPI StorageBaseImpl_DestroyElement(
   if (SUCCEEDED(hr))
     hr = StorageBaseImpl_Flush(This);
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -2995,7 +2985,7 @@ static HRESULT StorageImpl_LoadFileHeader(
 	This->smallBlockSize != DEF_SMALL_BLOCK_SIZE ||
 	This->smallBlockLimit != LIMIT_TO_USE_SMALL_BLOCK)
     {
-	FIXME("Broken OLE storage file? bigblock=0x%x, smallblock=0x%x, sblimit=0x%x\n",
+	FIXME("Broken OLE storage file? bigblock=%#lx, smallblock=%#lx, sblimit=%#lx\n",
 	    This->bigBlockSize, This->smallBlockSize, This->smallBlockLimit);
 	hr = STG_E_INVALIDHEADER;
     }
@@ -3016,19 +3006,9 @@ static void StorageImpl_SaveFileHeader(
 {
   BYTE   headerBigBlock[HEADER_SIZE];
   int    index;
-  HRESULT hr;
   ULARGE_INTEGER offset;
-  DWORD bytes_read, bytes_written;
+  DWORD bytes_written;
   DWORD major_version, dirsectorcount;
-
-  /*
-   * Get a pointer to the big block of data containing the header.
-   */
-  offset.u.HighPart = 0;
-  offset.u.LowPart = 0;
-  hr = StorageImpl_ReadAt(This, offset, headerBigBlock, HEADER_SIZE, &bytes_read);
-  if (SUCCEEDED(hr) && bytes_read != HEADER_SIZE)
-    hr = STG_E_FILENOTFOUND;
 
   if (This->bigBlockSizeBits == 0x9)
     major_version = 3;
@@ -3040,21 +3020,8 @@ static void StorageImpl_SaveFileHeader(
     major_version = 4;
   }
 
-  /*
-   * If the block read failed, the file is probably new.
-   */
-  if (FAILED(hr))
-  {
-    /*
-     * Initialize for all unknown fields.
-     */
-    memset(headerBigBlock, 0, HEADER_SIZE);
-
-    /*
-     * Initialize the magic number.
-     */
-    memcpy(headerBigBlock, STORAGE_magic, sizeof(STORAGE_magic));
-  }
+  memset(headerBigBlock, 0, HEADER_SIZE);
+  memcpy(headerBigBlock, STORAGE_magic, sizeof(STORAGE_magic));
 
   /*
    * Write the information to the header.
@@ -3150,9 +3117,7 @@ static void StorageImpl_SaveFileHeader(
       (This->bigBlockDepotStart[index]));
   }
 
-  /*
-   * Write the big block back to the file.
-   */
+  offset.QuadPart = 0;
   StorageImpl_WriteAt(This, offset, headerBigBlock, HEADER_SIZE, &bytes_written);
 }
 
@@ -3701,7 +3666,7 @@ static BlockChainStream* Storage32Impl_SmallBlocksToBigBlocks(
 
   if (FAILED(resRead) || FAILED(resWrite))
   {
-    ERR("conversion failed: resRead = 0x%08x, resWrite = 0x%08x\n", resRead, resWrite);
+    ERR("conversion failed: resRead = %#lx, resWrite = %#lx\n", resRead, resWrite);
     BlockChainStream_SetSize(bbTempChain, size);
     BlockChainStream_Destroy(bbTempChain);
     return NULL;
@@ -3806,7 +3771,7 @@ static SmallBlockChainStream* Storage32Impl_BigBlocksToSmallBlocks(
 
     if(FAILED(resRead) || FAILED(resWrite))
     {
-        ERR("conversion failed: resRead = 0x%08x, resWrite = 0x%08x\n", resRead, resWrite);
+        ERR("conversion failed: resRead = %#lx, resWrite = %#lx\n", resRead, resWrite);
         SmallBlockChainStream_SetSize(sbTempChain, size);
         SmallBlockChainStream_Destroy(sbTempChain);
         return NULL;
@@ -4035,8 +4000,7 @@ static HRESULT StorageImpl_GetNextBlockInChain(
 
   if(depotBlockCount >= This->bigBlockDepotCount)
   {
-    WARN("depotBlockCount %d, bigBlockDepotCount %d\n", depotBlockCount,
-	 This->bigBlockDepotCount);
+    WARN("depotBlockCount %ld, bigBlockDepotCount %ld\n", depotBlockCount, This->bigBlockDepotCount);
     return STG_E_READFAULT;
   }
 
@@ -4169,7 +4133,7 @@ static void StorageImpl_SetNextBlockInChain(
  *
  */
 static ULONG StorageImpl_GetNextFreeBigBlock(
-  StorageImpl* This)
+  StorageImpl* This, ULONG neededAddNumBlocks)
 {
   ULONG depotBlockIndexPos;
   BYTE depotBuffer[MAX_BIG_BLOCK_SIZE];
@@ -4294,7 +4258,7 @@ static ULONG StorageImpl_GetNextFreeBigBlock(
   /*
    * make sure that the block physically exists before using it
    */
-  neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock)+This->bigBlockSize;
+  neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock)+This->bigBlockSize * neededAddNumBlocks;
 
   ILockBytes_Stat(This->lockBytes, &statstg, STATFLAG_NONAME);
 
@@ -4761,14 +4725,13 @@ static HRESULT StorageImpl_Refresh(StorageImpl *This, BOOL new_object, BOOL crea
    */
   if (create)
   {
-    static const WCHAR rootentryW[] = {'R','o','o','t',' ','E','n','t','r','y',0};
     DirEntry rootEntry;
     /*
      * Initialize the directory table
      */
     memset(&rootEntry, 0, sizeof(rootEntry));
-    lstrcpyW(rootEntry.name, rootentryW);
-    rootEntry.sizeOfNameString = sizeof(rootentryW);
+    lstrcpyW(rootEntry.name, L"Root Entry");
+    rootEntry.sizeOfNameString = sizeof(L"Root Entry");
     rootEntry.stgType          = STGTY_ROOT;
     rootEntry.leftChild        = DIRENTRY_NULL;
     rootEntry.rightChild       = DIRENTRY_NULL;
@@ -5502,7 +5465,7 @@ static HRESULT WINAPI StorageInternalImpl_Commit(
   DWORD                  grfCommitFlags)  /* [in] */
 {
   StorageBaseImpl* This = impl_from_IStorage(iface);
-  TRACE("(%p,%x)\n", iface, grfCommitFlags);
+  TRACE("%p, %#lx.\n", iface, grfCommitFlags);
   return StorageBaseImpl_Flush(This);
 }
 
@@ -5968,7 +5931,7 @@ static HRESULT WINAPI TransactedSnapshotImpl_Commit(
 
   zero.QuadPart = 0;
 
-  TRACE("(%p,%x)\n", iface, grfCommitFlags);
+  TRACE("%p, %#lx.\n", iface, grfCommitFlags);
 
   /* Cannot commit a read-only transacted storage */
   if ( STGM_ACCESS_MODE( This->base.openFlags ) == STGM_READ )
@@ -6085,7 +6048,7 @@ end:
     StorageBaseImpl_UnlockTransaction(This->transactedParent, TRUE);
   }
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -6178,7 +6141,7 @@ static HRESULT TransactedSnapshotImpl_CreateDirEntry(StorageBaseImpl *base,
 
   *index = new_ref;
 
-  TRACE("%s l=%x r=%x d=%x <-- %x\n", debugstr_w(newData->name), newData->leftChild, newData->rightChild, newData->dirRootEntry, *index);
+  TRACE("%s l=%lx r=%lx d=%lx <-- %lx\n", debugstr_w(newData->name), newData->leftChild, newData->rightChild, newData->dirRootEntry, *index);
 
   return S_OK;
 }
@@ -6189,12 +6152,12 @@ static HRESULT TransactedSnapshotImpl_WriteDirEntry(StorageBaseImpl *base,
   TransactedSnapshotImpl* This = (TransactedSnapshotImpl*) base;
   HRESULT hr;
 
-  TRACE("%x %s l=%x r=%x d=%x\n", index, debugstr_w(data->name), data->leftChild, data->rightChild, data->dirRootEntry);
+  TRACE("%lx %s l=%lx r=%lx d=%lx\n", index, debugstr_w(data->name), data->leftChild, data->rightChild, data->dirRootEntry);
 
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -6231,13 +6194,13 @@ static HRESULT TransactedSnapshotImpl_ReadDirEntry(StorageBaseImpl *base,
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
   memcpy(data, &This->entries[index].data, sizeof(DirEntry));
 
-  TRACE("%x %s l=%x r=%x d=%x\n", index, debugstr_w(data->name), data->leftChild, data->rightChild, data->dirRootEntry);
+  TRACE("%lx %s l=%lx r=%lx d=%lx\n", index, debugstr_w(data->name), data->leftChild, data->rightChild, data->dirRootEntry);
 
   return S_OK;
 }
@@ -6297,14 +6260,14 @@ static HRESULT TransactedSnapshotImpl_StreamWriteAt(StorageBaseImpl *base,
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
   hr = TransactedSnapshotImpl_MakeStreamDirty(This, index);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -6316,7 +6279,7 @@ static HRESULT TransactedSnapshotImpl_StreamWriteAt(StorageBaseImpl *base,
         This->entries[index].data.size.QuadPart,
         offset.QuadPart + size);
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -6329,7 +6292,7 @@ static HRESULT TransactedSnapshotImpl_StreamSetSize(StorageBaseImpl *base,
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -6372,7 +6335,7 @@ static HRESULT TransactedSnapshotImpl_StreamSetSize(StorageBaseImpl *base,
   if (SUCCEEDED(hr))
     This->entries[index].data.size = newsize;
 
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -6386,14 +6349,14 @@ static HRESULT TransactedSnapshotImpl_StreamLink(StorageBaseImpl *base,
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, src);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
   hr = TransactedSnapshotImpl_EnsureReadEntry(This, dst);
   if (FAILED(hr))
   {
-    TRACE("<-- %08x\n", hr);
+    TRACE("<-- %#lx\n", hr);
     return hr;
   }
 
@@ -6682,7 +6645,7 @@ static HRESULT WINAPI TransactedSharedImpl_Commit(
   HRESULT hr;
   ULONG transactionSig;
 
-  TRACE("(%p,%x)\n", iface, grfCommitFlags);
+  TRACE("%p, %#lx\n", iface, grfCommitFlags);
 
   /* Cannot commit a read-only transacted storage */
   if ( STGM_ACCESS_MODE( This->base.openFlags ) == STGM_READ )
@@ -6750,7 +6713,7 @@ static HRESULT WINAPI TransactedSharedImpl_Commit(
       This->lastTransactionSig = transactionSig+1;
     }
   }
-  TRACE("<-- %08x\n", hr);
+  TRACE("<-- %#lx\n", hr);
   return hr;
 }
 
@@ -6888,7 +6851,7 @@ static HRESULT Storage_ConstructTransacted(StorageBaseImpl *parentStorage,
   if (parentStorage->openFlags & fixme_flags)
   {
     fixme_flags &= ~parentStorage->openFlags;
-    FIXME("Unimplemented flags %x\n", parentStorage->openFlags);
+    FIXME("Unimplemented flags %lx\n", parentStorage->openFlags);
   }
 
   if (toplevel && !(parentStorage->openFlags & STGM_NOSNAPSHOT) &&
@@ -6997,7 +6960,7 @@ void StorageUtl_WriteULargeInteger(void *buffer, ULONG offset, const ULARGE_INTE
 
 void StorageUtl_ReadGUID(const BYTE* buffer, ULONG offset, GUID* value)
 {
-  StorageUtl_ReadDWord(buffer, offset,   &(value->Data1));
+  StorageUtl_ReadDWord(buffer, offset, (DWORD *)&value->Data1);
   StorageUtl_ReadWord(buffer,  offset+4, &(value->Data2));
   StorageUtl_ReadWord(buffer,  offset+6, &(value->Data3));
 
@@ -7429,7 +7392,7 @@ static BOOL BlockChainStream_Enlarge(BlockChainStream* This,
    */
   if (blockIndex == BLOCK_END_OF_CHAIN)
   {
-    blockIndex = StorageImpl_GetNextFreeBigBlock(This->parentStorage);
+    blockIndex = StorageImpl_GetNextFreeBigBlock(This->parentStorage, 1);
     StorageImpl_SetNextBlockInChain(This->parentStorage,
                                       blockIndex,
                                       BLOCK_END_OF_CHAIN);
@@ -7498,7 +7461,7 @@ static BOOL BlockChainStream_Enlarge(BlockChainStream* This,
   {
     while (oldNumBlocks < newNumBlocks)
     {
-      blockIndex = StorageImpl_GetNextFreeBigBlock(This->parentStorage);
+      blockIndex = StorageImpl_GetNextFreeBigBlock(This->parentStorage, newNumBlocks - oldNumBlocks);
 
       StorageImpl_SetNextBlockInChain(
 	This->parentStorage,
@@ -7616,7 +7579,7 @@ HRESULT BlockChainStream_ReadAt(BlockChainStream* This,
   HRESULT hr;
   BlockChainBlock *cachedBlock;
 
-  TRACE("(%p)-> %i %p %i %p\n",This, offset.u.LowPart, buffer, size, bytesRead);
+  TRACE("%p, %li, %p, %lu, %p.\n",This, offset.u.LowPart, buffer, size, bytesRead);
 
   /*
    * Find the first block in the stream that contains part of the buffer.
@@ -8533,7 +8496,6 @@ static HRESULT create_storagefile(
   if (pwcsName == 0)
   {
     WCHAR tempPath[MAX_PATH];
-    static const WCHAR prefix[] = { 'S', 'T', 'O', 0 };
 
     memset(tempPath, 0, sizeof(tempPath));
     memset(tempFileName, 0, sizeof(tempFileName));
@@ -8541,7 +8503,7 @@ static HRESULT create_storagefile(
     if ((GetTempPathW(MAX_PATH, tempPath)) == 0 )
       tempPath[0] = '.';
 
-    if (GetTempFileNameW(tempPath, prefix, 0, tempFileName) != 0)
+    if (GetTempFileNameW(tempPath, L"STO", 0, tempFileName) != 0)
       pwcsName = tempFileName;
     else
     {
@@ -8608,7 +8570,7 @@ static HRESULT create_storagefile(
   IStorage_Release(&newStorage->IStorage_iface);
 
 end:
-  TRACE("<-- %p  r = %08x\n", *ppstgOpen, hr);
+  TRACE("<-- %p  r = %#lx\n", *ppstgOpen, hr);
 
   return hr;
 }
@@ -8640,9 +8602,7 @@ HRESULT WINAPI StgCreateDocfile(
 {
   STGOPTIONS stgoptions = {1, 0, 512};
 
-  TRACE("(%s, %x, %d, %p)\n",
-	debugstr_w(pwcsName), grfMode,
-	reserved, ppstgOpen);
+  TRACE("%s, %#lx, %ld, %p.\n", debugstr_w(pwcsName), grfMode, reserved, ppstgOpen);
 
   if (ppstgOpen == 0)
     return STG_E_INVALIDPOINTER;
@@ -8657,7 +8617,7 @@ HRESULT WINAPI StgCreateDocfile(
  */
 HRESULT WINAPI StgCreateStorageEx(const WCHAR* pwcsName, DWORD grfMode, DWORD stgfmt, DWORD grfAttrs, STGOPTIONS* pStgOptions, void* reserved, REFIID riid, void** ppObjectOpen)
 {
-    TRACE("(%s, %x, %x, %x, %p, %p, %p, %p)\n", debugstr_w(pwcsName),
+    TRACE("%s, %#lx, %#lx, %#lx, %p, %p, %p, %p.\n", debugstr_w(pwcsName),
           grfMode, stgfmt, grfAttrs, pStgOptions, reserved, riid, ppObjectOpen);
 
     if (stgfmt != STGFMT_FILE && grfAttrs != 0)
@@ -8697,7 +8657,7 @@ HRESULT WINAPI StgCreateStorageEx(const WCHAR* pwcsName, DWORD grfMode, DWORD st
 HRESULT WINAPI StgCreatePropSetStg(IStorage *pstg, DWORD reserved,
  IPropertySetStorage **propset)
 {
-    TRACE("(%p, 0x%x, %p)\n", pstg, reserved, propset);
+    TRACE("%p, %#lx, %p.\n", pstg, reserved, propset);
     if (reserved)
         return STG_E_INVALIDPARAMETER;
 
@@ -8709,7 +8669,7 @@ HRESULT WINAPI StgCreatePropSetStg(IStorage *pstg, DWORD reserved,
  */
 HRESULT WINAPI StgOpenStorageEx(const WCHAR* pwcsName, DWORD grfMode, DWORD stgfmt, DWORD grfAttrs, STGOPTIONS* pStgOptions, void* reserved, REFIID riid, void** ppObjectOpen)
 {
-    TRACE("(%s, %x, %x, %x, %p, %p, %p, %p)\n", debugstr_w(pwcsName),
+    TRACE("%s, %#lx, %#lx, %#lx, %p, %p, %p, %p.\n", debugstr_w(pwcsName),
           grfMode, stgfmt, grfAttrs, pStgOptions, reserved, riid, ppObjectOpen);
 
     if (stgfmt != STGFMT_DOCFILE && grfAttrs != 0)
@@ -8766,9 +8726,8 @@ HRESULT WINAPI StgOpenStorage(
   DWORD          accessMode;
   LPWSTR         temp_name = NULL;
 
-  TRACE("(%s, %p, %x, %p, %d, %p)\n",
-	debugstr_w(pwcsName), pstgPriority, grfMode,
-	snbExclude, reserved, ppstgOpen);
+  TRACE("%s, %p, %#lx, %p, %ld, %p.\n", debugstr_w(pwcsName), pstgPriority, grfMode,
+          snbExclude, reserved, ppstgOpen);
 
   if (pstgPriority)
   {
@@ -8935,7 +8894,7 @@ HRESULT WINAPI StgOpenStorage(
 end:
   CoTaskMemFree(temp_name);
   if (pstgPriority) IStorage_Release(pstgPriority);
-  TRACE("<-- %08x, IStorage %p\n", hr, ppstgOpen ? *ppstgOpen : NULL);
+  TRACE("<-- %#lx, IStorage %p\n", hr, ppstgOpen ? *ppstgOpen : NULL);
   return hr;
 }
 
@@ -9205,12 +9164,11 @@ HRESULT  WINAPI OleSaveToStream(IPersistStream *pPStm,IStream *pStm)
  */
 HRESULT STORAGE_CreateOleStream(IStorage *storage, DWORD flags)
 {
-    static const WCHAR stream_1oleW[] = {1,'O','l','e',0};
     static const DWORD version_magic = 0x02000001;
     IStream *stream;
     HRESULT hr;
 
-    hr = IStorage_CreateStream(storage, stream_1oleW, STGM_WRITE | STGM_SHARE_EXCLUSIVE, 0, 0, &stream);
+    hr = IStorage_CreateStream(storage, L"\1Ole", STGM_WRITE | STGM_SHARE_EXCLUSIVE, 0, 0, &stream);
     if (hr == S_OK)
     {
         struct empty_1ole_stream {
@@ -9270,7 +9228,7 @@ static HRESULT STREAM_ReadString( IStream *stm, LPWSTR *string )
     if( count != sizeof(len) )
         return E_OUTOFMEMORY;
 
-    TRACE("%d bytes\n",len);
+    TRACE("%ld bytes\n",len);
 
     str = CoTaskMemAlloc( len );
     if( !str )
@@ -9310,7 +9268,6 @@ static HRESULT STORAGE_WriteCompObj( LPSTORAGE pstg, CLSID *clsid,
 {
     IStream *pstm;
     HRESULT r = S_OK;
-    static const WCHAR szwStreamName[] = {1, 'C', 'o', 'm', 'p', 'O', 'b', 'j', 0};
 
     static const BYTE unknown1[12] =
        { 0x01, 0x00, 0xFE, 0xFF, 0x03, 0x0A, 0x00, 0x00,
@@ -9324,7 +9281,7 @@ static HRESULT STORAGE_WriteCompObj( LPSTORAGE pstg, CLSID *clsid,
            debugstr_w(szProgIDName));
 
     /*  Create a CompObj stream */
-    r = IStorage_CreateStream(pstg, szwStreamName,
+    r = IStorage_CreateStream(pstg, L"\1CompObj",
         STGM_CREATE | STGM_WRITE  | STGM_SHARE_EXCLUSIVE, 0, 0, &pstm );
     if( FAILED (r) )
         return r;
@@ -9399,7 +9356,6 @@ HRESULT WINAPI ReadFmtUserTypeStg (LPSTORAGE pstg, CLIPFORMAT* pcf, LPOLESTR* lp
 {
     HRESULT r;
     IStream *stm = 0;
-    static const WCHAR szCompObj[] = { 1, 'C','o','m','p','O','b','j', 0 };
     unsigned char unknown1[12];
     unsigned char unknown2[16];
     DWORD count;
@@ -9408,11 +9364,10 @@ HRESULT WINAPI ReadFmtUserTypeStg (LPSTORAGE pstg, CLIPFORMAT* pcf, LPOLESTR* lp
 
     TRACE("(%p,%p,%p)\n", pstg, pcf, lplpszUserType);
 
-    r = IStorage_OpenStream( pstg, szCompObj, NULL,
-                    STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm );
+    r = IStorage_OpenStream( pstg, L"\1CompObj", NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stm );
     if( FAILED ( r ) )
     {
-        WARN("Failed to open stream r = %08x\n", r);
+        WARN("Failed to open stream r = %#lx\n", r);
         return r;
     }
 
@@ -9922,11 +9877,10 @@ static void OLECONVERT_GetOLE20FromOLE10(LPSTORAGE pDestStorage, const BYTE *pBu
     IStorage *pTempStorage;
     DWORD dwNumOfBytesWritten;
     WCHAR wstrTempDir[MAX_PATH], wstrTempFile[MAX_PATH];
-    static const WCHAR wstrPrefix[] = {'s', 'i', 's', 0};
 
     /* Create a temp File */
     GetTempPathW(MAX_PATH, wstrTempDir);
-    GetTempFileNameW(wstrTempDir, wstrPrefix, 0, wstrTempFile);
+    GetTempFileNameW(wstrTempDir, L"sis", 0, wstrTempFile);
     hFile = CreateFileW(wstrTempFile, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
 
     if(hFile != INVALID_HANDLE_VALUE)
@@ -9972,13 +9926,12 @@ static DWORD OLECONVERT_WriteOLE20ToBuffer(LPSTORAGE pStorage, BYTE **pData)
     DWORD nDataLength = 0;
     IStorage *pTempStorage;
     WCHAR wstrTempDir[MAX_PATH], wstrTempFile[MAX_PATH];
-    static const WCHAR wstrPrefix[] = {'s', 'i', 's', 0};
 
     *pData = NULL;
 
     /* Create temp Storage */
     GetTempPathW(MAX_PATH, wstrTempDir);
-    GetTempFileNameW(wstrTempDir, wstrPrefix, 0, wstrTempFile);
+    GetTempFileNameW(wstrTempDir, L"sis", 0, wstrTempFile);
     hRes = StgCreateDocfile(wstrTempFile, STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE, 0, &pTempStorage);
 
     if(hRes == S_OK)
@@ -10029,7 +9982,6 @@ HRESULT OLECONVERT_CreateCompObjStream(LPSTORAGE pStorage, LPCSTR strOleTypeName
     IStream *pStream;
     HRESULT hStorageRes, hRes = S_OK;
     OLECONVERT_ISTORAGE_COMPOBJ IStorageCompObj;
-    static const WCHAR wstrStreamName[] = {1,'C', 'o', 'm', 'p', 'O', 'b', 'j', 0};
     WCHAR bufferW[OLESTREAM_MAX_STR_LEN];
 
     static const BYTE pCompObjUnknown1[] = {0x01, 0x00, 0xFE, 0xFF, 0x03, 0x0A, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -10042,7 +9994,7 @@ HRESULT OLECONVERT_CreateCompObjStream(LPSTORAGE pStorage, LPCSTR strOleTypeName
 
 
     /*  Create a CompObj stream if it doesn't exist */
-    hStorageRes = IStorage_CreateStream(pStorage, wstrStreamName,
+    hStorageRes = IStorage_CreateStream(pStorage, L"\1CompObj",
         STGM_WRITE  | STGM_SHARE_EXCLUSIVE, 0, 0, &pStream );
     if(hStorageRes == S_OK)
     {
@@ -10130,7 +10082,6 @@ static void OLECONVERT_CreateOlePresStream(LPSTORAGE pStorage, DWORD dwExtentX, 
 {
     HRESULT hRes;
     IStream *pStream;
-    static const WCHAR wstrStreamName[] = {2, 'O', 'l', 'e', 'P', 'r', 'e', 's', '0', '0', '0', 0};
     static const BYTE pOlePresStreamHeader[] =
     {
         0xFF, 0xFF, 0xFF, 0xFF, 0x03, 0x00, 0x00, 0x00,
@@ -10148,7 +10099,7 @@ static void OLECONVERT_CreateOlePresStream(LPSTORAGE pStorage, DWORD dwExtentX, 
     };
 
     /* Create the OlePres000 Stream */
-    hRes = IStorage_CreateStream(pStorage, wstrStreamName,
+    hRes = IStorage_CreateStream(pStorage, L"\2OlePres000",
         STGM_CREATE | STGM_WRITE  | STGM_SHARE_EXCLUSIVE, 0, 0, &pStream );
 
     if(hRes == S_OK)
@@ -10214,10 +10165,9 @@ static void OLECONVERT_CreateOle10NativeStream(LPSTORAGE pStorage, const BYTE *p
 {
     HRESULT hRes;
     IStream *pStream;
-    static const WCHAR wstrStreamName[] = {1, 'O', 'l', 'e', '1', '0', 'N', 'a', 't', 'i', 'v', 'e', 0};
 
     /* Create the Ole10Native Stream */
-    hRes = IStorage_CreateStream(pStorage, wstrStreamName,
+    hRes = IStorage_CreateStream(pStorage, L"\1Ole10Native",
         STGM_CREATE | STGM_WRITE  | STGM_SHARE_EXCLUSIVE, 0, 0, &pStream );
 
     if(hRes == S_OK)
@@ -10255,10 +10205,9 @@ static HRESULT OLECONVERT_GetOLE10ProgID(LPSTORAGE pStorage, char *strProgID, DW
     IStream *pStream;
     LARGE_INTEGER iSeekPos;
     OLECONVERT_ISTORAGE_COMPOBJ CompObj;
-    static const WCHAR wstrStreamName[] = {1,'C', 'o', 'm', 'p', 'O', 'b', 'j', 0};
 
     /* Open the CompObj Stream */
-    hRes = IStorage_OpenStream(pStorage, wstrStreamName, NULL,
+    hRes = IStorage_OpenStream(pStorage, L"\1CompObj", NULL,
         STGM_READ  | STGM_SHARE_EXCLUSIVE, 0, &pStream );
     if(hRes == S_OK)
     {
@@ -10325,7 +10274,6 @@ static void OLECONVERT_GetOle10PresData(LPSTORAGE pStorage, OLECONVERT_OLESTREAM
 
     HRESULT hRes;
     IStream *pStream;
-    static const WCHAR wstrStreamName[] = {1, 'O', 'l', 'e', '1', '0', 'N', 'a', 't', 'i', 'v', 'e', 0};
 
     /* Initialize Default data for OLESTREAM */
     pOleStreamData[0].dwOleID = OLESTREAM_ID;
@@ -10338,7 +10286,7 @@ static void OLECONVERT_GetOle10PresData(LPSTORAGE pStorage, OLECONVERT_OLESTREAM
     pOleStreamData[1].pData = NULL;
 
     /* Open Ole10Native Stream */
-    hRes = IStorage_OpenStream(pStorage, wstrStreamName, NULL,
+    hRes = IStorage_OpenStream(pStorage, L"\1Ole10Native", NULL,
         STGM_READ  | STGM_SHARE_EXCLUSIVE, 0, &pStream );
     if(hRes == S_OK)
     {
@@ -10378,7 +10326,6 @@ static void OLECONVERT_GetOle20PresData(LPSTORAGE pStorage, OLECONVERT_OLESTREAM
     HRESULT hRes;
     IStream *pStream;
     OLECONVERT_ISTORAGE_OLEPRES olePress;
-    static const WCHAR wstrStreamName[] = {2, 'O', 'l', 'e', 'P', 'r', 'e', 's', '0', '0', '0', 0};
 
     /* Initialize Default data for OLESTREAM */
     pOleStreamData[0].dwOleID = OLESTREAM_ID;
@@ -10397,7 +10344,7 @@ static void OLECONVERT_GetOle20PresData(LPSTORAGE pStorage, OLECONVERT_OLESTREAM
 
 
     /* Open OlePress000 stream */
-    hRes = IStorage_OpenStream(pStorage, wstrStreamName, NULL,
+    hRes = IStorage_OpenStream(pStorage, L"\2OlePres000", NULL,
         STGM_READ  | STGM_SHARE_EXCLUSIVE, 0, &pStream );
     if(hRes == S_OK)
     {
@@ -10555,7 +10502,6 @@ HRESULT WINAPI OleConvertIStorageToOLESTREAM (
     HRESULT hRes = S_OK;
     IStream *pStream;
     OLECONVERT_OLESTREAM_DATA pOleStreamData[2];
-    static const WCHAR wstrStreamName[] = {1, 'O', 'l', 'e', '1', '0', 'N', 'a', 't', 'i', 'v', 'e', 0};
 
     TRACE("%p %p\n", pstg, pOleStream);
 
@@ -10574,7 +10520,7 @@ HRESULT WINAPI OleConvertIStorageToOLESTREAM (
     if(hRes == S_OK)
     {
         /* Was it originally Ole10 */
-        hRes = IStorage_OpenStream(pstg, wstrStreamName, 0, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &pStream);
+        hRes = IStorage_OpenStream(pstg, L"\1Ole10Native", 0, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &pStream);
         if(hRes == S_OK)
         {
             IStream_Release(pStream);
@@ -10610,12 +10556,22 @@ enum stream_1ole_flags {
     OleStream_Convert      = 0x00000004
 };
 
+/*************************************************************************
+ * OleConvertIStorageToOLESTREAMEx [OLE32.@]
+ */
+HRESULT WINAPI OleConvertIStorageToOLESTREAMEx ( LPSTORAGE stg, CLIPFORMAT cf, LONG width, LONG height,
+                                                 DWORD size, LPSTGMEDIUM medium, LPOLESTREAM olestream )
+{
+    FIXME("%p, %x, %ld, %ld, %ld, %p, %p: stub\n", stg, cf, width, height, size, medium, olestream);
+
+    return E_NOTIMPL;
+}
+
 /***********************************************************************
  *		GetConvertStg (OLE32.@)
  */
 HRESULT WINAPI GetConvertStg(IStorage *stg)
 {
-    static const WCHAR stream_1oleW[] = {1,'O','l','e',0};
     static const DWORD version_magic = 0x02000001;
     DWORD header[2];
     IStream *stream;
@@ -10625,7 +10581,7 @@ HRESULT WINAPI GetConvertStg(IStorage *stg)
 
     if (!stg) return E_INVALIDARG;
 
-    hr = IStorage_OpenStream(stg, stream_1oleW, NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stream);
+    hr = IStorage_OpenStream(stg, L"\1Ole", NULL, STGM_READ | STGM_SHARE_EXCLUSIVE, 0, &stream);
     if (FAILED(hr)) return hr;
 
     hr = IStream_Read(stream, header, sizeof(header), NULL);
@@ -10634,7 +10590,7 @@ HRESULT WINAPI GetConvertStg(IStorage *stg)
 
     if (header[0] != version_magic)
     {
-        ERR("got wrong version magic for 1Ole stream, 0x%08x\n", header[0]);
+        ERR("got wrong version magic for 1Ole stream, %#lx.\n", header[0]);
         return E_FAIL;
     }
 
@@ -10646,7 +10602,6 @@ HRESULT WINAPI GetConvertStg(IStorage *stg)
  */
 HRESULT WINAPI SetConvertStg(IStorage *storage, BOOL convert)
 {
-    static const WCHAR stream_1oleW[] = {1,'O','l','e',0};
     DWORD flags = convert ? OleStream_Convert : 0;
     IStream *stream;
     DWORD header[2];
@@ -10654,7 +10609,7 @@ HRESULT WINAPI SetConvertStg(IStorage *storage, BOOL convert)
 
     TRACE("(%p, %d)\n", storage, convert);
 
-    hr = IStorage_OpenStream(storage, stream_1oleW, NULL, STGM_READWRITE | STGM_SHARE_EXCLUSIVE, 0, &stream);
+    hr = IStorage_OpenStream(storage, L"\1Ole", NULL, STGM_READWRITE | STGM_SHARE_EXCLUSIVE, 0, &stream);
     if (FAILED(hr))
     {
         if (hr != STG_E_FILENOTFOUND)

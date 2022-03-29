@@ -50,7 +50,7 @@ static ULONG STDMETHODCALLTYPE d2d_state_block_AddRef(ID2D1DrawingStateBlock1 *i
     struct d2d_state_block *state_block = impl_from_ID2D1DrawingStateBlock1(iface);
     ULONG refcount = InterlockedIncrement(&state_block->refcount);
 
-    TRACE("%p increasing refcount to %u.\n", iface, refcount);
+    TRACE("%p increasing refcount to %lu.\n", iface, refcount);
 
     return refcount;
 }
@@ -60,7 +60,7 @@ static ULONG STDMETHODCALLTYPE d2d_state_block_Release(ID2D1DrawingStateBlock1 *
     struct d2d_state_block *state_block = impl_from_ID2D1DrawingStateBlock1(iface);
     ULONG refcount = InterlockedDecrement(&state_block->refcount);
 
-    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %lu.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -165,11 +165,11 @@ void d2d_state_block_init(struct d2d_state_block *state_block, ID2D1Factory *fac
         const D2D1_DRAWING_STATE_DESCRIPTION1 *desc, IDWriteRenderingParams *text_rendering_params)
 {
     static const D2D1_MATRIX_3X2_F identity =
-    {
+    {{{
         1.0f, 0.0f,
         0.0f, 1.0f,
         0.0f, 0.0f,
-    };
+    }}};
 
     state_block->ID2D1DrawingStateBlock1_iface.lpVtbl = &d2d_state_block_vtbl;
     state_block->refcount = 1;

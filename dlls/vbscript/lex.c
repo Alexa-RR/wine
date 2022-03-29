@@ -204,6 +204,48 @@ static int parse_string_literal(parser_ctx_t *ctx, const WCHAR **ret)
     return tString;
 }
 
+static int parse_date_literal(parser_ctx_t *ctx, DATE *ret)
+{
+    const WCHAR *ptr = ++ctx->ptr;
+    WCHAR *rptr;
+    int len = 0;
+    HRESULT res;
+
+    while(ctx->ptr < ctx->end) {
+        if(*ctx->ptr == '\n' || *ctx->ptr == '\r') {
+            FIXME("newline inside date literal\n");
+            return 0;
+        }
+
+       if(*ctx->ptr == '#')
+            break;
+       ctx->ptr++;
+    }
+
+    if(ctx->ptr == ctx->end) {
+        FIXME("unterminated date literal\n");
+        return 0;
+    }
+
+    len += ctx->ptr-ptr;
+
+    rptr = heap_alloc((len+1)*sizeof(WCHAR));
+    if(!rptr)
+        return 0;
+
+    memcpy( rptr, ptr, len * sizeof(WCHAR));
+    rptr[len] = 0;
+    res = VarDateFromStr(rptr, ctx->lcid, 0, ret);
+    heap_free(rptr);
+    if (FAILED(res)) {
+        FIXME("Invalid date literal\n");
+        return 0;
+    }
+
+    ctx->ptr++;
+    return tDate;
+}
+
 static int parse_numeric_literal(parser_ctx_t *ctx, void **ret)
 {
     BOOL use_int = TRUE;
@@ -315,7 +357,7 @@ static int parse_hex_literal(parser_ctx_t *ctx, LONG *ret)
     while((d = hex_to_int(*++ctx->ptr)) != -1)
         l = l*16 + d;
 
-    if(begin + 9 /* max digits+1 */ < ctx->ptr || (*ctx->ptr != '&' && is_identifier_char(*ctx->ptr))) {
+    if(begin + 9 /* max digits+1 */ < ctx->ptr) {
         FIXME("invalid literal\n");
         return 0;
     }
@@ -337,8 +379,7 @@ static void skip_spaces(parser_ctx_t *ctx)
 
 static int comment_line(parser_ctx_t *ctx)
 {
-    static const WCHAR newlineW[] = {'\n','\r',0};
-    ctx->ptr = wcspbrk(ctx->ptr, newlineW);
+    ctx->ptr = wcspbrk(ctx->ptr, L"\n\r");
     if(ctx->ptr)
         ctx->ptr++;
     else
@@ -393,11 +434,18 @@ static int parse_next_token(void *lval, unsigned *loc, parser_ctx_t *ctx)
         /*
          * We need to distinguish between '.' used as part of a member expression and
          * a beginning of a dot expression (a member expression accessing with statement
-         * expression).
+         * expression) and a floating point number like ".2" .
          */
         c = ctx->ptr > ctx->code ? ctx->ptr[-1] : '\n';
+        if (is_identifier_char(c) || c == ')') {
+            ctx->ptr++;
+            return '.';
+        }
+        c = ctx->ptr[1];
+        if('0' <= c && c <= '9')
+            return parse_numeric_literal(ctx, lval);
         ctx->ptr++;
-        return is_identifier_char(c) || c == ')' ? '.' : tDOT;
+        return tDOT;
     case '-':
         if(ctx->is_html && ctx->ptr[1] == '-' && ctx->ptr[2] == '>')
             return comment_line(ctx);
@@ -423,6 +471,8 @@ static int parse_next_token(void *lval, unsigned *loc, parser_ctx_t *ctx)
         return tEXPRLBRACKET;
     case '"':
         return parse_string_literal(ctx, lval);
+    case '#':
+        return parse_date_literal(ctx, lval);
     case '&':
         if(*++ctx->ptr == 'h' || *ctx->ptr == 'H')
             return parse_hex_literal(ctx, lval);

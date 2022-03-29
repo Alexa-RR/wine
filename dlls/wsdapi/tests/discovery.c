@@ -52,23 +52,10 @@ static const char testProbeMessage[] = "<?xml version=\"1.0\" encoding=\"utf-8\"
     "<grog:Perry>ExtraInfo</grog:Perry></soap:Header>"
     "<soap:Body><wsd:Probe><wsd:Types>grog:Cider</wsd:Types><grog:Lager>MoreInfo</grog:Lager></wsd:Probe></soap:Body></soap:Envelope>";
 
-static const WCHAR discoveryTo[] = {
-    'u','r','n',':',
-    's','c','h','e','m','a','s','-','x','m','l','s','o','a','p','-','o','r','g',':',
-    'w','s',':','2','0','0','5',':','0','4',':',
-    'd','i','s','c','o','v','e','r','y', 0 };
-
-static const WCHAR actionProbe[] = {
-    'h','t','t','p',':','/','/',
-    's','c','h','e','m','a','s','.','x','m','l','s','o','a','p','.','o','r','g','/',
-    'w','s','/','2','0','0','5','/','0','4','/',
-    'd','i','s','c','o','v','e','r','y','/',
-    'P','r','o','b','e', 0 };
-
-static const WCHAR uri_more_tests[] = { 'h','t','t','p',':','/','/','m','o','r','e','.','t','e','s','t','s','/', 0 };
-static const WCHAR uri_more_tests_no_slash[] = { 'h','t','t','p',':','/','/','m','o','r','e','.','t','e','s','t','s', 0 };
-static const WCHAR prefix_grog[] = { 'g','r','o','g', 0 };
-static const WCHAR name_cider[] = { 'C','i','d','e','r', 0 };
+static const WCHAR *uri_more_tests = L"http://more.tests/";
+static const WCHAR *uri_more_tests_no_slash = L"http://more.tests";
+static const WCHAR *prefix_grog = L"grog";
+static const WCHAR *name_cider = L"Cider";
 
 static HANDLE probe_event = NULL;
 static UUID probe_message_id;
@@ -495,7 +482,7 @@ static ULONG WINAPI IWSDiscoveryPublisherNotifyImpl_AddRef(IWSDiscoveryPublisher
     IWSDiscoveryPublisherNotifyImpl *This = impl_from_IWSDiscoveryPublisherNotify(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    trace("IWSDiscoveryPublisherNotifyImpl_AddRef called (%p, ref = %d)\n", This, ref);
+    trace("IWSDiscoveryPublisherNotifyImpl_AddRef called (%p, ref = %ld)\n", This, ref);
     return ref;
 }
 
@@ -504,7 +491,7 @@ static ULONG WINAPI IWSDiscoveryPublisherNotifyImpl_Release(IWSDiscoveryPublishe
     IWSDiscoveryPublisherNotifyImpl *This = impl_from_IWSDiscoveryPublisherNotify(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    trace("IWSDiscoveryPublisherNotifyImpl_Release called (%p, ref = %d)\n", This, ref);
+    trace("IWSDiscoveryPublisherNotifyImpl_Release called (%p, ref = %ld)\n", This, ref);
 
     if (ref == 0)
     {
@@ -576,15 +563,13 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
 
     if (pSoap != NULL)
     {
-        static const WCHAR perry[] = {'P','e','r','r','y',0};
-        static const WCHAR extra_info[] = {'E','x','t','r','a','I','n','f','o',0};
         WSD_PROBE *probe_msg = (WSD_PROBE *) pSoap->Body;
         WSD_APP_SEQUENCE *appseq = (WSD_APP_SEQUENCE *) pSoap->Header.AppSequence;
 
         ok(pSoap->Body != NULL, "pSoap->Body == NULL\n");
-        ok(pSoap->Header.To != NULL && lstrcmpW(pSoap->Header.To, discoveryTo) == 0,
+        ok(pSoap->Header.To != NULL && lstrcmpW(pSoap->Header.To, L"urn:schemas-xmlsoap-org:ws:2005:04:discovery") == 0,
             "pSoap->Header.To == '%s'\n", wine_dbgstr_w(pSoap->Header.To));
-        ok(pSoap->Header.Action != NULL && lstrcmpW(pSoap->Header.Action, actionProbe) == 0,
+        ok(pSoap->Header.Action != NULL && lstrcmpW(pSoap->Header.Action, L"http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe") == 0,
             "pSoap->Header.Action == '%s'\n", wine_dbgstr_w(pSoap->Header.Action));
 
         ok(pSoap->Header.MessageID != NULL, "pSoap->Header.MessageID == NULL\n");
@@ -607,25 +592,19 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
 
         if (appseq != NULL)
         {
-            static const WCHAR seq_id[] = {'u','r','n',':','u','u','i','d',':','6','3','8','a','b','e','e','8','-',
-                '1','2','4','d','-','4','b','6','a','-','8','b','8','5','-',
-                '8','c','f','2','8','3','7','a','2','f','d','2',0};
-
             ok(appseq->InstanceId == 21, "pSoap->Header.AppSequence->InstanceId = %s\n",
                 wine_dbgstr_longlong(appseq->InstanceId));
-            ok(lstrcmpW(appseq->SequenceId, seq_id) == 0, "pSoap->Header.AppSequence->SequenceId = '%s'\n",
+            ok(lstrcmpW(appseq->SequenceId, L"urn:uuid:638abee8-124d-4b6a-8b85-8cf2837a2fd2") == 0, "pSoap->Header.AppSequence->SequenceId = '%s'\n",
                 wine_dbgstr_w(appseq->SequenceId));
             ok(appseq->MessageNumber == 14, "pSoap->Header.AppSequence->MessageNumber = %s\n",
                 wine_dbgstr_longlong(appseq->MessageNumber));
         }
 
         verify_wsdxml_any_text("pSoap->Header.AnyHeaders", pSoap->Header.AnyHeaders, uri_more_tests_no_slash,
-            prefix_grog, perry, extra_info);
+            prefix_grog, L"Perry", L"ExtraInfo");
 
         if (probe_msg != NULL)
         {
-            static const WCHAR lager[] = {'L','a','g','e','r',0};
-            static const WCHAR more_info[] = {'M','o','r','e','I','n','f','o',0};
             IWSDUdpAddress *remote_addr = NULL;
             HRESULT rc;
 
@@ -639,10 +618,10 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
             }
 
             ok(probe_msg->Scopes == NULL, "Probe message Scopes != NULL\n");
-            verify_wsdxml_any_text("probe_msg->Any", probe_msg->Any, uri_more_tests_no_slash, prefix_grog, lager, more_info);
+            verify_wsdxml_any_text("probe_msg->Any", probe_msg->Any, uri_more_tests_no_slash, prefix_grog, L"Lager", L"MoreInfo");
 
             rc = IWSDMessageParameters_GetRemoteAddress(pMessageParameters, (IWSDAddress **) &remote_addr);
-            ok(rc == S_OK, "IWSDMessageParameters_GetRemoteAddress returned %08x\n", rc);
+            ok(rc == S_OK, "IWSDMessageParameters_GetRemoteAddress returned %08lx\n", rc);
 
             if (remote_addr != NULL)
             {
@@ -653,13 +632,6 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
                 WSDXML_ELEMENT *header_any_element, *body_any_element, *endpoint_any_element, *ref_param_any_element;
                 WSDXML_NAME header_any_name;
                 WSDXML_NAMESPACE ns;
-                static const WCHAR header_any_name_text[] = {'B','e','e','r',0};
-                static const WCHAR header_any_text[] = {'P','u','b','l','i','s','h','T','e','s','t',0};
-                static const WCHAR body_any_text[] = {'B','o','d','y','T','e','s','t',0};
-                static const WCHAR endpoint_any_text[] = {'E','n','d','P','T','e','s','t',0};
-                static const WCHAR ref_param_any_text[] = {'R','e','f','P','T','e','s','t',0};
-                static const WCHAR uri[] = {'h','t','t','p',':','/','/','w','i','n','e','.','t','e','s','t','/',0};
-                static const WCHAR prefix[] = {'w','i','n','e',0};
                 BOOL probe_matches_message_seen = FALSE, endpoint_reference_seen = FALSE, app_sequence_seen = FALSE;
                 BOOL metadata_version_seen = FALSE, wine_ns_seen = FALSE, body_probe_matches_seen = FALSE;
                 BOOL types_seen = FALSE, any_header_seen = FALSE, any_body_seen = FALSE;
@@ -668,7 +640,7 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
                 int i;
 
                 rc = IWSDUdpAddress_GetSockaddr(remote_addr, &remote_sock);
-                ok(rc == S_OK, "IWSDMessageParameters_GetRemoteAddress returned %08x\n", rc);
+                ok(rc == S_OK, "IWSDMessageParameters_GetRemoteAddress returned %08lx\n", rc);
 
                 IWSDUdpAddress_Release(remote_addr);
 
@@ -685,28 +657,28 @@ static HRESULT WINAPI IWSDiscoveryPublisherNotifyImpl_ProbeHandler(IWSDiscoveryP
                 sequenceIdW = utf8_to_wide(sequenceId);
 
                 /* Create "any" elements for header */
-                ns.Uri = uri;
-                ns.PreferredPrefix = prefix;
+                ns.Uri = L"http://wine.test/";
+                ns.PreferredPrefix = L"wine";
 
-                header_any_name.LocalName = (WCHAR *) header_any_name_text;
+                header_any_name.LocalName = (WCHAR *) L"Beer";
                 header_any_name.Space = &ns;
 
-                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, header_any_text, &header_any_element);
-                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"PublishTest", &header_any_element);
+                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, body_any_text, &body_any_element);
-                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"BodyTest", &body_any_element);
+                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, endpoint_any_text, &endpoint_any_element);
-                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"EndPTest", &endpoint_any_element);
+                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, ref_param_any_text, &ref_param_any_element);
-                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+                rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"RefPTest", &ref_param_any_element);
+                ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
                 rc = IWSDiscoveryPublisher_MatchProbeEx(publisher_instance, pSoap, pMessageParameters, publisherIdW, 1, 1, 1,
                     sequenceIdW, probe_msg->Types, NULL, NULL, header_any_element, ref_param_any_element, NULL,
                     endpoint_any_element, body_any_element);
-                ok(rc == S_OK, "IWSDiscoveryPublisher_MatchProbeEx failed with %08x\n", rc);
+                ok(rc == S_OK, "IWSDiscoveryPublisher_MatchProbeEx failed with %08lx\n", rc);
 
                 WSDFreeLinkedMemory(header_any_element);
                 WSDFreeLinkedMemory(body_any_element);
@@ -836,27 +808,27 @@ static void CreateDiscoveryPublisher_tests(void)
     ULONG ref;
 
     rc = WSDCreateDiscoveryPublisher(NULL, NULL);
-    ok((rc == E_POINTER) || (rc == E_INVALIDARG), "WSDCreateDiscoveryPublisher(NULL, NULL) failed: %08x\n", rc);
+    ok((rc == E_POINTER) || (rc == E_INVALIDARG), "WSDCreateDiscoveryPublisher(NULL, NULL) failed: %08lx\n", rc);
 
     rc = WSDCreateDiscoveryPublisher(NULL, &publisher);
-    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08lx\n", rc);
     ok(publisher != NULL, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: publisher == NULL\n");
 
     /* Try to query for objects */
     rc = IWSDiscoveryPublisher_QueryInterface(publisher, &IID_IUnknown, (LPVOID*)&unknown);
-    ok(rc == S_OK,"IWSDiscoveryPublisher_QueryInterface(IID_IUnknown) failed: %08x\n", rc);
+    ok(rc == S_OK,"IWSDiscoveryPublisher_QueryInterface(IID_IUnknown) failed: %08lx\n", rc);
 
     if (rc == S_OK)
         IUnknown_Release(unknown);
 
     rc = IWSDiscoveryPublisher_QueryInterface(publisher, &IID_IWSDiscoveryPublisher, (LPVOID*)&publisher2);
-    ok(rc == S_OK,"IWSDiscoveryPublisher_QueryInterface(IID_IWSDiscoveryPublisher) failed: %08x\n", rc);
+    ok(rc == S_OK,"IWSDiscoveryPublisher_QueryInterface(IID_IWSDiscoveryPublisher) failed: %08lx\n", rc);
 
     if (rc == S_OK)
         IWSDiscoveryPublisher_Release(publisher2);
 
     ref = IWSDiscoveryPublisher_Release(publisher);
-    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %d references, should have 0\n", ref);
+    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %ld references, should have 0\n", ref);
 }
 
 static void CreateDiscoveryPublisher_XMLContext_tests(void)
@@ -868,17 +840,17 @@ static void CreateDiscoveryPublisher_XMLContext_tests(void)
 
     /* Test creating an XML context and supplying it to WSDCreateDiscoveryPublisher */
     rc = WSDXMLCreateContext(&xmlContext);
-    ok(rc == S_OK, "WSDXMLCreateContext failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDXMLCreateContext failed: %08lx\n", rc);
 
     rc = WSDCreateDiscoveryPublisher(xmlContext, &publisher);
-    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(xmlContext, &publisher) failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(xmlContext, &publisher) failed: %08lx\n", rc);
     ok(publisher != NULL, "WSDCreateDiscoveryPublisher(xmlContext, &publisher) failed: publisher == NULL\n");
 
     rc = IWSDiscoveryPublisher_GetXMLContext(publisher, NULL);
-    ok(rc == E_INVALIDARG, "GetXMLContext returned unexpected value with NULL argument: %08x\n", rc);
+    ok(rc == E_INVALIDARG, "GetXMLContext returned unexpected value with NULL argument: %08lx\n", rc);
 
     rc = IWSDiscoveryPublisher_GetXMLContext(publisher, &returnedContext);
-    ok(rc == S_OK, "GetXMLContext failed: %08x\n", rc);
+    ok(rc == S_OK, "GetXMLContext failed: %08lx\n", rc);
 
     ok(xmlContext == returnedContext, "GetXMLContext returned unexpected value: returnedContext == %p\n", returnedContext);
 
@@ -896,11 +868,11 @@ static void CreateDiscoveryPublisher_XMLContext_tests(void)
     returnedContext = NULL;
 
     rc = WSDCreateDiscoveryPublisher(NULL, &publisher);
-    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08lx\n", rc);
     ok(publisher != NULL, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: publisher == NULL\n");
 
     rc = IWSDiscoveryPublisher_GetXMLContext(publisher, &returnedContext);
-    ok(rc == S_OK, "GetXMLContext failed: %08x\n", rc);
+    ok(rc == S_OK, "GetXMLContext failed: %08lx\n", rc);
 
     ref = IWSDXMLContext_Release(returnedContext);
     ok(ref == 1, "IWSDXMLContext_Release() has %d references, should have 1\n", ref);
@@ -929,34 +901,27 @@ static void Publish_tests(void)
     WSDXML_ELEMENT *header_any_element, *body_any_element, *endpoint_any_element, *ref_param_any_element;
     WSDXML_NAME header_any_name, another_name;
     WSDXML_NAMESPACE ns, ns2;
-    WCHAR header_any_name_text[] = {'B','e','e','r',0};
-    static const WCHAR header_any_text[] = {'P','u','b','l','i','s','h','T','e','s','t',0};
-    static const WCHAR body_any_text[] = {'B','o','d','y','T','e','s','t',0};
-    static const WCHAR endpoint_any_text[] = {'E','n','d','P','T','e','s','t',0};
-    static const WCHAR ref_param_any_text[] = {'R','e','f','P','T','e','s','t',0};
-    static const WCHAR uri[] = {'h','t','t','p',':','/','/','w','i','n','e','.','t','e','s','t','/',0};
-    static const WCHAR prefix[] = {'w','i','n','e',0};
-    static const WCHAR uri3[] = {'h','t','t','p',':','/','/','t','h','i','r','d','.','u','r','l','/',0};
+    static const WCHAR *uri = L"http://wine.test/";
     WSD_NAME_LIST types_list;
     WSD_URI_LIST scopes_list, xaddrs_list;
     unsigned char *probe_uuid_str;
 
     rc = WSDCreateDiscoveryPublisher(NULL, &publisher);
-    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08lx\n", rc);
     ok(publisher != NULL, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: publisher == NULL\n");
 
     publisher_instance = publisher;
 
     /* Test SetAddressFamily */
     rc = IWSDiscoveryPublisher_SetAddressFamily(publisher, 12345);
-    ok(rc == E_INVALIDARG, "IWSDiscoveryPublisher_SetAddressFamily(12345) returned unexpected result: %08x\n", rc);
+    ok(rc == E_INVALIDARG, "IWSDiscoveryPublisher_SetAddressFamily(12345) returned unexpected result: %08lx\n", rc);
 
     rc = IWSDiscoveryPublisher_SetAddressFamily(publisher, WSDAPI_ADDRESSFAMILY_IPV4);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV4) failed: %08x\n", rc);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV4) failed: %08lx\n", rc);
 
     /* Try to update the address family after already setting it */
     rc = IWSDiscoveryPublisher_SetAddressFamily(publisher, WSDAPI_ADDRESSFAMILY_IPV6);
-    ok(rc == STG_E_INVALIDFUNCTION, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV6) returned unexpected result: %08x\n", rc);
+    ok(rc == STG_E_INVALIDFUNCTION, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV6) returned unexpected result: %08lx\n", rc);
 
     /* Create notification sinks */
     ok(create_discovery_publisher_notify(&sink1) == TRUE, "create_discovery_publisher_notify failed\n");
@@ -968,21 +933,21 @@ static void Publish_tests(void)
 
     /* Attempt to unregister sink before registering it */
     rc = IWSDiscoveryPublisher_UnRegisterNotificationSink(publisher, sink1);
-    ok(rc == E_FAIL, "IWSDiscoveryPublisher_UnRegisterNotificationSink returned unexpected result: %08x\n", rc);
+    ok(rc == E_FAIL, "IWSDiscoveryPublisher_UnRegisterNotificationSink returned unexpected result: %08lx\n", rc);
 
     /* Register notification sinks */
     rc = IWSDiscoveryPublisher_RegisterNotificationSink(publisher, sink1);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08x\n", rc);
-    ok(sink1Impl->ref == 2, "Ref count for sink 1 is not as expected: %d\n", sink1Impl->ref);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08lx\n", rc);
+    ok(sink1Impl->ref == 2, "Ref count for sink 1 is not as expected: %ld\n", sink1Impl->ref);
 
     rc = IWSDiscoveryPublisher_RegisterNotificationSink(publisher, sink2);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08x\n", rc);
-    ok(sink2Impl->ref == 2, "Ref count for sink 2 is not as expected: %d\n", sink2Impl->ref);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08lx\n", rc);
+    ok(sink2Impl->ref == 2, "Ref count for sink 2 is not as expected: %ld\n", sink2Impl->ref);
 
     /* Unregister the first sink */
     rc = IWSDiscoveryPublisher_UnRegisterNotificationSink(publisher, sink1);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_UnRegisterNotificationSink failed: %08x\n", rc);
-    ok(sink1Impl->ref == 1, "Ref count for sink 1 is not as expected: %d\n", sink1Impl->ref);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_UnRegisterNotificationSink failed: %08lx\n", rc);
+    ok(sink1Impl->ref == 1, "Ref count for sink 1 is not as expected: %ld\n", sink1Impl->ref);
 
     /* Set up network listener */
     publisherIdW = utf8_to_wide(publisherId);
@@ -1005,22 +970,22 @@ static void Publish_tests(void)
 
     /* Create "any" elements for header */
     ns.Uri = uri;
-    ns.PreferredPrefix = prefix;
+    ns.PreferredPrefix = L"wine";
 
-    header_any_name.LocalName = header_any_name_text;
+    header_any_name.LocalName = (WCHAR *) L"Beer";
     header_any_name.Space = &ns;
 
-    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, header_any_text, &header_any_element);
-    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"PublishTest", &header_any_element);
+    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, body_any_text, &body_any_element);
-    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"BodyTest", &body_any_element);
+    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, endpoint_any_text, &endpoint_any_element);
-    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"EndPTest", &endpoint_any_element);
+    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
-    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, ref_param_any_text, &ref_param_any_element);
-    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+    rc = WSDXMLBuildAnyForSingleElement(&header_any_name, L"RefPTest", &ref_param_any_element);
+    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
     /* Create types list */
     ns2.Uri = uri_more_tests;
@@ -1046,7 +1011,7 @@ static void Publish_tests(void)
     xaddrs_list.Element = uri_more_tests;
 
     xaddrs_list.Next->Next = NULL;
-    xaddrs_list.Next->Element = uri3;
+    xaddrs_list.Next->Element = L"http://third.url/";
 
     /* Publish the service */
     rc = IWSDiscoveryPublisher_PublishEx(publisher, publisherIdW, 1, 1, 1, sequenceIdW, &types_list, &scopes_list,
@@ -1060,7 +1025,7 @@ static void Publish_tests(void)
     heap_free(scopes_list.Next);
     heap_free(xaddrs_list.Next);
 
-    ok(rc == S_OK, "Publish failed: %08x\n", rc);
+    ok(rc == S_OK, "Publish failed: %08lx\n", rc);
 
     /* Wait up to 2 seconds for messages to be received */
     if (WaitForMultipleObjects(msgStorage->numThreadHandles, msgStorage->threadHandles, TRUE, 2000) == WAIT_TIMEOUT)
@@ -1157,11 +1122,11 @@ after_publish_test:
     CloseHandle(probe_event);
 
     ref = IWSDiscoveryPublisher_Release(publisher);
-    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %d references, should have 0\n", ref);
+    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %ld references, should have 0\n", ref);
 
     /* Check that the sinks have been released by the publisher */
-    ok(sink1Impl->ref == 1, "Ref count for sink 1 is not as expected: %d\n", sink1Impl->ref);
-    ok(sink2Impl->ref == 1, "Ref count for sink 2 is not as expected: %d\n", sink2Impl->ref);
+    ok(sink1Impl->ref == 1, "Ref count for sink 1 is not as expected: %ld\n", sink1Impl->ref);
+    ok(sink2Impl->ref == 1, "Ref count for sink 2 is not as expected: %ld\n", sink2Impl->ref);
 
     /* Release the sinks */
     IWSDiscoveryPublisherNotify_Release(sink1);
@@ -1187,22 +1152,18 @@ static void UnPublish_tests(void)
     WSDXML_ELEMENT *body_any_element;
     WSDXML_NAME body_any_name;
     WSDXML_NAMESPACE ns;
-    WCHAR body_any_name_text[] = {'B','e','e','r',0};
-    static const WCHAR body_any_text[] = {'B','o','d','y','T','e','s','t',0};
-    static const WCHAR uri[] = {'h','t','t','p',':','/','/','w','i','n','e','.','t','e','s','t','/',0};
-    static const WCHAR prefix[] = {'w','i','n','e',0};
 
     rc = WSDCreateDiscoveryPublisher(NULL, &publisher);
-    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08x\n", rc);
+    ok(rc == S_OK, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: %08lx\n", rc);
     ok(publisher != NULL, "WSDCreateDiscoveryPublisher(NULL, &publisher) failed: publisher == NULL\n");
 
     rc = IWSDiscoveryPublisher_SetAddressFamily(publisher, WSDAPI_ADDRESSFAMILY_IPV4);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV4) failed: %08x\n", rc);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_SetAddressFamily(WSDAPI_ADDRESSFAMILY_IPV4) failed: %08lx\n", rc);
 
     /* Create notification sink */
     ok(create_discovery_publisher_notify(&sink1) == TRUE, "create_discovery_publisher_notify failed\n");
     rc = IWSDiscoveryPublisher_RegisterNotificationSink(publisher, sink1);
-    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08x\n", rc);
+    ok(rc == S_OK, "IWSDiscoveryPublisher_RegisterNotificationSink failed: %08lx\n", rc);
 
     /* Set up network listener */
     publisherIdW = utf8_to_wide(publisherId);
@@ -1224,21 +1185,21 @@ static void UnPublish_tests(void)
     ok(ret == TRUE, "Unable to listen on IPv4 addresses (ret == %d)\n", ret);
 
     /* Create "any" elements for header */
-    ns.Uri = uri;
-    ns.PreferredPrefix = prefix;
+    ns.Uri = L"http://wine.test/";
+    ns.PreferredPrefix = L"wine";
 
-    body_any_name.LocalName = body_any_name_text;
+    body_any_name.LocalName = (WCHAR *) L"Beer";
     body_any_name.Space = &ns;
 
-    rc = WSDXMLBuildAnyForSingleElement(&body_any_name, body_any_text, &body_any_element);
-    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08x\n", rc);
+    rc = WSDXMLBuildAnyForSingleElement(&body_any_name, L"BodyTest", &body_any_element);
+    ok(rc == S_OK, "WSDXMLBuildAnyForSingleElement failed with %08lx\n", rc);
 
     /* Unpublish the service */
     rc = IWSDiscoveryPublisher_UnPublish(publisher, publisherIdW, 1, 1, sequenceIdW, body_any_element);
 
     WSDFreeLinkedMemory(body_any_element);
 
-    ok(rc == S_OK, "Unpublish failed: %08x\n", rc);
+    ok(rc == S_OK, "Unpublish failed: %08lx\n", rc);
 
     /* Wait up to 2 seconds for messages to be received */
     if (WaitForMultipleObjects(msg_storage->numThreadHandles, msg_storage->threadHandles, TRUE, 2000) == WAIT_TIMEOUT)
@@ -1299,7 +1260,7 @@ after_unpublish_test:
     heap_free(sequenceIdW);
 
     ref = IWSDiscoveryPublisher_Release(publisher);
-    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %d references, should have 0\n", ref);
+    ok(ref == 0, "IWSDiscoveryPublisher_Release() has %ld references, should have 0\n", ref);
 
     /* Release the sinks */
     IWSDiscoveryPublisherNotify_Release(sink1);
@@ -1341,18 +1302,18 @@ static BOOL is_firewall_enabled(void)
 
     hr = CoCreateInstance( &CLSID_NetFwMgr, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwMgr,
                            (void **)&mgr );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = INetFwMgr_get_LocalPolicy( mgr, &policy );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = INetFwPolicy_get_CurrentProfile( policy, &profile );
     if (hr != S_OK) goto done;
 
     hr = INetFwProfile_get_FirewallEnabled( profile, &enabled );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
 
 done:
     if (policy) INetFwPolicy_Release( policy );
@@ -1364,7 +1325,6 @@ done:
 
 static HRESULT set_firewall( enum firewall_op op )
 {
-    static const WCHAR testW[] = {'w','s','d','a','p','i','_','t','e','s','t',0};
     HRESULT hr, init;
     INetFwMgr *mgr = NULL;
     INetFwPolicy *policy = NULL;
@@ -1382,32 +1342,32 @@ static HRESULT set_firewall( enum firewall_op op )
 
     hr = CoCreateInstance( &CLSID_NetFwMgr, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwMgr,
                            (void **)&mgr );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = INetFwMgr_get_LocalPolicy( mgr, &policy );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = INetFwPolicy_get_CurrentProfile( policy, &profile );
     if (hr != S_OK) goto done;
 
     hr = INetFwProfile_get_AuthorizedApplications( profile, &apps );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = CoCreateInstance( &CLSID_NetFwAuthorizedApplication, NULL, CLSCTX_INPROC_SERVER,
                            &IID_INetFwAuthorizedApplication, (void **)&app );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     hr = INetFwAuthorizedApplication_put_ProcessImageFileName( app, image );
     if (hr != S_OK) goto done;
 
-    name = SysAllocString( testW );
+    name = SysAllocString( L"wsdapi_test" );
     hr = INetFwAuthorizedApplication_put_Name( app, name );
     SysFreeString( name );
-    ok( hr == S_OK, "got %08x\n", hr );
+    ok( hr == S_OK, "got %08lx\n", hr );
     if (hr != S_OK) goto done;
 
     if (op == APP_ADD)
@@ -1442,7 +1402,7 @@ START_TEST(discovery)
         }
         if ((hr = set_firewall(APP_ADD)) != S_OK)
         {
-            skip("can't authorize app in firewall %08x\n", hr);
+            skip("can't authorize app in firewall %08lx\n", hr);
             return;
         }
     }

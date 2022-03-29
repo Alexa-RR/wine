@@ -19,7 +19,6 @@
  */
 
 #include "config.h"
-#include "wine/port.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -32,10 +31,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
-#ifdef HAVE_POLL_H
 #include <poll.h>
-#endif
 #ifdef HAVE_SCHED_H
+/* FreeBSD needs this for cpu_set_t instead of its cpuset_t */
+#define _WITH_CPU_SET_T
 #include <sched.h>
 #endif
 
@@ -55,20 +54,6 @@
 #include "esync.h"
 
 
-#ifdef __i386__
-static const unsigned int supported_cpus = CPU_FLAG(CPU_x86);
-#elif defined(__x86_64__)
-static const unsigned int supported_cpus = CPU_FLAG(CPU_x86_64) | CPU_FLAG(CPU_x86);
-#elif defined(__powerpc__)
-static const unsigned int supported_cpus = CPU_FLAG(CPU_POWERPC);
-#elif defined(__arm__)
-static const unsigned int supported_cpus = CPU_FLAG(CPU_ARM);
-#elif defined(__aarch64__)
-static const unsigned int supported_cpus = CPU_FLAG(CPU_ARM64) | CPU_FLAG(CPU_ARM);
-#else
-#error Unsupported CPU
-#endif
-
 /* thread queues */
 
 struct thread_wait
@@ -82,8 +67,9 @@ struct thread_wait
     enum select_op          select;
     client_ptr_t            key;        /* wait key for keyed events */
     client_ptr_t            cookie;     /* magic cookie to return to client */
-    timeout_t               timeout;
+    abstime_t               when;
     struct timeout_user    *user;
+    int                     status;     /* status to return (unless STATUS_PENDING) */
     struct wait_queue_entry queues[1];
 };
 
@@ -109,8 +95,8 @@ static void clear_apc_queue( struct list *queue );
 static const struct object_ops thread_apc_ops =
 {
     sizeof(struct thread_apc),  /* size */
+    &no_type,                   /* type */
     dump_thread_apc,            /* dump */
-    no_get_type,                /* get_type */
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_apc_signaled,        /* signaled */
@@ -118,9 +104,10 @@ static const struct object_ops thread_apc_ops =
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
-    no_map_access,              /* map_access */
+    default_map_access,         /* map_access */
     default_get_sd,             /* get_sd */
     default_set_sd,             /* set_sd */
+    no_get_full_name,           /* get_full_name */
     no_lookup_name,             /* lookup_name */
     no_link_name,               /* link_name */
     NULL,                       /* unlink_name */
@@ -132,10 +119,69 @@ static const struct object_ops thread_apc_ops =
 };
 
 
+/* thread CPU context */
+
+struct context
+{
+    struct object   obj;        /* object header */
+    unsigned int    status;     /* status of the context */
+    context_t       regs[3];    /* context data */
+};
+#define CTX_NATIVE  0  /* context for native machine */
+#define CTX_WOW     1  /* context if thread is inside WoW */
+#define CTX_PENDING 2  /* pending native context when we don't know whether thread is inside WoW */
+
+/* flags for registers that always need to be set from the server side */
+static const unsigned int system_flags = SERVER_CTX_DEBUG_REGISTERS;
+/* flags for registers that are set from the native context even in WoW mode */
+static const unsigned int always_native_flags = SERVER_CTX_DEBUG_REGISTERS | SERVER_CTX_FLOATING_POINT | SERVER_CTX_YMM_REGISTERS;
+
+static void dump_context( struct object *obj, int verbose );
+static int context_signaled( struct object *obj, struct wait_queue_entry *entry );
+
+static const struct object_ops context_ops =
+{
+    sizeof(struct context),     /* size */
+    &no_type,                   /* type */
+    dump_context,               /* dump */
+    add_queue,                  /* add_queue */
+    remove_queue,               /* remove_queue */
+    context_signaled,           /* signaled */
+    no_satisfied,               /* satisfied */
+    no_signal,                  /* signal */
+    no_get_fd,                  /* get_fd */
+    default_map_access,         /* map_access */
+    default_get_sd,             /* get_sd */
+    default_set_sd,             /* set_sd */
+    no_get_full_name,           /* get_full_name */
+    no_lookup_name,             /* lookup_name */
+    no_link_name,               /* link_name */
+    NULL,                       /* unlink_name */
+    no_open_file,               /* open_file */
+    no_kernel_obj_list,         /* get_kernel_obj_list */
+    no_close_handle,            /* close_handle */
+    no_destroy                  /* destroy */
+};
+
+
 /* thread operations */
 
+static const WCHAR thread_name[] = {'T','h','r','e','a','d'};
+
+struct type_descr thread_type =
+{
+    { thread_name, sizeof(thread_name) },   /* name */
+    THREAD_ALL_ACCESS,                      /* valid_access */
+    {                                       /* mapping */
+        STANDARD_RIGHTS_READ | THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT,
+        STANDARD_RIGHTS_WRITE | THREAD_SET_LIMITED_INFORMATION | THREAD_SET_INFORMATION
+        | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_TERMINATE | 0x04,
+        STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+        THREAD_ALL_ACCESS
+    },
+};
+
 static void dump_thread( struct object *obj, int verbose );
-static struct object_type *thread_get_type( struct object *obj );
 static int thread_signaled( struct object *obj, struct wait_queue_entry *entry );
 static int thread_get_esync_fd( struct object *obj, enum esync_type *type );
 static unsigned int thread_map_access( struct object *obj, unsigned int access );
@@ -146,8 +192,8 @@ static void destroy_thread( struct object *obj );
 static const struct object_ops thread_ops =
 {
     sizeof(struct thread),      /* size */
+    &thread_type,               /* type */
     dump_thread,                /* dump */
-    thread_get_type,            /* get_type */
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_signaled,            /* signaled */
@@ -158,6 +204,7 @@ static const struct object_ops thread_ops =
     thread_map_access,          /* map_access */
     default_get_sd,             /* get_sd */
     default_set_sd,             /* set_sd */
+    no_get_full_name,           /* get_full_name */
     no_lookup_name,             /* lookup_name */
     no_link_name,               /* link_name */
     NULL,                       /* unlink_name */
@@ -226,12 +273,14 @@ static inline void init_thread_structure( struct thread *thread )
     thread->unix_pid        = -1;  /* not known yet */
     thread->unix_tid        = -1;  /* not known yet */
     thread->context         = NULL;
-    thread->suspend_context = NULL;
     thread->teb             = 0;
     thread->entry_point     = 0;
+<<<<<<< HEAD
     thread->esync_fd        = -1;
     thread->esync_apc_fd    = -1;
     thread->debug_ctx       = NULL;
+=======
+>>>>>>> master
     thread->system_regs     = 0;
     thread->queue           = NULL;
     thread->wait            = NULL;
@@ -247,6 +296,7 @@ static inline void init_thread_structure( struct thread *thread )
     thread->exit_code       = 0;
     thread->priority        = 0;
     thread->suspend         = 0;
+    thread->dbg_hidden      = 0;
     thread->desktop_users   = 0;
     thread->token           = NULL;
     thread->desc            = NULL;
@@ -277,9 +327,41 @@ static inline int is_valid_address( client_ptr_t addr )
     return addr && !(addr % sizeof(int));
 }
 
+
+/* dump a context on stdout for debugging purposes */
+static void dump_context( struct object *obj, int verbose )
+{
+    struct context *context = (struct context *)obj;
+    assert( obj->ops == &context_ops );
+
+    fprintf( stderr, "context flags=%x/%x\n",
+             context->regs[CTX_NATIVE].flags, context->regs[CTX_WOW].flags );
+}
+
+
+static int context_signaled( struct object *obj, struct wait_queue_entry *entry )
+{
+    struct context *context = (struct context *)obj;
+    return context->status != STATUS_PENDING;
+}
+
+
+static struct context *create_thread_context( struct thread *thread )
+{
+    struct context *context;
+    if (!(context = alloc_object( &context_ops ))) return NULL;
+    context->status = STATUS_PENDING;
+    memset( &context->regs, 0, sizeof(context->regs) );
+    context->regs[CTX_NATIVE].machine = native_machine;
+    context->regs[CTX_PENDING].machine = native_machine;
+    return context;
+}
+
+
 /* create a new thread */
 struct thread *create_thread( int fd, struct process *process, const struct security_descriptor *sd )
 {
+    struct desktop *desktop;
     struct thread *thread;
     int request_pipe[2];
     krnl_cbdata_t cbdata;
@@ -318,11 +400,11 @@ struct thread *create_thread( int fd, struct process *process, const struct secu
     init_thread_structure( thread );
 
     thread->process = (struct process *)grab_object( process );
-    thread->desktop = process->desktop;
+    thread->desktop = 0;
     thread->affinity = process->affinity;
     if (!current) current = thread;
 
-    list_add_head( &thread_list, &thread->entry );
+    list_add_tail( &thread_list, &thread->entry );
 
     if (sd && !set_sd_defaults_from_token( &thread->obj, sd,
                                            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
@@ -353,10 +435,21 @@ struct thread *create_thread( int fd, struct process *process, const struct secu
         return NULL;
     }
 
+<<<<<<< HEAD
     if (do_esync())
     {
         thread->esync_fd = esync_create_fd( 0, 0 );
         thread->esync_apc_fd = esync_create_fd( 0, 0 );
+=======
+    if (process->desktop)
+    {
+        if (!(desktop = get_desktop_obj( process, process->desktop, 0 ))) clear_error();  /* ignore errors */
+        else
+        {
+            set_thread_default_desktop( thread, desktop, process->desktop );
+            release_object( desktop );
+        }
+>>>>>>> master
     }
 
     set_fd_events( thread->request_fd, POLLIN );  /* start listening to events */
@@ -424,6 +517,13 @@ static void cleanup_thread( struct thread *thread )
 {
     int i;
 
+    if (thread->context)
+    {
+        thread->context->status = STATUS_ACCESS_DENIED;
+        wake_up( &thread->context->obj, 0 );
+        release_object( thread->context );
+        thread->context = NULL;
+    }
     clear_apc_queue( &thread->system_apc );
     clear_apc_queue( &thread->kernel_apc );
     clear_apc_queue( &thread->user_apc );
@@ -432,13 +532,16 @@ static void cleanup_thread( struct thread *thread )
     if (thread->request_fd) release_object( thread->request_fd );
     if (thread->reply_fd) release_object( thread->reply_fd );
     if (thread->wait_fd) release_object( thread->wait_fd );
+<<<<<<< HEAD
     if (thread->attached_process) release_object ( thread->attached_process);
     if (thread->callback_init_event) release_object( thread->callback_init_event );
     free( thread->suspend_context );
+=======
+>>>>>>> master
     cleanup_clipboard_thread(thread);
     destroy_thread_windows( thread );
     free_msg_queue( thread );
-    close_thread_desktop( thread );
+    release_thread_desktop( thread, 1 );
     for (i = 0; i < MAX_INFLIGHT_FDS; i++)
     {
         if (thread->inflight[i].client != -1)
@@ -456,8 +559,6 @@ static void cleanup_thread( struct thread *thread )
     thread->request_fd = NULL;
     thread->reply_fd = NULL;
     thread->wait_fd = NULL;
-    thread->context = NULL;
-    thread->suspend_context = NULL;
     thread->desktop = 0;
     thread->desc = NULL;
     thread->desc_len = 0;
@@ -472,7 +573,6 @@ static void destroy_thread( struct object *obj )
     struct thread *thread = (struct thread *)obj;
     assert( obj->ops == &thread_ops );
 
-    assert( !thread->debug_ctx );  /* cannot still be debugging something */
     list_remove( &thread->entry );
     cleanup_thread( thread );
     release_object( thread->process );
@@ -494,12 +594,15 @@ static void dump_thread( struct object *obj, int verbose )
              thread->id, thread->unix_pid, thread->unix_tid, thread->state );
 }
 
+<<<<<<< HEAD
 static struct object_type *thread_get_type( struct object *obj )
 {
     static const struct unicode_str str = { type_Thread, sizeof(type_Thread) };
     return get_object_type( &str );
 }
 
+=======
+>>>>>>> master
 static int thread_signaled( struct object *obj, struct wait_queue_entry *entry )
 {
     struct thread *mythread = (struct thread *)obj;
@@ -515,16 +618,10 @@ static int thread_get_esync_fd( struct object *obj, enum esync_type *type )
 
 static unsigned int thread_map_access( struct object *obj, unsigned int access )
 {
-    if (access & GENERIC_READ)    access |= STANDARD_RIGHTS_READ | THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT;
-    if (access & GENERIC_WRITE)   access |= STANDARD_RIGHTS_WRITE | THREAD_SET_INFORMATION | THREAD_SET_CONTEXT |
-                                            THREAD_TERMINATE | THREAD_SUSPEND_RESUME;
-    if (access & GENERIC_EXECUTE) access |= STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION;
-    if (access & GENERIC_ALL)     access |= THREAD_ALL_ACCESS;
-
+    access = default_map_access( obj, access );
     if (access & THREAD_QUERY_INFORMATION) access |= THREAD_QUERY_LIMITED_INFORMATION;
     if (access & THREAD_SET_INFORMATION) access |= THREAD_SET_LIMITED_INFORMATION;
-
-    return access & ~(GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL);
+    return access;
 }
 
 static void dump_thread_apc( struct object *obj, int verbose )
@@ -544,9 +641,20 @@ static int thread_apc_signaled( struct object *obj, struct wait_queue_entry *ent
 static void thread_apc_destroy( struct object *obj )
 {
     struct thread_apc *apc = (struct thread_apc *)obj;
+<<<<<<< HEAD
     if (apc->callee) release_object( apc->callee);
+=======
+
+>>>>>>> master
     if (apc->caller) release_object( apc->caller );
-    if (apc->owner) release_object( apc->owner );
+    if (apc->owner)
+    {
+        if (apc->result.type == APC_ASYNC_IO)
+            async_set_result( apc->owner, apc->result.async_io.status, apc->result.async_io.total );
+        else if (apc->call.type == APC_ASYNC_IO)
+            async_set_result( apc->owner, apc->call.async_io.status, 0 );
+        release_object( apc->owner );
+    }
 }
 
 /* queue an async procedure call */
@@ -686,6 +794,8 @@ static void set_thread_info( struct thread *thread,
         security_set_thread_token( thread, req->token );
     if (req->mask & SET_THREAD_INFO_ENTRYPOINT)
         thread->entry_point = req->entry_point;
+    if (req->mask & SET_THREAD_INFO_DBG_HIDDEN)
+        thread->dbg_hidden = 1;
     if (req->mask & SET_THREAD_INFO_DESCRIPTION)
     {
         WCHAR *desc;
@@ -713,15 +823,10 @@ static void set_thread_info( struct thread *thread,
 /* stop a thread (at the Unix level) */
 void stop_thread( struct thread *thread )
 {
-    if (thread->context) return;  /* already inside a debug event, no need for a signal */
+    if (thread->context) return;  /* already suspended, no need for a signal */
+    if (!(thread->context = create_thread_context( thread ))) return;
     /* can't stop a thread while initialisation is in progress */
     if (is_process_init_done(thread->process)) send_thread_signal( thread, SIGUSR1 );
-}
-
-/* stop a thread if it's supposed to be suspended */
-void stop_thread_if_suspended( struct thread *thread )
-{
-    if (thread->suspend + thread->process->suspend > 0) stop_thread( thread );
 }
 
 /* suspend a thread */
@@ -789,6 +894,11 @@ void make_wait_abandoned( struct wait_queue_entry *entry )
     entry->wait->abandoned = 1;
 }
 
+void set_wait_status( struct wait_queue_entry *entry, int status )
+{
+    entry->wait->status = status;
+}
+
 /* finish waiting */
 static unsigned int end_wait( struct thread *thread, unsigned int status )
 {
@@ -801,6 +911,7 @@ static unsigned int end_wait( struct thread *thread, unsigned int status )
 
     if (status < wait->count)  /* wait satisfied, tell it to the objects */
     {
+        wait->status = status;
         if (wait->select == SELECT_WAIT_ALL)
         {
             for (i = 0, entry = wait->queues; i < wait->count; i++, entry++)
@@ -811,6 +922,7 @@ static unsigned int end_wait( struct thread *thread, unsigned int status )
             entry = wait->queues + status;
             entry->obj->ops->satisfied( entry->obj, entry );
         }
+        status = wait->status;
         if (wait->abandoned) status += STATUS_ABANDONED_WAIT_0;
     }
     for (i = 0, entry = wait->queues; i < wait->count; i++, entry++)
@@ -822,7 +934,7 @@ static unsigned int end_wait( struct thread *thread, unsigned int status )
 
 /* build the thread wait structure */
 static int wait_on( const select_op_t *select_op, unsigned int count, struct object *objects[],
-                    int flags, timeout_t timeout )
+                    int flags, abstime_t when )
 {
     struct thread_wait *wait;
     struct wait_queue_entry *entry;
@@ -836,7 +948,7 @@ static int wait_on( const select_op_t *select_op, unsigned int count, struct obj
     wait->select  = select_op->op;
     wait->cookie  = 0;
     wait->user    = NULL;
-    wait->timeout = timeout;
+    wait->when = when;
     wait->abandoned = 0;
     wait->in_kernel = 0;
     current->wait = wait;
@@ -856,7 +968,7 @@ static int wait_on( const select_op_t *select_op, unsigned int count, struct obj
 }
 
 static int wait_on_handles( const select_op_t *select_op, unsigned int count, const obj_handle_t *handles,
-                            int flags, timeout_t timeout )
+                            int flags, abstime_t when )
 {
     struct object *objects[MAXIMUM_WAIT_OBJECTS];
     unsigned int i;
@@ -868,7 +980,7 @@ static int wait_on_handles( const select_op_t *select_op, unsigned int count, co
         if (!(objects[i] = get_handle_obj( current->process, handles[i], SYNCHRONIZE, NULL )))
             break;
 
-    if (i == count) ret = wait_on( select_op, count, objects, flags, timeout );
+    if (i == count) ret = wait_on( select_op, count, objects, flags, when );
 
     while (i > 0) release_object( objects[--i] );
     return ret;
@@ -914,6 +1026,7 @@ static int check_wait( struct thread *thread )
             if (entry->obj->ops->signaled( entry->obj, entry )) return i;
     }
 
+<<<<<<< HEAD
     if ((wait->flags & SELECT_ALERTABLE) && !list_empty(&thread->user_apc))
     {
         struct thread_apc *apc = LIST_ENTRY( list_head(&thread->user_apc), struct thread_apc, entry );
@@ -928,6 +1041,11 @@ static int check_wait( struct thread *thread )
         }
     }
     if (wait->timeout <= current_time) return STATUS_TIMEOUT;
+=======
+    if ((wait->flags & SELECT_ALERTABLE) && !list_empty(&thread->user_apc)) return STATUS_USER_APC;
+    if (wait->when >= 0 && wait->when <= current_time) return STATUS_TIMEOUT;
+    if (wait->when < 0 && -wait->when <= monotonic_time) return STATUS_TIMEOUT;
+>>>>>>> master
     return -1;
 }
 
@@ -936,6 +1054,18 @@ static int send_thread_wakeup( struct thread *thread, client_ptr_t cookie, int s
 {
     struct wake_up_reply reply;
     int ret;
+
+    /* check if we're waking current suspend wait */
+    if (thread->context && thread->suspend_cookie == cookie
+        && signaled != STATUS_KERNEL_APC && signaled != STATUS_USER_APC)
+    {
+        if (!thread->context->regs[CTX_NATIVE].flags && !thread->context->regs[CTX_WOW].flags)
+        {
+            release_object( thread->context );
+            thread->context = NULL;
+        }
+        else signaled = STATUS_KERNEL_APC; /* signal a fake APC so that client calls select to get a new context */
+    }
 
     memset( &reply, 0, sizeof(reply) );
     reply.cookie   = cookie;
@@ -1033,19 +1163,17 @@ static int signal_object( obj_handle_t handle )
 }
 
 /* select on a list of handles */
-static timeout_t select_on( const select_op_t *select_op, data_size_t op_size, client_ptr_t cookie,
-                            int flags, timeout_t timeout )
+static int select_on( const select_op_t *select_op, data_size_t op_size, client_ptr_t cookie,
+                      int flags, abstime_t when )
 {
     int ret;
     unsigned int count;
     struct object *object;
 
-    if (timeout <= 0) timeout = current_time - timeout;
-
     switch (select_op->op)
     {
     case SELECT_NONE:
-        if (!wait_on( select_op, 0, NULL, flags, timeout )) return timeout;
+        if (!wait_on( select_op, 0, NULL, flags, when )) return 1;
         break;
 
     case SELECT_WAIT:
@@ -1054,24 +1182,24 @@ static timeout_t select_on( const select_op_t *select_op, data_size_t op_size, c
         if (op_size < offsetof( select_op_t, wait.handles ) || count > MAXIMUM_WAIT_OBJECTS)
         {
             set_error( STATUS_INVALID_PARAMETER );
-            return 0;
+            return 1;
         }
-        if (!wait_on_handles( select_op, count, select_op->wait.handles, flags, timeout ))
-            return timeout;
+        if (!wait_on_handles( select_op, count, select_op->wait.handles, flags, when ))
+            return 1;
         break;
 
     case SELECT_SIGNAL_AND_WAIT:
-        if (!wait_on_handles( select_op, 1, &select_op->signal_and_wait.wait, flags, timeout ))
-            return timeout;
+        if (!wait_on_handles( select_op, 1, &select_op->signal_and_wait.wait, flags, when ))
+            return 1;
         if (select_op->signal_and_wait.signal)
         {
             if (!signal_object( select_op->signal_and_wait.signal ))
             {
                 end_wait( current, get_error() );
-                return timeout;
+                return 1;
             }
             /* check if we woke ourselves up */
-            if (!current->wait) return timeout;
+            if (!current->wait) return 1;
         }
         break;
 
@@ -1079,38 +1207,42 @@ static timeout_t select_on( const select_op_t *select_op, data_size_t op_size, c
     case SELECT_KEYED_EVENT_RELEASE:
         object = (struct object *)get_keyed_event_obj( current->process, select_op->keyed_event.handle,
                          select_op->op == SELECT_KEYED_EVENT_WAIT ? KEYEDEVENT_WAIT : KEYEDEVENT_WAKE );
-        if (!object) return timeout;
-        ret = wait_on( select_op, 1, &object, flags, timeout );
+        if (!object) return 1;
+        ret = wait_on( select_op, 1, &object, flags, when );
         release_object( object );
-        if (!ret) return timeout;
+        if (!ret) return 1;
         current->wait->key = select_op->keyed_event.key;
         break;
 
     default:
         set_error( STATUS_INVALID_PARAMETER );
-        return 0;
+        return 1;
     }
 
     if ((ret = check_wait( current )) != -1)
     {
         /* condition is already satisfied */
         set_error( end_wait( current, ret ));
-        return timeout;
+        return 1;
     }
 
     /* now we need to wait */
+<<<<<<< HEAD
     if (current->wait->timeout != TIMEOUT_INFINITE && !current->wait->in_kernel)
+=======
+    if (current->wait->when != TIMEOUT_INFINITE)
+>>>>>>> master
     {
-        if (!(current->wait->user = add_timeout_user( current->wait->timeout,
+        if (!(current->wait->user = add_timeout_user( abstime_to_timeout(current->wait->when),
                                                       thread_timeout, current->wait )))
         {
             end_wait( current, get_error() );
-            return timeout;
+            return 1;
         }
     }
     current->wait->cookie = cookie;
     set_error( STATUS_PENDING );
-    return timeout;
+    return 0;
 }
 
 /* attempt to wake threads sleeping on the object wait queue */
@@ -1138,9 +1270,13 @@ static inline struct list *get_apc_queue( struct thread *thread, enum apc_type t
     switch(type)
     {
     case APC_NONE:
+        return NULL;
     case APC_USER:
+<<<<<<< HEAD
     case APC_TIMER:
     case APC_REAL_USER:
+=======
+>>>>>>> master
         return &thread->user_apc;
     case APC_REAL_KERNEL:
         return &thread->kernel_apc;
@@ -1191,12 +1327,12 @@ static int queue_apc( struct process *process, struct thread *thread, struct thr
             }
         }
         if (!thread) return 0;  /* nothing found */
-        queue = get_apc_queue( thread, apc->call.type );
+        if (!(queue = get_apc_queue( thread, apc->call.type ))) return 1;
     }
     else
     {
         if (thread->state == TERMINATED) return 0;
-        queue = get_apc_queue( thread, apc->call.type );
+        if (!(queue = get_apc_queue( thread, apc->call.type ))) return 1;
         /* send signal for system APCs if needed */
         if ((queue == &thread->system_apc || queue == &thread->kernel_apc) && list_empty( queue ) && !is_in_apc_wait( thread ))
         {
@@ -1380,7 +1516,6 @@ void kill_thread( struct thread *thread, int violent_death )
         violent_death = 0;
     }
     kill_console_processes( thread, 0 );
-    debug_exit_thread( thread );
     abandon_mutexes( thread );
     if (do_esync())
         esync_abandon_mutexes( thread );
@@ -1398,53 +1533,14 @@ void kill_thread( struct thread *thread, int violent_death )
 /* copy parts of a context structure */
 static void copy_context( context_t *to, const context_t *from, unsigned int flags )
 {
-    assert( to->cpu == from->cpu );
-    to->flags |= flags;
+    assert( to->machine == from->machine );
     if (flags & SERVER_CTX_CONTROL) to->ctl = from->ctl;
     if (flags & SERVER_CTX_INTEGER) to->integer = from->integer;
     if (flags & SERVER_CTX_SEGMENTS) to->seg = from->seg;
     if (flags & SERVER_CTX_FLOATING_POINT) to->fp = from->fp;
     if (flags & SERVER_CTX_DEBUG_REGISTERS) to->debug = from->debug;
     if (flags & SERVER_CTX_EXTENDED_REGISTERS) to->ext = from->ext;
-}
-
-/* return the context flags that correspond to system regs */
-/* (system regs are the ones we can't access on the client side) */
-static unsigned int get_context_system_regs( enum cpu_type cpu )
-{
-    switch (cpu)
-    {
-    case CPU_x86:     return SERVER_CTX_DEBUG_REGISTERS;
-    case CPU_x86_64:  return SERVER_CTX_DEBUG_REGISTERS;
-    case CPU_POWERPC: return 0;
-    case CPU_ARM:     return SERVER_CTX_DEBUG_REGISTERS;
-    case CPU_ARM64:   return SERVER_CTX_DEBUG_REGISTERS;
-    }
-    return 0;
-}
-
-/* take a snapshot of currently running threads */
-struct thread_snapshot *thread_snap( int *count )
-{
-    struct thread_snapshot *snapshot, *ptr;
-    struct thread *thread;
-    int total = 0;
-
-    LIST_FOR_EACH_ENTRY( thread, &thread_list, struct thread, entry )
-        if (thread->state != TERMINATED) total++;
-    if (!total || !(snapshot = mem_alloc( sizeof(*snapshot) * total ))) return NULL;
-    ptr = snapshot;
-    LIST_FOR_EACH_ENTRY( thread, &thread_list, struct thread, entry )
-    {
-        if (thread->state == TERMINATED) continue;
-        ptr->thread   = thread;
-        ptr->count    = thread->obj.refcount;
-        ptr->priority = thread->priority;
-        grab_object( thread );
-        ptr++;
-    }
-    *count = total;
-    return snapshot;
+    if (flags & SERVER_CTX_YMM_REGISTERS) to->ymm = from->ymm;
 }
 
 /* gets the current impersonation token */
@@ -1454,27 +1550,6 @@ struct token *thread_get_impersonation_token( struct thread *thread )
         return thread->token;
     else
         return thread->process->token;
-}
-
-/* check if a cpu type can be supported on this server */
-int is_cpu_supported( enum cpu_type cpu )
-{
-    unsigned int prefix_cpu_mask = get_prefix_cpu_mask();
-
-    if (supported_cpus & prefix_cpu_mask & CPU_FLAG(cpu)) return 1;
-    if (!(supported_cpus & prefix_cpu_mask))
-        set_error( STATUS_NOT_SUPPORTED );
-    else if (supported_cpus & CPU_FLAG(cpu))
-        set_error( STATUS_INVALID_IMAGE_WIN_64 );  /* server supports it but not the prefix */
-    else
-        set_error( STATUS_INVALID_IMAGE_FORMAT );
-    return 0;
-}
-
-/* return the cpu mask for supported cpus */
-unsigned int get_supported_cpu_mask(void)
-{
-    return supported_cpus & get_prefix_cpu_mask();
 }
 
 /* create a new thread */
@@ -1517,7 +1592,8 @@ DECL_HANDLER(new_thread)
     if ((thread = create_thread( request_fd, process, sd )))
     {
         thread->system_regs = current->system_regs;
-        if (req->suspend) thread->suspend++;
+        if (req->flags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED) thread->suspend++;
+        thread->dbg_hidden = !!(req->flags & THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER);
         reply->tid = get_thread_id( thread );
         if ((reply->handle = alloc_handle_no_access_check( current->process, thread,
                                                            req->access, objattr->attributes )))
@@ -1531,24 +1607,20 @@ done:
     release_object( process );
 }
 
-/* initialize a new thread */
-DECL_HANDLER(init_thread)
+static int init_thread( struct thread *thread, int reply_fd, int wait_fd )
 {
-    struct process *process = current->process;
-    int wait_fd, reply_fd;
-
-    if ((reply_fd = thread_get_inflight_fd( current, req->reply_fd )) == -1)
+    if ((reply_fd = thread_get_inflight_fd( thread, reply_fd )) == -1)
     {
         set_error( STATUS_TOO_MANY_OPENED_FILES );
-        return;
+        return 0;
     }
-    if ((wait_fd = thread_get_inflight_fd( current, req->wait_fd )) == -1)
+    if ((wait_fd = thread_get_inflight_fd( thread, wait_fd )) == -1)
     {
         set_error( STATUS_TOO_MANY_OPENED_FILES );
         goto error;
     }
 
-    if (current->reply_fd)  /* already initialised */
+    if (thread->reply_fd)  /* already initialised */
     {
         set_error( STATUS_INVALID_PARAMETER );
         goto error;
@@ -1556,9 +1628,46 @@ DECL_HANDLER(init_thread)
 
     if (fcntl( reply_fd, F_SETFL, O_NONBLOCK ) == -1) goto error;
 
-    current->reply_fd = create_anonymous_fd( &thread_fd_ops, reply_fd, &current->obj, 0 );
-    current->wait_fd  = create_anonymous_fd( &thread_fd_ops, wait_fd, &current->obj, 0 );
-    if (!current->reply_fd || !current->wait_fd) return;
+    thread->reply_fd = create_anonymous_fd( &thread_fd_ops, reply_fd, &thread->obj, 0 );
+    thread->wait_fd  = create_anonymous_fd( &thread_fd_ops, wait_fd, &thread->obj, 0 );
+    return thread->reply_fd && thread->wait_fd;
+
+ error:
+    if (reply_fd != -1) close( reply_fd );
+    if (wait_fd != -1) close( wait_fd );
+    return 0;
+}
+
+/* initialize the first thread of a new process */
+DECL_HANDLER(init_first_thread)
+{
+    struct process *process = current->process;
+
+    if (!init_thread( current, req->reply_fd, req->wait_fd )) return;
+
+    current->unix_pid = process->unix_pid = req->unix_pid;
+    current->unix_tid = req->unix_tid;
+
+    if (!process->parent_id)
+        process->affinity = current->affinity = get_thread_affinity( current );
+    else
+        set_thread_affinity( current, current->affinity );
+
+    debug_level = max( debug_level, req->debug_level );
+
+    reply->pid          = get_process_id( process );
+    reply->tid          = get_thread_id( current );
+    reply->session_id   = process->session_id;
+    reply->info_size    = get_process_startup_info_size( process );
+    reply->server_start = server_start_time;
+    set_reply_data( supported_machines,
+                    min( supported_machines_count * sizeof(unsigned short), get_reply_max_size() ));
+}
+
+/* initialize a new thread */
+DECL_HANDLER(init_thread)
+{
+    if (!init_thread( current, req->reply_fd, req->wait_fd )) return;
 
     if (!is_valid_address(req->teb))
     {
@@ -1566,38 +1675,16 @@ DECL_HANDLER(init_thread)
         return;
     }
 
-    current->unix_pid = req->unix_pid;
+    current->unix_pid = current->process->unix_pid;
     current->unix_tid = req->unix_tid;
     current->teb      = req->teb;
-    current->entry_point = process->peb ? req->entry : 0;
+    current->entry_point = req->entry;
 
-    if (!process->peb)  /* first thread, initialize the process too */
-    {
-        if (!is_cpu_supported( req->cpu )) return;
-        process->unix_pid = current->unix_pid;
-        process->peb      = req->entry;
-        process->cpu      = req->cpu;
-        reply->info_size  = init_process( current );
-        if (!process->parent_id)
-            process->affinity = current->affinity = get_thread_affinity( current );
-        else
-            set_thread_affinity( current, current->affinity );
-    }
-    else
-    {
-        if (req->cpu != process->cpu)
-        {
-            set_error( STATUS_INVALID_PARAMETER );
-            return;
-        }
-        if (process->unix_pid != current->unix_pid)
-            process->unix_pid = -1;  /* can happen with linuxthreads */
-        init_thread_context( current );
-        generate_debug_event( current, CREATE_THREAD_DEBUG_EVENT, &req->entry );
-        set_thread_affinity( current, current->affinity );
-    }
-    debug_level = max( debug_level, req->debug_level );
+    init_thread_context( current );
+    generate_debug_event( current, DbgCreateThreadStateChange, &req->entry );
+    set_thread_affinity( current, current->affinity );
 
+<<<<<<< HEAD
     if (current->startup_info)
     {
         wake_up( &current->startup_info->obj, 0 );
@@ -1623,6 +1710,9 @@ DECL_HANDLER(init_thread)
  error:
     if (reply_fd != -1) close( reply_fd );
     if (wait_fd != -1) close( wait_fd );
+=======
+    reply->suspend = (current->suspend || current->process->suspend || current->context != NULL);
+>>>>>>> master
 }
 
 /* terminate a thread */
@@ -1630,17 +1720,11 @@ DECL_HANDLER(terminate_thread)
 {
     struct thread *thread;
 
-    reply->self = 0;
-    reply->last = 0;
     if ((thread = get_thread_from_handle( req->handle, THREAD_TERMINATE )))
     {
         thread->exit_code = req->exit_code;
         if (thread != current) kill_thread( thread, 1 );
-        else
-        {
-            reply->self = 1;
-            reply->last = (thread->process->running_threads == 1);
-        }
+        else reply->self = 1;
         release_object( thread );
     }
 }
@@ -1677,11 +1761,10 @@ DECL_HANDLER(wait_thread_init)
 DECL_HANDLER(get_thread_info)
 {
     struct thread *thread;
-    obj_handle_t handle = req->handle;
+    unsigned int access = req->access & (THREAD_QUERY_INFORMATION | THREAD_QUERY_LIMITED_INFORMATION);
 
-    if (!handle) thread = get_thread_from_id( req->tid_in );
-    else thread = get_thread_from_handle( req->handle, THREAD_QUERY_LIMITED_INFORMATION );
-
+    if (!access) access = THREAD_QUERY_LIMITED_INFORMATION;
+    thread = get_thread_from_handle( req->handle, access );
     if (thread)
     {
         reply->pid            = get_process_id( thread->process );
@@ -1693,6 +1776,7 @@ DECL_HANDLER(get_thread_info)
         reply->affinity       = thread->affinity;
         reply->last           = thread->process->running_threads == 1;
         reply->suspend_count  = thread->suspend;
+        reply->dbg_hidden     = thread->dbg_hidden;
         reply->desc_len       = thread->desc_len;
 
         if (thread->desc && get_reply_max_size())
@@ -1712,7 +1796,7 @@ DECL_HANDLER(get_thread_times)
 {
     struct thread *thread;
 
-    if ((thread = get_thread_from_handle( req->handle, THREAD_QUERY_INFORMATION )))
+    if ((thread = get_thread_from_handle( req->handle, THREAD_QUERY_LIMITED_INFORMATION )))
     {
         reply->creation_time  = thread->creation_time;
         reply->exit_time      = thread->exit_time;
@@ -1764,22 +1848,67 @@ DECL_HANDLER(resume_thread)
 DECL_HANDLER(select)
 {
     select_op_t select_op;
-    data_size_t op_size;
+    data_size_t op_size, ctx_size;
+    struct context *ctx;
     struct thread_apc *apc;
     const apc_result_t *result = get_req_data();
+    unsigned int ctx_count;
 
-    if (get_req_data_size() < sizeof(*result))
+    if (get_req_data_size() < sizeof(*result)) goto invalid_param;
+    if (get_req_data_size() - sizeof(*result) < req->size) goto invalid_param;
+    if (req->size & 3) goto invalid_param;
+    ctx_size = get_req_data_size() - sizeof(*result) - req->size;
+    ctx_count = ctx_size / sizeof(context_t);
+    if (ctx_count * sizeof(context_t) != ctx_size) goto invalid_param;
+    if (ctx_count > 1 + (current->process->machine != native_machine)) goto invalid_param;
+
+    if (ctx_count)
     {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
-    }
-    if (!req->cookie)
-    {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
+        const context_t *native_context = (const context_t *)((const char *)(result + 1) + req->size);
+        const context_t *wow_context = (ctx_count > 1) ? native_context + 1 : NULL;
+
+        if (current->context && current->context->status != STATUS_PENDING) goto invalid_param;
+
+        if (native_context->machine == native_machine)
+        {
+            if (wow_context && wow_context->machine != current->process->machine) goto invalid_param;
+        }
+        else if (native_context->machine == current->process->machine)
+        {
+            if (wow_context) goto invalid_param;
+            wow_context = native_context;
+            native_context = NULL;
+        }
+        else goto invalid_param;
+
+        if (!current->context && !(current->context = create_thread_context( current ))) return;
+
+        ctx = current->context;
+        if (native_context)
+        {
+            copy_context( &ctx->regs[CTX_NATIVE], native_context,
+                          native_context->flags & ~(ctx->regs[CTX_NATIVE].flags | system_flags) );
+        }
+        if (wow_context)
+        {
+            ctx->regs[CTX_WOW].machine = current->process->machine;
+            copy_context( &ctx->regs[CTX_WOW], wow_context, wow_context->flags & ~ctx->regs[CTX_WOW].flags );
+        }
+        else if (ctx->regs[CTX_PENDING].flags)
+        {
+            unsigned int flags = ctx->regs[CTX_PENDING].flags & ~ctx->regs[CTX_NATIVE].flags;
+            copy_context( &ctx->regs[CTX_NATIVE], &ctx->regs[CTX_PENDING], flags );
+            ctx->regs[CTX_NATIVE].flags |= flags;
+        }
+        ctx->regs[CTX_PENDING].flags = 0;
+        ctx->status = STATUS_SUCCESS;
+        current->suspend_cookie = req->cookie;
+        wake_up( &ctx->obj, 0 );
     }
 
-    op_size = min( get_req_data_size() - sizeof(*result), sizeof(select_op) );
+    if (!req->cookie) goto invalid_param;
+
+    op_size = min( req->size, sizeof(select_op) );
     memset( &select_op, 0, sizeof(select_op) );
     memcpy( &select_op, result + 1, op_size );
 
@@ -1793,43 +1922,25 @@ DECL_HANDLER(select)
         if (apc->result.type == APC_CREATE_THREAD)  /* transfer the handle to the caller process */
         {
             obj_handle_t handle = duplicate_handle( current->process, apc->result.create_thread.handle,
-                                                    apc->caller->process, 0, 0, DUP_HANDLE_SAME_ACCESS );
+                                                    apc->caller->process, 0, 0, DUPLICATE_SAME_ACCESS );
             close_handle( current->process, apc->result.create_thread.handle );
             apc->result.create_thread.handle = handle;
             clear_error();  /* ignore errors from the above calls */
-        }
-        else if (apc->result.type == APC_ASYNC_IO)
-        {
-            if (apc->owner)
-                async_set_result( apc->owner, apc->result.async_io.status, apc->result.async_io.total );
         }
         wake_up( &apc->obj, 0 );
         close_handle( current->process, req->prev_apc );
         release_object( apc );
     }
 
-    reply->timeout = select_on( &select_op, op_size, req->cookie, req->flags, req->timeout );
+    reply->signaled = select_on( &select_op, op_size, req->cookie, req->flags, req->timeout );
 
-    while (get_error() == STATUS_USER_APC)
+    if (get_error() == STATUS_USER_APC)
     {
-        if (!(apc = thread_dequeue_apc( current, 0 )))
-            break;
-        /* Optimization: ignore APC_NONE calls, they are only used to
-         * wake up a thread, but since we got here the thread woke up already.
-         */
-        if (apc->call.type != APC_NONE &&
-            (reply->apc_handle = alloc_handle( current->process, apc, SYNCHRONIZE, 0 )))
-        {
-            reply->call = apc->call;
-            release_object( apc );
-            break;
-        }
-        apc->executed = 1;
-        wake_up( &apc->obj, 0 );
+        apc = thread_dequeue_apc( current, 0 );
+        reply->call = apc->call;
         release_object( apc );
     }
-
-    if (get_error() == STATUS_KERNEL_APC)
+    else if (get_error() == STATUS_KERNEL_APC)
     {
         apc = thread_dequeue_apc( current, 1 );
         if ((reply->apc_handle = alloc_handle( current->process, apc, SYNCHRONIZE, 0 )))
@@ -1841,6 +1952,24 @@ DECL_HANDLER(select)
         }
         release_object( apc );
     }
+    else if (reply->signaled && get_reply_max_size() >= sizeof(context_t) &&
+             current->context && current->suspend_cookie == req->cookie)
+    {
+        ctx = current->context;
+        if (ctx->regs[CTX_NATIVE].flags || ctx->regs[CTX_WOW].flags)
+        {
+            data_size_t size = (ctx->regs[CTX_WOW].flags ? 2 : 1) * sizeof(context_t);
+            unsigned int flags = system_flags & ctx->regs[CTX_NATIVE].flags;
+            if (flags) set_thread_context( current, &ctx->regs[CTX_NATIVE], flags );
+            set_reply_data( ctx->regs, min( size, get_reply_max_size() ));
+        }
+        release_object( ctx );
+        current->context = NULL;
+    }
+    return;
+
+invalid_param:
+    set_error( STATUS_INVALID_PARAMETER );
 }
 
 /* queue an APC for a thread or process */
@@ -1879,7 +2008,7 @@ DECL_HANDLER(queue_apc)
         {
             /* duplicate the handle into the target process */
             obj_handle_t handle = duplicate_handle( current->process, apc->call.map_view.handle,
-                                                    process, 0, 0, DUP_HANDLE_SAME_ACCESS );
+                                                    process, 0, 0, DUPLICATE_SAME_ACCESS );
             if (handle) apc->call.map_view.handle = handle;
             else
             {
@@ -1889,8 +2018,22 @@ DECL_HANDLER(queue_apc)
         }
         break;
     case APC_CREATE_THREAD:
-    case APC_BREAK_PROCESS:
         process = get_process_from_handle( req->handle, PROCESS_CREATE_THREAD );
+        break;
+    case APC_DUP_HANDLE:
+        process = get_process_from_handle( req->handle, PROCESS_DUP_HANDLE );
+        if (process && process != current->process)
+        {
+            /* duplicate the destination process handle into the target process */
+            obj_handle_t handle = duplicate_handle( current->process, apc->call.dup_handle.dst_process,
+                                                    process, 0, 0, DUPLICATE_SAME_ACCESS );
+            if (handle) apc->call.dup_handle.dst_process = handle;
+            else
+            {
+                release_object( process );
+                process = NULL;
+            }
+        }
         break;
     default:
         set_error( STATUS_INVALID_PARAMETER );
@@ -1899,8 +2042,35 @@ DECL_HANDLER(queue_apc)
 
     if (!thread && !process)
     {
+<<<<<<< HEAD
         release_object(apc);
         return;
+=======
+        if (!queue_apc( NULL, thread, apc )) set_error( STATUS_UNSUCCESSFUL );
+        release_object( thread );
+    }
+    else if (process)
+    {
+        reply->self = (process == current->process);
+        if (!reply->self)
+        {
+            obj_handle_t handle = alloc_handle( current->process, apc, SYNCHRONIZE, 0 );
+            if (handle)
+            {
+                if (queue_apc( process, NULL, apc ))
+                {
+                    apc->caller = (struct thread *)grab_object( current );
+                    reply->handle = handle;
+                }
+                else
+                {
+                    close_handle( current->process, handle );
+                    set_error( STATUS_PROCESS_IS_TERMINATING );
+                }
+            }
+        }
+        release_object( process );
+>>>>>>> master
     }
 
     apc_handle = alloc_handle( current->process, apc, SYNCHRONIZE, 0 );
@@ -2003,135 +2173,147 @@ DECL_HANDLER(get_apc_result)
 /* retrieve the current context of a thread */
 DECL_HANDLER(get_thread_context)
 {
+    struct context *thread_context = NULL;
     struct thread *thread;
     context_t *context;
 
-    if (get_reply_max_size() < sizeof(context_t))
+    if (get_reply_max_size() < 2 * sizeof(context_t))
     {
         set_error( STATUS_INVALID_PARAMETER );
         return;
     }
-    if (!(thread = get_thread_from_handle( req->handle, THREAD_GET_CONTEXT ))) return;
-    reply->self = (thread == current);
 
-    if (thread != current && !thread->context)
+    if (req->context)
     {
-        /* thread is not suspended, retry (if it's still running) */
-        if (thread->state == RUNNING)
+        if (!(thread_context = (struct context *)get_handle_obj( current->process, req->context,
+                                                                 0, &context_ops )))
+            return;
+        close_handle( current->process, req->context ); /* avoid extra server call */
+    }
+    else
+    {
+        if (!(thread = get_thread_from_handle( req->handle, THREAD_GET_CONTEXT ))) return;
+        if (req->machine != native_machine && req->machine != thread->process->machine)
+            set_error( STATUS_INVALID_PARAMETER );
+        else if (thread->state != RUNNING)
+            set_error( STATUS_UNSUCCESSFUL );
+        else
         {
-            set_error( STATUS_PENDING );
-            if (req->suspend)
+            reply->self = (thread == current);
+            if (thread != current) stop_thread( thread );
+            if (thread->context)
             {
-                release_object( thread );
-                /* make sure we have suspend access */
-                if (!(thread = get_thread_from_handle( req->handle, THREAD_SUSPEND_RESUME ))) return;
-                suspend_thread( thread );
+                /* make sure that system regs are valid in thread context */
+                if (thread->unix_tid != -1 && (system_flags & ~thread->context->regs[CTX_NATIVE].flags))
+                    get_thread_context( thread, &thread->context->regs[CTX_NATIVE], system_flags );
+                if (!get_error()) thread_context = (struct context *)grab_object( thread->context );
+            }
+            else if (!get_error() && (context = set_reply_data_size( sizeof(context_t) )))
+            {
+                assert( reply->self );
+                memset( context, 0, sizeof(context_t) );
+                context->machine = native_machine;
+                if (system_flags) get_thread_context( thread, context, system_flags );
             }
         }
-        else set_error( STATUS_UNSUCCESSFUL );
+        release_object( thread );
+        if (!thread_context) return;
     }
-    else if ((context = set_reply_data_size( sizeof(context_t) )))
-    {
-        unsigned int flags = get_context_system_regs( thread->process->cpu );
 
-        memset( context, 0, sizeof(context_t) );
-        context->cpu = thread->process->cpu;
-        if (thread->context) copy_context( context, thread->context, req->flags & ~flags );
-        if (req->flags & flags) get_thread_context( thread, context, req->flags & flags );
+    if (!thread_context->status)
+    {
+        unsigned int native_flags = req->flags, wow_flags = 0;
+
+        if (req->machine == thread_context->regs[CTX_WOW].machine)
+        {
+            native_flags = req->flags & always_native_flags;
+            wow_flags = req->flags & ~always_native_flags;
+        }
+        if ((context = set_reply_data_size( (!!native_flags + !!wow_flags) * sizeof(context_t) )))
+        {
+            if (native_flags)
+            {
+                memset( context, 0, sizeof(*context) );
+                context->machine = thread_context->regs[CTX_NATIVE].machine;
+                copy_context( context, &thread_context->regs[CTX_NATIVE], native_flags );
+                context->flags = native_flags;
+                context++;
+            }
+            if (wow_flags)
+            {
+                memset( context, 0, sizeof(*context) );
+                context->machine = thread_context->regs[CTX_WOW].machine;
+                copy_context( context, &thread_context->regs[CTX_WOW], wow_flags );
+                context->flags = wow_flags;
+            }
+        }
     }
-    release_object( thread );
+    else
+    {
+        set_error( thread_context->status );
+        if (thread_context->status == STATUS_PENDING)
+            reply->handle = alloc_handle( current->process, thread_context, SYNCHRONIZE, 0 );
+    }
+
+    release_object( thread_context );
 }
 
 /* set the current context of a thread */
 DECL_HANDLER(set_thread_context)
 {
     struct thread *thread;
-    const context_t *context = get_req_data();
+    const context_t *contexts = get_req_data();
+    unsigned int ctx_count = get_req_data_size() / sizeof(context_t);
 
-    if (get_req_data_size() < sizeof(context_t))
+    if (!ctx_count || ctx_count > 2 || ctx_count * sizeof(context_t) != get_req_data_size())
     {
         set_error( STATUS_INVALID_PARAMETER );
         return;
     }
+
     if (!(thread = get_thread_from_handle( req->handle, THREAD_SET_CONTEXT ))) return;
     reply->self = (thread == current);
 
-    if (thread != current && !thread->context)
+    if (contexts[CTX_NATIVE].machine != native_machine ||
+        (ctx_count == 2 && contexts[CTX_WOW].machine != thread->process->machine))
+        set_error( STATUS_INVALID_PARAMETER );
+    else if (thread->state != TERMINATED)
     {
-        /* thread is not suspended, retry (if it's still running) */
-        if (thread->state == RUNNING)
-        {
-            set_error( STATUS_PENDING );
-            if (req->suspend)
-            {
-                release_object( thread );
-                /* make sure we have suspend access */
-                if (!(thread = get_thread_from_handle( req->handle, THREAD_SUSPEND_RESUME ))) return;
-                suspend_thread( thread );
-            }
-        }
-        else set_error( STATUS_UNSUCCESSFUL );
-    }
-    else if (context->cpu == thread->process->cpu)
-    {
-        unsigned int system_flags = get_context_system_regs(context->cpu) & context->flags;
-        unsigned int client_flags = context->flags & ~system_flags;
+        unsigned int ctx = CTX_NATIVE;
+        const context_t *context = &contexts[CTX_NATIVE];
+        unsigned int flags = system_flags & context->flags;
+        unsigned int native_flags = always_native_flags & context->flags;
 
-        if (system_flags) set_thread_context( thread, context, system_flags );
-        if (thread->context && !get_error()) copy_context( thread->context, context, client_flags );
+        if (thread != current) stop_thread( thread );
+        else if (flags) set_thread_context( thread, context, flags );
+        if (thread->context && !get_error())
+        {
+            if (ctx_count == 2)
+            {
+                /* If the target thread doesn't have a WoW context, set native instead.
+                 * If we don't know yet whether we have a WoW context, store native context
+                 * in CTX_PENDING and update when the target thread sends its context(s). */
+                if (thread->context->status != STATUS_PENDING)
+                {
+                    ctx = thread->context->regs[CTX_WOW].machine ? CTX_WOW : CTX_NATIVE;
+                    context = &contexts[ctx];
+                }
+                else ctx = CTX_PENDING;
+            }
+            flags = context->flags;
+            if (native_flags && ctx != CTX_NATIVE) /* some regs are always set from the native context */
+            {
+                copy_context( &thread->context->regs[CTX_NATIVE], &contexts[CTX_NATIVE], native_flags );
+                thread->context->regs[CTX_NATIVE].flags |= native_flags;
+                flags &= ~native_flags;
+            }
+            copy_context( &thread->context->regs[ctx], context, flags );
+            thread->context->regs[ctx].flags |= flags;
+        }
     }
-    else set_error( STATUS_INVALID_PARAMETER );
+    else set_error( STATUS_UNSUCCESSFUL );
 
     release_object( thread );
-}
-
-/* retrieve the suspended context of a thread */
-DECL_HANDLER(get_suspend_context)
-{
-    if (get_reply_max_size() < sizeof(context_t))
-    {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
-    }
-
-    if (current->suspend_context)
-    {
-        if (current->suspend_context->flags)
-            set_reply_data_ptr( current->suspend_context, sizeof(context_t) );
-        else
-            free( current->suspend_context );
-        if (current->context == current->suspend_context)
-        {
-            current->context = NULL;
-            stop_thread_if_suspended( current );
-        }
-        current->suspend_context = NULL;
-    }
-    else set_error( STATUS_INVALID_PARAMETER );  /* not suspended, shouldn't happen */
-}
-
-/* store the suspended context of a thread */
-DECL_HANDLER(set_suspend_context)
-{
-    const context_t *context = get_req_data();
-
-    if (get_req_data_size() < sizeof(context_t))
-    {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
-    }
-
-    if (current->context || context->cpu != current->process->cpu)
-    {
-        /* nested suspend or exception, shouldn't happen */
-        set_error( STATUS_INVALID_PARAMETER );
-    }
-    else if ((current->suspend_context = mem_alloc( sizeof(context_t) )))
-    {
-        memcpy( current->suspend_context, get_req_data(), sizeof(context_t) );
-        current->suspend_context->flags = 0;  /* to keep track of what is modified */
-        current->context = current->suspend_context;
-    }
 }
 
 /* fetch a selector entry for a thread */
@@ -2143,4 +2325,53 @@ DECL_HANDLER(get_selector_entry)
         get_selector_entry( thread, req->entry, &reply->base, &reply->limit, &reply->flags );
         release_object( thread );
     }
+}
+
+/* Iterate thread list for process. Use global thread list to also
+ * return terminated but not yet destroyed threads. */
+DECL_HANDLER(get_next_thread)
+{
+    struct thread *thread;
+    struct process *process;
+    struct list *ptr;
+
+    if (req->flags > 1)
+    {
+        set_error( STATUS_INVALID_PARAMETER );
+        return;
+    }
+
+    if (!(process = get_process_from_handle( req->process, PROCESS_QUERY_INFORMATION )))
+        return;
+
+    if (!req->last)
+    {
+        ptr = req->flags ? list_tail( &thread_list ) : list_head( &thread_list );
+    }
+    else if ((thread = get_thread_from_handle( req->last, 0 )))
+    {
+        ptr = req->flags ? list_prev( &thread_list, &thread->entry )
+                         : list_next( &thread_list, &thread->entry );
+        release_object( thread );
+    }
+    else
+    {
+        release_object( process );
+        return;
+    }
+
+    while (ptr)
+    {
+        thread = LIST_ENTRY( ptr, struct thread, entry );
+        if (thread->process == process)
+        {
+            reply->handle = alloc_handle( current->process, thread, req->access, req->attributes );
+            release_object( process );
+            return;
+        }
+        ptr = req->flags ? list_prev( &thread_list, &thread->entry )
+                         : list_next( &thread_list, &thread->entry );
+    }
+    set_error( STATUS_NO_MORE_ENTRIES );
+    release_object( process );
 }

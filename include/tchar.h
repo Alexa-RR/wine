@@ -154,6 +154,7 @@ extern "C" {
 #define _tcsupr       WINE_tchar_routine(_strupr,         _mbsupr,     _wcsupr)
 #define _tcsupr_s     WINE_tchar_routine(_strupr_s,       _mbsupr_s,   _wcsupr_s)
 #define _tcsxfrm      WINE_tchar_routine(strxfrm,         strxfrm,     wcsxfrm)
+#define _tcsxfrm_l    WINE_tchar_routine(_strxfrm_l,      _strxfrm_l,  _wcsxfrm_l)
 #define _tctime       WINE_tchar_routine(ctime,           ctime,       _wctime)
 #define _tenviron     WINE_tchar_routine(_environ,        _environ,    _wenviron)
 #define _texecl       WINE_tchar_routine(execl,           _execl,      _wexecl)
@@ -240,7 +241,7 @@ typedef unsigned short wctype_t;
 #ifndef __TCHAR_DEFINED
 #if defined(WINE_UNICODE_NATIVE)
 typedef wchar_t       _TCHAR;
-#elif defined(WINE_UNICODE_CHAR16)
+#elif __cpp_unicode_literals >= 200710
 typedef char16_t      _TCHAR;
 #else
 typedef unsigned short _TCHAR;

@@ -15,6 +15,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "ntstatus.h"
+#define WIN32_NO_STATUS
 #include <stdarg.h>
 #include <stdlib.h>
 #include "ntstatus.h"
@@ -22,6 +24,11 @@
 #include "windef.h"
 #include "winbase.h"
 #include "winternl.h"
+<<<<<<< HEAD
+=======
+#include "winnls.h"
+#include "lmcons.h"
+>>>>>>> master
 #include "wtsapi32.h"
 #include "wine/debug.h"
 #include "wine/heap.h"
@@ -42,7 +49,7 @@ void WINAPI WTSCloseServer(HANDLE hServer)
  */
 BOOL WINAPI WTSConnectSessionA(ULONG LogonId, ULONG TargetLogonId, PSTR pPassword, BOOL bWait)
 {
-   FIXME("Stub %d %d (%s) %d\n", LogonId, TargetLogonId, debugstr_a(pPassword), bWait);
+   FIXME("Stub %ld %ld (%s) %d\n", LogonId, TargetLogonId, debugstr_a(pPassword), bWait);
    return TRUE;
 }
 
@@ -51,7 +58,7 @@ BOOL WINAPI WTSConnectSessionA(ULONG LogonId, ULONG TargetLogonId, PSTR pPasswor
  */
 BOOL WINAPI WTSConnectSessionW(ULONG LogonId, ULONG TargetLogonId, PWSTR pPassword, BOOL bWait)
 {
-   FIXME("Stub %d %d (%s) %d\n", LogonId, TargetLogonId, debugstr_w(pPassword), bWait);
+   FIXME("Stub %ld %ld (%s) %d\n", LogonId, TargetLogonId, debugstr_w(pPassword), bWait);
    return TRUE;
 }
 
@@ -60,7 +67,7 @@ BOOL WINAPI WTSConnectSessionW(ULONG LogonId, ULONG TargetLogonId, PWSTR pPasswo
  */
 BOOL WINAPI WTSDisconnectSession(HANDLE hServer, DWORD SessionId, BOOL bWait)
 {
-    FIXME("Stub %p 0x%08x %d\n", hServer, SessionId, bWait);
+    FIXME("Stub %p 0x%08lx %d\n", hServer, SessionId, bWait);
     return TRUE;
 }
 
@@ -77,11 +84,127 @@ BOOL WINAPI WTSEnableChildSessions(BOOL enable)
 /************************************************************
  *                WTSEnumerateProcessesExW  (WTSAPI32.@)
  */
-BOOL WINAPI WTSEnumerateProcessesExW(HANDLE server, DWORD *level, DWORD session_id, WCHAR **info, DWORD *count)
+BOOL WINAPI WTSEnumerateProcessesExW(HANDLE server, DWORD *level, DWORD session_id,
+        WCHAR **ret_info, DWORD *ret_count)
 {
-    FIXME("Stub %p %p %d %p %p\n", server, level, session_id, info, count);
-    if (count) *count = 0;
-    return FALSE;
+    SYSTEM_PROCESS_INFORMATION *nt_info, *nt_process;
+    WTS_PROCESS_INFOW *info;
+    ULONG nt_size = 4096;
+    DWORD count, size;
+    NTSTATUS status;
+    char *p;
+
+    TRACE("server %p, level %lu, session_id %#lx, ret_info %p, ret_count %p\n",
+            server, *level, session_id, ret_info, ret_count);
+
+    if (!ret_info || !ret_count)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (session_id != WTS_ANY_SESSION)
+        FIXME("ignoring session id %#lx\n", session_id);
+
+    if (*level)
+    {
+        FIXME("unhandled level %lu\n", *level);
+        SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+        return FALSE;
+    }
+
+    if (!(nt_info = malloc(nt_size)))
+    {
+        SetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+
+    while ((status = NtQuerySystemInformation(SystemProcessInformation, nt_info,
+            nt_size, NULL)) == STATUS_INFO_LENGTH_MISMATCH)
+    {
+        SYSTEM_PROCESS_INFORMATION *new_info;
+
+        nt_size *= 2;
+        if (!(new_info = realloc(nt_info, nt_size)))
+        {
+            free(nt_info);
+            SetLastError(ERROR_OUTOFMEMORY);
+            return FALSE;
+        }
+        nt_info = new_info;
+    }
+    if (status)
+    {
+        free(nt_info);
+        SetLastError(RtlNtStatusToDosError(status));
+        return FALSE;
+    }
+
+    size = 0;
+    count = 0;
+    nt_process = nt_info;
+    for (;;)
+    {
+        size += sizeof(WTS_PROCESS_INFOW) + nt_process->ProcessName.Length + sizeof(WCHAR);
+        size += offsetof(SID, SubAuthority[SID_MAX_SUB_AUTHORITIES]);
+        ++count;
+
+        if (!nt_process->NextEntryOffset)
+            break;
+        nt_process = (SYSTEM_PROCESS_INFORMATION *)((char *)nt_process + nt_process->NextEntryOffset);
+    }
+
+    if (!(info = heap_alloc(size)))
+    {
+        free(nt_info);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+    p = (char *)(info + count);
+
+    count = 0;
+    nt_process = nt_info;
+    for (;;)
+    {
+        HANDLE process, token;
+
+        info[count].SessionId = nt_process->SessionId;
+        info[count].ProcessId = (DWORD_PTR)nt_process->UniqueProcessId;
+
+        info[count].pProcessName = (WCHAR *)p;
+        memcpy(p, nt_process->ProcessName.Buffer, nt_process->ProcessName.Length);
+        info[count].pProcessName[nt_process->ProcessName.Length / sizeof(WCHAR)] = 0;
+        p += nt_process->ProcessName.Length + sizeof(WCHAR);
+
+        info[count].pUserSid = NULL;
+        if ((process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, info[count].ProcessId)))
+        {
+            if (OpenProcessToken(process, TOKEN_QUERY, &token))
+            {
+                char buffer[sizeof(TOKEN_USER) + offsetof(SID, SubAuthority[SID_MAX_SUB_AUTHORITIES])];
+                TOKEN_USER *user = (TOKEN_USER *)buffer;
+                DWORD size;
+
+                GetTokenInformation(token, TokenUser, buffer, sizeof(buffer), &size);
+                info[count].pUserSid = p;
+                size = GetLengthSid(user->User.Sid);
+                memcpy(p, user->User.Sid, size);
+                p += size;
+                CloseHandle(token);
+            }
+            CloseHandle(process);
+        }
+
+        ++count;
+        if (!nt_process->NextEntryOffset)
+            break;
+        nt_process = (SYSTEM_PROCESS_INFORMATION *)((char *)nt_process + nt_process->NextEntryOffset);
+    }
+
+    *ret_info = (WCHAR *)info;
+    *ret_count = count;
+    SetLastError(0);
+    return TRUE;
 }
 
 /************************************************************
@@ -89,7 +212,7 @@ BOOL WINAPI WTSEnumerateProcessesExW(HANDLE server, DWORD *level, DWORD session_
  */
 BOOL WINAPI WTSEnumerateProcessesExA(HANDLE server, DWORD *level, DWORD session_id, char **info, DWORD *count)
 {
-    FIXME("Stub %p %p %d %p %p\n", server, level, session_id, info, count);
+    FIXME("Stub %p %p %ld %p %p\n", server, level, session_id, info, count);
     if (count) *count = 0;
     return FALSE;
 }
@@ -100,7 +223,7 @@ BOOL WINAPI WTSEnumerateProcessesExA(HANDLE server, DWORD *level, DWORD session_
 BOOL WINAPI WTSEnumerateProcessesA(HANDLE hServer, DWORD Reserved, DWORD Version,
     PWTS_PROCESS_INFOA* ppProcessInfo, DWORD* pCount)
 {
-    FIXME("Stub %p 0x%08x 0x%08x %p %p\n", hServer, Reserved, Version,
+    FIXME("Stub %p 0x%08lx 0x%08lx %p %p\n", hServer, Reserved, Version,
           ppProcessInfo, pCount);
 
     if (!ppProcessInfo || !pCount) return FALSE;
@@ -114,9 +237,10 @@ BOOL WINAPI WTSEnumerateProcessesA(HANDLE hServer, DWORD Reserved, DWORD Version
 /************************************************************
  *                WTSEnumerateProcessesW  (WTSAPI32.@)
  */
-BOOL WINAPI WTSEnumerateProcessesW(HANDLE hServer, DWORD Reserved, DWORD Version,
-    PWTS_PROCESS_INFOW* ppProcessInfo, DWORD* pCount)
+BOOL WINAPI WTSEnumerateProcessesW(HANDLE server, DWORD reserved, DWORD version,
+        WTS_PROCESS_INFOW **info, DWORD *count)
 {
+<<<<<<< HEAD
     WTS_PROCESS_INFOW *processInfo;
     SYSTEM_PROCESS_INFORMATION *spi;
     ULONG size = 0x4000;
@@ -124,13 +248,19 @@ BOOL WINAPI WTSEnumerateProcessesW(HANDLE hServer, DWORD Reserved, DWORD Version
     NTSTATUS status;
     DWORD count;
     WCHAR *name;
+=======
+    DWORD level = 0;
+>>>>>>> master
 
-    if (!ppProcessInfo || !pCount || Reserved != 0 || Version != 1)
+    TRACE("server %p, reserved %#lx, version %lu, info %p, count %p\n", server, reserved, version, info, count);
+
+    if (reserved || version != 1)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
+<<<<<<< HEAD
     if (hServer != WTS_CURRENT_SERVER_HANDLE)
     {
         SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
@@ -197,6 +327,9 @@ BOOL WINAPI WTSEnumerateProcessesW(HANDLE hServer, DWORD Reserved, DWORD Version
 
     HeapFree(GetProcessHeap(), 0, buf);
     return TRUE;
+=======
+    return WTSEnumerateProcessesExW(server, &level, WTS_ANY_SESSION, (WCHAR **)info, count);
+>>>>>>> master
 }
 
 /************************************************************
@@ -204,7 +337,7 @@ BOOL WINAPI WTSEnumerateProcessesW(HANDLE hServer, DWORD Reserved, DWORD Version
  */
 BOOL WINAPI WTSEnumerateServersA(LPSTR pDomainName, DWORD Reserved, DWORD Version, PWTS_SERVER_INFOA *ppServerInfo, DWORD *pCount)
 {
-    FIXME("Stub %s 0x%08x 0x%08x %p %p\n", debugstr_a(pDomainName), Reserved, Version, ppServerInfo, pCount);
+    FIXME("Stub %s 0x%08lx 0x%08lx %p %p\n", debugstr_a(pDomainName), Reserved, Version, ppServerInfo, pCount);
     return FALSE;
 }
 
@@ -213,7 +346,7 @@ BOOL WINAPI WTSEnumerateServersA(LPSTR pDomainName, DWORD Reserved, DWORD Versio
  */
 BOOL WINAPI WTSEnumerateServersW(LPWSTR pDomainName, DWORD Reserved, DWORD Version, PWTS_SERVER_INFOW *ppServerInfo, DWORD *pCount)
 {
-    FIXME("Stub %s 0x%08x 0x%08x %p %p\n", debugstr_w(pDomainName), Reserved, Version, ppServerInfo, pCount);
+    FIXME("Stub %s 0x%08lx 0x%08lx %p %p\n", debugstr_w(pDomainName), Reserved, Version, ppServerInfo, pCount);
     return FALSE;
 }
 
@@ -223,7 +356,7 @@ BOOL WINAPI WTSEnumerateServersW(LPWSTR pDomainName, DWORD Reserved, DWORD Versi
  */
 BOOL WINAPI WTSEnumerateSessionsExW(HANDLE server, DWORD *level, DWORD filter, WTS_SESSION_INFO_1W* info, DWORD *count)
 {
-    FIXME("Stub %p %p %d %p %p\n", server, level, filter, info, count);
+    FIXME("Stub %p %p %ld %p %p\n", server, level, filter, info, count);
     if (count) *count = 0;
     return FALSE;
 }
@@ -233,7 +366,7 @@ BOOL WINAPI WTSEnumerateSessionsExW(HANDLE server, DWORD *level, DWORD filter, W
  */
 BOOL WINAPI WTSEnumerateSessionsExA(HANDLE server, DWORD *level, DWORD filter, WTS_SESSION_INFO_1A* info, DWORD *count)
 {
-    FIXME("Stub %p %p %d %p %p\n", server, level, filter, info, count);
+    FIXME("Stub %p %p %ld %p %p\n", server, level, filter, info, count);
     if (count) *count = 0;
     return FALSE;
 }
@@ -246,7 +379,7 @@ BOOL WINAPI WTSEnumerateSessionsA(HANDLE hServer, DWORD Reserved, DWORD Version,
 {
     static int once;
 
-    if (!once++) FIXME("Stub %p 0x%08x 0x%08x %p %p\n", hServer, Reserved, Version,
+    if (!once++) FIXME("Stub %p 0x%08lx 0x%08lx %p %p\n", hServer, Reserved, Version,
           ppSessionInfo, pCount);
 
     if (!ppSessionInfo || !pCount) return FALSE;
@@ -263,7 +396,7 @@ BOOL WINAPI WTSEnumerateSessionsA(HANDLE hServer, DWORD Reserved, DWORD Version,
 BOOL WINAPI WTSEnumerateSessionsW(HANDLE hServer, DWORD Reserved, DWORD Version,
     PWTS_SESSION_INFOW* ppSessionInfo, DWORD* pCount)
 {
-    FIXME("Stub %p 0x%08x 0x%08x %p %p\n", hServer, Reserved, Version,
+    FIXME("Stub %p 0x%08lx 0x%08lx %p %p\n", hServer, Reserved, Version,
           ppSessionInfo, pCount);
 
     if (!ppSessionInfo || !pCount) return FALSE;
@@ -287,7 +420,7 @@ void WINAPI WTSFreeMemory(PVOID pMemory)
  */
 BOOL WINAPI WTSFreeMemoryExA(WTS_TYPE_CLASS type, void *ptr, ULONG nmemb)
 {
-    TRACE("%d %p %d\n", type, ptr, nmemb);
+    TRACE("%d %p %ld\n", type, ptr, nmemb);
     heap_free(ptr);
     return TRUE;
 }
@@ -297,7 +430,7 @@ BOOL WINAPI WTSFreeMemoryExA(WTS_TYPE_CLASS type, void *ptr, ULONG nmemb)
  */
 BOOL WINAPI WTSFreeMemoryExW(WTS_TYPE_CLASS type, void *ptr, ULONG nmemb)
 {
-    TRACE("%d %p %d\n", type, ptr, nmemb);
+    TRACE("%d %p %ld\n", type, ptr, nmemb);
     heap_free(ptr);
     return TRUE;
 }
@@ -308,7 +441,7 @@ BOOL WINAPI WTSFreeMemoryExW(WTS_TYPE_CLASS type, void *ptr, ULONG nmemb)
  */
 BOOL WINAPI WTSLogoffSession(HANDLE hserver, DWORD session_id, BOOL bwait)
 {
-    FIXME("(%p, 0x%x, %d): stub\n", hserver, session_id, bwait);
+    FIXME("(%p, 0x%lx, %d): stub\n", hserver, session_id, bwait);
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }
@@ -357,47 +490,88 @@ HANDLE WINAPI WTSOpenServerW(LPWSTR pServerName)
 /************************************************************
  *                WTSQuerySessionInformationA  (WTSAPI32.@)
  */
-BOOL WINAPI WTSQuerySessionInformationA(
-    HANDLE hServer,
-    DWORD SessionId,
-    WTS_INFO_CLASS WTSInfoClass,
-    LPSTR* Buffer,
-    DWORD* BytesReturned)
+BOOL WINAPI WTSQuerySessionInformationA(HANDLE server, DWORD session_id, WTS_INFO_CLASS class, char **buffer, DWORD *count)
 {
-    /* FIXME: Forward request to winsta.dll::WinStationQueryInformationA */
-    FIXME("Stub %p 0x%08x %d %p %p\n", hServer, SessionId, WTSInfoClass,
-        Buffer, BytesReturned);
+    WCHAR *bufferW = NULL;
 
-    return FALSE;
+    TRACE("%p 0x%08lx %d %p %p\n", server, session_id, class, buffer, count);
+
+    if (!buffer || !count)
+    {
+        SetLastError(ERROR_INVALID_USER_BUFFER);
+        return FALSE;
+    }
+
+    if (!WTSQuerySessionInformationW(server, session_id, class, &bufferW, count))
+        return FALSE;
+
+    *count = WideCharToMultiByte(CP_ACP, 0, bufferW, -1, NULL, 0, NULL, NULL);
+    if (!*count)
+    {
+        WTSFreeMemory(bufferW);
+        return FALSE;
+    }
+
+    if (!(*buffer = heap_alloc(*count)))
+    {
+        WTSFreeMemory(bufferW);
+        return FALSE;
+    }
+
+    if (!(*count = WideCharToMultiByte(CP_ACP, 0, bufferW, -1, *buffer, *count, NULL, NULL)))
+    {
+        WTSFreeMemory(bufferW);
+        heap_free(*buffer);
+        return FALSE;
+    }
+
+    WTSFreeMemory(bufferW);
+    return TRUE;
 }
 
 /************************************************************
  *                WTSQuerySessionInformationW  (WTSAPI32.@)
  */
-BOOL WINAPI WTSQuerySessionInformationW(
-    HANDLE hServer,
-    DWORD SessionId,
-    WTS_INFO_CLASS WTSInfoClass,
-    LPWSTR* Buffer,
-    DWORD* BytesReturned)
+BOOL WINAPI WTSQuerySessionInformationW(HANDLE server, DWORD session_id, WTS_INFO_CLASS class, WCHAR **buffer, DWORD *count)
 {
-    /* FIXME: Forward request to winsta.dll::WinStationQueryInformationW */
-    FIXME("Stub %p 0x%08x %d %p %p\n", hServer, SessionId, WTSInfoClass,
-        Buffer, BytesReturned);
+    TRACE("%p 0x%08lx %d %p %p\n", server, session_id, class, buffer, count);
 
-    if (WTSInfoClass == WTSUserName)
+    if (!buffer || !count)
     {
-        WCHAR *username;
-        DWORD count = 0;
+        SetLastError(ERROR_INVALID_USER_BUFFER);
+        return FALSE;
+    }
 
-        GetUserNameW(NULL, &count);
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) return FALSE;
-        if (!(username = heap_alloc(count * sizeof(WCHAR)))) return FALSE;
-        GetUserNameW(username, &count);
-        *Buffer = username;
-        *BytesReturned = count * sizeof(WCHAR);
+    if (class == WTSUserName)
+    {
+        DWORD size = UNLEN + 1;
+        WCHAR *username;
+
+        if (!(username = heap_alloc(size * sizeof(WCHAR)))) return FALSE;
+        GetUserNameW(username, &size);
+        *buffer = username;
+        *count = size * sizeof(WCHAR);
         return TRUE;
     }
+
+    if (class ==  WTSDomainName)
+    {
+        DWORD size = MAX_COMPUTERNAME_LENGTH + 1;
+        WCHAR *computername;
+
+        if (!(computername = heap_alloc(size * sizeof(WCHAR)))) return FALSE;
+        GetComputerNameW(computername, &size);
+        *buffer = computername;
+        /* GetComputerNameW() return size doesn't include terminator */
+        size++;
+        *count = size * sizeof(WCHAR);
+        return TRUE;
+    }
+
+    FIXME("Unimplemented class %d\n", class);
+
+    *buffer = NULL;
+    *count = 0;
     return FALSE;
 }
 
@@ -406,7 +580,7 @@ BOOL WINAPI WTSQuerySessionInformationW(
  */
 BOOL WINAPI WTSQueryUserToken(ULONG session_id, PHANDLE token)
 {
-    FIXME("%u %p semi-stub!\n", session_id, token);
+    FIXME("%lu %p semi-stub!\n", session_id, token);
 
     if (!token)
     {
@@ -445,7 +619,7 @@ BOOL WINAPI WTSQueryUserConfigW(LPWSTR pServerName, LPWSTR pUserName, WTS_CONFIG
  */
 BOOL WINAPI WTSRegisterSessionNotification(HWND hWnd, DWORD dwFlags)
 {
-    FIXME("Stub %p 0x%08x\n", hWnd, dwFlags);
+    FIXME("Stub %p 0x%08lx\n", hWnd, dwFlags);
     return TRUE;
 }
 
@@ -454,7 +628,7 @@ BOOL WINAPI WTSRegisterSessionNotification(HWND hWnd, DWORD dwFlags)
  */
 BOOL WINAPI WTSRegisterSessionNotificationEx(HANDLE hServer, HWND hWnd, DWORD dwFlags)
 {
-    FIXME("Stub %p %p 0x%08x\n", hServer, hWnd, dwFlags);
+    FIXME("Stub %p %p 0x%08lx\n", hServer, hWnd, dwFlags);
     return TRUE;
 }
 
@@ -465,7 +639,7 @@ BOOL WINAPI WTSRegisterSessionNotificationEx(HANDLE hServer, HWND hWnd, DWORD dw
 BOOL WINAPI WTSSendMessageA(HANDLE hServer, DWORD SessionId, LPSTR pTitle, DWORD TitleLength, LPSTR pMessage,
    DWORD MessageLength, DWORD Style, DWORD Timeout, DWORD *pResponse, BOOL bWait)
 {
-   FIXME("Stub %p 0x%08x (%s) %d (%s) %d 0x%08x %d %p %d\n", hServer, SessionId, debugstr_a(pTitle), TitleLength, debugstr_a(pMessage), MessageLength, Style, Timeout, pResponse, bWait);
+   FIXME("Stub %p 0x%08lx (%s) %ld (%s) %ld 0x%08lx %ld %p %d\n", hServer, SessionId, debugstr_a(pTitle), TitleLength, debugstr_a(pMessage), MessageLength, Style, Timeout, pResponse, bWait);
    return FALSE;
 }
 
@@ -475,7 +649,7 @@ BOOL WINAPI WTSSendMessageA(HANDLE hServer, DWORD SessionId, LPSTR pTitle, DWORD
 BOOL WINAPI WTSSendMessageW(HANDLE hServer, DWORD SessionId, LPWSTR pTitle, DWORD TitleLength, LPWSTR pMessage,
    DWORD MessageLength, DWORD Style, DWORD Timeout, DWORD *pResponse, BOOL bWait)
 {
-   FIXME("Stub %p 0x%08x (%s) %d (%s) %d 0x%08x %d %p %d\n", hServer, SessionId, debugstr_w(pTitle), TitleLength, debugstr_w(pMessage), MessageLength, Style, Timeout, pResponse, bWait);
+   FIXME("Stub %p 0x%08lx (%s) %ld (%s) %ld 0x%08lx %ld %p %d\n", hServer, SessionId, debugstr_w(pTitle), TitleLength, debugstr_w(pMessage), MessageLength, Style, Timeout, pResponse, bWait);
    return FALSE;
 }
 
@@ -484,7 +658,7 @@ BOOL WINAPI WTSSendMessageW(HANDLE hServer, DWORD SessionId, LPWSTR pTitle, DWOR
  */
 BOOL WINAPI WTSSetUserConfigA(LPSTR pServerName, LPSTR pUserName, WTS_CONFIG_CLASS WTSConfigClass, LPSTR pBuffer, DWORD DataLength)
 {
-   FIXME("Stub (%s) (%s) 0x%08x %p %d\n", debugstr_a(pServerName), debugstr_a(pUserName), WTSConfigClass,pBuffer, DataLength);
+   FIXME("Stub (%s) (%s) 0x%08x %p %ld\n", debugstr_a(pServerName), debugstr_a(pUserName), WTSConfigClass,pBuffer, DataLength);
    return FALSE;
 }
 
@@ -493,7 +667,7 @@ BOOL WINAPI WTSSetUserConfigA(LPSTR pServerName, LPSTR pUserName, WTS_CONFIG_CLA
  */
 BOOL WINAPI WTSSetUserConfigW(LPWSTR pServerName, LPWSTR pUserName, WTS_CONFIG_CLASS WTSConfigClass, LPWSTR pBuffer, DWORD DataLength)
 {
-   FIXME("Stub (%s) (%s) 0x%08x %p %d\n", debugstr_w(pServerName), debugstr_w(pUserName), WTSConfigClass,pBuffer, DataLength);
+   FIXME("Stub (%s) (%s) 0x%08x %p %ld\n", debugstr_w(pServerName), debugstr_w(pUserName), WTSConfigClass,pBuffer, DataLength);
    return FALSE;
 }
 
@@ -502,7 +676,7 @@ BOOL WINAPI WTSSetUserConfigW(LPWSTR pServerName, LPWSTR pUserName, WTS_CONFIG_C
  */
 BOOL WINAPI WTSShutdownSystem(HANDLE hServer, DWORD ShutdownFlag)
 {
-   FIXME("Stub %p 0x%08x\n", hServer,ShutdownFlag);
+   FIXME("Stub %p 0x%08lx\n", hServer,ShutdownFlag);
    return FALSE;
 }
 
@@ -511,7 +685,7 @@ BOOL WINAPI WTSShutdownSystem(HANDLE hServer, DWORD ShutdownFlag)
  */
 BOOL WINAPI WTSStartRemoteControlSessionA(LPSTR pTargetServerName, ULONG TargetLogonId, BYTE HotkeyVk, USHORT HotkeyModifiers)
 {
-   FIXME("Stub (%s) %d %d %d\n", debugstr_a(pTargetServerName), TargetLogonId, HotkeyVk, HotkeyModifiers);
+   FIXME("Stub (%s) %ld %d %d\n", debugstr_a(pTargetServerName), TargetLogonId, HotkeyVk, HotkeyModifiers);
    return FALSE;
 }
 
@@ -520,7 +694,7 @@ BOOL WINAPI WTSStartRemoteControlSessionA(LPSTR pTargetServerName, ULONG TargetL
  */
 BOOL WINAPI WTSStartRemoteControlSessionW(LPWSTR pTargetServerName, ULONG TargetLogonId, BYTE HotkeyVk, USHORT HotkeyModifiers)
 {
-   FIXME("Stub (%s) %d %d %d\n", debugstr_w(pTargetServerName), TargetLogonId, HotkeyVk, HotkeyModifiers);
+   FIXME("Stub (%s) %ld %d %d\n", debugstr_w(pTargetServerName), TargetLogonId, HotkeyVk, HotkeyModifiers);
    return FALSE;
 }
 
@@ -529,7 +703,7 @@ BOOL WINAPI WTSStartRemoteControlSessionW(LPWSTR pTargetServerName, ULONG Target
  */
 BOOL WINAPI WTSStopRemoteControlSession(ULONG LogonId)
 {
-   FIXME("Stub %d\n",  LogonId);
+   FIXME("Stub %ld\n",  LogonId);
    return FALSE;
 }
 
@@ -538,7 +712,7 @@ BOOL WINAPI WTSStopRemoteControlSession(ULONG LogonId)
  */
 BOOL WINAPI WTSTerminateProcess(HANDLE hServer, DWORD ProcessId, DWORD ExitCode)
 {
-   FIXME("Stub %p %d %d\n", hServer, ProcessId, ExitCode);
+   FIXME("Stub %p %ld %ld\n", hServer, ProcessId, ExitCode);
    return FALSE;
 }
 
@@ -575,7 +749,7 @@ BOOL WINAPI WTSVirtualChannelClose(HANDLE hChannelHandle)
  */
 HANDLE WINAPI WTSVirtualChannelOpen(HANDLE hServer, DWORD SessionId, LPSTR pVirtualName)
 {
-   FIXME("Stub %p %d (%s)\n", hServer, SessionId, debugstr_a(pVirtualName));
+   FIXME("Stub %p %ld (%s)\n", hServer, SessionId, debugstr_a(pVirtualName));
    return NULL;
 }
 
@@ -584,7 +758,7 @@ HANDLE WINAPI WTSVirtualChannelOpen(HANDLE hServer, DWORD SessionId, LPSTR pVirt
  */
 HANDLE WINAPI WTSVirtualChannelOpenEx(DWORD SessionId, LPSTR pVirtualName, DWORD flags)
 {
-   FIXME("Stub %d (%s) %d\n",  SessionId, debugstr_a(pVirtualName), flags);
+   FIXME("Stub %ld (%s) %ld\n",  SessionId, debugstr_a(pVirtualName), flags);
    return NULL;
 }
 
@@ -621,7 +795,7 @@ BOOL WINAPI WTSVirtualChannelQuery(HANDLE hChannelHandle, WTS_VIRTUAL_CLASS WtsV
  */
 BOOL WINAPI WTSVirtualChannelRead(HANDLE hChannelHandle, ULONG TimeOut, PCHAR Buffer, ULONG BufferSize, PULONG pBytesRead)
 {
-   FIXME("Stub %p %d %p %d %p\n", hChannelHandle, TimeOut, Buffer, BufferSize, pBytesRead);
+   FIXME("Stub %p %ld %p %ld %p\n", hChannelHandle, TimeOut, Buffer, BufferSize, pBytesRead);
    return FALSE;
 }
 
@@ -630,7 +804,7 @@ BOOL WINAPI WTSVirtualChannelRead(HANDLE hChannelHandle, ULONG TimeOut, PCHAR Bu
  */
 BOOL WINAPI WTSVirtualChannelWrite(HANDLE hChannelHandle, PCHAR Buffer, ULONG Length, PULONG pBytesWritten)
 {
-   FIXME("Stub %p %p %d %p\n", hChannelHandle, Buffer, Length, pBytesWritten);
+   FIXME("Stub %p %p %ld %p\n", hChannelHandle, Buffer, Length, pBytesWritten);
    return FALSE;
 }
 
@@ -640,6 +814,6 @@ BOOL WINAPI WTSVirtualChannelWrite(HANDLE hChannelHandle, PCHAR Buffer, ULONG Le
 BOOL WINAPI WTSWaitSystemEvent(HANDLE hServer, DWORD Mask, DWORD* Flags)
 {
     /* FIXME: Forward request to winsta.dll::WinStationWaitSystemEvent */
-    FIXME("Stub %p 0x%08x %p\n", hServer, Mask, Flags);
+    FIXME("Stub %p 0x%08lx %p\n", hServer, Mask, Flags);
     return FALSE;
 }
