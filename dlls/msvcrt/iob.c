@@ -24,7 +24,6 @@
 #endif
 
 #include <stdio.h>
-#include <wine/asm.h>
 
 #undef __iob_func
 extern FILE * __cdecl __iob_func(void);
@@ -36,4 +35,9 @@ FILE * __cdecl __acrt_iob_func(unsigned idx)
 {
     return __iob_func() + idx;
 }
-__ASM_GLOBAL_IMPORT(__acrt_iob_func)
+
+#ifdef __i386__
+void *_imp____acrt_iob_func = __acrt_iob_func;
+#else
+void *__imp___acrt_iob_func = __acrt_iob_func;
+#endif

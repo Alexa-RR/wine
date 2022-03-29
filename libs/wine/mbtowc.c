@@ -24,7 +24,7 @@
 
 #ifdef __ASM_OBSOLETE
 
-#include "unicode.h"
+#include "wine/unicode.h"
 
 extern const unsigned short nfd_table[] DECLSPEC_HIDDEN;
 

@@ -28,6 +28,7 @@
 #include "wingdi.h"
 #include "winuser.h"
 #include "winnls.h"
+#include "winspool.h"
 #include "setupapi.h"
 #include "shlobj.h"
 #include "setupapi_private.h"
@@ -45,22 +46,9 @@ struct user_dirid
     WCHAR *str;
 };
 
-#ifdef __i386__
-static const WCHAR printer_env[] = L"w32x86";
-#elif defined __x86_64__
-static const WCHAR printer_env[] = L"x64";
-#elif defined __arm__
-static const WCHAR printer_env[] = L"arm";
-#elif defined __aarch64__
-static const WCHAR printer_env[] = L"arm64";
-#else
-#error not defined for this cpu
-#endif
-
 static int nb_user_dirids;     /* number of user dirids in use */
 static int alloc_user_dirids;  /* number of allocated user dirids */
 static struct user_dirid *user_dirids;
-static const WCHAR *printer_dirids[5];  /* 66000..66004 */
 static const WCHAR *system_dirids[MAX_SYSTEM_DIRID+1];
 static const WCHAR *csidl_dirids[MAX_CSIDL_DIRID-MIN_CSIDL_DIRID+1];
 
@@ -68,13 +56,14 @@ static const WCHAR *csidl_dirids[MAX_CSIDL_DIRID-MIN_CSIDL_DIRID+1];
 static const WCHAR *get_unknown_dirid(void)
 {
     static WCHAR *unknown_dirid;
+    static const WCHAR unknown_str[] = {'\\','u','n','k','n','o','w','n',0};
 
     if (!unknown_dirid)
     {
-        UINT len = GetSystemDirectoryW( NULL, 0 ) + lstrlenW(L"\\unknown");
+        UINT len = GetSystemDirectoryW( NULL, 0 ) + lstrlenW(unknown_str);
         if (!(unknown_dirid = HeapAlloc( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return NULL;
         GetSystemDirectoryW( unknown_dirid, len );
-        lstrcatW( unknown_dirid, L"\\unknown" );
+        lstrcatW( unknown_dirid, unknown_str );
     }
     return unknown_dirid;
 }
@@ -84,13 +73,25 @@ static const WCHAR *get_csidl_dir(DWORD csidl);
 /* create the string for a system dirid */
 static const WCHAR *create_system_dirid( int dirid )
 {
+    static const WCHAR Null[]    = {0};
+    static const WCHAR C_Root[]  = {'C',':','\\',0};
+    static const WCHAR Drivers[] = {'\\','d','r','i','v','e','r','s',0};
+    static const WCHAR Inf[]     = {'\\','i','n','f',0};
+    static const WCHAR Help[]    = {'\\','h','e','l','p',0};
+    static const WCHAR Fonts[]   = {'\\','f','o','n','t','s',0};
+    static const WCHAR Viewers[] = {'\\','v','i','e','w','e','r','s',0};
+    static const WCHAR System[]  = {'\\','s','y','s','t','e','m',0};
+    static const WCHAR Spool[]   = {'\\','s','p','o','o','l',0};
+    static const WCHAR UserProfile[] = {'U','S','E','R','P','R','O','F','I','L','E',0};
+
     WCHAR buffer[MAX_PATH+32], *str;
     int len;
+    DWORD needed;
 
     switch(dirid)
     {
     case DIRID_NULL:
-        return L"";
+        return Null;
     case DIRID_WINDOWS:
         GetWindowsDirectoryW( buffer, MAX_PATH );
         break;
@@ -99,88 +100,55 @@ static const WCHAR *create_system_dirid( int dirid )
         break;
     case DIRID_DRIVERS:
         GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\drivers" );
+        lstrcatW( buffer, Drivers );
         break;
     case DIRID_INF:
         GetWindowsDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\inf" );
+        lstrcatW( buffer, Inf );
         break;
     case DIRID_HELP:
         GetWindowsDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\help" );
+        lstrcatW( buffer, Help );
         break;
     case DIRID_FONTS:
         GetWindowsDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\fonts" );
+        lstrcatW( buffer, Fonts );
         break;
     case DIRID_VIEWERS:
         GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\viewers" );
-        break;
-    case DIRID_COLOR:
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\spool\\drivers\\color" );
+        lstrcatW( buffer, Viewers );
         break;
     case DIRID_APPS:
-        return L"C:\\";  /* FIXME */
+        return C_Root;  /* FIXME */
     case DIRID_SHARED:
         GetWindowsDirectoryW( buffer, MAX_PATH );
         break;
     case DIRID_BOOT:
-        return L"C:\\";  /* FIXME */
+        return C_Root;  /* FIXME */
     case DIRID_SYSTEM16:
         GetWindowsDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\system" );
+        lstrcatW( buffer, System );
         break;
     case DIRID_SPOOL:
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\spool" );
-        break;
-    case DIRID_SPOOLDRIVERS:
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\spool\\drivers" );
+    case DIRID_SPOOLDRIVERS:  /* FIXME */
+        GetWindowsDirectoryW( buffer, MAX_PATH );
+        lstrcatW( buffer, Spool );
         break;
     case DIRID_USERPROFILE:
-        if (GetEnvironmentVariableW( L"USERPROFILE", buffer, MAX_PATH )) break;
+        if (GetEnvironmentVariableW( UserProfile, buffer, MAX_PATH )) break;
         return get_csidl_dir(CSIDL_PROFILE);
     case DIRID_LOADER:
-        return L"C:\\";  /* FIXME */
+        return C_Root;  /* FIXME */
     case DIRID_PRINTPROCESSOR:
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\spool\\prtprocs\\" );
-        lstrcatW( buffer, printer_env );
+        if (!GetPrintProcessorDirectoryW(NULL, NULL, 1, (LPBYTE)buffer, sizeof(buffer), &needed))
+        {
+            WARN( "cannot retrieve print processor directory\n" );
+            return get_unknown_dirid();
+        }
         break;
+    case DIRID_COLOR:  /* FIXME */
     default:
         FIXME( "unknown dirid %d\n", dirid );
-        return get_unknown_dirid();
-    }
-    len = (lstrlenW(buffer) + 1) * sizeof(WCHAR);
-    if ((str = HeapAlloc( GetProcessHeap(), 0, len ))) memcpy( str, buffer, len );
-    return str;
-}
-
-static const WCHAR *create_printer_dirid( DWORD dirid )
-{
-    WCHAR buffer[MAX_PATH+32], *str;
-    int len;
-
-    switch (dirid)
-    {
-    case 66000:  /* printer driver */
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        lstrcatW( buffer, L"\\spool\\drivers\\" );
-        lstrcatW( buffer, printer_env );
-        break;
-    case 66001:  /* print processor */
-        return create_system_dirid( DIRID_PRINTPROCESSOR );
-    case 66002:  /* system directory (FIXME: only for native architecture) */
-        GetSystemDirectoryW( buffer, MAX_PATH );
-        break;
-    case 66003:  /* color directory */
-        return create_system_dirid( DIRID_COLOR );
-    case 66004:  /* asp files directory */
-    default:
-        FIXME( "unsupported dirid %ld\n", dirid );
         return get_unknown_dirid();
     }
     len = (lstrlenW(buffer) + 1) * sizeof(WCHAR);
@@ -195,7 +163,7 @@ static const WCHAR *get_csidl_dir( DWORD csidl )
 
     if (!SHGetSpecialFolderPathW( NULL, buffer, csidl, TRUE ))
     {
-        FIXME( "CSIDL %lx not found\n", csidl );
+        FIXME( "CSIDL %x not found\n", csidl );
         return get_unknown_dirid();
     }
     len = (lstrlenW(buffer) + 1) * sizeof(WCHAR);
@@ -210,12 +178,7 @@ const WCHAR *DIRID_get_string( int dirid )
 
     if (dirid == DIRID_ABSOLUTE || dirid == DIRID_ABSOLUTE_16BIT) dirid = DIRID_NULL;
 
-    if (dirid >= 66000 && dirid <= 66004)
-    {
-        if (!printer_dirids[dirid - 66000]) printer_dirids[dirid - 66000] = create_printer_dirid( dirid );
-        return printer_dirids[dirid - 66000];
-    }
-    else if (dirid >= DIRID_USER)
+    if (dirid >= DIRID_USER)
     {
         for (i = 0; i < nb_user_dirids; i++)
             if (user_dirids[i].id == dirid) return user_dirids[i].str;

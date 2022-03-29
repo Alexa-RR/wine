@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -146,7 +148,7 @@ static ULONG WINAPI BitmapLockImpl_AddRef(IWICBitmapLock *iface)
     BitmapLockImpl *This = impl_from_IWICBitmapLock(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -156,7 +158,7 @@ static ULONG WINAPI BitmapLockImpl_Release(IWICBitmapLock *iface)
     BitmapLockImpl *This = impl_from_IWICBitmapLock(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
     {
@@ -267,7 +269,7 @@ static ULONG WINAPI BitmapImpl_AddRef(IWICBitmap *iface)
     BitmapImpl *This = impl_from_IWICBitmap(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -277,7 +279,7 @@ static ULONG WINAPI BitmapImpl_Release(IWICBitmap *iface)
     BitmapImpl *This = impl_from_IWICBitmap(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
     {
@@ -369,7 +371,7 @@ static HRESULT WINAPI BitmapImpl_Lock(IWICBitmap *iface, const WICRect *prcLock,
     BitmapLockImpl *result;
     WICRect rc;
 
-    TRACE("(%p,%s,%lx,%p)\n", iface, debug_wic_rect(prcLock), flags, ppILock);
+    TRACE("(%p,%s,%x,%p)\n", iface, debug_wic_rect(prcLock), flags, ppILock);
 
     if (!(flags & (WICBitmapLockRead|WICBitmapLockWrite)) || !ppILock)
         return E_INVALIDARG;
@@ -596,7 +598,7 @@ static HRESULT WINAPI IMILBitmapImpl_unknown1(IMILBitmap *iface, void **ppv)
 static HRESULT WINAPI IMILBitmapImpl_Lock(IMILBitmap *iface, const WICRect *rc, DWORD flags, IWICBitmapLock **lock)
 {
     BitmapImpl *This = impl_from_IMILBitmap(iface);
-    TRACE("(%p,%p,%08lx,%p)\n", iface, rc, flags, lock);
+    TRACE("(%p,%p,%08x,%p)\n", iface, rc, flags, lock);
     return IWICBitmap_Lock(&This->IWICBitmap_iface, rc, flags, lock);
 }
 

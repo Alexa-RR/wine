@@ -46,6 +46,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 /* Undocumented notification, see tests */
 #define CMDID_EXPLORER_UPDATEHISTORY 38
 
+static const WCHAR about_blankW[] = {'a','b','o','u','t',':','b','l','a','n','k',0};
+
 typedef struct {
     task_t header;
     HTMLDocumentObj *doc;
@@ -133,7 +135,7 @@ void set_current_mon(HTMLOuterWindow *This, IMoniker *mon, DWORD flags)
         hres = IUriContainer_GetIUri(uri_container, &uri);
         IUriContainer_Release(uri_container);
         if(hres != S_OK) {
-            WARN("GetIUri failed: %08lx\n", hres);
+            WARN("GetIUri failed: %08x\n", hres);
             uri = NULL;
         }
     }
@@ -145,7 +147,7 @@ void set_current_mon(HTMLOuterWindow *This, IMoniker *mon, DWORD flags)
         if(SUCCEEDED(hres)) {
             hres = create_uri(url, 0, &uri);
             if(FAILED(hres)) {
-                WARN("CreateUri failed: %08lx\n", hres);
+                WARN("CreateUri failed: %08x\n", hres);
                 set_current_uri(This, NULL);
                 This->url = SysAllocString(url);
                 CoTaskMemFree(url);
@@ -153,7 +155,7 @@ void set_current_mon(HTMLOuterWindow *This, IMoniker *mon, DWORD flags)
             }
             CoTaskMemFree(url);
         }else {
-            WARN("GetDisplayName failed: %08lx\n", hres);
+            WARN("GetDisplayName failed: %08x\n", hres);
         }
     }
 
@@ -234,7 +236,7 @@ static void set_progress_proc(task_t *_task)
         hres = IDocHostUIHandler_GetHostInfo(doc->hostui, &hostinfo);
         if(SUCCEEDED(hres))
             /* FIXME: use hostinfo */
-            TRACE("hostinfo = {%lu %08lx %08lx %s %s}\n",
+            TRACE("hostinfo = {%u %08x %08x %s %s}\n",
                     hostinfo.cbSize, hostinfo.dwFlags, hostinfo.dwDoubleClick,
                     debugstr_w(hostinfo.pchHostCss), debugstr_w(hostinfo.pchHostNS));
     }
@@ -352,7 +354,7 @@ HRESULT set_moniker(HTMLOuterWindow *window, IMoniker *mon, IUri *nav_uri, IBind
 
     hres = IMoniker_GetDisplayName(mon, pibc, NULL, &url);
     if(FAILED(hres)) {
-        WARN("GetDisplayName failed: %08lx\n", hres);
+        WARN("GetDisplayName failed: %08x\n", hres);
         return hres;
     }
 
@@ -512,7 +514,7 @@ static HRESULT get_doc_string(HTMLDocumentNode *This, char **str)
 
     nsres = nsIDOMHTMLDocument_QueryInterface(This->nsdoc, &IID_nsIDOMNode, (void**)&nsnode);
     if(NS_FAILED(nsres)) {
-        ERR("Could not get nsIDOMNode failed: %08lx\n", nsres);
+        ERR("Could not get nsIDOMNode failed: %08x\n", nsres);
         return E_FAIL;
     }
 
@@ -586,7 +588,7 @@ static HRESULT WINAPI PersistMoniker_Load(IPersistMoniker *iface, BOOL fFullyAva
     IMoniker *mon;
     HRESULT hres;
 
-    TRACE("(%p)->(%x %p %p %08lx)\n", This, fFullyAvailable, pimkName, pibc, grfMode);
+    TRACE("(%p)->(%x %p %p %08x)\n", This, fFullyAvailable, pimkName, pibc, grfMode);
 
     if(pibc) {
         IUnknown *unk = NULL;
@@ -789,7 +791,7 @@ static HRESULT WINAPI PersistFile_IsDirty(IPersistFile *iface)
 static HRESULT WINAPI PersistFile_Load(IPersistFile *iface, LPCOLESTR pszFileName, DWORD dwMode)
 {
     HTMLDocument *This = impl_from_IPersistFile(iface);
-    FIXME("(%p)->(%s %08lx)\n", This, debugstr_w(pszFileName), dwMode);
+    FIXME("(%p)->(%s %08x)\n", This, debugstr_w(pszFileName), dwMode);
     return E_NOTIMPL;
 }
 
@@ -806,7 +808,7 @@ static HRESULT WINAPI PersistFile_Save(IPersistFile *iface, LPCOLESTR pszFileNam
     file = CreateFileW(pszFileName, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                        FILE_ATTRIBUTE_NORMAL, NULL);
     if(file == INVALID_HANDLE_VALUE) {
-        WARN("Could not create file: %lu\n", GetLastError());
+        WARN("Could not create file: %u\n", GetLastError());
         return E_FAIL;
     }
 
@@ -891,9 +893,9 @@ static HRESULT WINAPI PersistStreamInit_Load(IPersistStreamInit *iface, IStream 
 
     TRACE("(%p)->(%p)\n", This, pStm);
 
-    hres = CreateURLMoniker(NULL, L"about:blank", &mon);
+    hres = CreateURLMoniker(NULL, about_blankW, &mon);
     if(FAILED(hres)) {
-        WARN("CreateURLMoniker failed: %08lx\n", hres);
+        WARN("CreateURLMoniker failed: %08x\n", hres);
         return hres;
     }
 
@@ -922,7 +924,7 @@ static HRESULT WINAPI PersistStreamInit_Save(IPersistStreamInit *iface, IStream 
 
     hres = IStream_Write(pStm, str, strlen(str), &written);
     if(FAILED(hres))
-        FIXME("Write failed: %08lx\n", hres);
+        FIXME("Write failed: %08x\n", hres);
 
     heap_free(str);
 
@@ -948,9 +950,9 @@ static HRESULT WINAPI PersistStreamInit_InitNew(IPersistStreamInit *iface)
 
     TRACE("(%p)\n", This);
 
-    hres = CreateURLMoniker(NULL, L"about:blank", &mon);
+    hres = CreateURLMoniker(NULL, about_blankW, &mon);
     if(FAILED(hres)) {
-        WARN("CreateURLMoniker failed: %08lx\n", hres);
+        WARN("CreateURLMoniker failed: %08x\n", hres);
         return hres;
     }
 
@@ -1094,7 +1096,7 @@ static HRESULT WINAPI PersistHistory_SaveHistory(IPersistHistory *iface, IStream
 static HRESULT WINAPI PersistHistory_SetPositionCookie(IPersistHistory *iface, DWORD dwPositioncookie)
 {
     HTMLDocument *This = impl_from_IPersistHistory(iface);
-    FIXME("(%p)->(%lx)\n", This, dwPositioncookie);
+    FIXME("(%p)->(%x)\n", This, dwPositioncookie);
     return E_NOTIMPL;
 }
 
@@ -1161,14 +1163,15 @@ static HRESULT WINAPI HlinkTarget_Navigate(IHlinkTarget *iface, DWORD grfHLNF, L
 {
     HTMLDocument *This = impl_from_IHlinkTarget(iface);
 
-    TRACE("(%p)->(%08lx %s)\n", This, grfHLNF, debugstr_w(pwzJumpLocation));
+    TRACE("(%p)->(%08x %s)\n", This, grfHLNF, debugstr_w(pwzJumpLocation));
 
     if(grfHLNF)
-        FIXME("Unsupported grfHLNF=%08lx\n", grfHLNF);
+        FIXME("Unsupported grfHLNF=%08x\n", grfHLNF);
     if(pwzJumpLocation)
         FIXME("JumpLocation not supported\n");
 
     if(!This->doc_obj->client) {
+        static const WCHAR szOpen[] = {'o','p','e','n',0};
         HRESULT hres;
         BSTR uri;
 
@@ -1176,7 +1179,7 @@ static HRESULT WINAPI HlinkTarget_Navigate(IHlinkTarget *iface, DWORD grfHLNF, L
         if (FAILED(hres))
             return hres;
 
-        ShellExecuteW(NULL, L"open", uri, NULL, NULL, SW_SHOW);
+        ShellExecuteW(NULL, szOpen, uri, NULL, NULL, SW_SHOW);
         SysFreeString(uri);
         return S_OK;
     }
@@ -1188,7 +1191,7 @@ static HRESULT WINAPI HlinkTarget_GetMoniker(IHlinkTarget *iface, LPCWSTR pwzLoc
         IMoniker **ppimkLocation)
 {
     HTMLDocument *This = impl_from_IHlinkTarget(iface);
-    FIXME("(%p)->(%s %08lx %p)\n", This, debugstr_w(pwzLocation), dwAssign, ppimkLocation);
+    FIXME("(%p)->(%s %08x %p)\n", This, debugstr_w(pwzLocation), dwAssign, ppimkLocation);
     return E_NOTIMPL;
 }
 

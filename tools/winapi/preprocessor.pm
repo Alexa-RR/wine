@@ -19,7 +19,6 @@
 package preprocessor;
 
 use strict;
-use warnings 'all';
 
 sub new($) {
     my $proto = shift;

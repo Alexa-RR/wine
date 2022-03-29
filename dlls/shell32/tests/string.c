@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#define WINE_NOWINSOCK
 #include "windef.h"
 #include "winbase.h"
 #include "wtypes.h"

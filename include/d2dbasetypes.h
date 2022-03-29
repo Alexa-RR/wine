@@ -16,9 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#ifndef _D2DBASETYPES_INCLUDED
-#define _D2DBASETYPES_INCLUDED
-
 #ifndef D3DCOLORVALUE_DEFINED
 typedef struct D3DCOLORVALUE
 {
@@ -31,6 +28,16 @@ typedef struct D3DCOLORVALUE
 #endif
 
 typedef D3DCOLORVALUE D2D_COLOR_F;
+
+typedef struct D2D_MATRIX_3X2_F
+{
+    float _11;
+    float _12;
+    float _21;
+    float _22;
+    float _31;
+    float _32;
+} D2D_MATRIX_3X2_F;
 
 typedef struct D2D_RECT_F
 {
@@ -59,5 +66,3 @@ typedef struct D2D_RECT_U
     UINT32 right;
     UINT32 bottom;
 } D2D_RECT_U;
-
-#endif /* _D2DBASETYPES_INCLUDED */

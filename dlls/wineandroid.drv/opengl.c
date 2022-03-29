@@ -25,12 +25,12 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dlfcn.h>
 #ifdef HAVE_EGL_EGL_H
 #include <EGL/egl.h>
 #endif
@@ -42,6 +42,7 @@
 #include "wine/wgl.h"
 #undef GLAPIENTRY
 #include "wine/wgl_driver.h"
+#include "wine/library.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(android);
@@ -418,7 +419,7 @@ static BOOL android_wglSetPixelFormatWINE( HDC hdc, int format )
 /***********************************************************************
  *		android_wglCopyContext
  */
-static BOOL WINAPI android_wglCopyContext( struct wgl_context *src, struct wgl_context *dst, UINT mask )
+static BOOL android_wglCopyContext( struct wgl_context *src, struct wgl_context *dst, UINT mask )
 {
     FIXME( "%p -> %p mask %#x unsupported\n", src, dst, mask );
     return FALSE;
@@ -427,7 +428,7 @@ static BOOL WINAPI android_wglCopyContext( struct wgl_context *src, struct wgl_c
 /***********************************************************************
  *		android_wglCreateContext
  */
-static struct wgl_context * WINAPI android_wglCreateContext( HDC hdc )
+static struct wgl_context *android_wglCreateContext( HDC hdc )
 {
     int egl_attribs[3] = { EGL_CONTEXT_CLIENT_VERSION, egl_client_version, EGL_NONE };
 
@@ -437,7 +438,7 @@ static struct wgl_context * WINAPI android_wglCreateContext( HDC hdc )
 /***********************************************************************
  *		android_wglDeleteContext
  */
-static BOOL WINAPI android_wglDeleteContext( struct wgl_context *ctx )
+static BOOL android_wglDeleteContext( struct wgl_context *ctx )
 {
     EnterCriticalSection( &drawable_section );
     list_remove( &ctx->entry );
@@ -449,7 +450,7 @@ static BOOL WINAPI android_wglDeleteContext( struct wgl_context *ctx )
 /***********************************************************************
  *		android_wglDescribePixelFormat
  */
-static int WINAPI android_wglDescribePixelFormat( HDC hdc, int fmt, UINT size, PIXELFORMATDESCRIPTOR *pfd )
+static int android_wglDescribePixelFormat( HDC hdc, int fmt, UINT size, PIXELFORMATDESCRIPTOR *pfd )
 {
     EGLint val;
     EGLConfig config;
@@ -495,7 +496,7 @@ static int WINAPI android_wglDescribePixelFormat( HDC hdc, int fmt, UINT size, P
 /***********************************************************************
  *		android_wglGetPixelFormat
  */
-static int WINAPI android_wglGetPixelFormat( HDC hdc )
+static int android_wglGetPixelFormat( HDC hdc )
 {
     struct gl_drawable *gl;
     int ret = 0;
@@ -513,7 +514,7 @@ static int WINAPI android_wglGetPixelFormat( HDC hdc )
 /***********************************************************************
  *		android_wglGetProcAddress
  */
-static PROC WINAPI android_wglGetProcAddress( LPCSTR name )
+static PROC android_wglGetProcAddress( LPCSTR name )
 {
     PROC ret;
     if (!strncmp( name, "wgl", 3 )) return NULL;
@@ -525,7 +526,7 @@ static PROC WINAPI android_wglGetProcAddress( LPCSTR name )
 /***********************************************************************
  *		android_wglMakeCurrent
  */
-static BOOL WINAPI android_wglMakeCurrent( HDC hdc, struct wgl_context *ctx )
+static BOOL android_wglMakeCurrent( HDC hdc, struct wgl_context *ctx )
 {
     BOOL ret = FALSE;
     struct gl_drawable *gl;
@@ -565,7 +566,7 @@ done:
 /***********************************************************************
  *		android_wglSetPixelFormat
  */
-static BOOL WINAPI android_wglSetPixelFormat( HDC hdc, int format, const PIXELFORMATDESCRIPTOR *pfd )
+static BOOL android_wglSetPixelFormat( HDC hdc, int format, const PIXELFORMATDESCRIPTOR *pfd )
 {
     return set_pixel_format( hdc, format, FALSE );
 }
@@ -573,7 +574,7 @@ static BOOL WINAPI android_wglSetPixelFormat( HDC hdc, int format, const PIXELFO
 /***********************************************************************
  *		android_wglShareLists
  */
-static BOOL WINAPI android_wglShareLists( struct wgl_context *org, struct wgl_context *dest )
+static BOOL android_wglShareLists( struct wgl_context *org, struct wgl_context *dest )
 {
     FIXME( "%p %p\n", org, dest );
     return FALSE;
@@ -582,7 +583,7 @@ static BOOL WINAPI android_wglShareLists( struct wgl_context *org, struct wgl_co
 /***********************************************************************
  *		android_wglSwapBuffers
  */
-static BOOL WINAPI android_wglSwapBuffers( HDC hdc )
+static BOOL android_wglSwapBuffers( HDC hdc )
 {
     struct wgl_context *ctx = NtCurrentTeb()->glContext;
 
@@ -654,11 +655,11 @@ static void init_extensions(void)
 
     /* load standard functions and extensions exported from the OpenGL library */
 
-#define USE_GL_FUNC(func) if ((ptr = dlsym( opengl_handle, #func ))) egl_funcs.gl.p_##func = ptr;
+#define USE_GL_FUNC(func) if ((ptr = wine_dlsym( opengl_handle, #func, NULL, 0 ))) egl_funcs.gl.p_##func = ptr;
     ALL_WGL_FUNCS
 #undef USE_GL_FUNC
 
-#define LOAD_FUNCPTR(func) egl_funcs.ext.p_##func = dlsym( opengl_handle, #func )
+#define LOAD_FUNCPTR(func) egl_funcs.ext.p_##func = wine_dlsym( opengl_handle, #func, NULL, 0 )
     LOAD_FUNCPTR( glActiveShaderProgram );
     LOAD_FUNCPTR( glActiveTexture );
     LOAD_FUNCPTR( glAttachShader );
@@ -948,23 +949,24 @@ static BOOL egl_init(void)
     static int retval = -1;
     EGLConfig *configs;
     EGLint major, minor, count, i, pass;
+    char buffer[200];
 
     if (retval != -1) return retval;
     retval = 0;
 
-    if (!(egl_handle = dlopen( SONAME_LIBEGL, RTLD_NOW|RTLD_GLOBAL )))
+    if (!(egl_handle = wine_dlopen( SONAME_LIBEGL, RTLD_NOW|RTLD_GLOBAL, buffer, sizeof(buffer) )))
     {
-        ERR( "failed to load %s: %s\n", SONAME_LIBEGL, dlerror() );
+        ERR( "failed to load %s: %s\n", SONAME_LIBEGL, buffer );
         return FALSE;
     }
-    if (!(opengl_handle = dlopen( SONAME_LIBGLESV2, RTLD_NOW|RTLD_GLOBAL )))
+    if (!(opengl_handle = wine_dlopen( SONAME_LIBGLESV2, RTLD_NOW|RTLD_GLOBAL, buffer, sizeof(buffer) )))
     {
-        ERR( "failed to load %s: %s\n", SONAME_LIBGLESV2, dlerror() );
+        ERR( "failed to load %s: %s\n", SONAME_LIBGLESV2, buffer );
         return FALSE;
     }
 
 #define LOAD_FUNCPTR(func) do { \
-        if (!(p_##func = dlsym( egl_handle, #func ))) \
+        if (!(p_##func = wine_dlsym( egl_handle, #func, NULL, 0 ))) \
         { ERR( "can't find symbol %s\n", #func); return FALSE; }    \
     } while(0)
     LOAD_FUNCPTR( eglCreateContext );

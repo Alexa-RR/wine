@@ -536,6 +536,36 @@ static void on_fontlist_modified(LPWSTR wszNewFaceName)
         set_font(wszNewFaceName);
 }
 
+static void add_font(LPCWSTR fontName, DWORD fontType, HWND hListWnd, const NEWTEXTMETRICEXW *ntmc)
+{
+    COMBOBOXEXITEMW cbItem;
+    WCHAR buffer[MAX_PATH];
+    int fontHeight = 0;
+
+    cbItem.mask = CBEIF_TEXT;
+    cbItem.pszText = buffer;
+    cbItem.cchTextMax = MAX_STRING_LEN;
+    cbItem.iItem = 0;
+
+    while(SendMessageW(hListWnd, CBEM_GETITEMW, 0, (LPARAM)&cbItem))
+    {
+        if(lstrcmpiW(cbItem.pszText, fontName) <= 0)
+            cbItem.iItem++;
+        else
+            break;
+    }
+    cbItem.pszText = HeapAlloc( GetProcessHeap(), 0, (lstrlenW(fontName) + 1)*sizeof(WCHAR) );
+    lstrcpyW( cbItem.pszText, fontName );
+
+    cbItem.mask |= CBEIF_LPARAM;
+    if(fontType & RASTER_FONTTYPE)
+        fontHeight = ntmc->ntmTm.tmHeight - ntmc->ntmTm.tmInternalLeading;
+
+    cbItem.lParam = MAKELONG(fontType,fontHeight);
+    SendMessageW(hListWnd, CBEM_INSERTITEMW, 0, (LPARAM)&cbItem);
+    HeapFree( GetProcessHeap(), 0, cbItem.pszText );
+}
+
 static void dialog_choose_font(void)
 {
     CHOOSEFONTW cf;
@@ -584,132 +614,36 @@ static void dialog_choose_font(void)
     }
 }
 
-struct font_desc
-{
-    WCHAR *name;
-    LPARAM lParam;
-};
-
-struct font_array
-{
-    struct font_desc *fonts;
-    size_t count;
-    size_t capacity;
-};
-
-static BOOL array_reserve(void **elements, size_t *capacity, size_t count, size_t size)
-{
-    size_t new_capacity, max_capacity;
-    void *new_elements;
-
-    if (count <= *capacity)
-        return TRUE;
-
-    max_capacity = ~(SIZE_T)0 / size;
-    if (count > max_capacity)
-        return FALSE;
-
-    new_capacity = max(4, *capacity);
-    while (new_capacity < count && new_capacity <= max_capacity / 2)
-        new_capacity *= 2;
-    if (new_capacity < count)
-        new_capacity = max_capacity;
-
-    new_elements = *elements ? HeapReAlloc(GetProcessHeap(), 0, *elements, new_capacity * size) :
-            HeapAlloc(GetProcessHeap(), 0, new_capacity * size);
-    if (!new_elements)
-        return FALSE;
-
-    *elements = new_elements;
-    *capacity = new_capacity;
-
-    return TRUE;
-}
-
-static void add_font(struct font_array *fonts, LPCWSTR fontName, DWORD fontType, const NEWTEXTMETRICEXW *ntmc)
-{
-    int fontHeight = 0;
-    size_t idx;
-
-    if (!array_reserve((void **)&fonts->fonts, &fonts->capacity, fonts->count + 1, sizeof(*fonts->fonts)))
-        return;
-
-    if (fontType & RASTER_FONTTYPE)
-        fontHeight = ntmc->ntmTm.tmHeight - ntmc->ntmTm.tmInternalLeading;
-
-    idx = fonts->count;
-    fonts->fonts[idx].name = HeapAlloc( GetProcessHeap(), 0, (lstrlenW(fontName) + 1)*sizeof(WCHAR) );
-    lstrcpyW( fonts->fonts[idx].name, fontName );
-    fonts->fonts[idx].lParam = MAKELONG(fontType, fontHeight);
-
-    fonts->count++;
-}
 
 static int CALLBACK enum_font_proc(const LOGFONTW *lpelfe, const TEXTMETRICW *lpntme,
                             DWORD FontType, LPARAM lParam)
 {
-    struct font_array *fonts = (void *)lParam;
+    HWND hListWnd = (HWND) lParam;
 
     if (lpelfe->lfFaceName[0] == '@') return 1;  /* ignore vertical fonts */
 
-    add_font(fonts, lpelfe->lfFaceName, FontType, (const NEWTEXTMETRICEXW *)lpntme);
+    if(SendMessageW(hListWnd, CB_FINDSTRINGEXACT, -1, (LPARAM)lpelfe->lfFaceName) == CB_ERR)
+    {
+
+        add_font(lpelfe->lfFaceName, FontType, hListWnd, (const NEWTEXTMETRICEXW*)lpntme);
+    }
 
     return 1;
 }
 
-static int __cdecl fonts_desc_compare(const void *a, const void *b)
-{
-    const struct font_desc *left = a, *right = b;
-    return lstrcmpiW(left->name, right->name);
-}
-
 static void populate_font_list(HWND hListWnd)
 {
-    struct font_array font_array = { 0 };
     HDC hdc = GetDC(hMainWnd);
     LOGFONTW fontinfo;
     HWND hListEditWnd = (HWND)SendMessageW(hListWnd, CBEM_GETEDITCONTROL, 0, 0);
     CHARFORMAT2W fmt;
-    size_t i, j;
 
     fontinfo.lfCharSet = DEFAULT_CHARSET;
     *fontinfo.lfFaceName = '\0';
     fontinfo.lfPitchAndFamily = 0;
 
-    /* Collect font names, sort, remove duplicates. */
-    EnumFontFamiliesExW(hdc, &fontinfo, enum_font_proc, (LPARAM)&font_array, 0);
-
-    qsort(font_array.fonts, font_array.count, sizeof(*font_array.fonts), fonts_desc_compare);
-
-    for (i = 1, j = 0; i < font_array.count; ++i)
-    {
-        if (!lstrcmpiW(font_array.fonts[i].name, font_array.fonts[j].name))
-        {
-            HeapFree(GetProcessHeap(), 0, font_array.fonts[i].name);
-            font_array.fonts[i].name = NULL;
-        }
-        else if (++j != i)
-        {
-            font_array.fonts[j] = font_array.fonts[i];
-            font_array.fonts[i].name = NULL;
-        }
-    }
-    font_array.count = j + 1;
-
-    for (i = 0; i < font_array.count; ++i)
-    {
-        COMBOBOXEXITEMW cbitem = { 0 };
-
-        cbitem.mask = CBEIF_TEXT | CBEIF_LPARAM;
-        cbitem.pszText = font_array.fonts[i].name;
-        cbitem.iItem = -1;
-        cbitem.lParam = font_array.fonts[i].lParam;
-
-        SendMessageW(hListWnd, CBEM_INSERTITEMW, 0, (LPARAM)&cbitem);
-
-        HeapFree(GetProcessHeap(), 0, font_array.fonts[i].name);
-    }
-    HeapFree(GetProcessHeap(), 0, font_array.fonts);
+    EnumFontFamiliesExW(hdc, &fontinfo, enum_font_proc,
+                        (LPARAM)hListWnd, 0);
 
     ZeroMemory(&fmt, sizeof(fmt));
     fmt.cbSize = sizeof(fmt);
@@ -1881,7 +1815,7 @@ static LRESULT OnCreate( HWND hWnd )
     HFONT font;
     HDC hdc;
     SIZE name_sz, size_sz;
-    int height, dpi;
+    int height;
     static const WCHAR wszRichEditDll[] = {'R','I','C','H','E','D','2','0','.','D','L','L','\0'};
     static const WCHAR wszRichEditText[] = {'R','i','c','h','E','d','i','t',' ','t','e','x','t','\0'};
     static const WCHAR font_text[] = {'T','i','m','e','s',' ','N','e','w',' ','R','o','m','a','n',0}; /* a long font name */
@@ -1905,12 +1839,8 @@ static LRESULT OnCreate( HWND hWnd )
       NULL, 0,
       24, 24, 16, 16, sizeof(TBBUTTON));
 
-    hdc = GetDC(hWnd);
-    dpi = GetDeviceCaps(hdc, LOGPIXELSY);
-    ReleaseDC(hWnd, hdc);
-
     ab.hInst = HINST_COMMCTRL;
-    ab.nID = dpi >= 120 ? IDB_STD_LARGE_COLOR : IDB_STD_SMALL_COLOR;
+    ab.nID = IDB_STD_SMALL_COLOR;
     nStdBitmaps = SendMessageW(hToolBarWnd, TB_ADDBITMAP, 0, (LPARAM)&ab);
 
     AddButton(hToolBarWnd, nStdBitmaps+STD_FILENEW, ID_FILE_NEW);
@@ -2023,7 +1953,7 @@ static LRESULT OnCreate( HWND hWnd )
 
     if (!hEditorWnd)
     {
-        fprintf(stderr, "Error code %lu\n", GetLastError());
+        fprintf(stderr, "Error code %u\n", GetLastError());
         return -1;
     }
     assert(hEditorWnd);
@@ -2164,7 +2094,7 @@ static LRESULT OnNotify( HWND hWnd, LPARAM lParam)
 
             update_font_list();
 
-            sprintf( buf,"selection = %ld..%ld, line count=%Id",
+            sprintf( buf,"selection = %d..%d, line count=%ld",
                      pSC->chrg.cpMin, pSC->chrg.cpMax,
                      SendMessageW(hwndEditor, EM_GETLINECOUNT, 0, 0));
             SetWindowTextA(GetDlgItem(hWnd, IDC_STATUSBAR), buf);
@@ -2451,7 +2381,7 @@ static LRESULT OnCommand( HWND hWnd, WPARAM wParam, LPARAM lParam)
         SendMessageW(hwndEditor, EM_EXGETSEL, 0, (LPARAM)&range);
         data = HeapAlloc(GetProcessHeap(), 0, sizeof(*data) * (range.cpMax-range.cpMin+1));
         SendMessageW(hwndEditor, EM_GETSELTEXT, 0, (LPARAM)data);
-        sprintf(buf, "Start = %ld, End = %ld", range.cpMin, range.cpMax);
+        sprintf(buf, "Start = %d, End = %d", range.cpMin, range.cpMax);
         MessageBoxA(hWnd, buf, "Editor", MB_OK);
         MessageBoxW(hWnd, data, wszAppTitle, MB_OK);
         HeapFree( GetProcessHeap(), 0, data);

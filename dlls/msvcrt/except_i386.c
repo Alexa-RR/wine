@@ -25,11 +25,12 @@
  * www.thecodeproject.com.
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #ifdef __i386__
 
-#include <setjmp.h>
 #include <stdarg.h>
-#include <fpieee.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -119,7 +120,7 @@ typedef struct _SCOPETABLE
   void * (*lpfnHandler)(void);
 } SCOPETABLE, *PSCOPETABLE;
 
-typedef struct MSVCRT_EXCEPTION_FRAME
+typedef struct _MSVCRT_EXCEPTION_FRAME
 {
   EXCEPTION_REGISTRATION_RECORD *prev;
   void (*handler)(PEXCEPTION_RECORD, EXCEPTION_REGISTRATION_RECORD*,
@@ -327,7 +328,7 @@ static void cxx_local_unwind( cxx_exception_frame* frame, const cxx_function_des
         if (trylevel < 0 || trylevel >= descr->unwind_count)
         {
             ERR( "invalid trylevel %d\n", trylevel );
-            terminate();
+            MSVCRT_terminate();
         }
         handler = descr->unwind_table[trylevel].handler;
         if (handler)
@@ -368,7 +369,7 @@ static DWORD catch_function_nested_handler( EXCEPTION_RECORD *rec, EXCEPTION_REG
             *rec = *prev_rec;
             rec->ExceptionFlags &= ~EH_UNWINDING;
             if(TRACE_ON(seh)) {
-                TRACE("detect rethrow: exception code: %lx\n", rec->ExceptionCode);
+                TRACE("detect rethrow: exception code: %x\n", rec->ExceptionCode);
                 if(rec->ExceptionCode == CXX_EXCEPTION)
                     TRACE("re-propagate: obj: %lx, type: %lx\n",
                             rec->ExceptionInformation[1], rec->ExceptionInformation[2]);
@@ -538,8 +539,8 @@ static LONG CALLBACK se_translation_filter( EXCEPTION_POINTERS *ep, void *c )
 
     if (rec->ExceptionCode != CXX_EXCEPTION)
     {
-        TRACE( "non-c++ exception thrown in SEH handler: %lx\n", rec->ExceptionCode );
-        terminate();
+        TRACE( "non-c++ exception thrown in SEH handler: %x\n", rec->ExceptionCode );
+        MSVCRT_terminate();
     }
 
     exc_type = (cxx_exception_type *)rec->ExceptionInformation[2];
@@ -548,18 +549,6 @@ static LONG CALLBACK se_translation_filter( EXCEPTION_POINTERS *ep, void *c )
 
     __DestructExceptionObject( rec );
     return ExceptionContinueSearch;
-}
-
-static void check_noexcept( PEXCEPTION_RECORD rec,
-        const cxx_function_descr *descr, BOOL nested )
-{
-    if (!nested && rec->ExceptionCode == CXX_EXCEPTION &&
-            descr->magic >= CXX_FRAME_MAGIC_VC8 &&
-            (descr->flags & FUNC_DESCR_NOEXCEPT))
-    {
-        ERR("noexcept function propagating exception\n");
-        terminate();
-    }
 }
 
 /*********************************************************************
@@ -589,11 +578,7 @@ DWORD CDECL cxx_frame_handler( PEXCEPTION_RECORD rec, cxx_exception_frame* frame
         if (descr->unwind_count && !nested_frame) cxx_local_unwind( frame, descr, -1 );
         return ExceptionContinueSearch;
     }
-    if (!descr->tryblock_count)
-    {
-        check_noexcept(rec, descr, nested_frame != NULL);
-        return ExceptionContinueSearch;
-    }
+    if (!descr->tryblock_count) return ExceptionContinueSearch;
 
     if(rec->ExceptionCode == CXX_EXCEPTION &&
             rec->ExceptionInformation[1] == 0 && rec->ExceptionInformation[2] == 0)
@@ -601,7 +586,7 @@ DWORD CDECL cxx_frame_handler( PEXCEPTION_RECORD rec, cxx_exception_frame* frame
         *rec = *msvcrt_get_thread_data()->exc_record;
         rec->ExceptionFlags &= ~EH_UNWINDING;
         if(TRACE_ON(seh)) {
-            TRACE("detect rethrow: exception code: %lx\n", rec->ExceptionCode);
+            TRACE("detect rethrow: exception code: %x\n", rec->ExceptionCode);
             if(rec->ExceptionCode == CXX_EXCEPTION)
                 TRACE("re-propagate: obj: %lx, type: %lx\n",
                         rec->ExceptionInformation[1], rec->ExceptionInformation[2]);
@@ -633,7 +618,7 @@ DWORD CDECL cxx_frame_handler( PEXCEPTION_RECORD rec, cxx_exception_frame* frame
         thread_data_t *data = msvcrt_get_thread_data();
 
         exc_type = NULL;
-        TRACE("handling C exception code %lx  rec %p frame %p trylevel %d descr %p nested_frame %p\n",
+        TRACE("handling C exception code %x  rec %p frame %p trylevel %d descr %p nested_frame %p\n",
               rec->ExceptionCode,  rec, frame, frame->trylevel, descr, nested_frame );
 
         if (data->se_translator) {
@@ -658,7 +643,6 @@ DWORD CDECL cxx_frame_handler( PEXCEPTION_RECORD rec, cxx_exception_frame* frame
 
     call_catch_block( rec, context, frame, descr,
             nested_frame, exc_type );
-    check_noexcept(rec, descr, nested_frame != NULL);
     return ExceptionContinueSearch;
 }
 
@@ -692,7 +676,7 @@ __ASM_GLOBAL_FUNC( __CxxFrameHandler,
  *
  * Callback meant to be used as UnwindFunc for setjmp/longjmp.
  */
-void __stdcall __CxxLongjmpUnwind( const _JUMP_BUFFER *buf )
+void __stdcall __CxxLongjmpUnwind( const struct MSVCRT___JUMP_BUFFER *buf )
 {
     cxx_exception_frame *frame = (cxx_exception_frame *)buf->Registration;
     const cxx_function_descr *descr = (const cxx_function_descr *)buf->UnwindData[0];
@@ -866,7 +850,7 @@ int CDECL _except_handler2(PEXCEPTION_RECORD rec,
                            PCONTEXT context,
                            EXCEPTION_REGISTRATION_RECORD** dispatcher)
 {
-  FIXME("exception %lx flags=%lx at %p handler=%p %p %p stub\n",
+  FIXME("exception %x flags=%x at %p handler=%p %p %p stub\n",
         rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress,
         frame->Handler, context, dispatcher);
   return ExceptionContinueSearch;
@@ -883,7 +867,7 @@ int CDECL _except_handler3(PEXCEPTION_RECORD rec,
   EXCEPTION_POINTERS exceptPtrs;
   PSCOPETABLE pScopeTable;
 
-  TRACE("exception %lx flags=%lx at %p handler=%p %p %p semi-stub\n",
+  TRACE("exception %x flags=%x at %p handler=%p %p %p semi-stub\n",
         rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress,
         frame->handler, context, dispatcher);
 
@@ -952,7 +936,7 @@ int CDECL _except_handler4_common( ULONG *cookie, void (*check_cookie)(void),
     EXCEPTION_POINTERS exceptPtrs;
     const SCOPETABLE_V4 *scope_table = get_scopetable_v4( frame, *cookie );
 
-    TRACE( "exception %lx flags=%lx at %p handler=%p %p %p cookie=%lx scope table=%p cookies=%d/%lx,%d/%lx\n",
+    TRACE( "exception %x flags=%x at %p handler=%p %p %p cookie=%x scope table=%p cookies=%d/%x,%d/%x\n",
            rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress,
            frame->handler, context, dispatcher, *cookie, scope_table,
            scope_table->gs_cookie_offset, scope_table->gs_cookie_xor,
@@ -1020,7 +1004,7 @@ int CDECL _except_handler4_common( ULONG *cookie, void (*check_cookie)(void),
  */
 
 #define MSVCRT_JMP_MAGIC 0x56433230 /* ID value for new jump structure */
-typedef void (__stdcall *MSVCRT_unwind_function)(const _JUMP_BUFFER *);
+typedef void (__stdcall *MSVCRT_unwind_function)(const struct MSVCRT___JUMP_BUFFER *);
 
 /* define an entrypoint for setjmp/setjmp3 that stores the registers in the jmp buf */
 /* and then jumps to the C backend function */
@@ -1040,7 +1024,7 @@ typedef void (__stdcall *MSVCRT_unwind_function)(const _JUMP_BUFFER *);
  *		_setjmp (MSVCRT.@)
  */
 DEFINE_SETJMP_ENTRYPOINT(MSVCRT__setjmp)
-int CDECL DECLSPEC_HIDDEN __regs_MSVCRT__setjmp(_JUMP_BUFFER *jmp)
+int CDECL DECLSPEC_HIDDEN __regs_MSVCRT__setjmp(struct MSVCRT___JUMP_BUFFER *jmp)
 {
     jmp->Registration = (unsigned long)NtCurrentTeb()->Tib.ExceptionList;
     if (jmp->Registration == ~0UL)
@@ -1057,7 +1041,7 @@ int CDECL DECLSPEC_HIDDEN __regs_MSVCRT__setjmp(_JUMP_BUFFER *jmp)
  *		_setjmp3 (MSVCRT.@)
  */
 DEFINE_SETJMP_ENTRYPOINT( MSVCRT__setjmp3 )
-int WINAPIV DECLSPEC_HIDDEN __regs_MSVCRT__setjmp3(_JUMP_BUFFER *jmp, int nb_args, ...)
+int WINAPIV DECLSPEC_HIDDEN __regs_MSVCRT__setjmp3(struct MSVCRT___JUMP_BUFFER *jmp, int nb_args, ...)
 {
     jmp->Cookie = MSVCRT_JMP_MAGIC;
     jmp->UnwindFunc = 0;
@@ -1088,7 +1072,7 @@ int WINAPIV DECLSPEC_HIDDEN __regs_MSVCRT__setjmp3(_JUMP_BUFFER *jmp, int nb_arg
 /*********************************************************************
  *		longjmp (MSVCRT.@)
  */
-void CDECL MSVCRT_longjmp(_JUMP_BUFFER *jmp, int retval)
+void CDECL MSVCRT_longjmp(struct MSVCRT___JUMP_BUFFER *jmp, int retval)
 {
     unsigned long cur_frame = 0;
 
@@ -1126,7 +1110,7 @@ void CDECL MSVCRT_longjmp(_JUMP_BUFFER *jmp, int retval)
 /*********************************************************************
  *		_seh_longjmp_unwind (MSVCRT.@)
  */
-void __stdcall _seh_longjmp_unwind(_JUMP_BUFFER *jmp)
+void __stdcall _seh_longjmp_unwind(struct MSVCRT___JUMP_BUFFER *jmp)
 {
     msvcrt_local_unwind2( (MSVCRT_EXCEPTION_FRAME *)jmp->Registration, jmp->TryLevel, (void *)jmp->Ebp );
 }
@@ -1134,7 +1118,7 @@ void __stdcall _seh_longjmp_unwind(_JUMP_BUFFER *jmp)
 /*********************************************************************
  *		_seh_longjmp_unwind4 (MSVCRT.@)
  */
-void __stdcall _seh_longjmp_unwind4(_JUMP_BUFFER *jmp)
+void __stdcall _seh_longjmp_unwind4(struct MSVCRT___JUMP_BUFFER *jmp)
 {
     msvcrt_local_unwind4( (ULONG *)&jmp->Cookie, (MSVCRT_EXCEPTION_FRAME *)jmp->Registration,
                           jmp->TryLevel, (void *)jmp->Ebp );
@@ -1143,14 +1127,14 @@ void __stdcall _seh_longjmp_unwind4(_JUMP_BUFFER *jmp)
 /*********************************************************************
  *              _fpieee_flt (MSVCRT.@)
  */
-int __cdecl _fpieee_flt(__msvcrt_ulong exception_code, EXCEPTION_POINTERS *ep,
+int __cdecl _fpieee_flt(ULONG exception_code, EXCEPTION_POINTERS *ep,
         int (__cdecl *handler)(_FPIEEE_RECORD*))
 {
     FLOATING_SAVE_AREA *ctx = &ep->ContextRecord->FloatSave;
     _FPIEEE_RECORD rec;
     int ret;
 
-    TRACE("(%lx %p %p)\n", exception_code, ep, handler);
+    TRACE("(%x %p %p)\n", exception_code, ep, handler);
 
     switch(exception_code) {
     case STATUS_FLOAT_DIVIDE_BY_ZERO:
@@ -1187,7 +1171,7 @@ int __cdecl _fpieee_flt(__msvcrt_ulong exception_code, EXCEPTION_POINTERS *ep,
     rec.Cause.Underflow = rec.Enable.Underflow & rec.Status.Underflow;
     rec.Cause.Inexact = rec.Enable.Inexact & rec.Status.Inexact;
 
-    TRACE("opcode: %lx\n", *(ULONG*)ep->ContextRecord->FloatSave.ErrorOffset);
+    TRACE("opcode: %x\n", *(ULONG*)ep->ContextRecord->FloatSave.ErrorOffset);
 
     if(*(WORD*)ctx->ErrorOffset == 0x35dc) { /* fdiv m64fp */
         if(exception_code==STATUS_FLOAT_DIVIDE_BY_ZERO || exception_code==STATUS_FLOAT_INVALID_OPERATION) {
@@ -1213,7 +1197,7 @@ int __cdecl _fpieee_flt(__msvcrt_ulong exception_code, EXCEPTION_POINTERS *ep,
         return ret;
     }
 
-    FIXME("unsupported opcode: %lx\n", *(ULONG*)ep->ContextRecord->FloatSave.ErrorOffset);
+    FIXME("unsupported opcode: %x\n", *(ULONG*)ep->ContextRecord->FloatSave.ErrorOffset);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 

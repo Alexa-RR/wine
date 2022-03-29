@@ -25,6 +25,7 @@
 #include "mf_private.h"
 
 #include "wine/debug.h"
+#include "wine/heap.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(mfplat);
 
@@ -61,7 +62,7 @@ static ULONG WINAPI sink_writer_AddRef(IMFSinkWriter *iface)
     struct sink_writer *writer = impl_from_IMFSinkWriter(iface);
     ULONG refcount = InterlockedIncrement(&writer->refcount);
 
-    TRACE("%p, %lu.\n", iface, refcount);
+    TRACE("%p, %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -71,11 +72,11 @@ static ULONG WINAPI sink_writer_Release(IMFSinkWriter *iface)
     struct sink_writer *writer = impl_from_IMFSinkWriter(iface);
     ULONG refcount = InterlockedDecrement(&writer->refcount);
 
-    TRACE("%p, %lu.\n", iface, refcount);
+    TRACE("%p, %u.\n", iface, refcount);
 
     if (!refcount)
     {
-        free(writer);
+        heap_free(writer);
     }
 
     return refcount;
@@ -91,7 +92,7 @@ static HRESULT WINAPI sink_writer_AddStream(IMFSinkWriter *iface, IMFMediaType *
 static HRESULT WINAPI sink_writer_SetInputMediaType(IMFSinkWriter *iface, DWORD index, IMFMediaType *type,
         IMFAttributes *parameters)
 {
-    FIXME("%p, %lu, %p, %p.\n", iface, index, type, parameters);
+    FIXME("%p, %u, %p, %p.\n", iface, index, type, parameters);
 
     return E_NOTIMPL;
 }
@@ -105,35 +106,35 @@ static HRESULT WINAPI sink_writer_BeginWriting(IMFSinkWriter *iface)
 
 static HRESULT WINAPI sink_writer_WriteSample(IMFSinkWriter *iface, DWORD index, IMFSample *sample)
 {
-    FIXME("%p, %lu, %p.\n", iface, index, sample);
+    FIXME("%p, %u, %p.\n", iface, index, sample);
 
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sink_writer_SendStreamTick(IMFSinkWriter *iface, DWORD index, LONGLONG timestamp)
 {
-    FIXME("%p, %lu, %s.\n", iface, index, wine_dbgstr_longlong(timestamp));
+    FIXME("%p, %u, %s.\n", iface, index, wine_dbgstr_longlong(timestamp));
 
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sink_writer_PlaceMarker(IMFSinkWriter *iface, DWORD index, void *context)
 {
-    FIXME("%p, %lu, %p.\n", iface, index, context);
+    FIXME("%p, %u, %p.\n", iface, index, context);
 
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sink_writer_NotifyEndOfSegment(IMFSinkWriter *iface, DWORD index)
 {
-    FIXME("%p, %lu.\n", iface, index);
+    FIXME("%p, %u.\n", iface, index);
 
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sink_writer_Flush(IMFSinkWriter *iface, DWORD index)
 {
-    FIXME("%p, %lu.\n", iface, index);
+    FIXME("%p, %u.\n", iface, index);
 
     return E_NOTIMPL;
 }
@@ -148,14 +149,14 @@ static HRESULT WINAPI sink_writer_Finalize(IMFSinkWriter *iface)
 static HRESULT WINAPI sink_writer_GetServiceForStream(IMFSinkWriter *iface, DWORD index, REFGUID service,
         REFIID riid, void **object)
 {
-    FIXME("%p, %lu, %s, %s, %p.\n", iface, index, debugstr_guid(service), debugstr_guid(riid), object);
+    FIXME("%p, %u, %s, %s, %p.\n", iface, index, debugstr_guid(service), debugstr_guid(riid), object);
 
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI sink_writer_GetStatistics(IMFSinkWriter *iface, DWORD index, MF_SINK_WRITER_STATISTICS *stats)
 {
-    FIXME("%p, %lu, %p.\n", iface, index, stats);
+    FIXME("%p, %u, %p.\n", iface, index, stats);
 
     return E_NOTIMPL;
 }
@@ -184,7 +185,7 @@ HRESULT create_sink_writer_from_sink(IMFMediaSink *sink, IMFAttributes *attribut
     struct sink_writer *object;
     HRESULT hr;
 
-    object = malloc(sizeof(*object));
+    object = heap_alloc(sizeof(*object));
     if (!object)
         return E_OUTOFMEMORY;
 
@@ -202,7 +203,7 @@ HRESULT create_sink_writer_from_stream(IMFByteStream *stream, IMFAttributes *att
     struct sink_writer *object;
     HRESULT hr;
 
-    object = malloc(sizeof(*object));
+    object = heap_alloc(sizeof(*object));
     if (!object)
         return E_OUTOFMEMORY;
 

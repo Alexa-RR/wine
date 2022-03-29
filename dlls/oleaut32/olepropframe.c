@@ -93,7 +93,7 @@ static ULONG WINAPI PropertyPageSite_AddRef(IPropertyPageSite* iface)
     PropertyPageSite *this = impl_from_IPropertyPageSite(iface);
     LONG ref = InterlockedIncrement(&this->ref);
 
-    TRACE("%p, refcount %ld.\n", iface, ref);
+    TRACE("(%p) ref=%d\n", this, ref);
     return ref;
 }
 
@@ -102,7 +102,7 @@ static ULONG WINAPI PropertyPageSite_Release(IPropertyPageSite* iface)
     PropertyPageSite *this = impl_from_IPropertyPageSite(iface);
     LONG ref = InterlockedDecrement(&this->ref);
 
-    TRACE("%p, refcount %ld.\n", iface, ref);
+    TRACE("(%p) ref=%d\n", this, ref);
     if(!ref)
         HeapFree(GetProcessHeap(), 0, this);
     return ref;
@@ -111,7 +111,7 @@ static ULONG WINAPI PropertyPageSite_Release(IPropertyPageSite* iface)
 static HRESULT WINAPI PropertyPageSite_OnStatusChange(
         IPropertyPageSite *iface, DWORD dwFlags)
 {
-    TRACE("%p, %lx.\n", iface, dwFlags);
+    TRACE("(%p, %x)\n", iface, dwFlags);
     return S_OK;
 }
 
@@ -154,6 +154,8 @@ static IPropertyPageSiteVtbl PropertyPageSiteVtbl = {
  */
 HRESULT WINAPI OleCreatePropertyFrameIndirect(LPOCPFIPARAMS lpParams)
 {
+    static const WCHAR comctlW[] = { 'c','o','m','c','t','l','3','2','.','d','l','l',0 };
+
     PROPSHEETHEADERW property_sheet;
     PROPSHEETPAGEW property_sheet_page;
     struct {
@@ -178,7 +180,7 @@ HRESULT WINAPI OleCreatePropertyFrameIndirect(LPOCPFIPARAMS lpParams)
     if(!lpParams)
         return E_POINTER;
 
-    TRACE("%ld, %p, %d, %d, %s, %ld, %p, %ld, %p, %ld, %ld.\n", lpParams->cbStructSize,
+    TRACE("(%d %p %d %d %s %d %p %d %p %d %d)\n", lpParams->cbStructSize,
             lpParams->hWndOwner, lpParams->x, lpParams->y,
             debugstr_w(lpParams->lpszCaption), lpParams->cObjects,
             lpParams->lplpUnk, lpParams->cPages, lpParams->lpPages,
@@ -196,7 +198,7 @@ HRESULT WINAPI OleCreatePropertyFrameIndirect(LPOCPFIPARAMS lpParams)
         FIXME("dispidInitialProperty not yet implemented\n");
 
     hdc = GetDC(NULL);
-    hcomctl = LoadLibraryW(L"comctl32.dll");
+    hcomctl = LoadLibraryW(comctlW);
     if(hcomctl)
         property_sheet_dialog_find = FindResourceW(hcomctl,
                 MAKEINTRESOURCEW(1006 /*IDD_PROPSHEET*/), (LPWSTR)RT_DIALOG);
@@ -286,7 +288,7 @@ HRESULT WINAPI OleCreatePropertyFrameIndirect(LPOCPFIPARAMS lpParams)
         res = IPropertyPage_SetObjects(property_page[i],
                 lpParams->cObjects, lpParams->lplpUnk);
         if(FAILED(res))
-            WARN("SetObjects() failed, hr %#lx.\n", res);
+            WARN("SetObjects() failed, hr %#x.\n", res);
 
         res = IPropertyPage_GetPageInfo(property_page[i], &page_info);
         if(FAILED(res))

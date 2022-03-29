@@ -571,9 +571,6 @@ END
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 
-/* @makedep: taskmgr.manifest */
-1 RT_MANIFEST taskmgr.manifest
-
 /*
  Icon
 */

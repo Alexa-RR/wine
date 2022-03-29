@@ -34,6 +34,35 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(propsys);
 
+static HINSTANCE propsys_hInstance;
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("(0x%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
+
+    switch (fdwReason)
+    {
+        case DLL_WINE_PREATTACH:
+            return FALSE;    /* prefer native version */
+        case DLL_PROCESS_ATTACH:
+            propsys_hInstance = hinstDLL;
+            DisableThreadLibraryCalls(hinstDLL);
+            break;
+    }
+
+    return TRUE;
+}
+
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( propsys_hInstance );
+}
+
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( propsys_hInstance );
+}
+
 static HRESULT WINAPI ClassFactory_QueryInterface(IClassFactory *iface, REFIID riid, void **ppv)
 {
     *ppv = NULL;
@@ -103,6 +132,11 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     return CLASS_E_CLASSNOTAVAILABLE;
 }
 
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
+}
+
 static HRESULT WINAPI propsys_QueryInterface(IPropertySystem *iface, REFIID riid, void **obj)
 {
     *obj = NULL;
@@ -157,7 +191,7 @@ static HRESULT WINAPI propsys_FormatForDisplay(IPropertySystem *iface,
     REFPROPERTYKEY key, REFPROPVARIANT propvar, PROPDESC_FORMAT_FLAGS flags,
     LPWSTR dest, DWORD destlen)
 {
-    FIXME("%p %p %x %p %ld: stub\n", key, propvar, flags, dest, destlen);
+    FIXME("%p %p %x %p %d: stub\n", key, propvar, flags, dest, destlen);
     return E_NOTIMPL;
 }
 
@@ -246,6 +280,12 @@ HRESULT WINAPI PSRefreshPropertySchema(void)
 
 HRESULT WINAPI PSStringFromPropertyKey(REFPROPERTYKEY pkey, LPWSTR psz, UINT cch)
 {
+    static const WCHAR guid_fmtW[] = {'{','%','0','8','X','-','%','0','4','X','-',
+                                      '%','0','4','X','-','%','0','2','X','%','0','2','X','-',
+                                      '%','0','2','X','%','0','2','X','%','0','2','X',
+                                      '%','0','2','X','%','0','2','X','%','0','2','X','}',0};
+    static const WCHAR pid_fmtW[] = {'%','u',0};
+
     WCHAR pidW[PKEY_PIDSTR_MAX + 1];
     LPWSTR p = psz;
     int len;
@@ -265,8 +305,8 @@ HRESULT WINAPI PSStringFromPropertyKey(REFPROPERTYKEY pkey, LPWSTR psz, UINT cch
         return E_NOT_SUFFICIENT_BUFFER;
     }
 
-    swprintf(psz, cch, L"{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", pkey->fmtid.Data1,
-             pkey->fmtid.Data2, pkey->fmtid.Data3, pkey->fmtid.Data4[0], pkey->fmtid.Data4[1],
+    swprintf(psz, cch, guid_fmtW, pkey->fmtid.Data1, pkey->fmtid.Data2,
+             pkey->fmtid.Data3, pkey->fmtid.Data4[0], pkey->fmtid.Data4[1],
              pkey->fmtid.Data4[2], pkey->fmtid.Data4[3], pkey->fmtid.Data4[4],
              pkey->fmtid.Data4[5], pkey->fmtid.Data4[6], pkey->fmtid.Data4[7]);
 
@@ -275,7 +315,7 @@ HRESULT WINAPI PSStringFromPropertyKey(REFPROPERTYKEY pkey, LPWSTR psz, UINT cch
     *p++ = ' ';
     cch -= GUIDSTRING_MAX - 1 + 1;
 
-    len = swprintf(pidW, ARRAY_SIZE(pidW), L"%u", pkey->pid);
+    len = swprintf(pidW, ARRAY_SIZE(pidW), pid_fmtW, pkey->pid);
 
     if (cch >= len + 1)
     {

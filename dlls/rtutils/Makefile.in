@@ -1,7 +1,8 @@
 MODULE    = rtutils.dll
 IMPORTLIB = rtutils
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
+	main.c \
 	tracing.c

@@ -21,18 +21,22 @@
 
 #define COBJMACROS
 
+#include "config.h"
+
 #include <assert.h>
 #include <stdarg.h>
-#include <libxml/xmlerror.h>
-#include <libxml/tree.h>
-#include <libxml/xmlschemas.h>
-#include <libxml/schemasInternals.h>
-#include <libxml/hash.h>
-#include <libxml/parser.h>
-#include <libxml/parserInternals.h>
-#include <libxml/xmlIO.h>
-#include <libxml/xmlversion.h>
-#include <libxml/xpath.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/xmlerror.h>
+# include <libxml/tree.h>
+# include <libxml/xmlschemas.h>
+# include <libxml/schemasInternals.h>
+# include <libxml/hash.h>
+# include <libxml/parser.h>
+# include <libxml/parserInternals.h>
+# include <libxml/xmlIO.h>
+# include <libxml/xmlversion.h>
+# include <libxml/xpath.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -44,7 +48,15 @@
 
 #include "msxml_private.h"
 
+#ifdef HAVE_LIBXML2
+
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
+
+#if LIBXML_VERSION >= 20908
+#define XMLHASH_CONST const
+#else
+#define XMLHASH_CONST
+#endif
 
 /* We use a chained hashtable, which can hold any number of schemas
  * TODO: grow/shrink hashtable depending on load factor
@@ -243,17 +255,22 @@ static void LIBXML2_LOG_CALLBACK parser_warning(void* ctx, char const* msg, ...)
     va_end(ap);
 }
 
+#ifdef HAVE_XMLSCHEMASSETPARSERSTRUCTUREDERRORS
 static void parser_serror(void* ctx, xmlErrorPtr err)
 {
     LIBXML2_CALLBACK_SERROR(Schema_parse, err);
 }
+#endif
 
 static inline xmlSchemaPtr Schema_parse(xmlSchemaParserCtxtPtr spctx)
 {
     TRACE("(%p)\n", spctx);
 
     xmlSchemaSetParserErrors(spctx, parser_error, parser_warning, NULL);
+#ifdef HAVE_XMLSCHEMASSETPARSERSTRUCTUREDERRORS
     xmlSchemaSetParserStructuredErrors(spctx, parser_serror, NULL);
+#endif
+
     return xmlSchemaParse(spctx);
 }
 
@@ -273,10 +290,12 @@ static void LIBXML2_LOG_CALLBACK validate_warning(void* ctx, char const* msg, ..
     va_end(ap);
 }
 
+#ifdef HAVE_XMLSCHEMASSETVALIDSTRUCTUREDERRORS
 static void validate_serror(void* ctx, xmlErrorPtr err)
 {
     LIBXML2_CALLBACK_SERROR(Schema_validate_tree, err);
 }
+#endif
 
 static HRESULT schema_cache_get_item(IUnknown *iface, LONG index, VARIANT *item)
 {
@@ -299,7 +318,9 @@ static inline HRESULT Schema_validate_tree(xmlSchemaPtr schema, xmlNodePtr tree)
      *       we probably need to validate the schema here. */
     svctx = xmlSchemaNewValidCtxt(schema);
     xmlSchemaSetValidErrors(svctx, validate_error, validate_warning, NULL);
+#ifdef HAVE_XMLSCHEMASSETVALIDSTRUCTUREDERRORS
     xmlSchemaSetValidStructuredErrors(svctx, validate_serror, NULL);
+#endif
 
     if (tree->type == XML_DOCUMENT_NODE)
         err = xmlSchemaValidateDoc(svctx, (xmlDocPtr)tree);
@@ -755,14 +776,14 @@ void schemasCleanup(void)
 static LONG cache_entry_add_ref(cache_entry* entry)
 {
     LONG ref = InterlockedIncrement(&entry->ref);
-    TRACE("%p, refcount %ld.\n", entry, ref);
+    TRACE("(%p)->(%d)\n", entry, ref);
     return ref;
 }
 
 static LONG cache_entry_release(cache_entry* entry)
 {
     LONG ref = InterlockedDecrement(&entry->ref);
-    TRACE("%p, refcount %ld.\n", entry, ref);
+    TRACE("(%p)->(%d)\n", entry, ref);
 
     if (ref == 0)
     {
@@ -921,7 +942,7 @@ static cache_entry* cache_entry_from_url(VARIANT url, xmlChar const* nsURI, MSXM
     cache_entry* entry;
     IXMLDOMDocument3* domdoc = NULL;
     xmlDocPtr doc = NULL;
-    HRESULT hr = dom_document_create(version, (void **)&domdoc);
+    HRESULT hr = DOMDocument_create(version, (void**)&domdoc);
     VARIANT_BOOL b = VARIANT_FALSE;
     CacheEntryType type = CacheEntryType_Invalid;
 
@@ -936,7 +957,7 @@ static cache_entry* cache_entry_from_url(VARIANT url, xmlChar const* nsURI, MSXM
     hr = IXMLDOMDocument3_load(domdoc, url, &b);
     if (hr != S_OK)
     {
-        ERR("load() returned %#lx.\n", hr);
+        ERR("IXMLDOMDocument3_load() returned 0x%08x\n", hr);
         if (b != VARIANT_TRUE)
         {
             FIXME("Failed to load doc at %s\n", debugstr_w(V_BSTR(&url)));
@@ -965,7 +986,7 @@ static cache_entry* cache_entry_from_url(VARIANT url, xmlChar const* nsURI, MSXM
     return entry;
 }
 
-static void cache_free(void* data, const xmlChar* name /* ignored */)
+static void cache_free(void* data, XMLHASH_CONST xmlChar* name /* ignored */)
 {
     cache_entry_release((cache_entry*)data);
 }
@@ -1126,7 +1147,7 @@ static ULONG WINAPI schema_cache_AddRef(IXMLDOMSchemaCollection2* iface)
 {
     schema_cache* This = impl_from_IXMLDOMSchemaCollection2(iface);
     LONG ref = InterlockedIncrement(&This->ref);
-    TRACE("%p, refcount %ld.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -1134,9 +1155,9 @@ static ULONG WINAPI schema_cache_Release(IXMLDOMSchemaCollection2* iface)
 {
     schema_cache* This = impl_from_IXMLDOMSchemaCollection2(iface);
     LONG ref = InterlockedDecrement(&This->ref);
-    TRACE("%p, refcount %ld.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
 
-    if (!ref)
+    if (ref == 0)
     {
         int i;
 
@@ -1245,7 +1266,7 @@ static HRESULT WINAPI schema_cache_add(IXMLDOMSchemaCollection2* iface, BSTR uri
                         BSTR xml;
 
                         IXMLDOMNode_get_xml(domnode, &xml);
-                        dom_document_create(This->version, (void **)&domdoc);
+                        DOMDocument_create(This->version, (void**)&domdoc);
                         IXMLDOMDocument_loadXML(domdoc, xml, &b);
                         SysFreeString(xml);
                         doc = xmlNodePtr_from_domnode((IXMLDOMNode*)domdoc, XML_DOCUMENT_NODE)->doc;
@@ -1367,7 +1388,7 @@ static HRESULT WINAPI schema_cache_get_namespaceURI(IXMLDOMSchemaCollection2* if
 {
     schema_cache* This = impl_from_IXMLDOMSchemaCollection2(iface);
 
-    TRACE("%p, %ld, %p.\n", iface, index, uri);
+    TRACE("(%p)->(%i %p)\n", This, index, uri);
 
     if (!uri)
         return E_POINTER;
@@ -1382,7 +1403,7 @@ static HRESULT WINAPI schema_cache_get_namespaceURI(IXMLDOMSchemaCollection2* if
     return S_OK;
 }
 
-static void cache_copy(void* data, void* dest, const xmlChar* name)
+static void cache_copy(void* data, void* dest, XMLHASH_CONST xmlChar* name)
 {
     schema_cache* This = (schema_cache*) dest;
     cache_entry* entry = (cache_entry*) data;
@@ -1620,3 +1641,14 @@ HRESULT SchemaCache_create(MSXML_VERSION version, void** obj)
     *obj = &This->IXMLDOMSchemaCollection2_iface;
     return S_OK;
 }
+
+#else
+
+HRESULT SchemaCache_create(MSXML_VERSION version, void** obj)
+{
+    MESSAGE("This program tried to use a SchemaCache object, but\n"
+            "libxml2 support was not present at compile time.\n");
+    return E_NOTIMPL;
+}
+
+#endif

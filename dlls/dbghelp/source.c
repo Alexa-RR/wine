@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  *
  */
+#include "config.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -78,7 +79,7 @@ unsigned source_new(struct module* module, const char* base, const char* name)
         if (!tmp) return ret;
         full = tmp;
         strcpy(tmp, base);
-        if (bsz && tmp[bsz - 1] != '/') tmp[bsz++] = '/';
+        if (tmp[bsz - 1] != '/') tmp[bsz++] = '/';
         strcpy(&tmp[bsz], name);
     }
     rb_module = module;
@@ -293,7 +294,7 @@ BOOL WINAPI SymEnumSourceLines(HANDLE hProcess, ULONG64 base, PCSTR obj,
                                PSYM_ENUMLINES_CALLBACK EnumLinesCallback,
                                PVOID UserContext)
 {
-    FIXME("%p %s %s %s %lu %lu %p %p: stub!\n",
+    FIXME("%p %s %s %s %u %u %p %p: stub!\n",
           hProcess, wine_dbgstr_longlong(base), debugstr_a(obj), debugstr_a(file),
           line, flags, EnumLinesCallback, UserContext);
     SetLastError(ERROR_NOT_SUPPORTED);
@@ -309,7 +310,7 @@ BOOL WINAPI SymEnumSourceLinesW(HANDLE hProcess, ULONG64 base, PCWSTR obj,
                                 PSYM_ENUMLINES_CALLBACKW EnumLinesCallback,
                                 PVOID UserContext)
 {
-    FIXME("%p %s %s %s %lu %lu %p %p: stub!\n",
+    FIXME("%p %s %s %s %u %u %p %p: stub!\n",
           hProcess, wine_dbgstr_longlong(base), debugstr_w(obj), debugstr_w(file),
           line, flags, EnumLinesCallback, UserContext);
     SetLastError(ERROR_NOT_SUPPORTED);

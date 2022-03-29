@@ -1,6 +1,6 @@
 @ stub AddConnectionOptionListEntries
 @ stub CreateVPNConnection
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
 @ stub GetInternetConnected
 @ stub GetNetworkConnected

@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +47,7 @@ struct mo_file
     /* ... rest of file data here */
 };
 
-static struct lan_blk *new_top, *new_tail;
+static lan_blk_t *new_top, *new_tail;
 
 static const struct
 {
@@ -365,7 +366,7 @@ static BOOL is_english( int lan )
     return lan == MAKELANGID( LANG_ENGLISH, SUBLANG_DEFAULT );
 }
 
-static char *convert_msgid_ascii( const struct lanmsg *msg, int error_on_invalid_char )
+static char *convert_msgid_ascii( const lanmsg_t *msg, int error_on_invalid_char )
 {
     int i;
     char *buffer = xmalloc( msg->len * 4 + 1 );
@@ -445,7 +446,7 @@ static void po_xerror2( int severity, po_message_t message1,
 
 static const struct po_xerror_handler po_xerror_handler = { po_xerror, po_xerror2 };
 
-static void add_po_string( po_file_t po, const struct lanmsg *msgid, const struct lanmsg *msgstr )
+static void add_po_string( po_file_t po, const lanmsg_t *msgid, const lanmsg_t *msgstr )
 {
     po_message_t msg;
     po_message_iterator_t iterator;
@@ -504,7 +505,7 @@ static po_file_t create_po_file(void)
 void write_pot_file( const char *outname )
 {
     int i, j;
-    struct lan_blk *lbp;
+    lan_blk_t *lbp;
     po_file_t po = create_po_file();
 
     for (lbp = lanblockhead; lbp; lbp = lbp->next)
@@ -512,7 +513,7 @@ void write_pot_file( const char *outname )
         if (!is_english( lbp->lan )) continue;
         for (i = 0; i < lbp->nblk; i++)
         {
-            struct block *blk = &lbp->blks[i];
+            block_t *blk = &lbp->blks[i];
             for (j = 0; j < blk->nmsg; j++) add_po_string( po, blk->msgs[j], NULL );
         }
     }
@@ -542,13 +543,21 @@ static void byteswap( unsigned int *data, unsigned int count )
 
 static void load_mo_file( const char *name )
 {
-    size_t size;
+    struct stat st;
+    int res, fd;
 
-    if (!(mo_file = read_file( name, &size ))) fatal_perror( "Failed to read %s", name );
+    fd = open( name, O_RDONLY | O_BINARY );
+    if (fd == -1) fatal_perror( "Failed to open %s", name );
+    fstat( fd, &st );
+    mo_file = xmalloc( st.st_size );
+    res = read( fd, mo_file, st.st_size );
+    if (res == -1) fatal_perror( "Failed to read %s", name );
+    else if (res != st.st_size) error( "Failed to read %s\n", name );
+    close( fd );
 
     /* sanity checks */
 
-    if (size < sizeof(*mo_file))
+    if (st.st_size < sizeof(*mo_file))
         error( "%s is not a valid .mo file\n", name );
     if (mo_file->magic == 0xde120495)
         byteswap( &mo_file->revision, 4 );
@@ -556,9 +565,9 @@ static void load_mo_file( const char *name )
         error( "%s is not a valid .mo file\n", name );
     if ((mo_file->revision >> 16) > 1)
         error( "%s: unsupported file version %x\n", name, mo_file->revision );
-    if (mo_file->msgid_off >= size ||
-        mo_file->msgstr_off >= size ||
-        size < sizeof(*mo_file) + 2 * 8 * mo_file->count)
+    if (mo_file->msgid_off >= st.st_size ||
+        mo_file->msgstr_off >= st.st_size ||
+        st.st_size < sizeof(*mo_file) + 2 * 8 * mo_file->count)
         error( "%s: corrupted file\n", name );
 
     if (mo_file->magic == 0xde120495)
@@ -624,9 +633,9 @@ static const char *get_msgstr( const char *msgid, const char *context, int *foun
     return ret;
 }
 
-static struct lanmsg *translate_string( struct lanmsg *str, int lang, int *found )
+static lanmsg_t *translate_string( lanmsg_t *str, int lang, int *found )
 {
-    struct lanmsg *new;
+    lanmsg_t *new;
     const char *transl;
     char *buffer, *msgid, *context;
 
@@ -646,7 +655,7 @@ static struct lanmsg *translate_string( struct lanmsg *str, int lang, int *found
     return new;
 }
 
-static void translate_block( struct block *blk, struct block *new, int lang, int *found )
+static void translate_block( block_t *blk, block_t *new, int lang, int *found )
 {
     int i;
 
@@ -665,7 +674,7 @@ static void translate_block( struct block *blk, struct block *new, int lang, int
 static void translate_messages( int lang )
 {
     int i, found;
-    struct lan_blk *lbp, *new;
+    lan_blk_t *lbp, *new;
 
     for (lbp = lanblockhead; lbp; lbp = lbp->next)
     {
@@ -697,7 +706,7 @@ static void translate_messages( int lang )
 
 void add_translations( const char *po_dir )
 {
-    struct lan_blk *lbp;
+    lan_blk_t *lbp;
     char buffer[256];
     char *p, *tok, *name;
     unsigned int i;

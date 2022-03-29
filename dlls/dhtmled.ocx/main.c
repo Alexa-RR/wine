@@ -20,14 +20,10 @@
 
 #define COBJMACROS
 
-#include "oaidl.h"
-#include "ocidl.h"
-#include "docobj.h"
-#include "mshtml.h"
-#include "rpcproxy.h"
 #include "initguid.h"
 #include "dhtmled.h"
 #include "dhtmled_private.h"
+#include "rpcproxy.h"
 
 #include "wine/debug.h"
 
@@ -96,21 +92,20 @@ static const IClassFactoryVtbl ClassFactoryVtbl = {
     ClassFactory_LockServer
 };
 
+static HINSTANCE dhtmled_instance;
+
 /******************************************************************
  *          DllMain (dhtmled.ocx.@)
  */
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, VOID *reserved)
 {
-    TRACE("(%p, %lu, %p)\n", instance, reason, reserved);
+    TRACE("(%p, %u, %p)\n", instance, reason, reserved);
 
     switch (reason)
     {
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(instance);
-            break;
-        case DLL_PROCESS_DETACH:
-            if (reserved) break;
-            release_typelib();
+            dhtmled_instance = instance;
             break;
     }
 
@@ -131,4 +126,31 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, LPVOID *out)
 
     FIXME("no class for %s\n", debugstr_guid(clsid));
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *          DllCanUnloadNow (dhtmled.ocx.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    TRACE("()\n");
+    return S_FALSE;
+}
+
+/***********************************************************************
+ *          DllRegisterServer (dhtmled.ocx.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    TRACE("()\n");
+    return __wine_register_resources(dhtmled_instance);
+}
+
+/***********************************************************************
+ *          DllUnregisterServer (dhtmled.ocx.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    TRACE("()\n");
+    return __wine_unregister_resources(dhtmled_instance);
 }

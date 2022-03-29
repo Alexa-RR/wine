@@ -552,7 +552,7 @@ BOOL16 WINAPI NotifyRegister16( HTASK16 htask, FARPROC16 lpfnCallback,
 {
     int	i;
 
-    FIXME("(%x,%lx,%x), semi-stub.\n",
+    FIXME("(%x,%x,%x), semi-stub.\n",
                       htask, (DWORD)lpfnCallback, wFlags );
     if (!htask) htask = GetCurrentTask();
     for (i=0;i<nrofnotifys;i++)
@@ -718,20 +718,15 @@ BOOL16 WINAPI TimerCount16( TIMERINFO *pTimerInfo )
  */
 BOOL16 WINAPI SystemHeapInfo16( SYSHEAPINFO *pHeapInfo )
 {
-<<<<<<< HEAD
     STACK16FRAME* stack16 = MapSL((SEGPTR)NtCurrentTeb()->SystemReserved1[0]);
     HANDLE16 oldDS = stack16->ds;
-=======
-    HANDLE16 oldDS = CURRENT_DS;
->>>>>>> master
     WORD user = LoadLibrary16( "USER.EXE" );
     WORD gdi = LoadLibrary16( "GDI.EXE" );
-
-    CURRENT_DS = user;
+    stack16->ds = user;
     pHeapInfo->wUserFreePercent = (int)LocalCountFree16() * 100 / LocalHeapSize16();
-    CURRENT_DS = gdi;
+    stack16->ds = gdi;
     pHeapInfo->wGDIFreePercent  = (int)LocalCountFree16() * 100 / LocalHeapSize16();
-    CURRENT_DS = oldDS;
+    stack16->ds = oldDS;
     pHeapInfo->hUserSegment = user;
     pHeapInfo->hGDISegment  = gdi;
     FreeLibrary16( user );

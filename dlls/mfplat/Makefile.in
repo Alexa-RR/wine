@@ -1,13 +1,11 @@
 MODULE    = mfplat.dll
 IMPORTLIB = mfplat
-IMPORTS   = advapi32 ole32 mfuuid propsys rtworkq kernelbase
-DELAYIMPORTS = bcrypt
+IMPORTS   = advapi32 ole32 mfuuid propsys rtworkq
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	buffer.c \
 	main.c \
 	mediatype.c \
-	queue.c \
-	sample.c
+	queue.c

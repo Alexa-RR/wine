@@ -142,7 +142,7 @@ typedef struct
     SIZE dim;           /* [cx,cy] - dimensions of calendars matrix, row/column count */
 } MONTHCAL_INFO, *LPMONTHCAL_INFO;
 
-static const WCHAR themeClass[] = L"Scrollbar";
+static const WCHAR themeClass[] = { 'S','c','r','o','l','l','b','a','r',0 };
 
 /* empty SYSTEMTIME const */
 static const SYSTEMTIME st_null;
@@ -671,7 +671,7 @@ MONTHCAL_GetMonthRange(const MONTHCAL_INFO *infoPtr, DWORD flag, SYSTEMTIME *st)
 {
   INT range;
 
-  TRACE("flags %#lx, st %p\n", flag, st);
+  TRACE("flag=%d, st=%p\n", flag, st);
 
   switch (flag) {
   case GMR_VISIBLE:
@@ -709,7 +709,7 @@ MONTHCAL_GetMonthRange(const MONTHCAL_INFO *infoPtr, DWORD flag, SYSTEMTIME *st)
       break;
   }
   default:
-      WARN("Unknown flag value, got %ld\n", flag);
+      WARN("Unknown flag value, got %d\n", flag);
       range = 0;
   }
 
@@ -782,6 +782,7 @@ static void MONTHCAL_CircleDay(const MONTHCAL_INFO *infoPtr, HDC hdc,
 static void MONTHCAL_DrawDay(const MONTHCAL_INFO *infoPtr, HDC hdc, const SYSTEMTIME *st,
                              int bold, const PAINTSTRUCT *ps)
 {
+  static const WCHAR fmtW[] = { '%','d',0 };
   WCHAR buf[10];
   RECT r, r_temp;
   COLORREF oldCol = 0;
@@ -810,7 +811,7 @@ static void MONTHCAL_DrawDay(const MONTHCAL_INFO *infoPtr, HDC hdc, const SYSTEM
   SelectObject(hdc, bold ? infoPtr->hBoldFont : infoPtr->hFont);
 
   old_bkmode = SetBkMode(hdc, TRANSPARENT);
-  wsprintfW(buf, L"%d", st->wDay);
+  wsprintfW(buf, fmtW, st->wDay);
   DrawTextW(hdc, buf, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE );
   SetBkMode(hdc, old_bkmode);
 
@@ -861,6 +862,12 @@ static void MONTHCAL_PaintButton(MONTHCAL_INFO *infoPtr, HDC hdc, enum nav_direc
 /* paint a title with buttons and month/year string */
 static void MONTHCAL_PaintTitle(MONTHCAL_INFO *infoPtr, HDC hdc, const PAINTSTRUCT *ps, INT calIdx)
 {
+  static const WCHAR mmmmW[] = {'M','M','M','M',0};
+  static const WCHAR mmmW[] = {'M','M','M',0};
+  static const WCHAR mmW[] = {'M','M',0};
+  static const WCHAR fmtyearW[] = {'%','l','d',0};
+  static const WCHAR fmtmmW[] = {'%','0','2','d',0};
+  static const WCHAR fmtmW[] = {'%','d',0};
   RECT *title = &infoPtr->calendars[calIdx].title;
   const SYSTEMTIME *st = &infoPtr->calendars[calIdx].month;
   WCHAR monthW[80], strW[80], fmtW[80], yearW[6] /* valid year range is 1601-30827 */;
@@ -880,18 +887,18 @@ static void MONTHCAL_PaintTitle(MONTHCAL_INFO *infoPtr, HDC hdc, const PAINTSTRU
   DrawTextW(hdc, strW, lstrlenW(strW), title, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
   GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SYEARMONTH, fmtW, ARRAY_SIZE(fmtW));
-  wsprintfW(yearW, L"%ld", st->wYear);
+  wsprintfW(yearW, fmtyearW, st->wYear);
 
   /* month is trickier as it's possible to have different format pictures, we'll
      test for M, MM, MMM, and MMMM */
-  if (wcsstr(fmtW, L"MMMM"))
+  if (wcsstr(fmtW, mmmmW))
     GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SMONTHNAME1+st->wMonth-1, monthW, ARRAY_SIZE(monthW));
-  else if (wcsstr(fmtW, L"MMM"))
+  else if (wcsstr(fmtW, mmmW))
     GetLocaleInfoW(LOCALE_USER_DEFAULT, LOCALE_SABBREVMONTHNAME1+st->wMonth-1, monthW, ARRAY_SIZE(monthW));
-  else if (wcsstr(fmtW, L"MM"))
-    wsprintfW(monthW, L"%02d", st->wMonth);
+  else if (wcsstr(fmtW, mmW))
+    wsprintfW(monthW, fmtmmW, st->wMonth);
   else
-    wsprintfW(monthW, L"%d", st->wMonth);
+    wsprintfW(monthW, fmtmW, st->wMonth);
 
   /* update hit boxes */
   yearoffset = 0;
@@ -939,6 +946,7 @@ static void MONTHCAL_PaintTitle(MONTHCAL_INFO *infoPtr, HDC hdc, const PAINTSTRU
 static void MONTHCAL_PaintWeeknumbers(const MONTHCAL_INFO *infoPtr, HDC hdc, const PAINTSTRUCT *ps, INT calIdx)
 {
   const SYSTEMTIME *date = &infoPtr->calendars[calIdx].month;
+  static const WCHAR fmt_weekW[] = { '%','d',0 };
   INT mindays, weeknum, weeknum1, startofprescal;
   INT i, prev_month;
   SYSTEMTIME st;
@@ -1024,15 +1032,15 @@ static void MONTHCAL_PaintWeeknumbers(const MONTHCAL_INFO *infoPtr, HDC hdc, con
   for(i = 0; i < 6; i++) {
     if((i == 0) && (weeknum > 50))
     {
-        wsprintfW(buf, L"%d", weeknum);
+        wsprintfW(buf, fmt_weekW, weeknum);
         weeknum = 0;
     }
     else if((i == 5) && (weeknum > 47))
     {
-        wsprintfW(buf, L"%d", 1);
+	wsprintfW(buf, fmt_weekW, 1);
     }
     else
-        wsprintfW(buf, L"%d", weeknum + i);
+	wsprintfW(buf, fmt_weekW, weeknum + i);
 
     DrawTextW(hdc, buf, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     OffsetRect(&r, 0, infoPtr->height_increment);
@@ -1048,6 +1056,7 @@ static void MONTHCAL_PaintWeeknumbers(const MONTHCAL_INFO *infoPtr, HDC hdc, con
 /* bottom today date */
 static void MONTHCAL_PaintTodayTitle(const MONTHCAL_INFO *infoPtr, HDC hdc, const PAINTSTRUCT *ps)
 {
+  static const WCHAR fmt_todayW[] = { '%','s',' ','%','s',0 };
   WCHAR buf_todayW[30], buf_dateW[20], buf[80];
   RECT text_rect, box_rect;
   HFONT old_font;
@@ -1066,7 +1075,7 @@ static void MONTHCAL_PaintTodayTitle(const MONTHCAL_INFO *infoPtr, HDC hdc, cons
   old_font = SelectObject(hdc, infoPtr->hBoldFont);
   SetTextColor(hdc, infoPtr->colors[MCSC_TEXT]);
 
-  wsprintfW(buf, L"%s %s", buf_todayW, buf_dateW);
+  wsprintfW(buf, fmt_todayW, buf_todayW, buf_dateW);
   DrawTextW(hdc, buf, -1, &text_rect, DT_CALCRECT | DT_LEFT | DT_VCENTER | DT_SINGLELINE);
   DrawTextW(hdc, buf, -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
@@ -1296,7 +1305,7 @@ MONTHCAL_SetColor(MONTHCAL_INFO *infoPtr, UINT index, COLORREF color)
   enum CachedBrush type;
   COLORREF prev;
 
-  TRACE("%p, %d: color %#lx\n", infoPtr, index, color);
+  TRACE("%p, %d: color %08x\n", infoPtr, index, color);
 
   if (index > MCSC_TRAILINGTEXT) return -1;
 
@@ -1799,7 +1808,6 @@ MONTHCAL_HitTest(const MONTHCAL_INFO *infoPtr, MCHITTESTINFO *lpht)
   if(!lpht || lpht->cbSize < MCHITTESTINFO_V1_SIZE) return -1;
 
   htinfo.st = st_null;
-  htinfo.uHit = 0;
 
   /* we should preserve passed fields if hit area doesn't need them */
   if (lpht->cbSize == sizeof(MCHITTESTINFO))
@@ -2071,7 +2079,8 @@ static LRESULT CALLBACK EditWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM 
 {
     MONTHCAL_INFO *infoPtr = (MONTHCAL_INFO *)GetWindowLongPtrW(GetParent(hwnd), 0);
 
-    TRACE("hwnd %p, uMsg %x, wParam %Ix, lParam %Ix\n", hwnd, uMsg, wParam, lParam);
+    TRACE("(hwnd=%p, uMsg=%x, wParam=%lx, lParam=%lx)\n",
+	  hwnd, uMsg, wParam, lParam);
 
     switch (uMsg)
     {
@@ -2159,7 +2168,7 @@ MONTHCAL_LButtonDown(MONTHCAL_INFO *infoPtr, LPARAM lParam)
 
   hit = MONTHCAL_HitTest(infoPtr, &ht);
 
-  TRACE("%lx at %s\n", hit, wine_dbgstr_point(&ht.pt));
+  TRACE("%x at %s\n", hit, wine_dbgstr_point(&ht.pt));
 
   switch(hit)
   {
@@ -2319,7 +2328,7 @@ MONTHCAL_LButtonUp(MONTHCAL_INFO *infoPtr, LPARAM lParam)
 static LRESULT
 MONTHCAL_Timer(MONTHCAL_INFO *infoPtr, WPARAM id)
 {
-  TRACE("%Id\n", id);
+  TRACE("%ld\n", id);
 
   switch(id) {
   case MC_PREVNEXTMONTHTIMER:
@@ -2342,7 +2351,7 @@ MONTHCAL_Timer(MONTHCAL_INFO *infoPtr, WPARAM id)
     return 0;
   }
   default:
-    ERR("got unknown timer %Id\n", id);
+    ERR("got unknown timer %ld\n", id);
     break;
   }
 
@@ -2448,7 +2457,7 @@ MONTHCAL_EraseBkgnd(const MONTHCAL_INFO *infoPtr, HDC hdc)
 static LRESULT
 MONTHCAL_PrintClient(MONTHCAL_INFO *infoPtr, HDC hdc, DWORD options)
 {
-  FIXME("Partial Stub: (hdc %p options %#lx)\n", hdc, options);
+  FIXME("Partial Stub: (hdc=%p options=0x%08x)\n", hdc, options);
 
   if ((options & PRF_CHECKVISIBLE) && !IsWindowVisible(infoPtr->hwndSelf))
       return 0;
@@ -2475,6 +2484,7 @@ MONTHCAL_SetFocus(const MONTHCAL_INFO *infoPtr)
 /* sets the size information */
 static void MONTHCAL_UpdateSize(MONTHCAL_INFO *infoPtr)
 {
+  static const WCHAR O0W[] = { '0','0',0 };
   RECT *title=&infoPtr->calendars[0].title;
   RECT *prev=&infoPtr->titlebtnprev;
   RECT *next=&infoPtr->titlebtnnext;
@@ -2516,7 +2526,8 @@ static void MONTHCAL_UpdateSize(MONTHCAL_INFO *infoPtr)
       }
       else /* locale independent fallback on failure */
       {
-          GetTextExtentPoint32W(hdc, L"Sun", 3, &sz);
+          static const WCHAR sunW[] = { 'S','u','n' };
+          GetTextExtentPoint32W(hdc, sunW, ARRAY_SIZE(sunW), &sz);
           day_width = sz.cx;
           break;
       }
@@ -2526,7 +2537,7 @@ static void MONTHCAL_UpdateSize(MONTHCAL_INFO *infoPtr)
 
   /* recalculate the height and width increments and offsets */
   size.cx = 0;
-  GetTextExtentPoint32W(hdc, L"00", 2, &size);
+  GetTextExtentPoint32W(hdc, O0W, 2, &size);
 
   /* restore the originally selected font */
   SelectObject(hdc, font);
@@ -2697,14 +2708,14 @@ static LRESULT theme_changed (const MONTHCAL_INFO* infoPtr)
     HTHEME theme = GetWindowTheme (infoPtr->hwndSelf);
     CloseThemeData (theme);
     OpenThemeData (infoPtr->hwndSelf, themeClass);
-    InvalidateRect (infoPtr->hwndSelf, NULL, TRUE);
     return 0;
 }
 
 static INT MONTHCAL_StyleChanged(MONTHCAL_INFO *infoPtr, WPARAM wStyleType,
                                  const STYLESTRUCT *lpss)
 {
-    TRACE("styletype %Ix, styleOld %#lx, styleNew %#lx\n", wStyleType, lpss->styleOld, lpss->styleNew);
+    TRACE("(styletype=%lx, styleOld=0x%08x, styleNew=0x%08x)\n",
+          wStyleType, lpss->styleOld, lpss->styleNew);
 
     if (wStyleType != GWL_STYLE) return 0;
 
@@ -2720,7 +2731,8 @@ static INT MONTHCAL_StyleChanged(MONTHCAL_INFO *infoPtr, WPARAM wStyleType,
 static INT MONTHCAL_StyleChanging(MONTHCAL_INFO *infoPtr, WPARAM wStyleType,
                                   STYLESTRUCT *lpss)
 {
-    TRACE("styletype %Ix, styleOld %#lx, styleNew %#lx\n", wStyleType, lpss->styleOld, lpss->styleNew);
+    TRACE("(styletype=%lx, styleOld=0x%08x, styleNew=0x%08x)\n",
+          wStyleType, lpss->styleOld, lpss->styleNew);
 
     /* block MCS_MULTISELECT change */
     if ((lpss->styleNew ^ lpss->styleOld) & MCS_MULTISELECT)
@@ -2871,7 +2883,7 @@ MONTHCAL_WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
   MONTHCAL_INFO *infoPtr = (MONTHCAL_INFO *)GetWindowLongPtrW(hwnd, 0);
 
-  TRACE("hwnd %p, msg %x, wparam %Ix, lparam %Ix\n", hwnd, uMsg, wParam, lParam);
+  TRACE("hwnd=%p msg=%x wparam=%lx lparam=%lx\n", hwnd, uMsg, wParam, lParam);
 
   if (!infoPtr && (uMsg != WM_CREATE))
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
@@ -3012,7 +3024,7 @@ MONTHCAL_WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
   default:
     if ((uMsg >= WM_USER) && (uMsg < WM_APP) && !COMCTL32_IsReflectedMessage(uMsg))
-      ERR( "unknown msg %04x, wp %Ix, lp %Ix\n", uMsg, wParam, lParam);
+      ERR( "unknown msg %04x wp=%08lx lp=%08lx\n", uMsg, wParam, lParam);
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
   }
 }

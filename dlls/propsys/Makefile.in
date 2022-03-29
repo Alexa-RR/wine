@@ -2,7 +2,7 @@ MODULE    = propsys.dll
 IMPORTLIB = propsys
 IMPORTS   = ole32 oleaut32 uuid
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	propstore.c \

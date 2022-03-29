@@ -19,10 +19,14 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"

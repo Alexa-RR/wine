@@ -1,15 +1,5 @@
-<<<<<<< HEAD
 MODULE = dllhost.exe
 
 EXTRADLLFLAGS = -mconsole -municode -mno-cygwin
 
 C_SRCS = dllhost.c
-=======
-MODULE    = dllhost.exe
-IMPORTS   = ole32 uuid
-
-EXTRADLLFLAGS = -mwindows -municode
-
-C_SRCS = \
-	dllhost.c
->>>>>>> master

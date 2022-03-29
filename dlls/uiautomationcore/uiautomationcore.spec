@@ -1,7 +1,7 @@
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub DllGetClassObject
-@ stdcall -private DllRegisterServer()
-@ stdcall -private DllUnregisterServer()
+@ stub DllRegisterServer
+@ stub DllUnregisterServer
 @ stub DockPattern_SetDockPosition
 @ stub ExpandCollapsePattern_Collapse
 @ stub ExpandCollapsePattern_Expand
@@ -56,7 +56,7 @@
 @ stub UiaAddEvent
 @ stdcall UiaClientsAreListening()
 #@ stub UiaDisconnectAllProviders
-@ stdcall UiaDisconnectProvider(ptr)
+#@ stub UiaDisconnectProvider
 @ stub UiaEventAddWindow
 @ stub UiaEventRemoveWindow
 @ stub UiaFind
@@ -86,12 +86,12 @@
 #@ stub UiaProviderFromIAccessible
 @ stub UiaRaiseAsyncContentLoadedEvent
 @ stdcall UiaRaiseAutomationEvent(ptr long)
-@ stdcall UiaRaiseAutomationPropertyChangedEvent(ptr long int128 int128)
+@ stub UiaRaiseAutomationPropertyChangedEvent
 #@ stub UiaRaiseChangesEvent
 #@ stub UiaRaiseNotificationEvent
 @ stub UiaRaiseStructureChangedEvent
 #@ stub UiaRaiseTextEditTextChangedEvent
-@ stdcall UiaRegisterProviderCallback(ptr)
+@ stub UiaRegisterProviderCallback
 @ stub UiaRemoveEvent
 @ stdcall UiaReturnRawElementProvider(long long long ptr)
 @ stub UiaSetFocus

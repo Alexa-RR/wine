@@ -1,7 +1,7 @@
 MODULE    = msftedit.dll
 IMPORTS   = uuid riched20
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	msftedit_main.c

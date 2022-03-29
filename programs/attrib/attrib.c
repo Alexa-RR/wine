@@ -24,6 +24,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(attrib);
 
+static const WCHAR starW[]  = {'*','\0'};
+
 /* =========================================================================
  * Load a string from the resource file, handling any error
  * Returns string retrieved from resource file
@@ -31,10 +33,11 @@ WINE_DEFAULT_DEBUG_CHANNEL(attrib);
 static WCHAR *ATTRIB_LoadMessage(UINT id)
 {
     static WCHAR msg[MAXSTRING];
+    const WCHAR failedMsg[]  = {'F', 'a', 'i', 'l', 'e', 'd', '!', 0};
 
     if (!LoadStringW(GetModuleHandleW(NULL), id, msg, ARRAY_SIZE(msg))) {
-        WINE_FIXME("LoadString failed with %ld\n", GetLastError());
-        lstrcpyW(msg, L"Failed!");
+        WINE_FIXME("LoadString failed with %d\n", GetLastError());
+        lstrcpyW(msg, failedMsg);
     }
     return msg;
 }
@@ -52,7 +55,7 @@ static int WINAPIV ATTRIB_wprintf(const WCHAR *format, ...)
     static BOOL  traceOutput  = FALSE;
 #define MAX_WRITECONSOLE_SIZE 65535
 
-    va_list parms;
+    __ms_va_list parms;
     DWORD   nOut;
     int len;
     DWORD   res = 0;
@@ -70,12 +73,13 @@ static int WINAPIV ATTRIB_wprintf(const WCHAR *format, ...)
         return 0;
     }
 
-    va_start(parms, format);
+    __ms_va_start(parms, format);
+    SetLastError(NO_ERROR);
     len = FormatMessageW(FORMAT_MESSAGE_FROM_STRING, format, 0, 0, output_bufW,
                    MAX_WRITECONSOLE_SIZE/sizeof(*output_bufW), &parms);
-    va_end(parms);
-    if (len == 0 && GetLastError() != ERROR_NO_WORK_DONE) {
-        WINE_FIXME("Could not format string: le=%lu, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
+    __ms_va_end(parms);
+    if (len == 0 && GetLastError() != NO_ERROR) {
+        WINE_FIXME("Could not format string: le=%u, fmt=%s\n", GetLastError(), wine_dbgstr_w(format));
         return 0;
     }
 
@@ -104,7 +108,7 @@ static int WINAPIV ATTRIB_wprintf(const WCHAR *format, ...)
         }
 
         /* Convert to OEM, then output */
-        convertedChars = WideCharToMultiByte(CP_ACP, 0, output_bufW,
+        convertedChars = WideCharToMultiByte(GetConsoleOutputCP(), 0, output_bufW,
                             len, output_bufA, MAX_WRITECONSOLE_SIZE,
                             "?", &usedDefaultChar);
         WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), output_bufA, convertedChars,
@@ -141,9 +145,10 @@ static BOOL ATTRIB_processdirectory(const WCHAR *rootdir, const WCHAR *filespec,
     WCHAR buffer[MAX_PATH];
     HANDLE hff;
     WIN32_FIND_DATAW fd;
-    WCHAR flags[] = L"        ";
+    WCHAR flags[] = {' ',' ',' ',' ',' ',' ',' ',' ','\0'};
+    static const WCHAR slashW[] = {'\\','\0'};
 
-    WINE_TRACE("Processing dir '%s', spec '%s', %d,%lx,%lx\n",
+    WINE_TRACE("Processing dir '%s', spec '%s', %d,%x,%x\n",
                wine_dbgstr_w(rootdir), wine_dbgstr_w(filespec),
                recurse, attrib_set, attrib_clear);
 
@@ -151,22 +156,25 @@ static BOOL ATTRIB_processdirectory(const WCHAR *rootdir, const WCHAR *filespec,
 
       /* Build spec to search for */
       lstrcpyW(buffer, rootdir);
-      lstrcatW(buffer, L"*");
+      lstrcatW(buffer, starW);
 
       /* Search for directories in the location and recurse if necessary */
       WINE_TRACE("Searching for directories with '%s'\n", wine_dbgstr_w(buffer));
       hff = FindFirstFileW(buffer, &fd);
       if (hff != INVALID_HANDLE_VALUE) {
           do {
+              const WCHAR dot[] = {'.', 0};
+              const WCHAR dotdot[] = {'.', '.', 0};
+
               /* Only interested in directories, and not . nor .. */
               if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
-                  !lstrcmpW(fd.cFileName, L".") || !lstrcmpW(fd.cFileName, L".."))
+                  !lstrcmpW(fd.cFileName, dot) || !lstrcmpW(fd.cFileName, dotdot))
                   continue;
 
               /* Build new root dir to go searching in */
               lstrcpyW(buffer, rootdir);
               lstrcatW(buffer, fd.cFileName);
-              lstrcatW(buffer, L"\\");
+              lstrcatW(buffer, slashW);
               ATTRIB_processdirectory(buffer, filespec, recurse, includedirs,
                                       attrib_set, attrib_clear);
 
@@ -184,10 +192,12 @@ static BOOL ATTRIB_processdirectory(const WCHAR *rootdir, const WCHAR *filespec,
     hff = FindFirstFileW(buffer, &fd);
     if (hff != INVALID_HANDLE_VALUE) {
         do {
+            const WCHAR dot[] = {'.', 0};
+            const WCHAR dotdot[] = {'.', '.', 0};
             DWORD count;
             WINE_TRACE("Found '%s'\n", wine_dbgstr_w(fd.cFileName));
 
-            if (!lstrcmpW(fd.cFileName, L".") || !lstrcmpW(fd.cFileName, L".."))
+            if (!lstrcmpW(fd.cFileName, dot) || !lstrcmpW(fd.cFileName, dotdot))
                 continue;
 
             if (!includedirs && (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
@@ -203,6 +213,7 @@ static BOOL ATTRIB_processdirectory(const WCHAR *rootdir, const WCHAR *filespec,
                 SetFileAttributesW(buffer, fd.dwFileAttributes);
                 found = TRUE;
             } else {
+                static const WCHAR fmt[] = {'%','1',' ',' ',' ',' ',' ','%','2','\n','\0'};
                 if (fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) {
                     flags[4] = 'H';
                 }
@@ -223,7 +234,7 @@ static BOOL ATTRIB_processdirectory(const WCHAR *rootdir, const WCHAR *filespec,
                 }
                 lstrcpyW(buffer, rootdir);
                 lstrcatW(buffer, fd.cFileName);
-                ATTRIB_wprintf(L"%1     %2\n", flags, buffer);
+                ATTRIB_wprintf(fmt, flags, buffer);
                 for (count = 0; count < (ARRAY_SIZE(flags) - 1); count++) flags[count] = ' ';
                 found = TRUE;
             }
@@ -243,16 +254,18 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     DWORD attrib_clear = 0;
     BOOL  attrib_recurse = FALSE;
     BOOL  attrib_includedirs = FALSE;
+    static const WCHAR help_option[] = {'/','?','\0'};
+    static const WCHAR wildcardsW[] = {'*','?','\0'};
     int i = 1;
     BOOL  found = FALSE;
 
-    if ((argc >= 2) && !lstrcmpW(argv[1], L"/?")) {
+    if ((argc >= 2) && !lstrcmpW(argv[1], help_option)) {
         ATTRIB_wprintf(ATTRIB_LoadMessage(STRING_HELP));
         return 0;
     }
 
     /* By default all files from current directory are taken into account */
-    lstrcpyW(originalname, L".\\*");
+    lstrcpyW(name, starW);
 
     while (i < argc) {
         WCHAR *param = argv[i++];
@@ -299,7 +312,7 @@ int __cdecl wmain(int argc, WCHAR *argv[])
 
     /* If a directory is explicitly supplied on the command line, and no
        wildcards are in the name, then allow it to be changed/displayed  */
-    if (wcspbrk(originalname, L"*?") == NULL) attrib_includedirs = TRUE;
+    if (wcspbrk(originalname, wildcardsW) == NULL) attrib_includedirs = TRUE;
 
     /* Do all the processing based on the filename arg */
     found = ATTRIB_processdirectory(curdir, name, attrib_recurse,

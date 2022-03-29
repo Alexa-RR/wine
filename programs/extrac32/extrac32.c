@@ -21,7 +21,6 @@
 
 #include <stdio.h>
 #include <windows.h>
-#include <commctrl.h>
 #include <shellapi.h>
 #include <setupapi.h>
 #include <shlwapi.h>
@@ -116,9 +115,11 @@ static void copy_file(LPCWSTR source, LPCWSTR destination)
 
     if (PathFileExistsW(destination) && !force_mode)
     {
+        static const WCHAR overwriteMsg[] = {'O','v','e','r','w','r','i','t','e',' ','"','%','s','"','?',0};
+        static const WCHAR titleMsg[] = {'E','x','t','r','a','c','t',0};
         WCHAR msg[MAX_PATH+100];
-        swprintf(msg, ARRAY_SIZE(msg), L"Overwrite \"%s\"?", destination);
-        if (MessageBoxW(NULL, msg, L"Extract", MB_YESNO | MB_ICONWARNING) != IDYES)
+        swprintf(msg, ARRAY_SIZE(msg), overwriteMsg, destination);
+        if (MessageBoxW(NULL, msg, titleMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
             return;
     }
 
@@ -226,8 +227,6 @@ int PASCAL wWinMain(HINSTANCE hInstance, HINSTANCE prev, LPWSTR cmdline, int sho
     WCHAR check, cmd = 0;
     WCHAR path[MAX_PATH];
     LPCWSTR cabfile = NULL;
-
-    InitCommonControls();
 
     path[0] = 0;
 

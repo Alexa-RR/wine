@@ -209,14 +209,13 @@ static int (__cdecl *p__ismbblead)(unsigned int);
 
 static MSVCRT_long (__cdecl *p__Xtime_diff_to_millis2)(const xtime*, const xtime*);
 static int (__cdecl *p_xtime_get)(xtime*, int);
-static _Cvtvec (__cdecl *p__Getcvt)(void);
+static _Cvtvec* (__cdecl *p__Getcvt)(_Cvtvec*);
 static void (CDECL *p__Call_once)(int *once, void (CDECL *func)(void));
 static void (CDECL *p__Call_onceEx)(int *once, void (CDECL *func)(void*), void *argv);
 static void (CDECL *p__Do_call)(void *this);
 static short (__cdecl *p__Dtest)(double *d);
 static short (__cdecl *p__Dscale)(double *d, int exp);
 static short (__cdecl *p__FExp)(float *x, float y, int exp);
-static const char* (__cdecl *p__Syserror_map)(int err);
 
 /* filesystem */
 static ULONGLONG(__cdecl *p_tr2_sys__File_size)(char const*);
@@ -417,8 +416,6 @@ static void (__thiscall *p_vector_base_v4__Internal_resize)(
         vector_base_v4*, size_t, size_t, size_t, void (__cdecl*)(void*, size_t),
         void (__cdecl *copy)(void*, const void*, size_t), const void*);
 
-static const BYTE *p_byte_reverse_table;
-
 static HMODULE msvcp;
 #define SETNOFAIL(x,y) x = (void*)GetProcAddress(msvcp,y)
 #define SET(x,y) do { SETNOFAIL(x,y); ok(x != NULL, "Export '%s' not found\n", y); } while(0)
@@ -578,8 +575,6 @@ static BOOL init(void)
                 "?_Internal_reserve@_Concurrent_vector_base_v4@details@Concurrency@@IEAAX_K00@Z");
         SET(p_vector_base_v4__Internal_resize,
                 "?_Internal_resize@_Concurrent_vector_base_v4@details@Concurrency@@IEAAX_K00P6AXPEAX0@ZP6AX1PEBX0@Z3@Z");
-        SET(p__Syserror_map,
-                "?_Syserror_map@std@@YAPEBDH@Z");
     } else {
         SET(p_tr2_sys__File_size,
                 "?_File_size@sys@tr2@std@@YA_KPBD@Z");
@@ -653,8 +648,6 @@ static BOOL init(void)
                 "?_Mtx_unlock@threads@stdext@@YAXPAX@Z");
         SET(p_vector_base_v4__Segment_index_of,
                 "?_Segment_index_of@_Concurrent_vector_base_v4@details@Concurrency@@KAII@Z");
-        SET(p__Syserror_map,
-                "?_Syserror_map@std@@YAPBDH@Z");
 #ifdef __i386__
         SET(p_i386_Thrd_current,
                 "_Thrd_current");
@@ -811,8 +804,6 @@ static BOOL init(void)
     SET(p__Cnd_do_broadcast_at_thread_exit,
             "_Cnd_do_broadcast_at_thread_exit");
 
-    SET(p_byte_reverse_table, "?_Byte_reverse_table@details@Concurrency@@3QBEB");
-
     hdll = GetModuleHandleA("msvcr120.dll");
     p_setlocale = (void*)GetProcAddress(hdll, "setlocale");
     p__setmbcp = (void*)GetProcAddress(hdll, "_setmbcp");
@@ -934,7 +925,7 @@ static void test__Getcvt(void)
     _Cvtvec cvtvec;
     int i;
 
-    cvtvec = p__Getcvt();
+    p__Getcvt(&cvtvec);
     ok(cvtvec.page == 0, "cvtvec.page = %d\n", cvtvec.page);
     ok(cvtvec.mb_max == 1, "cvtvec.mb_max = %d\n", cvtvec.mb_max);
     todo_wine ok(cvtvec.unk == 1, "cvtvec.unk = %d\n", cvtvec.unk);
@@ -945,7 +936,7 @@ static void test__Getcvt(void)
         win_skip("_Getcvt tests\n");
         return;
     }
-    cvtvec = p__Getcvt();
+    p__Getcvt(&cvtvec);
     ok(cvtvec.page == 936, "cvtvec.page = %d\n", cvtvec.page);
     ok(cvtvec.mb_max == 2, "cvtvec.mb_max = %d\n", cvtvec.mb_max);
     ok(cvtvec.unk == 0, "cvtvec.unk = %d\n", cvtvec.unk);
@@ -959,7 +950,7 @@ static void test__Getcvt(void)
     }
 
     p__setmbcp(936);
-    cvtvec = p__Getcvt();
+    p__Getcvt(&cvtvec);
     ok(cvtvec.page == 936, "cvtvec.page = %d\n", cvtvec.page);
     ok(cvtvec.mb_max == 2, "cvtvec.mb_max = %d\n", cvtvec.mb_max);
     ok(cvtvec.unk == 0, "cvtvec.unk = %d\n", cvtvec.unk);
@@ -1179,19 +1170,12 @@ static void test__FExp(void)
     ok(ret == FP_NORMAL, "ret = %x\n", ret);
 }
 
-static void test__Syserror_map(void)
-{
-    const char *r;
-
-    r = p__Syserror_map(0);
-    ok(!r, "_Syserror_map(0) returned %p\n", r);
-}
-
 static void test_tr2_sys__File_size(void)
 {
     ULONGLONG val;
     HANDLE file;
     LARGE_INTEGER file_size;
+    WCHAR testW[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
     CreateDirectoryA("tr2_test_dir", NULL);
 
     file = CreateFileA("tr2_test_dir/f1", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
@@ -1202,7 +1186,7 @@ static void test_tr2_sys__File_size(void)
     CloseHandle(file);
     val = p_tr2_sys__File_size("tr2_test_dir/f1");
     ok(val == 7, "file_size is %s\n", wine_dbgstr_longlong(val));
-    val = p_tr2_sys__File_size_wchar(L"tr2_test_dir/f1");
+    val = p_tr2_sys__File_size_wchar(testW);
     ok(val == 7, "file_size is %s\n", wine_dbgstr_longlong(val));
 
     file = CreateFileA("tr2_test_dir/f2", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
@@ -1234,6 +1218,9 @@ static void test_tr2_sys__Equivalent(void)
     int val, i;
     HANDLE file;
     char temp_path[MAX_PATH], current_path[MAX_PATH];
+    WCHAR testW[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
+    WCHAR testW2[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','2',0};
+    WCHAR test_dirW[] = {'t','r','2','_','t','e','s','t','_','d','i','r',0};
     struct {
         char const *path1;
         char const *path2;
@@ -1273,11 +1260,11 @@ static void test_tr2_sys__Equivalent(void)
         ok(errno == 0xdeadbeef, "errno = %d\n", errno);
     }
 
-    val = p_tr2_sys__Equivalent_wchar(L"tr2_test_dir/f1", L"tr2_test_dir/f1");
+    val = p_tr2_sys__Equivalent_wchar(testW, testW);
     ok(val == 1, "tr2_sys__Equivalent(): expect: 1, got %d\n", val);
-    val = p_tr2_sys__Equivalent_wchar(L"tr2_test_dir/f1", L"tr2_test_dir/f2");
+    val = p_tr2_sys__Equivalent_wchar(testW, testW2);
     ok(val == 0, "tr2_sys__Equivalent(): expect: 0, got %d\n", val);
-    val = p_tr2_sys__Equivalent_wchar(L"tr2_test_dir", L"tr2_test_dir");
+    val = p_tr2_sys__Equivalent_wchar(test_dirW, test_dirW);
     ok(val == -1, "tr2_sys__Equivalent(): expect: -1, got %d\n", val);
 
     ok(DeleteFileA("tr2_test_dir/f1"), "expect tr2_test_dir/f1 to exist\n");
@@ -1288,6 +1275,7 @@ static void test_tr2_sys__Equivalent(void)
 
 static void test_tr2_sys__Current_get(void)
 {
+    static const WCHAR backslashW[] = {'\\',0};
     char temp_path[MAX_PATH], current_path[MAX_PATH], origin_path[MAX_PATH];
     char *temp;
     WCHAR temp_path_wchar[MAX_PATH], current_path_wchar[MAX_PATH];
@@ -1306,7 +1294,7 @@ static void test_tr2_sys__Current_get(void)
     ok(SetCurrentDirectoryW(temp_path_wchar), "SetCurrentDirectoryW to temp_path_wchar failed\n");
     temp_wchar = p_tr2_sys__Current_get_wchar(current_path_wchar);
     ok(temp_wchar == current_path_wchar, "p_tr2_sys__Current_get_wchar returned different buffer\n");
-    wcscat(temp_wchar, L"\\");
+    wcscat(temp_wchar, backslashW);
     ok(!wcscmp(temp_path_wchar, current_path_wchar), "test_tr2_sys__Current_get(): expect: %s, got %s\n", wine_dbgstr_w(temp_path_wchar), wine_dbgstr_w(current_path_wchar));
 
     ok(SetCurrentDirectoryA(origin_path), "SetCurrentDirectoryA to origin_path failed\n");
@@ -1319,6 +1307,7 @@ static void test_tr2_sys__Current_set(void)
 {
     char temp_path[MAX_PATH], current_path[MAX_PATH], origin_path[MAX_PATH];
     char *temp;
+    WCHAR testW[] = {'.','/',0};
 
     GetTempPathA(MAX_PATH, temp_path);
     GetCurrentDirectoryA(MAX_PATH, origin_path);
@@ -1331,7 +1320,7 @@ static void test_tr2_sys__Current_set(void)
     strcat(temp, "\\");
     ok(!strcmp(temp_path, current_path), "test_tr2_sys__Current_get(): expect: %s, got %s\n", temp_path, current_path);
 
-    ok(p_tr2_sys__Current_set_wchar(L"./"), "p_tr2_sys__Current_set_wchar to temp_path failed\n");
+    ok(p_tr2_sys__Current_set_wchar(testW), "p_tr2_sys__Current_set_wchar to temp_path failed\n");
     temp = p_tr2_sys__Current_get(current_path);
     ok(temp == current_path, "p_tr2_sys__Current_get returned different buffer\n");
     strcat(temp, "\\");
@@ -1354,6 +1343,7 @@ static void test_tr2_sys__Current_set(void)
 static void test_tr2_sys__Make_dir(void)
 {
     int ret, i;
+    WCHAR testW[] = {'w','d',0};
     struct {
         char const *path;
         int val;
@@ -1370,11 +1360,11 @@ static void test_tr2_sys__Make_dir(void)
         ok(ret == tests[i].val, "tr2_sys__Make_dir(): test %d expect: %d, got %d\n", i+1, tests[i].val, ret);
         ok(errno == 0xdeadbeef, "tr2_sys__Make_dir(): test %d errno expect 0xdeadbeef, got %d\n", i+1, errno);
     }
-    ret = p_tr2_sys__Make_dir_wchar(L"wd");
+    ret = p_tr2_sys__Make_dir_wchar(testW);
     ok(ret == 1, "tr2_sys__Make_dir(): expect: 1, got %d\n", ret);
 
     ok(p_tr2_sys__Remove_dir("tr2_test_dir"), "expect tr2_test_dir to exist\n");
-    ok(p_tr2_sys__Remove_dir_wchar(L"wd"), "expect wd to exist\n");
+    ok(p_tr2_sys__Remove_dir_wchar(testW), "expect wd to exist\n");
 }
 
 static void test_tr2_sys__Remove_dir(void)
@@ -1406,6 +1396,7 @@ static void test_tr2_sys__Copy_file(void)
     HANDLE file;
     int ret, i;
     LARGE_INTEGER file_size;
+    WCHAR testW[] = {'f','1',0}, testW2[] = {'f','w',0};
     struct {
         char const *source;
         char const *dest;
@@ -1445,11 +1436,11 @@ static void test_tr2_sys__Copy_file(void)
             ok(p_tr2_sys__File_size(tests[i].source) == p_tr2_sys__File_size(tests[i].dest),
                     "test_tr2_sys__Copy_file(): test %d failed, mismatched file sizes\n", i+1);
     }
-    ret = p_tr2_sys__Copy_file_wchar(L"f1", L"fw", TRUE);
+    ret = p_tr2_sys__Copy_file_wchar(testW, testW2, TRUE);
     ok(ret == ERROR_SUCCESS, "test_tr2_sys__Copy_file_wchar() expect ERROR_SUCCESS, got %d\n", ret);
 
     ok(DeleteFileA("f1"), "expect f1 to exist\n");
-    ok(DeleteFileW(L"fw"), "expect fw to exist\n");
+    ok(DeleteFileW(testW2), "expect fw to exist\n");
     ok(DeleteFileA("f1_copy"), "expect f1_copy to exist\n");
     ok(DeleteFileA("tr2_test_dir/f1_copy"), "expect tr2_test_dir/f1 to exist\n");
     ret = p_tr2_sys__Remove_dir("tr2_test_dir");
@@ -1463,6 +1454,7 @@ static void test_tr2_sys__Rename(void)
     BY_HANDLE_FILE_INFORMATION info1, info2;
     char temp_path[MAX_PATH], current_path[MAX_PATH];
     LARGE_INTEGER file_size;
+    static const WCHAR testW[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
     static const struct {
         char const *old_path;
         char const *new_path;
@@ -1475,18 +1467,28 @@ static void test_tr2_sys__Rename(void)
         { "tr2_test_dir\\f1_rename", "tr2_test_dir\\??invalid_name>>", ERROR_INVALID_NAME },
         { "tr2_test_dir\\not_exist_file", "tr2_test_dir\\not_exist_rename", ERROR_FILE_NOT_FOUND }
     };
+    static const WCHAR f1_renameW[] =
+            {'t','r','2','_','t','e','s','t','_','d','i','r','\\','f','1','_','r','e','n','a','m','e',0};
+    static const WCHAR f1_rename2W[] =
+            {'t','r','2','_','t','e','s','t','_','d','i','r','\\','f','1','_','r','e','n','a','m','e','2',0};
+    static const WCHAR not_existW[] =
+            {'t','r','2','_','t','e','s','t','_','d','i','r','\\','n','o','t','_','e','x','i','s','t',0};
+    static const WCHAR not_exist2W[] =
+            {'t','r','2','_','t','e','s','t','_','d','i','r','\\','n','o','t','_','e','x','i','s','t','2',0};
+    static const WCHAR invalidW[] =
+            {'t','r','2','_','t','e','s','t','_','d','i','r','\\','?','?','i','n','v','a','l','i','d','>',0};
     static const struct {
         const WCHAR *old_path;
         const WCHAR *new_path;
         int val;
     } testsW[] = {
-        { L"tr2_test_dir/f1", L"tr2_test_dir\\f1_rename", ERROR_SUCCESS },
-        { L"tr2_test_dir/f1", NULL, ERROR_FILE_NOT_FOUND }, /* Differs from the A version */
-        { L"tr2_test_dir/f1", L"tr2_test_dir\\f1_rename", ERROR_FILE_NOT_FOUND },
-        { NULL, L"tr2_test_dir\\f1_rename2", ERROR_PATH_NOT_FOUND }, /* Differs from the A version */
-        { L"tr2_test_dir\\f1_rename", L"tr2_test_dir\\??invalid>", ERROR_INVALID_NAME },
-        { L"tr2_test_dir\\not_exist", L"tr2_test_dir\\not_exist2", ERROR_FILE_NOT_FOUND },
-        { L"tr2_test_dir\\not_exist", L"tr2_test_dir\\??invalid>", ERROR_FILE_NOT_FOUND }
+        { testW, f1_renameW, ERROR_SUCCESS },
+        { testW, NULL, ERROR_FILE_NOT_FOUND }, /* Differs from the A version */
+        { testW, f1_renameW, ERROR_FILE_NOT_FOUND },
+        { NULL, f1_rename2W, ERROR_PATH_NOT_FOUND }, /* Differs from the A version */
+        { f1_renameW, invalidW, ERROR_INVALID_NAME },
+        { not_existW, not_exist2W, ERROR_FILE_NOT_FOUND },
+        { not_existW, invalidW, ERROR_FILE_NOT_FOUND }
     };
 
     GetCurrentDirectoryA(MAX_PATH, current_path);
@@ -1622,6 +1624,8 @@ static void test_tr2_sys__Stat(void)
         { "tr2_test_dir\\f1_link" ,   regular_file, ERROR_SUCCESS },
         { "tr2_test_dir\\dir_link", directory_file, ERROR_SUCCESS },
     };
+    WCHAR testW[] = {'t','r','2','_','t','e','s','t','_','d','i','r',0};
+    WCHAR testW2[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
 
     CreateDirectoryA("tr2_test_dir", NULL);
     file = CreateFileA("tr2_test_dir/f1", 0, 0, NULL, CREATE_ALWAYS, 0, NULL);
@@ -1676,11 +1680,11 @@ static void test_tr2_sys__Stat(void)
     }
 
     err_code = 0xdeadbeef;
-    val = p_tr2_sys__Stat_wchar(L"tr2_test_dir", &err_code);
+    val = p_tr2_sys__Stat_wchar(testW, &err_code);
     ok(directory_file == val, "tr2_sys__Stat_wchar() expect directory_file, got %d\n", val);
     ok(ERROR_SUCCESS == err_code, "tr2_sys__Stat_wchar(): err_code expect ERROR_SUCCESS, got %d\n", err_code);
     err_code = 0xdeadbeef;
-    val = p_tr2_sys__Lstat_wchar(L"tr2_test_dir/f1", &err_code);
+    val = p_tr2_sys__Lstat_wchar(testW2, &err_code);
     ok(regular_file == val, "tr2_sys__Lstat_wchar() expect regular_file, got %d\n", val);
     ok(ERROR_SUCCESS == err_code, "tr2_sys__Lstat_wchar(): err_code expect ERROR_SUCCESS, got %d\n", err_code);
 
@@ -1697,6 +1701,7 @@ static void test_tr2_sys__Last_write_time(void)
     HANDLE file;
     int ret;
     __int64 last_write_time, newtime;
+    static const WCHAR fileW[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
     ret = p_tr2_sys__Make_dir("tr2_test_dir");
     ok(ret == 1, "tr2_sys__Make_dir() expect 1 got %d\n", ret);
 
@@ -1705,7 +1710,7 @@ static void test_tr2_sys__Last_write_time(void)
     CloseHandle(file);
 
     last_write_time = p_tr2_sys__Last_write_time("tr2_test_dir/f1");
-    newtime = p_tr2_sys__Last_write_time_wchar(L"tr2_test_dir/f1");
+    newtime = p_tr2_sys__Last_write_time_wchar(fileW);
     ok(last_write_time == newtime, "last_write_time = %s, newtime = %s\n",
             wine_dbgstr_longlong(last_write_time), wine_dbgstr_longlong(newtime));
     newtime = last_write_time + 123456789;
@@ -1766,7 +1771,7 @@ static void test_tr2_sys__dir_operation(void)
 
     memset(first_file_name, 0xff, MAX_PATH);
     memset(dest, 0, MAX_PATH);
-    type = err = 0xdeadbeef;
+    err = type = 0xdeadbeef;
     result_handle = NULL;
     result_handle = p_tr2_sys__Open_dir(first_file_name, "tr2_test_dir", &err, &type);
     ok(result_handle != NULL, "tr2_sys__Open_dir(): expect: not NULL, got %p\n", result_handle);
@@ -1796,7 +1801,7 @@ static void test_tr2_sys__dir_operation(void)
     ok(num_of_other_files == 0, "found %d other files\n", num_of_other_files);
 
     memset(first_file_name, 0xff, MAX_PATH);
-    type = err = 0xdeadbeef;
+    err = type = 0xdeadbeef;
     result_handle = file;
     result_handle = p_tr2_sys__Open_dir(first_file_name, "not_exist", &err, &type);
     ok(result_handle == NULL, "tr2_sys__Open_dir(): expect: NULL, got %p\n", result_handle);
@@ -1806,7 +1811,7 @@ static void test_tr2_sys__dir_operation(void)
 
     CreateDirectoryA("empty_dir", NULL);
     memset(first_file_name, 0xff, MAX_PATH);
-    type = err = 0xdeadbeef;
+    err = type = 0xdeadbeef;
     result_handle = file;
     result_handle = p_tr2_sys__Open_dir(first_file_name, "empty_dir", &err, &type);
     ok(result_handle == NULL, "tr2_sys__Open_dir(): expect: NULL, got %p\n", result_handle);
@@ -2063,14 +2068,14 @@ static void test_thrd(void)
     /* test for equal */
     for(i=0; i<ARRAY_SIZE(testeq); i++) {
         ret = p__Thrd_equal(testeq[i].a, testeq[i].b);
-        ok(ret == testeq[i].r, "(%p %lu) = (%p %lu) expected %d, got %d\n",
+        ok(ret == testeq[i].r, "(%p %u) = (%p %u) expected %d, got %d\n",
             testeq[i].a.hnd, testeq[i].a.id, testeq[i].b.hnd, testeq[i].b.id, testeq[i].r, ret);
     }
 
     /* test for less than */
     for(i=0; i<ARRAY_SIZE(testlt); i++) {
         ret = p__Thrd_lt(testlt[i].a, testlt[i].b);
-        ok(ret == testlt[i].r, "(%p %lu) < (%p %lu) expected %d, got %d\n",
+        ok(ret == testlt[i].r, "(%p %u) < (%p %u) expected %d, got %d\n",
             testlt[i].a.hnd, testlt[i].a.id, testlt[i].b.hnd, testlt[i].b.id, testlt[i].r, ret);
     }
 
@@ -2088,11 +2093,10 @@ static void test_thrd(void)
     /* test for current */
     ta = p__Thrd_current();
     tb = p__Thrd_current();
-    ok(ta.id == tb.id, "got a %ld b %ld\n", ta.id, tb.id);
-    ok(ta.id == GetCurrentThreadId(), "expected %ld, got %ld\n", GetCurrentThreadId(), ta.id);
-    /* the handles can be different if new threads are created at same time */
-    ok(ta.hnd != NULL, "handle a is NULL\n");
-    ok(tb.hnd != NULL, "handle b is NULL\n");
+    ok(ta.id == tb.id, "got a %d b %d\n", ta.id, tb.id);
+    ok(ta.id == GetCurrentThreadId(), "expected %d, got %d\n", GetCurrentThreadId(), ta.id);
+    /* these can be different if new threads are created at same time */
+    ok(ta.hnd == tb.hnd, "got a %p b %p\n", ta.hnd, tb.hnd);
     ok(!CloseHandle(ta.hnd), "handle %p not closed\n", ta.hnd);
     ok(!CloseHandle(tb.hnd), "handle %p not closed\n", tb.hnd);
 
@@ -2107,7 +2111,7 @@ static void test_thrd(void)
     ok(!ret, "failed to create thread, got %d\n", ret);
     ret = p__Thrd_join(ta, &r);
     ok(!ret, "failed to join thread, got %d\n", ret);
-    ok(ta.id == tb.id, "expected %ld, got %ld\n", ta.id, tb.id);
+    ok(ta.id == tb.id, "expected %d, got %d\n", ta.id, tb.id);
     ok(ta.hnd != tb.hnd, "same handles, got %p\n", ta.hnd);
     ok(r == 0x42, "expected 0x42, got %d\n", r);
     ret = p__Thrd_detach(ta);
@@ -2124,7 +2128,7 @@ static void test_thrd(void)
 struct cndmtx
 {
     HANDLE initialized;
-    LONG started;
+    int started;
     int thread_no;
 
     _Cnd_t cnd;
@@ -2242,7 +2246,7 @@ static void test_cnd(void)
     p__Cnd_register_at_thread_exit(&cnd, &mtx, &r);
     p__Cnd_unregister_at_thread_exit(&mtx);
     p__Cnd_do_broadcast_at_thread_exit();
-    ok(mtx->count == 1, "mtx.count = %ld\n", mtx->count);
+    ok(mtx->count == 1, "mtx.count = %d\n", mtx->count);
 
     p__Cnd_register_at_thread_exit(&cnd, &mtx, &r);
     ok(r == 0xcafe, "r = %x\n", r);
@@ -2334,14 +2338,14 @@ static unsigned int __cdecl vtbl_func__Go(_Pad *this)
     DWORD ret;
 
     ret = WaitForSingleObject(_Pad__Launch_returned, 100);
-    ok(ret == WAIT_TIMEOUT, "WiatForSingleObject returned %lx\n", ret);
-    ok(!pad.mtx->count, "pad.mtx.count = %ld\n", pad.mtx->count);
+    ok(ret == WAIT_TIMEOUT, "WiatForSingleObject returned %x\n", ret);
+    ok(!pad.mtx->count, "pad.mtx.count = %d\n", pad.mtx->count);
     ok(!pad.launched, "pad.launched = %x\n", pad.launched);
     call_func1(p__Pad__Release, &pad);
     ok(pad.launched, "pad.launched = %x\n", pad.launched);
     ret = WaitForSingleObject(_Pad__Launch_returned, 100);
-    ok(ret == WAIT_OBJECT_0, "WiatForSingleObject returned %lx\n", ret);
-    ok(pad.mtx->count == 1, "pad.mtx.count = %ld\n", pad.mtx->count);
+    ok(ret == WAIT_OBJECT_0, "WiatForSingleObject returned %x\n", ret);
+    ok(pad.mtx->count == 1, "pad.mtx.count = %d\n", pad.mtx->count);
     return 0;
 }
 
@@ -2387,7 +2391,7 @@ static void test__Pad(void)
     memset(&pad, 0xfe, sizeof(pad));
     call_func1(p__Pad_ctor, &pad);
     ok(!pad.launched, "pad.launched = %x\n", pad.launched);
-    ok(pad.mtx->count == 1, "pad.mtx.count = %ld\n", pad.mtx->count);
+    ok(pad.mtx->count == 1, "pad.mtx.count = %d\n", pad.mtx->count);
 
     pad.vtable = &pfunc;
     call_func2(p__Pad__Launch, &pad, &thrd);
@@ -2777,7 +2781,7 @@ static void test_queue_base_v4(void)
 
     thread[1] = CreateThread(NULL, 0, queue_push_thread, &queue, 0, NULL);
     ret = WaitForSingleObject(thread[1], 100);
-    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %lx\n", ret);
+    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %x\n", ret);
 
     SetEvent(block_end);
     WaitForSingleObject(thread[0], INFINITE);
@@ -2800,7 +2804,7 @@ static void test_queue_base_v4(void)
 
     thread[1] = CreateThread(NULL, 0, queue_pop_thread, &queue, 0, NULL);
     ret = WaitForSingleObject(thread[1], 100);
-    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %lx\n", ret);
+    ok(ret == WAIT_TIMEOUT, "WaitForSingleObject returned %x\n", ret);
 
     SetEvent(block_end);
     WaitForSingleObject(thread[0], INFINITE);
@@ -3302,26 +3306,6 @@ static void test_vector_base_v4(void)
     ok(!vector_alloc_count, "vector_alloc_count = %d, expected 0\n", vector_alloc_count);
 }
 
-static BYTE byte_reverse(BYTE b)
-{
-    b = ((b & 0xf0) >> 4) | ((b & 0x0f) << 4);
-    b = ((b & 0xcc) >> 2) | ((b & 0x33) << 2);
-    b = ((b & 0xaa) >> 1) | ((b & 0x55) << 1);
-    return b;
-}
-
-static void test_data_exports(void)
-{
-    unsigned int i;
-
-    ok(IsBadWritePtr((BYTE *)p_byte_reverse_table, 256), "byte_reverse_table is writeable.\n");
-    for (i = 0; i < 256; ++i)
-    {
-        ok(p_byte_reverse_table[i] == byte_reverse(i), "Got unexpected byte %#x, expected %#x.\n",
-                p_byte_reverse_table[i], byte_reverse(i));
-    }
-}
-
 START_TEST(msvcp120)
 {
     if(!init()) return;
@@ -3337,7 +3321,6 @@ START_TEST(msvcp120)
     test__Dtest();
     test__Dscale();
     test__FExp();
-    test__Syserror_map();
 
     test_tr2_sys__File_size();
     test_tr2_sys__Equivalent();
@@ -3366,8 +3349,6 @@ START_TEST(msvcp120)
     test_vector_base_v4();
 
     test_vbtable_size_exports();
-
-    test_data_exports();
 
     free_expect_struct();
     TlsFree(expect_idx);

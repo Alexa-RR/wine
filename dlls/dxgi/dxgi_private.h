@@ -96,10 +96,8 @@ void wined3d_display_mode_from_dxgi1(struct wined3d_display_mode *wined3d_mode,
 DXGI_USAGE dxgi_usage_from_wined3d_bind_flags(unsigned int wined3d_bind_flags) DECLSPEC_HIDDEN;
 unsigned int wined3d_bind_flags_from_dxgi_usage(DXGI_USAGE usage) DECLSPEC_HIDDEN;
 unsigned int dxgi_swapchain_flags_from_wined3d(unsigned int wined3d_flags) DECLSPEC_HIDDEN;
-HRESULT dxgi_get_output_from_window(IWineDXGIFactory *factory, HWND window, IDXGIOutput **dxgi_output)
-        DECLSPEC_HIDDEN;
 HRESULT wined3d_swapchain_desc_from_dxgi(struct wined3d_swapchain_desc *wined3d_desc,
-        IDXGIOutput *dxgi_containing_output, HWND window, const DXGI_SWAP_CHAIN_DESC1 *dxgi_desc,
+        HWND window, const DXGI_SWAP_CHAIN_DESC1 *dxgi_desc,
         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *dxgi_fullscreen_desc) DECLSPEC_HIDDEN;
 
 HRESULT dxgi_get_private_data(struct wined3d_private_store *store,
@@ -144,7 +142,7 @@ HRESULT dxgi_device_init(struct dxgi_device *device, struct dxgi_device_layer *l
 /* IDXGIOutput */
 struct dxgi_output
 {
-    IDXGIOutput6 IDXGIOutput6_iface;
+    IDXGIOutput4 IDXGIOutput4_iface;
     LONG refcount;
     struct wined3d_output *wined3d_output;
     struct wined3d_private_store private_store;
@@ -177,12 +175,10 @@ struct d3d11_swapchain
     LONG refcount;
     struct wined3d_private_store private_store;
     struct wined3d_swapchain *wined3d_swapchain;
-    struct wined3d_swapchain_state_parent state_parent;
     IWineDXGIDevice *device;
-    IWineDXGIFactory *factory;
+    IDXGIFactory *factory;
 
     IDXGIOutput *target;
-    LONG present_count;
 };
 
 HRESULT d3d11_swapchain_init(struct d3d11_swapchain *swapchain, struct dxgi_device *device,

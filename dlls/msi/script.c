@@ -49,6 +49,10 @@ WINE_DEFAULT_DEBUG_CHANNEL(msi);
 
 #endif
 
+static const WCHAR szJScript[] = { 'J','S','c','r','i','p','t',0};
+static const WCHAR szVBScript[] = { 'V','B','S','c','r','i','p','t',0};
+static const WCHAR szSession[] = {'S','e','s','s','i','o','n',0};
+
 /*
  * MsiActiveScriptSite - Our IActiveScriptSite implementation.
  */
@@ -90,7 +94,7 @@ static ULONG WINAPI MsiActiveScriptSite_AddRef(IActiveScriptSite* iface)
 {
     MsiActiveScriptSite *This = impl_from_IActiveScriptSite(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE( "(%p)->(%lu)\n", This, ref );
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -99,7 +103,7 @@ static ULONG WINAPI MsiActiveScriptSite_Release(IActiveScriptSite* iface)
     MsiActiveScriptSite *This = impl_from_IActiveScriptSite(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE( "(%p)->(%lu)\n", This, ref );
+    TRACE("(%p)->(%d)\n", This, ref);
 
     if (!ref)
         msi_free(This);
@@ -118,7 +122,7 @@ static HRESULT WINAPI MsiActiveScriptSite_GetItemInfo(IActiveScriptSite* iface, 
 {
     MsiActiveScriptSite *This = impl_from_IActiveScriptSite(iface);
 
-    TRACE( "(%p)->(%p, %lu, %p, %p)\n", This, pstrName, dwReturnMask, ppiunkItem, ppti );
+    TRACE("(%p)->(%p, %d, %p, %p)\n", This, pstrName, dwReturnMask, ppiunkItem, ppti);
 
     /* Determine the kind of pointer that is requested, and make sure placeholder is valid */
     if (dwReturnMask & SCRIPTINFO_ITYPEINFO) {
@@ -131,7 +135,7 @@ static HRESULT WINAPI MsiActiveScriptSite_GetItemInfo(IActiveScriptSite* iface, 
     }
 
     /* Are we looking for the session object? */
-    if (!wcscmp(L"Session", pstrName)) {
+    if (!wcscmp(szSession, pstrName)) {
         if (dwReturnMask & SCRIPTINFO_ITYPEINFO) {
             HRESULT hr = get_typeinfo(Session_tid, ppti);
             if (SUCCEEDED(hr))
@@ -315,9 +319,9 @@ DWORD call_script(MSIHANDLE hPackage, INT type, LPCWSTR script, LPCWSTR function
     /* Create the scripting engine */
     type &= msidbCustomActionTypeJScript|msidbCustomActionTypeVBScript;
     if (type == msidbCustomActionTypeJScript)
-        hr = CLSIDFromProgID(L"JScript", &clsid);
+        hr = CLSIDFromProgID(szJScript, &clsid);
     else if (type == msidbCustomActionTypeVBScript)
-        hr = CLSIDFromProgID(L"VBScript", &clsid);
+        hr = CLSIDFromProgID(szVBScript, &clsid);
     else {
         ERR("Unknown script type %d\n", type);
         goto done;
@@ -341,7 +345,7 @@ DWORD call_script(MSIHANDLE hPackage, INT type, LPCWSTR script, LPCWSTR function
     hr = IActiveScriptParse_InitNew(pActiveScriptParse);
     if (FAILED(hr)) goto done;
 
-    hr = IActiveScript_AddNamedItem(pActiveScript, L"Session", SCRIPTITEM_GLOBALMEMBERS|SCRIPTITEM_ISVISIBLE);
+    hr = IActiveScript_AddNamedItem(pActiveScript, szSession, SCRIPTITEM_GLOBALMEMBERS|SCRIPTITEM_ISVISIBLE);
     if (FAILED(hr)) goto done;
 
     hr = IActiveScriptParse_ParseScriptText(pActiveScriptParse, script, NULL, NULL, NULL, 0, 0, 0L, NULL, NULL);

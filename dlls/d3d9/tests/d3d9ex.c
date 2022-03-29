@@ -621,7 +621,7 @@ static void test_get_adapter_displaymode_ex(void)
     ok(mode_ex.ScanLineOrdering != 0, "ScanLineOrdering returned 0\n");
     /* Check that orientation is returned correctly by GetAdapterDisplayModeEx
      * and EnumDisplaySettingsEx(). */
-    ok(S2(U1(devmode)).dmDisplayOrientation == DMDO_180 && rotation == D3DDISPLAYROTATION_180,
+    todo_wine ok(S2(U1(devmode)).dmDisplayOrientation == DMDO_180 && rotation == D3DDISPLAYROTATION_180,
             "rotation is %d instead of %d\n", rotation, S2(U1(devmode)).dmDisplayOrientation);
 
     trace("GetAdapterDisplayModeEx returned Width = %d, Height = %d, RefreshRate = %d, Format = %x, ScanLineOrdering = %x, rotation = %d\n",
@@ -3559,21 +3559,14 @@ static void test_window_style(void)
         hr = reset_device(device, &device_desc);
         ok(SUCCEEDED(hr), "Failed to reset device, hr %#x.\n", hr);
 
-        GetWindowRect(device_window, &r);
-        if (tests[i].device_flags & CREATE_DEVICE_NOWINDOWCHANGES)
-            todo_wine ok(EqualRect(&r, &device_rect), "Expected %s, got %s, i=%u.\n",
-                    wine_dbgstr_rect(&device_rect), wine_dbgstr_rect(&r), i);
-        else
-            ok(EqualRect(&r, &fullscreen_rect), "Expected %s, got %s, i=%u.\n",
-                    wine_dbgstr_rect(&fullscreen_rect), wine_dbgstr_rect(&r), i);
-
         style = GetWindowLongA(device_window, GWL_STYLE);
         expected_style = device_style;
-        ok(style == expected_style, "Expected device window style %#x, got %#x, i=%u.\n",
-                expected_style, style, i);
+        todo_wine_if (!(tests[i].style_flags & WS_VISIBLE))
+            ok(style == expected_style, "Expected device window style %#x, got %#x, i=%u.\n",
+                    expected_style, style, i);
         style = GetWindowLongA(device_window, GWL_EXSTYLE);
         expected_style = device_exstyle;
-        ok(style == expected_style, "Expected device window extended style %#x, got %#x, i=%u.\n",
+        todo_wine ok(style == expected_style, "Expected device window extended style %#x, got %#x, i=%u.\n",
                 expected_style, style, i);
 
         style = GetWindowLongA(focus_window, GWL_STYLE);
@@ -3588,11 +3581,12 @@ static void test_window_style(void)
 
         style = GetWindowLongA(device_window, GWL_STYLE);
         expected_style = device_style;
-        ok(style == expected_style, "Expected device window style %#x, got %#x, i=%u.\n",
-                expected_style, style, i);
+        todo_wine_if (!(tests[i].style_flags & WS_VISIBLE))
+            ok(style == expected_style, "Expected device window style %#x, got %#x, i=%u.\n",
+                    expected_style, style, i);
         style = GetWindowLongA(device_window, GWL_EXSTYLE);
         expected_style = device_exstyle;
-        ok(style == expected_style, "Expected device window extended style %#x, got %#x, i=%u.\n",
+        todo_wine ok(style == expected_style, "Expected device window extended style %#x, got %#x, i=%u.\n",
                 expected_style, style, i);
 
         style = GetWindowLongA(focus_window, GWL_STYLE);
@@ -4020,7 +4014,8 @@ static void test_device_caps(void)
 
     ok(!(caps.Caps & ~(D3DCAPS_OVERLAY | D3DCAPS_READ_SCANLINE)),
             "Caps field has unexpected flags %#x.\n", caps.Caps);
-    ok(!(caps.Caps2 & ~(D3DCAPS2_FULLSCREENGAMMA | D3DCAPS2_CANCALIBRATEGAMMA | D3DCAPS2_RESERVED
+    ok(!(caps.Caps2 & ~(D3DCAPS2_NO2DDURING3DSCENE | D3DCAPS2_FULLSCREENGAMMA
+            | D3DCAPS2_CANRENDERWINDOWED | D3DCAPS2_CANCALIBRATEGAMMA | D3DCAPS2_RESERVED
             | D3DCAPS2_CANMANAGERESOURCE | D3DCAPS2_DYNAMICTEXTURES | D3DCAPS2_CANAUTOGENMIPMAP
             | D3DCAPS2_CANSHARERESOURCE)),
             "Caps2 field has unexpected flags %#x.\n", caps.Caps2);

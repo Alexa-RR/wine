@@ -34,8 +34,32 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(svchost);
 
-static const WCHAR service_reg_path[] = L"System\\CurrentControlSet\\Services";
-static const WCHAR svchost_path[] = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Svchost";
+/* Static strings used throughout svchost */
+static const WCHAR kd[] = {'-','k',0};
+
+static const WCHAR ks[] = {'/','k',0};
+
+static const WCHAR reg_separator[] = {'\\',0};
+
+static const WCHAR service_reg_path[] = {
+    'S','y','s','t','e','m',
+    '\\','C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t',
+    '\\','S','e','r','v','i','c','e','s',0};
+
+static const WCHAR parameters[] = {
+    'P','a','r','a','m','e','t','e','r','s',0};
+
+static const WCHAR service_dll[] = {
+    'S','e','r','v','i','c','e','D','l','l',0};
+
+static const WCHAR svchost_path[] = {
+    'S','o','f','t','w','a','r','e',
+    '\\','M','i','c','r','o','s','o','f','t',
+    '\\','W','i','n','d','o','w','s',' ','N','T',
+    '\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n',
+    '\\','S','v','c','h','o','s','t',0};
+
+static const CHAR service_main[] = "ServiceMain";
 
 /* Allocate and initialize a WSTR containing the queried value */
 static LPWSTR GetRegValue(HKEY service_key, const WCHAR *value_name)
@@ -86,7 +110,7 @@ static LPWSTR ExpandEnv(LPWSTR string)
     size = ExpandEnvironmentStringsW(string, NULL, size);
     if (size == 0)
     {
-        WINE_ERR("cannot expand env vars in %s: %lu\n",
+        WINE_ERR("cannot expand env vars in %s: %u\n",
                 wine_dbgstr_w(string), GetLastError());
         return NULL;
     }
@@ -94,7 +118,7 @@ static LPWSTR ExpandEnv(LPWSTR string)
             (size + 1) * sizeof(WCHAR));
     if (ExpandEnvironmentStringsW(string, expanded_string, size) == 0)
     {
-        WINE_ERR("cannot expand env vars in %s: %lu\n",
+        WINE_ERR("cannot expand env vars in %s: %u\n",
                 wine_dbgstr_w(string), GetLastError());
         HeapFree(GetProcessHeap(), 0, expanded_string);
         return NULL;
@@ -121,30 +145,31 @@ static BOOL AddServiceElem(LPWSTR service_name,
     WINE_TRACE("Adding element for %s\n", wine_dbgstr_w(service_name));
 
     /* Construct registry path to the service's parameters key */
-    size = lstrlenW(service_reg_path) + lstrlenW(L"\\") + lstrlenW(service_name) + lstrlenW(L"\\") +
-           lstrlenW(L"Parameters") + 1;
+    size = (lstrlenW(service_reg_path) + lstrlenW(reg_separator) +
+            lstrlenW(service_name) + lstrlenW(reg_separator) +
+            lstrlenW(parameters) + 1);
     service_param_key = HeapAlloc(GetProcessHeap(), 0, size * sizeof(WCHAR));
     lstrcpyW(service_param_key, service_reg_path);
-    lstrcatW(service_param_key, L"\\");
+    lstrcatW(service_param_key, reg_separator);
     lstrcatW(service_param_key, service_name);
-    lstrcatW(service_param_key, L"\\");
-    lstrcatW(service_param_key, L"Parameters");
+    lstrcatW(service_param_key, reg_separator);
+    lstrcatW(service_param_key, parameters);
     service_param_key[size - 1] = '\0';
     ret = RegOpenKeyExW(HKEY_LOCAL_MACHINE, service_param_key, 0,
             KEY_READ, &service_hkey);
     if (ret != ERROR_SUCCESS)
     {
-        WINE_ERR("cannot open key %s, err=%ld\n",
+        WINE_ERR("cannot open key %s, err=%d\n",
                 wine_dbgstr_w(service_param_key), ret);
         goto cleanup;
     }
 
     /* Find DLL associate with service from key */
-    dll_name_short = GetRegValue(service_hkey, L"ServiceDll");
+    dll_name_short = GetRegValue(service_hkey, service_dll);
     if (!dll_name_short)
     {
-        WINE_ERR("cannot find registry value ServiceDll for service %s\n",
-                wine_dbgstr_w(service_name));
+        WINE_ERR("cannot find registry value %s for service %s\n",
+                wine_dbgstr_w(service_dll), wine_dbgstr_w(service_name));
         RegCloseKey(service_hkey);
         goto cleanup;
     }
@@ -160,14 +185,14 @@ static BOOL AddServiceElem(LPWSTR service_name,
     }
 
     /* Look for alternate to default ServiceMain entry point */
-    ret = RegQueryValueExA(service_hkey, "ServiceMain", NULL, NULL, NULL, &reg_size);
+    ret = RegQueryValueExA(service_hkey, service_main, NULL, NULL, NULL, &reg_size);
     if (ret == ERROR_SUCCESS)
     {
         /* Add space for potentially missing NULL terminator, allocate, and
          * fill with the registry value */
         size = reg_size + 1;
         dll_service_main = HeapAlloc(GetProcessHeap(), 0, size);
-        ret = RegQueryValueExA(service_hkey, "ServiceMain", NULL, NULL,
+        ret = RegQueryValueExA(service_hkey, service_main, NULL, NULL,
                 (LPBYTE)dll_service_main, &reg_size);
         if (ret != ERROR_SUCCESS)
         {
@@ -182,7 +207,7 @@ static BOOL AddServiceElem(LPWSTR service_name,
     library = LoadLibraryExW(dll_name_long, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!library)
     {
-        WINE_ERR("failed to load library %s, err=%lu\n",
+        WINE_ERR("failed to load library %s, err=%u\n",
                 wine_dbgstr_w(dll_name_long), GetLastError());
         goto cleanup;
     }
@@ -194,7 +219,7 @@ static BOOL AddServiceElem(LPWSTR service_name,
     else
     {
         service_main_func =
-            (LPSERVICE_MAIN_FUNCTIONW) GetProcAddress(library, "ServiceMain");
+            (LPSERVICE_MAIN_FUNCTIONW) GetProcAddress(library, service_main);
     }
     if (!service_main_func)
     {
@@ -240,7 +265,7 @@ static BOOL StartGroupServices(LPWSTR services)
         service_name = service_name + lstrlenW(service_name);
         ++service_name;
     }
-    WINE_TRACE("Service group contains %ld services\n", service_count);
+    WINE_TRACE("Service group contains %d services\n", service_count);
 
     /* Populate the service table */
     service_table = HeapAlloc(GetProcessHeap(), 0,
@@ -263,7 +288,7 @@ static BOOL StartGroupServices(LPWSTR services)
 
     /* Start the services */
     if (!(ret = StartServiceCtrlDispatcherW(service_table)))
-        WINE_ERR("StartServiceCtrlDispatcherW failed to start %s: %lu\n",
+        WINE_ERR("StartServiceCtrlDispatcherW failed to start %s: %u\n",
                 wine_dbgstr_w(services), GetLastError());
 
     HeapFree(GetProcessHeap(), 0, service_table);
@@ -285,7 +310,7 @@ static BOOL LoadGroup(PWCHAR group_name)
             KEY_READ, &group_hkey);
     if (ret != ERROR_SUCCESS)
     {
-        WINE_ERR("cannot open key %s, err=%ld\n",
+        WINE_ERR("cannot open key %s, err=%d\n",
                 wine_dbgstr_w(svchost_path), ret);
         return FALSE;
     }
@@ -315,7 +340,8 @@ int __cdecl wmain(int argc, WCHAR *argv[])
 
     for (option_index = 1; option_index < argc; option_index++)
     {
-        if (lstrcmpiW(argv[option_index], L"/k") == 0 || lstrcmpiW(argv[option_index], L"-k") == 0)
+        if (lstrcmpiW(argv[option_index], ks) == 0 ||
+                lstrcmpiW(argv[option_index], kd) == 0)
         {
             ++option_index;
             if (option_index >= argc)

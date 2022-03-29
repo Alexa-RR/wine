@@ -22,14 +22,18 @@
  * the other drivers. */
 
 #include "config.h"
+#include "wine/port.h"
+#include "macdrv.h"
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <dlfcn.h>
 
-#include "macdrv.h"
+#include "windef.h"
+#include "winbase.h"
+
 #include "wine/debug.h"
 #include "wine/heap.h"
+#include "wine/library.h"
 
 #define VK_NO_PROTOTYPES
 #define WINE_VK_HOST
@@ -82,9 +86,7 @@ static void (*pvkDestroySwapchainKHR)(VkDevice, VkSwapchainKHR, const VkAllocati
 static VkResult (*pvkEnumerateInstanceExtensionProperties)(const char *, uint32_t *, VkExtensionProperties *);
 static void * (*pvkGetDeviceProcAddr)(VkDevice, const char *);
 static void * (*pvkGetInstanceProcAddr)(VkInstance, const char *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, VkSurfaceCapabilities2KHR *);
 static VkResult (*pvkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceFormats2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, uint32_t *, VkSurfaceFormat2KHR *);
 static VkResult (*pvkGetPhysicalDeviceSurfaceFormatsKHR)(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkSurfaceFormatKHR *);
 static VkResult (*pvkGetPhysicalDeviceSurfacePresentModesKHR)(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkPresentModeKHR *);
 static VkResult (*pvkGetPhysicalDeviceSurfaceSupportKHR)(VkPhysicalDevice, uint32_t, VkSurfaceKHR, VkBool32 *);
@@ -103,13 +105,13 @@ static void *vulkan_handle;
 
 static BOOL WINAPI wine_vk_init(INIT_ONCE *once, void *param, void **context)
 {
-    if (!(vulkan_handle = dlopen(SONAME_LIBMOLTENVK, RTLD_NOW)))
+    if (!(vulkan_handle = wine_dlopen(SONAME_LIBMOLTENVK, RTLD_NOW, NULL, 0)))
     {
         ERR("Failed to load %s\n", SONAME_LIBMOLTENVK);
         return TRUE;
     }
 
-#define LOAD_FUNCPTR(f) if ((p##f = dlsym(vulkan_handle, #f)) == NULL) goto fail;
+#define LOAD_FUNCPTR(f) if ((p##f = wine_dlsym(vulkan_handle, #f, NULL, 0)) == NULL) goto fail;
     LOAD_FUNCPTR(vkCreateInstance)
     LOAD_FUNCPTR(vkCreateSwapchainKHR)
     LOAD_FUNCPTR(vkCreateMacOSSurfaceMVK)
@@ -120,9 +122,7 @@ static BOOL WINAPI wine_vk_init(INIT_ONCE *once, void *param, void **context)
     LOAD_FUNCPTR(vkEnumerateInstanceExtensionProperties)
     LOAD_FUNCPTR(vkGetDeviceProcAddr)
     LOAD_FUNCPTR(vkGetInstanceProcAddr)
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceCapabilities2KHR)
     LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceFormats2KHR)
     LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceFormatsKHR)
     LOAD_FUNCPTR(vkGetPhysicalDeviceSurfacePresentModesKHR)
     LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceSupportKHR)
@@ -133,7 +133,7 @@ static BOOL WINAPI wine_vk_init(INIT_ONCE *once, void *param, void **context)
     return TRUE;
 
 fail:
-    dlclose(vulkan_handle);
+    wine_dlclose(vulkan_handle, NULL, 0);
     vulkan_handle = NULL;
     return TRUE;
 }
@@ -417,31 +417,11 @@ static VkResult macdrv_vkEnumerateInstanceExtensionProperties(const char *layer_
     return res;
 }
 
-static const char *wine_vk_native_fn_name(const char *name)
-{
-    const char *create_surface_name =
-        pvkCreateMetalSurfaceEXT ? "vkCreateMetalSurfaceEXT" : "vkCreateMacOSSurfaceMVK";
-
-    if (!strcmp(name, "vkCreateWin32SurfaceKHR"))
-        return create_surface_name;
-    /* We just need something where non-NULL is returned if the correct extension is enabled.
-     * So since there is no native equivalent of this function check for the create
-     * surface function.
-     */
-    if (!strcmp(name, "vkGetPhysicalDeviceWin32PresentationSupportKHR"))
-        return create_surface_name;
-
-    return name;
-}
-
 static void *macdrv_vkGetDeviceProcAddr(VkDevice device, const char *name)
 {
     void *proc_addr;
 
     TRACE("%p, %s\n", device, debugstr_a(name));
-
-    if (!pvkGetDeviceProcAddr(device, wine_vk_native_fn_name(name)))
-        return NULL;
 
     if ((proc_addr = macdrv_get_vk_device_proc_addr(name)))
         return proc_addr;
@@ -455,26 +435,10 @@ static void *macdrv_vkGetInstanceProcAddr(VkInstance instance, const char *name)
 
     TRACE("%p, %s\n", instance, debugstr_a(name));
 
-    if (!pvkGetInstanceProcAddr(instance, wine_vk_native_fn_name(name)))
-        return NULL;
-
     if ((proc_addr = macdrv_get_vk_instance_proc_addr(instance, name)))
         return proc_addr;
 
     return pvkGetInstanceProcAddr(instance, name);
-}
-
-static VkResult macdrv_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice phys_dev,
-        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, VkSurfaceCapabilities2KHR *capabilities)
-{
-    VkPhysicalDeviceSurfaceInfo2KHR surface_info_host;
-
-    TRACE("%p, %p, %p\n", phys_dev, surface_info, capabilities);
-
-    surface_info_host = *surface_info;
-    surface_info_host.surface = surface_from_handle(surface_info->surface)->surface;
-
-    return pvkGetPhysicalDeviceSurfaceCapabilities2KHR(phys_dev, &surface_info_host, capabilities);
 }
 
 static VkResult macdrv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice phys_dev,
@@ -486,19 +450,6 @@ static VkResult macdrv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevic
 
     return pvkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, mac_surface->surface,
             capabilities);
-}
-
-static VkResult macdrv_vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice phys_dev,
-        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, uint32_t *count, VkSurfaceFormat2KHR *formats)
-{
-    VkPhysicalDeviceSurfaceInfo2KHR surface_info_host;
-
-    TRACE("%p, %p, %p, %p\n", phys_dev, surface_info, count, formats);
-
-    surface_info_host = *surface_info;
-    surface_info_host.surface = surface_from_handle(surface_info->surface)->surface;
-
-    return pvkGetPhysicalDeviceSurfaceFormats2KHR(phys_dev, &surface_info_host, count, formats);
 }
 
 static VkResult macdrv_vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice phys_dev,
@@ -578,15 +529,6 @@ static VkResult macdrv_vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *
     return res;
 }
 
-static VkSurfaceKHR macdrv_wine_get_native_surface(VkSurfaceKHR surface)
-{
-    struct wine_vk_surface *mac_surface = surface_from_handle(surface);
-
-    TRACE("0x%s\n", wine_dbgstr_longlong(surface));
-
-    return mac_surface->surface;
-}
-
 static const struct vulkan_funcs vulkan_funcs =
 {
     macdrv_vkCreateInstance,
@@ -600,17 +542,13 @@ static const struct vulkan_funcs vulkan_funcs =
     macdrv_vkGetDeviceProcAddr,
     macdrv_vkGetInstanceProcAddr,
     NULL,
-    macdrv_vkGetPhysicalDeviceSurfaceCapabilities2KHR,
     macdrv_vkGetPhysicalDeviceSurfaceCapabilitiesKHR,
-    macdrv_vkGetPhysicalDeviceSurfaceFormats2KHR,
     macdrv_vkGetPhysicalDeviceSurfaceFormatsKHR,
     macdrv_vkGetPhysicalDeviceSurfacePresentModesKHR,
     macdrv_vkGetPhysicalDeviceSurfaceSupportKHR,
     macdrv_vkGetPhysicalDeviceWin32PresentationSupportKHR,
     macdrv_vkGetSwapchainImagesKHR,
     macdrv_vkQueuePresentKHR,
-
-    macdrv_wine_get_native_surface,
 };
 
 static void *macdrv_get_vk_device_proc_addr(const char *name)
@@ -650,7 +588,14 @@ static const struct vulkan_funcs *get_vulkan_driver(UINT version)
 
 #endif /* SONAME_LIBMOLTENVK */
 
-const struct vulkan_funcs * CDECL macdrv_wine_get_vulkan_driver(UINT version)
+const struct vulkan_funcs * CDECL macdrv_wine_get_vulkan_driver(PHYSDEV dev, UINT version)
 {
-    return get_vulkan_driver( version );
+    const struct vulkan_funcs *ret;
+
+    if (!(ret = get_vulkan_driver( version )))
+    {
+        dev = GET_NEXT_PHYSDEV( dev, wine_get_vulkan_driver );
+        ret = dev->funcs->wine_get_vulkan_driver( dev, version );
+    }
+    return ret;
 }

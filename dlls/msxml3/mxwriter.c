@@ -20,8 +20,12 @@
  */
 
 #define COBJMACROS
+#include "config.h"
 
 #include <stdarg.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -30,8 +34,9 @@
 #include "msxml6.h"
 
 #include "wine/debug.h"
+#include "wine/list.h"
 
-#include "msxml_dispex.h"
+#include "msxml_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -253,7 +258,7 @@ static xml_encoding parse_encoding_name(const WCHAR *encoding)
     {
         n = (min+max)/2;
 
-        c = lstrcmpiW(xml_encoding_map[n].encoding, encoding);
+        c = strcmpiW(xml_encoding_map[n].encoding, encoding);
         if (!c)
             return xml_encoding_map[n].enc;
 
@@ -336,13 +341,13 @@ static HRESULT write_output_buffer(mxwriter *writer, const WCHAR *data, int len)
 {
     output_buffer *buffer = &writer->buffer;
     encoded_buffer *buff;
-    ULONG written;
+    unsigned int written;
     int src_len;
 
     if (!len || !*data)
         return S_OK;
 
-    src_len = len == -1 ? lstrlenW(data) : len;
+    src_len = len == -1 ? strlenW(data) : len;
     if (writer->dest)
     {
         buff = &buffer->encoded;
@@ -688,6 +693,14 @@ static inline HRESULT flush_output_buffer(mxwriter *This)
     return write_data_to_stream(This);
 }
 
+/* Resets the mxwriter's output buffer by closing it, then creating a new
+ * output buffer using the given encoding.
+ */
+static inline void reset_output_buffer(mxwriter *This)
+{
+    close_output_buffer(This);
+}
+
 static HRESULT writer_set_property(mxwriter *writer, mxwriter_prop property, VARIANT_BOOL value)
 {
     writer->props[property] = value;
@@ -828,10 +841,10 @@ static HRESULT WINAPI mxwriter_QueryInterface(IMXWriter *iface, REFIID riid, voi
 
 static ULONG WINAPI mxwriter_AddRef(IMXWriter *iface)
 {
-    mxwriter *writer = impl_from_IMXWriter(iface);
-    LONG ref = InterlockedIncrement(&writer->ref);
+    mxwriter *This = impl_from_IMXWriter( iface );
+    LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
 
     return ref;
 }
@@ -841,9 +854,9 @@ static ULONG WINAPI mxwriter_Release(IMXWriter *iface)
     mxwriter *This = impl_from_IMXWriter( iface );
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
 
-    if (!ref)
+    if(!ref)
     {
         /* Windows flushes the buffer when the interface is destroyed. */
         flush_output_buffer(This);
@@ -914,7 +927,7 @@ static HRESULT WINAPI mxwriter_put_output(IMXWriter *iface, VARIANT dest)
     {
         if (This->dest) IStream_Release(This->dest);
         This->dest = NULL;
-        close_output_buffer(This);
+        reset_output_buffer(This);
         break;
     }
     case VT_UNKNOWN:
@@ -925,7 +938,7 @@ static HRESULT WINAPI mxwriter_put_output(IMXWriter *iface, VARIANT dest)
         if (hr == S_OK)
         {
             /* Recreate the output buffer to make sure it's using the correct encoding. */
-            close_output_buffer(This);
+            reset_output_buffer(This);
 
             if (This->dest) IStream_Release(This->dest);
             This->dest = stream;
@@ -1015,7 +1028,7 @@ static HRESULT WINAPI mxwriter_put_encoding(IMXWriter *iface, BSTR encoding)
     This->xml_enc = enc;
 
     TRACE("got encoding %d\n", This->xml_enc);
-    close_output_buffer(This);
+    reset_output_buffer(This);
     return S_OK;
 }
 
@@ -1216,7 +1229,7 @@ static HRESULT WINAPI SAXContentHandler_startDocument(ISAXContentHandler *iface)
      * be how Windows works.
      */
     if (This->prop_changed) {
-        close_output_buffer(This);
+        reset_output_buffer(This);
         This->prop_changed = FALSE;
     }
 
@@ -2154,8 +2167,8 @@ static HRESULT WINAPI VBSAXContentHandler_startElement(IVBSAXContentHandler *ifa
 
     TRACE("(%p)->(%p %p %p %p)\n", This, namespaceURI, localName, QName, attrs);
 
-    if (!namespaceURI || !*namespaceURI || !localName || !QName)
-        return E_INVALIDARG;
+    if (!namespaceURI || !localName || !QName)
+        return E_POINTER;
 
     TRACE("(%s %s %s)\n", debugstr_w(*namespaceURI), debugstr_w(*localName), debugstr_w(*QName));
 
@@ -2468,7 +2481,9 @@ static ULONG WINAPI SAXErrorHandler_Release(ISAXErrorHandler *iface)
 static HRESULT WINAPI SAXErrorHandler_error(ISAXErrorHandler *iface,
     ISAXLocator *locator, const WCHAR *message, HRESULT hr)
 {
-    FIXME("%p, %p, %s, %#lx.\n", iface, locator, debugstr_w(message), hr);
+    mxwriter *This = impl_from_ISAXErrorHandler( iface );
+
+    FIXME("(%p)->(%p %s 0x%08x)\n", This, locator, debugstr_w(message), hr);
 
     return E_NOTIMPL;
 }
@@ -2476,7 +2491,9 @@ static HRESULT WINAPI SAXErrorHandler_error(ISAXErrorHandler *iface,
 static HRESULT WINAPI SAXErrorHandler_fatalError(ISAXErrorHandler *iface,
     ISAXLocator *locator, const WCHAR *message, HRESULT hr)
 {
-    FIXME("%p, %p, %s, %#lx.\n", iface, locator, debugstr_w(message), hr);
+    mxwriter *This = impl_from_ISAXErrorHandler( iface );
+
+    FIXME("(%p)->(%p %s 0x%08x)\n", This, locator, debugstr_w(message), hr);
 
     return E_NOTIMPL;
 }
@@ -2484,7 +2501,9 @@ static HRESULT WINAPI SAXErrorHandler_fatalError(ISAXErrorHandler *iface,
 static HRESULT WINAPI SAXErrorHandler_ignorableWarning(ISAXErrorHandler *iface,
     ISAXLocator *locator, const WCHAR *message, HRESULT hr)
 {
-    FIXME("%p, %p, %s, %#lx.\n", iface, locator, debugstr_w(message), hr);
+    mxwriter *This = impl_from_ISAXErrorHandler( iface );
+
+    FIXME("(%p)->(%p %s 0x%08x)\n", This, locator, debugstr_w(message), hr);
 
     return E_NOTIMPL;
 }
@@ -2546,19 +2565,22 @@ static HRESULT WINAPI VBSAXErrorHandler_Invoke(IVBSAXErrorHandler *iface, DISPID
 
 static HRESULT WINAPI VBSAXErrorHandler_error(IVBSAXErrorHandler *iface, IVBSAXLocator *locator, BSTR *message, LONG code)
 {
-    FIXME("%p, %p, %p, %lx: stub\n", iface, locator, message, code);
+    mxwriter *This = impl_from_IVBSAXErrorHandler( iface );
+    FIXME("(%p)->(%p %p %x): stub\n", This, locator, message, code);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI VBSAXErrorHandler_fatalError(IVBSAXErrorHandler *iface, IVBSAXLocator *locator, BSTR *message, LONG code)
 {
-    FIXME("%p, %p, %p, %lx: stub\n", iface, locator, message, code);
+    mxwriter *This = impl_from_IVBSAXErrorHandler( iface );
+    FIXME("(%p)->(%p %p %x): stub\n", This, locator, message, code);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI VBSAXErrorHandler_ignorableWarning(IVBSAXErrorHandler *iface, IVBSAXLocator *locator, BSTR *message, LONG code)
 {
-    FIXME("%p, %p, %p, %lx: stub\n", iface, locator, message, code);
+    mxwriter *This = impl_from_IVBSAXErrorHandler( iface );
+    FIXME("(%p)->(%p %p %x): stub\n", This, locator, message, code);
     return E_NOTIMPL;
 }
 
@@ -2689,18 +2711,18 @@ static ULONG WINAPI MXAttributes_AddRef(IMXAttributes *iface)
 {
     mxattributes *This = impl_from_IMXAttributes( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
-    TRACE("%p, refcount %lu.\n", iface, ref );
+    TRACE("(%p)->(%d)\n", This, ref );
     return ref;
 }
 
 static ULONG WINAPI MXAttributes_Release(IMXAttributes *iface)
 {
     mxattributes *This = impl_from_IMXAttributes( iface );
-    ULONG ref = InterlockedDecrement( &This->ref );
+    LONG ref = InterlockedDecrement( &This->ref );
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
 
-    if (!ref)
+    if (ref == 0)
     {
         int i;
 
@@ -3067,10 +3089,10 @@ static HRESULT WINAPI SAXAttributes_getIndexFromName(ISAXAttributes *iface, cons
     for (i = 0; i < This->length; i++)
     {
         if (uri_len != SysStringLen(This->attr[i].uri)) continue;
-        if (wcsncmp(uri, This->attr[i].uri, uri_len)) continue;
+        if (strncmpW(uri, This->attr[i].uri, uri_len)) continue;
 
         if (len != SysStringLen(This->attr[i].local)) continue;
-        if (wcsncmp(name, This->attr[i].local, len)) continue;
+        if (strncmpW(name, This->attr[i].local, len)) continue;
 
         *index = i;
         return S_OK;
@@ -3095,7 +3117,7 @@ static HRESULT WINAPI SAXAttributes_getIndexFromQName(ISAXAttributes *iface, con
     for (i = 0; i < This->length; i++)
     {
         if (len != SysStringLen(This->attr[i].qname)) continue;
-        if (wcsncmp(qname, This->attr[i].qname, len)) continue;
+        if (strncmpW(qname, This->attr[i].qname, len)) continue;
 
         *index = i;
         return S_OK;
@@ -3252,8 +3274,8 @@ static HRESULT WINAPI VBSAXAttributes_GetTypeInfo(
     IVBSAXAttributes *iface,
     UINT iTInfo, LCID lcid, ITypeInfo** ppTInfo )
 {
-    TRACE("%p, %u, %lx, %p.\n", iface, iTInfo, lcid, ppTInfo);
-
+    mxattributes *This = impl_from_IVBSAXAttributes( iface );
+    TRACE("(%p)->(%u %u %p)\n", This, iTInfo, lcid, ppTInfo);
     return get_typeinfo(IVBSAXAttributes_tid, ppTInfo);
 }
 
@@ -3265,10 +3287,11 @@ static HRESULT WINAPI VBSAXAttributes_GetIDsOfNames(
     LCID lcid,
     DISPID* rgDispId)
 {
+    mxattributes *This = impl_from_IVBSAXAttributes( iface );
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%p, %s, %p, %u, %lx, %p.\n", iface, debugstr_guid(riid), rgszNames, cNames,
+    TRACE("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
 
     if(!rgszNames || cNames == 0 || !rgDispId)
@@ -3295,16 +3318,18 @@ static HRESULT WINAPI VBSAXAttributes_Invoke(
     EXCEPINFO* pExcepInfo,
     UINT* puArgErr)
 {
+    mxattributes *This = impl_from_IVBSAXAttributes( iface );
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%p, %ld, %s, %lx, %d, %p, %p, %p, %p.\n", iface, dispIdMember, debugstr_guid(riid),
+    TRACE("(%p)->(%d %s %d %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
           lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     hr = get_typeinfo(IVBSAXAttributes_tid, &typeinfo);
     if(SUCCEEDED(hr))
     {
-        hr = ITypeInfo_Invoke(typeinfo, iface, dispIdMember, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
+        hr = ITypeInfo_Invoke(typeinfo, &This->IVBSAXAttributes_iface, dispIdMember, wFlags,
+                pDispParams, pVarResult, pExcepInfo, puArgErr);
         ITypeInfo_Release(typeinfo);
     }
 

@@ -1,7 +1,6 @@
-EXTRADEFS = -D_CRTIMP=
+EXTRADEFS = -D_MT -D_MSVCR_VER=140
 MODULE    = ucrtbase.dll
 IMPORTLIB = ucrtbase
-IMPORTS   = ntdll
 DELAYIMPORTS = advapi32 user32
 PARENTSRC = ../msvcrt
 
@@ -36,7 +35,6 @@ C_SRCS = \
 	printf.c \
 	process.c \
 	scanf.c \
-	sincos.c \
 	string.c \
 	thread.c \
 	time.c \

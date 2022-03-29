@@ -1,7 +1,7 @@
 MODULE    = regsvr32.exe
-IMPORTS   = ole32 user32 kernelbase
+IMPORTS   = ole32 user32
 
-EXTRADLLFLAGS = -mwindows -municode
+EXTRADLLFLAGS = -mwindows -municode -mno-cygwin
 
 C_SRCS = \
 	regsvr32.c

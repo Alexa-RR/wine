@@ -24,6 +24,9 @@
 #include "d3d11.h"
 #include "wine/test.h"
 
+static pD3DCompile ppD3DCompile;
+static HRESULT (WINAPI *pD3DReflect)(const void *data, SIZE_T size, REFIID iid, void **out);
+
 static HRESULT (WINAPI *pD3D11CreateDevice)(IDXGIAdapter *adapter, D3D_DRIVER_TYPE driver_type,
         HMODULE swrast, UINT flags, const D3D_FEATURE_LEVEL *feature_levels, UINT levels,
         UINT sdk_version, ID3D11Device **device_out, D3D_FEATURE_LEVEL *obtained_feature_level,
@@ -39,15 +42,14 @@ struct vec4
     float x, y, z, w;
 };
 
-#define compile_shader(a, b) compile_shader_(__LINE__, a, b, 0)
-#define compile_shader_flags(a, b, c) compile_shader_(__LINE__, a, b, c)
-static ID3D10Blob *compile_shader_(unsigned int line, const char *source, const char *target, UINT flags)
+#define compile_shader(a, b) compile_shader_(__LINE__, a, b)
+static ID3D10Blob *compile_shader_(unsigned int line, const char *source, const char *target)
 {
     ID3D10Blob *blob = NULL, *errors = NULL;
     HRESULT hr;
 
-    hr = D3DCompile(source, strlen(source), NULL, NULL, NULL, "main", target, flags, 0, &blob, &errors);
-    ok_(__FILE__, line)(hr == S_OK, "Failed to compile shader, hr %#lx.\n", hr);
+    hr = ppD3DCompile(source, strlen(source), NULL, NULL, NULL, "main", target, 0, 0, &blob, &errors);
+    ok_(__FILE__, line)(hr == S_OK, "Failed to compile shader, hr %#x.\n", hr);
     if (errors)
     {
         if (winetest_debug > 1)
@@ -128,12 +130,12 @@ static IDXGISwapChain *create_swapchain(ID3D11Device *device, HWND window)
     HRESULT hr;
 
     hr = ID3D11Device_QueryInterface(device, &IID_IDXGIDevice, (void **)&dxgi_device);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(SUCCEEDED(hr), "Failed to get DXGI device, hr %#x.\n", hr);
     hr = IDXGIDevice_GetAdapter(dxgi_device, &adapter);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(SUCCEEDED(hr), "Failed to get adapter, hr %#x.\n", hr);
     IDXGIDevice_Release(dxgi_device);
     hr = IDXGIAdapter_GetParent(adapter, &IID_IDXGIFactory, (void **)&factory);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(SUCCEEDED(hr), "Failed to get factory, hr %#x.\n", hr);
     IDXGIAdapter_Release(adapter);
 
     dxgi_desc.BufferDesc.Width = 640;
@@ -153,7 +155,7 @@ static IDXGISwapChain *create_swapchain(ID3D11Device *device, HWND window)
     dxgi_desc.Flags = 0;
 
     hr = IDXGIFactory_CreateSwapChain(factory, (IUnknown *)device, &dxgi_desc, &swapchain);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(SUCCEEDED(hr), "Failed to create swapchain, hr %#x.\n", hr);
     IDXGIFactory_Release(factory);
 
     return swapchain;
@@ -195,10 +197,10 @@ static BOOL init_test_context_(unsigned int line, struct test_context *context)
     context->swapchain = create_swapchain(context->device, context->window);
 
     hr = ID3D11Device_CreateTexture2D(context->device, &texture_desc, NULL, &context->rt);
-    ok_(__FILE__, line)(hr == S_OK, "Failed to create texture, hr %#lx.\n", hr);
+    ok_(__FILE__, line)(hr == S_OK, "Failed to create texture, hr %#x.\n", hr);
 
     hr = ID3D11Device_CreateRenderTargetView(context->device, (ID3D11Resource *)context->rt, NULL, &context->rtv);
-    ok_(__FILE__, line)(hr == S_OK, "Failed to create rendertarget view, hr %#lx.\n", hr);
+    ok_(__FILE__, line)(hr == S_OK, "Failed to create rendertarget view, hr %#x.\n", hr);
 
     ID3D11Device_GetImmediateContext(context->device, &context->immediate_context);
 
@@ -234,7 +236,7 @@ static void release_test_context_(unsigned int line, struct test_context *contex
     DestroyWindow(context->window);
 
     ref = ID3D11Device_Release(context->device);
-    ok_(__FILE__, line)(!ref, "Device has %lu references left.\n", ref);
+    ok_(__FILE__, line)(!ref, "Device has %u references left.\n", ref);
 }
 
 #define create_buffer(a, b, c, d) create_buffer_(__LINE__, a, b, c, d)
@@ -252,7 +254,7 @@ static ID3D11Buffer *create_buffer_(unsigned int line, ID3D11Device *device,
     HRESULT hr;
 
     hr = ID3D11Device_CreateBuffer(device, &buffer_desc, data ? &resource_data : NULL, &buffer);
-    ok_(__FILE__, line)(hr == S_OK, "Failed to create buffer, hr %#lx.\n", hr);
+    ok_(__FILE__, line)(hr == S_OK, "Failed to create buffer, hr %#x.\n", hr);
     return buffer;
 }
 
@@ -285,15 +287,15 @@ static void draw_quad_(unsigned int line, struct test_context *context, ID3D10Bl
 
     if (!context->vs)
     {
-        ID3D10Blob *vs_code = compile_shader_(line, vs_source, "vs_4_0", 0);
+        ID3D10Blob *vs_code = compile_shader_(line, vs_source, "vs_4_0");
 
         hr = ID3D11Device_CreateInputLayout(device, default_layout_desc, ARRAY_SIZE(default_layout_desc),
                 ID3D10Blob_GetBufferPointer(vs_code), ID3D10Blob_GetBufferSize(vs_code), &context->input_layout);
-        ok_(__FILE__, line)(hr == S_OK, "Failed to create input layout, hr %#lx.\n", hr);
+        ok_(__FILE__, line)(hr == S_OK, "Failed to create input layout, hr %#x.\n", hr);
 
         hr = ID3D11Device_CreateVertexShader(device, ID3D10Blob_GetBufferPointer(vs_code),
                 ID3D10Blob_GetBufferSize(vs_code), NULL, &context->vs);
-        ok_(__FILE__, line)(hr == S_OK, "Failed to create vertex shader, hr %#lx.\n", hr);
+        ok_(__FILE__, line)(hr == S_OK, "Failed to create vertex shader, hr %#x.\n", hr);
     }
 
     if (!context->vb)
@@ -301,7 +303,7 @@ static void draw_quad_(unsigned int line, struct test_context *context, ID3D10Bl
 
     hr = ID3D11Device_CreatePixelShader(device, ID3D10Blob_GetBufferPointer(ps_code),
             ID3D10Blob_GetBufferSize(ps_code), NULL, &ps);
-    ok_(__FILE__, line)(hr == S_OK, "Failed to create pixel shader, hr %#lx.\n", hr);
+    ok_(__FILE__, line)(hr == S_OK, "Failed to create pixel shader, hr %#x.\n", hr);
 
     ID3D11DeviceContext_IASetInputLayout(context->immediate_context, context->input_layout);
     ID3D11DeviceContext_IASetPrimitiveTopology(context->immediate_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -333,11 +335,11 @@ static void init_readback(struct test_context *context, struct readback *rb)
     texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
     texture_desc.MiscFlags = 0;
     hr = ID3D11Device_CreateTexture2D(context->device, &texture_desc, NULL, (ID3D11Texture2D **)&rb->resource);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "Failed to create texture, hr %#x.\n", hr);
 
     ID3D11DeviceContext_CopyResource(context->immediate_context, rb->resource, (ID3D11Resource *)context->rt);
     hr = ID3D11DeviceContext_Map(context->immediate_context, rb->resource, 0, D3D11_MAP_READ, 0, &rb->map_desc);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
+    ok(hr == S_OK, "Failed to map texture, hr %#x.\n", hr);
 }
 
 static void release_readback(struct test_context *context, struct readback *rb)
@@ -383,17 +385,20 @@ static void test_swizzle(void)
     if (!init_test_context(&test_context))
         return;
 
-    ps_code = compile_shader(ps_source, "ps_4_0");
-    cb = create_buffer(test_context.device, D3D11_BIND_CONSTANT_BUFFER, sizeof(uniform), &uniform);
-    ID3D11DeviceContext_PSSetConstantBuffers(test_context.immediate_context, 0, 1, &cb);
-    draw_quad(&test_context, ps_code);
+    todo_wine ps_code = compile_shader(ps_source, "ps_4_0");
+    if (ps_code)
+    {
+        cb = create_buffer(test_context.device, D3D11_BIND_CONSTANT_BUFFER, sizeof(uniform), &uniform);
+        ID3D11DeviceContext_PSSetConstantBuffers(test_context.immediate_context, 0, 1, &cb);
+        draw_quad(&test_context, ps_code);
 
-    v = get_color_vec4(&test_context, 0, 0);
-    ok(compare_vec4(&v, 0.0101f, 0.0303f, 0.0202f, 0.0404f, 0),
-            "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v.x, v.y, v.z, v.w);
+        v = get_color_vec4(&test_context, 0, 0);
+        ok(compare_vec4(&v, 0.0101f, 0.0303f, 0.0202f, 0.0404f, 0),
+                "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v.x, v.y, v.z, v.w);
 
-    ID3D11Buffer_Release(cb);
-    ID3D10Blob_Release(ps_code);
+        ID3D11Buffer_Release(cb);
+        ID3D10Blob_Release(ps_code);
+    }
     release_test_context(&test_context);
 }
 
@@ -418,17 +423,20 @@ static void test_math(void)
     if (!init_test_context(&test_context))
         return;
 
-    ps_code = compile_shader(ps_source, "ps_4_0");
-    cb = create_buffer(test_context.device, D3D11_BIND_CONSTANT_BUFFER, sizeof(uniforms), uniforms);
-    ID3D11DeviceContext_PSSetConstantBuffers(test_context.immediate_context, 0, 1, &cb);
-    draw_quad(&test_context, ps_code);
+    todo_wine ps_code = compile_shader(ps_source, "ps_4_0");
+    if (ps_code)
+    {
+        cb = create_buffer(test_context.device, D3D11_BIND_CONSTANT_BUFFER, sizeof(uniforms), uniforms);
+        ID3D11DeviceContext_PSSetConstantBuffers(test_context.immediate_context, 0, 1, &cb);
+        draw_quad(&test_context, ps_code);
 
-    v = get_color_vec4(&test_context, 0, 0);
-    ok(compare_vec4(&v, -12.43f, 9.833333f, 1.6f, 35.0f, 1),
-            "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v.x, v.y, v.z, v.w);
+        v = get_color_vec4(&test_context, 0, 0);
+        ok(compare_vec4(&v, -12.43f, 9.833333f, 1.6f, 35.0f, 1),
+                "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v.x, v.y, v.z, v.w);
 
-    ID3D11Buffer_Release(cb);
-    ID3D10Blob_Release(ps_code);
+        ID3D11Buffer_Release(cb);
+        ID3D10Blob_Release(ps_code);
+    }
     release_test_context(&test_context);
 }
 
@@ -452,26 +460,29 @@ static void test_conditionals(void)
     if (!init_test_context(&test_context))
         return;
 
-    ps_code = compile_shader(ps_source, "ps_4_0");
-    draw_quad(&test_context, ps_code);
-    init_readback(&test_context, &rb);
-
-    for (i = 0; i < 200; i += 40)
+    todo_wine ps_code = compile_shader(ps_source, "ps_4_0");
+    if (ps_code)
     {
-        v = get_readback_vec4(&rb, i, 0);
-        ok(compare_vec4(v, 0.9f, 0.8f, 0.7f, 0.6f, 0),
-                "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v->x, v->y, v->z, v->w);
-    }
+        draw_quad(&test_context, ps_code);
+        init_readback(&test_context, &rb);
 
-    for (i = 240; i < 640; i += 40)
-    {
-        v = get_readback_vec4(&rb, i, 0);
-        ok(compare_vec4(v, 0.1f, 0.2f, 0.3f, 0.4f, 0),
-                "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v->x, v->y, v->z, v->w);
-    }
+        for (i = 0; i < 200; i += 40)
+        {
+            v = get_readback_vec4(&rb, i, 0);
+            ok(compare_vec4(v, 0.9f, 0.8f, 0.7f, 0.6f, 0),
+                    "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v->x, v->y, v->z, v->w);
+        }
 
-    release_readback(&test_context, &rb);
-    ID3D10Blob_Release(ps_code);
+        for (i = 240; i < 640; i += 40)
+        {
+            v = get_readback_vec4(&rb, i, 0);
+            ok(compare_vec4(v, 0.1f, 0.2f, 0.3f, 0.4f, 0),
+                    "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v->x, v->y, v->z, v->w);
+        }
+
+        release_readback(&test_context, &rb);
+        ID3D10Blob_Release(ps_code);
+    }
     release_test_context(&test_context);
 }
 
@@ -512,151 +523,17 @@ static void test_trig(void)
     release_test_context(&test_context);
 }
 
-static void test_sampling(void)
+static void check_type_desc(const char *prefix, const D3D11_SHADER_TYPE_DESC *type,
+        const D3D11_SHADER_TYPE_DESC *expect)
 {
-    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {0};
-    struct test_context test_context;
-    ID3D11ShaderResourceView *srv;
-    ID3D11SamplerState *sampler;
-    ID3D10Blob *ps_code = NULL;
-    ID3D11Texture2D *texture;
-    unsigned int i;
-    struct vec4 v;
-    HRESULT hr;
-
-    static const char *tests[] =
-    {
-        "sampler s;\n"
-        "float4 main() : COLOR\n"
-        "{\n"
-        "    return tex2D(s, float2(0.5, 0.5));\n"
-        "}",
-
-        "SamplerState s;\n"
-        "float4 main() : COLOR\n"
-        "{\n"
-        "    return tex2D(s, float2(0.5, 0.5));\n"
-        "}",
-
-        "sampler2D s;\n"
-        "float4 main() : COLOR\n"
-        "{\n"
-        "    return tex2D(s, float2(0.5, 0.5));\n"
-        "}",
-
-        "sampler s;\n"
-        "Texture2D t;\n"
-        "float4 main() : COLOR\n"
-        "{\n"
-        "    return t.Sample(s, float2(0.5, 0.5));\n"
-        "}",
-
-        "SamplerState s;\n"
-        "Texture2D t;\n"
-        "float4 main() : COLOR\n"
-        "{\n"
-        "    return t.Sample(s, float2(0.5, 0.5));\n"
-        "}",
-    };
-
-    static const D3D11_TEXTURE2D_DESC texture_desc =
-    {
-        .Width = 2,
-        .Height = 2,
-        .MipLevels = 1,
-        .ArraySize = 1,
-        .Format = DXGI_FORMAT_R32G32B32A32_FLOAT,
-        .SampleDesc.Count = 1,
-        .Usage = D3D11_USAGE_DEFAULT,
-        .BindFlags = D3D11_BIND_SHADER_RESOURCE,
-    };
-
-    static const float texture_data[] =
-    {
-        0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f,
-        1.0f, 0.0f, 1.0f, 0.0f,
-    };
-
-    static const D3D11_SUBRESOURCE_DATA resource_data = {&texture_data, sizeof(texture_data) / 2};
-
-    static const D3D11_SAMPLER_DESC sampler_desc =
-    {
-        .Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-        .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
-        .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
-        .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
-    };
-
-    static const float red[] = {1.0f, 0.0f, 0.0f, 1.0f};
-
-    if (!init_test_context(&test_context))
-        return;
-
-    hr = ID3D11Device_CreateTexture2D(test_context.device, &texture_desc, &resource_data, &texture);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-    srv_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-    srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srv_desc.Texture2D.MipLevels = 1;
-    hr = ID3D11Device_CreateShaderResourceView(test_context.device, (ID3D11Resource *)texture, &srv_desc, &srv);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-    ID3D11DeviceContext_PSSetShaderResources(test_context.immediate_context, 0, 1, &srv);
-
-    hr = ID3D11Device_CreateSamplerState(test_context.device, &sampler_desc, &sampler);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-    ID3D11DeviceContext_PSSetSamplers(test_context.immediate_context, 0, 1, &sampler);
-
-    for (i = 0; i < ARRAY_SIZE(tests); ++i)
-    {
-        winetest_push_context("Test %u", i);
-
-        ID3D11DeviceContext_ClearRenderTargetView(test_context.immediate_context, test_context.rtv, red);
-        todo_wine_if (i < 3)
-            ps_code = compile_shader_flags(tests[i], "ps_4_0", D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY);
-        if (ps_code)
-        {
-            draw_quad(&test_context, ps_code);
-
-            v = get_color_vec4(&test_context, 0, 0);
-            todo_wine ok(compare_vec4(&v, 0.25f, 0.0f, 0.25f, 0.0f, 0),
-                    "Got unexpected value {%.8e, %.8e, %.8e, %.8e}.\n", v.x, v.y, v.z, v.w);
-
-            ID3D10Blob_Release(ps_code);
-        }
-
-        winetest_pop_context();
-    }
-
-    ID3D11Texture2D_Release(texture);
-    ID3D11SamplerState_Release(sampler);
-    ID3D11ShaderResourceView_Release(srv);
-    release_test_context(&test_context);
-}
-
-static void check_type_desc(const D3D11_SHADER_TYPE_DESC *type, const D3D11_SHADER_TYPE_DESC *expect)
-{
-    ok(type->Class == expect->Class, "Got class %#x.\n", type->Class);
-    ok(type->Type == expect->Type, "Got type %#x.\n", type->Type);
-    ok(type->Rows == expect->Rows, "Got %u rows.\n", type->Rows);
-    ok(type->Columns == expect->Columns, "Got %u columns.\n", type->Columns);
-    ok(type->Elements == expect->Elements, "Got %u elements.\n", type->Elements);
-    ok(type->Members == expect->Members, "Got %u members.\n", type->Members);
-    ok(type->Offset == expect->Offset, "Got %u members.\n", type->Members);
-    ok(!strcmp(type->Name, expect->Name), "Got name %s.\n", debugstr_a(type->Name));
-}
-
-static void check_resource_binding(const D3D11_SHADER_INPUT_BIND_DESC *desc,
-        const D3D11_SHADER_INPUT_BIND_DESC *expect)
-{
-    ok(!strcmp(desc->Name, expect->Name), "Got name %s.\n", debugstr_a(desc->Name));
-    ok(desc->Type == expect->Type, "Got type %#x.\n", desc->Type);
-    ok(desc->BindPoint == expect->BindPoint, "Got bind point %u.\n", desc->BindPoint);
-    ok(desc->BindCount == expect->BindCount, "Got bind count %u.\n", desc->BindCount);
-    ok(desc->uFlags == expect->uFlags, "Got flags %#x.\n", desc->uFlags);
-    ok(desc->ReturnType == expect->ReturnType, "Got return type %#x.\n", desc->ReturnType);
-    ok(desc->Dimension == expect->Dimension, "Got dimension %#x.\n", desc->Dimension);
-    ok(desc->NumSamples == expect->NumSamples, "Got multisample count %u.\n", desc->NumSamples);
+    ok(type->Class == expect->Class, "%s: got class %#x.\n", prefix, type->Class);
+    ok(type->Type == expect->Type, "%s: got type %#x.\n", prefix, type->Type);
+    ok(type->Rows == expect->Rows, "%s: got %u rows.\n", prefix, type->Rows);
+    ok(type->Columns == expect->Columns, "%s: got %u columns.\n", prefix, type->Columns);
+    ok(type->Elements == expect->Elements, "%s: got %u elements.\n", prefix, type->Elements);
+    ok(type->Members == expect->Members, "%s: got %u members.\n", prefix, type->Members);
+    ok(type->Offset == expect->Offset, "%s: got %u members.\n", prefix, type->Members);
+    ok(!strcmp(type->Name, expect->Name), "%s: got name %s.\n", prefix, debugstr_a(type->Name));
 }
 
 static void test_reflection(void)
@@ -668,16 +545,13 @@ static void test_reflection(void)
     D3D11_SHADER_VARIABLE_DESC var_desc;
     ID3D11ShaderReflection *reflection;
     D3D11_SHADER_TYPE_DESC type_desc;
-    D3D11_SHADER_DESC shader_desc;
-    ID3D10Blob *code = NULL;
+    ID3D10Blob *vs_code = NULL;
     unsigned int i, j, k;
     ULONG refcount;
     HRESULT hr;
 
     static const char vs_source[] =
         "typedef uint uint_t;\n"
-        "float m;\n"
-        "\n"
         "cbuffer b1\n"
         "{\n"
         "    float a;\n"
@@ -690,48 +564,32 @@ static void test_reflection(void)
         "        float b;\n"
         "        float c;\n"
         "    } s;\n"
-        /* In direct contradiction to the documentation, this does not align. */
-        "    bool g;\n"
+        "    float g;\n"
         "    float h[2];\n"
         "    int i;\n"
         "    uint_t j;\n"
         "    float3x1 k;\n"
         "    row_major float3x1 l;\n"
-        "#pragma pack_matrix(row_major)\n"
-        "    float3x1 o;\n"
-        "    float4 p;\n"
-        "    float q;\n"
-        "    struct r_name {float a;} r;\n"
-        "    column_major float3x1 t;\n"
         "};\n"
         "\n"
-        "cbuffer b5 : register(b5)\n"
-        "{\n"
-        "    float4 u;\n"
-        "}\n"
+        "float m;\n"
         "\n"
         "float4 main(uniform float4 n) : SV_POSITION\n"
         "{\n"
-        "    return o._31 + m + n + u;\n"
+        "    return l._31 + m + n;\n"
         "}";
 
     struct shader_variable
     {
         D3D11_SHADER_VARIABLE_DESC var_desc;
         D3D11_SHADER_TYPE_DESC type_desc;
-        const D3D11_SHADER_TYPE_DESC *field_types;
     };
 
-    static const D3D11_SHADER_TYPE_DESC s_field_types[] =
+    static const D3D11_SHADER_TYPE_DESC field_types[] =
     {
         {D3D_SVC_VECTOR, D3D_SVT_FLOAT, 1, 4, 0, 0, 0, "float4"},
         {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 16, "float"},
         {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 20, "float"},
-    };
-
-    static const D3D11_SHADER_TYPE_DESC r_field_types[] =
-    {
-        {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 0, "float"},
     };
 
     static const struct shader_variable globals_vars =
@@ -744,21 +602,14 @@ static void test_reflection(void)
         {{"b", 4, 8}, {D3D_SVC_VECTOR, D3D_SVT_FLOAT, 1, 2, 0, 0, 0, "float2"}},
         {{"c", 16, 16}, {D3D_SVC_VECTOR, D3D_SVT_FLOAT, 1, 4, 0, 0, 0, "float4"}},
         {{"d", 32, 4}, {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 0, "float"}},
-        {{"s", 48, 24}, {D3D_SVC_STRUCT, D3D_SVT_VOID, 1, 6, 0, ARRAY_SIZE(s_field_types), 0, "<unnamed>"}, s_field_types},
-        {{"g", 72, 4}, {D3D_SVC_SCALAR, D3D_SVT_BOOL, 1, 1, 0, 0, 0, "bool"}},
+        {{"s", 48, 24}, {D3D_SVC_STRUCT, D3D_SVT_VOID, 1, 6, 0, 3, 0, "<unnamed>"}},
+        {{"g", 72, 4}, {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 0, "float"}},
         {{"h", 80, 20}, {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 2, 0, 0, "float"}},
         {{"i", 100, 4}, {D3D_SVC_SCALAR, D3D_SVT_INT, 1, 1, 0, 0, 0, "int"}},
         {{"j", 104, 4}, {D3D_SVC_SCALAR, D3D_SVT_UINT, 1, 1, 0, 0, 0, "uint_t"}},
         {{"k", 112, 12}, {D3D_SVC_MATRIX_COLUMNS, D3D_SVT_FLOAT, 3, 1, 0, 0, 0, "float3x1"}},
-        {{"l", 128, 36}, {D3D_SVC_MATRIX_ROWS, D3D_SVT_FLOAT, 3, 1, 0, 0, 0, "float3x1"}},
-        {{"o", 176, 36, D3D_SVF_USED}, {D3D_SVC_MATRIX_ROWS, D3D_SVT_FLOAT, 3, 1, 0, 0, 0, "float3x1"}},
-        {{"p", 224, 16}, {D3D_SVC_VECTOR, D3D_SVT_FLOAT, 1, 4, 0, 0, 0, "float4"}},
-        {{"q", 240, 4}, {D3D_SVC_SCALAR, D3D_SVT_FLOAT, 1, 1, 0, 0, 0, "float"}},
-        {{"r", 256, 4}, {D3D_SVC_STRUCT, D3D_SVT_VOID, 1, 1, 0, ARRAY_SIZE(r_field_types), 0, "r_name"}, r_field_types},
-        {{"t", 260, 12}, {D3D_SVC_MATRIX_COLUMNS, D3D_SVT_FLOAT, 3, 1, 0, 0, 0, "float3x1"}},
+        {{"l", 128, 36, D3D_SVF_USED}, {D3D_SVC_MATRIX_ROWS, D3D_SVT_FLOAT, 3, 1, 0, 0, 0, "float3x1"}},
     };
-    static const struct shader_variable b5_vars =
-        {{"u", 0, 16, D3D_SVF_USED}, {D3D_SVC_VECTOR, D3D_SVT_FLOAT, 1, 4, 0, 0, 0, "float4"}};
 
     static const struct
     {
@@ -769,411 +620,97 @@ static void test_reflection(void)
     {
         {{"$Globals", D3D_CT_CBUFFER, 1, 16}, &globals_vars},
         {{"$Params", D3D_CT_CBUFFER, 1, 16}, &params_vars},
-        {{"b1", D3D_CT_CBUFFER, ARRAY_SIZE(buffer_vars), 272}, buffer_vars},
-        {{"b5", D3D_CT_CBUFFER, 1, 16}, &b5_vars},
+        {{"b1", D3D_CT_CBUFFER, ARRAY_SIZE(buffer_vars), 176}, buffer_vars},
     };
 
-    static const D3D11_SHADER_INPUT_BIND_DESC vs_bindings[] =
-    {
-        {"$Globals", D3D_SIT_CBUFFER, 0, 1},
-        {"$Params", D3D_SIT_CBUFFER, 1, 1},
-        {"b1", D3D_SIT_CBUFFER, 2, 1},
-        {"b5", D3D_SIT_CBUFFER, 5, 1, D3D_SIF_USERPACKED},
-    };
-
-    static const char ps_source[] =
-        "texture2D a;\n"
-        "sampler c {};\n"
-        "SamplerState d {};\n"
-        "sampler e\n"
-        "{\n"
-        "    Texture = a;\n"
-        "    foo = bar + 2;\n"
-        "};\n"
-        "SamplerState f\n"
-        "{\n"
-        "    Texture = a;\n"
-        "    foo = bar + 2;\n"
-        "};\n"
-        "sampler2D g;\n"
-        "sampler b : register(s5);\n"
-        "float4 main(float2 pos : texcoord) : SV_TARGET\n"
-        "{\n"
-        "    return a.Sample(b, pos) + a.Sample(c, pos) + a.Sample(d, pos) + tex2D(f, pos) + tex2D(e, pos)"
-        "            + tex2D(g, pos);\n"
-        "}";
-
-    static const D3D11_SHADER_INPUT_BIND_DESC ps_bindings[] =
-    {
-        {"c", D3D_SIT_SAMPLER, 0, 1},
-        {"d", D3D_SIT_SAMPLER, 1, 1},
-        {"e", D3D_SIT_SAMPLER, 2, 1},
-        {"f", D3D_SIT_SAMPLER, 3, 1},
-        {"g", D3D_SIT_SAMPLER, 4, 1},
-        {"b", D3D_SIT_SAMPLER, 5, 1, D3D_SIF_USERPACKED},
-        {"f", D3D_SIT_TEXTURE, 0, 1, D3D_SIF_TEXTURE_COMPONENTS, D3D_RETURN_TYPE_FLOAT, D3D_SRV_DIMENSION_TEXTURE2D, ~0u},
-        {"e", D3D_SIT_TEXTURE, 1, 1, D3D_SIF_TEXTURE_COMPONENTS, D3D_RETURN_TYPE_FLOAT, D3D_SRV_DIMENSION_TEXTURE2D, ~0u},
-        {"g", D3D_SIT_TEXTURE, 2, 1, D3D_SIF_TEXTURE_COMPONENTS, D3D_RETURN_TYPE_FLOAT, D3D_SRV_DIMENSION_TEXTURE2D, ~0u},
-        {"a", D3D_SIT_TEXTURE, 3, 1, D3D_SIF_TEXTURE_COMPONENTS, D3D_RETURN_TYPE_FLOAT, D3D_SRV_DIMENSION_TEXTURE2D, ~0u},
-    };
-
-    todo_wine code = compile_shader(vs_source, "vs_5_0");
-    if (!code)
+    todo_wine vs_code = compile_shader(vs_source, "vs_5_0");
+    if (!vs_code)
         return;
 
-    hr = D3DReflect(ID3D10Blob_GetBufferPointer(code), ID3D10Blob_GetBufferSize(code),
+    hr = pD3DReflect(ID3D10Blob_GetBufferPointer(vs_code), ID3D10Blob_GetBufferSize(vs_code),
             &IID_ID3D11ShaderReflection, (void **)&reflection);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-
-    hr = reflection->lpVtbl->GetDesc(reflection, &shader_desc);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-    ok(shader_desc.ConstantBuffers == ARRAY_SIZE(vs_buffers), "Got %u buffers.\n", shader_desc.ConstantBuffers);
-    ok(shader_desc.BoundResources == ARRAY_SIZE(vs_bindings), "Got %u resources.\n", shader_desc.BoundResources);
+    ok(hr == S_OK, "Got hr %#x.\n", hr);
 
     for (i = 0; i < ARRAY_SIZE(vs_buffers); ++i)
     {
-        winetest_push_context("Buffer %u", i);
-
         cbuffer = reflection->lpVtbl->GetConstantBufferByIndex(reflection, i);
         hr = cbuffer->lpVtbl->GetDesc(cbuffer, &buffer_desc);
-        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-        ok(!strcmp(buffer_desc.Name, vs_buffers[i].desc.Name), "Got name %s.\n", debugstr_a(buffer_desc.Name));
-        ok(buffer_desc.Type == vs_buffers[i].desc.Type, "Got type %#x.\n", buffer_desc.Type);
-        ok(buffer_desc.Variables == vs_buffers[i].desc.Variables, "Got %u variables.\n", buffer_desc.Variables);
-        ok(buffer_desc.Size == vs_buffers[i].desc.Size, "Got size %u.\n", buffer_desc.Size);
-        ok(buffer_desc.uFlags == vs_buffers[i].desc.uFlags, "Got flags %#x.\n", buffer_desc.uFlags);
+        ok(hr == S_OK, "Test %u: got hr %#x.\n", i, hr);
+        ok(!strcmp(buffer_desc.Name, vs_buffers[i].desc.Name),
+                "Test %u: got name %s.\n", i, debugstr_a(buffer_desc.Name));
+        ok(buffer_desc.Type == vs_buffers[i].desc.Type, "Test %u: got type %#x.\n", i, buffer_desc.Type);
+        ok(buffer_desc.Variables == vs_buffers[i].desc.Variables,
+                "Test %u: got %u variables.\n", i, buffer_desc.Variables);
+        ok(buffer_desc.Size == vs_buffers[i].desc.Size, "Test %u: got size %u.\n", i, buffer_desc.Size);
+        ok(buffer_desc.uFlags == vs_buffers[i].desc.uFlags, "Test %u: got flags %#x.\n", i, buffer_desc.uFlags);
 
         for (j = 0; j < buffer_desc.Variables; ++j)
         {
             const struct shader_variable *expect = &vs_buffers[i].vars[j];
-
-            winetest_push_context("Variable %u", j);
+            char prefix[40];
 
             var = cbuffer->lpVtbl->GetVariableByIndex(cbuffer, j);
             hr = var->lpVtbl->GetDesc(var, &var_desc);
-            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-            ok(!strcmp(var_desc.Name, expect->var_desc.Name), "Got name %s.\n", debugstr_a(var_desc.Name));
-            ok(var_desc.StartOffset == expect->var_desc.StartOffset, "Got offset %u.\n", var_desc.StartOffset);
-            ok(var_desc.Size == expect->var_desc.Size, "Got size %u.\n", var_desc.Size);
-            ok(var_desc.uFlags == expect->var_desc.uFlags, "Got flags %#x.\n", var_desc.uFlags);
-            ok(!var_desc.DefaultValue, "Got default value %p.\n", var_desc.DefaultValue);
+            ok(hr == S_OK, "Test %u, %u: got hr %#x.\n", i, j, hr);
+            ok(!strcmp(var_desc.Name, expect->var_desc.Name),
+                    "Test %u, %u: got name %s.\n", i, j, debugstr_a(var_desc.Name));
+            ok(var_desc.StartOffset == expect->var_desc.StartOffset, "Test %u, %u: got offset %u.\n",
+                    i, j, var_desc.StartOffset);
+            ok(var_desc.Size == expect->var_desc.Size, "Test %u, %u: got size %u.\n", i, j, var_desc.Size);
+            ok(var_desc.uFlags == expect->var_desc.uFlags, "Test %u, %u: got flags %#x.\n", i, j, var_desc.uFlags);
+            ok(!var_desc.DefaultValue, "Test %u, %u: got default value %p.\n", i, j, var_desc.DefaultValue);
 
             type = var->lpVtbl->GetType(var);
             hr = type->lpVtbl->GetDesc(type, &type_desc);
-            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-            check_type_desc(&type_desc, &expect->type_desc);
+            ok(hr == S_OK, "Test %u, %u: got hr %#x.\n", i, j, hr);
+            sprintf(prefix, "Test %u, %u", i, j);
+            check_type_desc(prefix, &type_desc, &expect->type_desc);
 
-            for (k = 0; k < type_desc.Members; ++k)
+            if (!strcmp(type_desc.Name, "<unnamed>"))
             {
-                winetest_push_context("Field %u", k);
-
-                field = type->lpVtbl->GetMemberTypeByIndex(type, k);
-                hr = field->lpVtbl->GetDesc(field, &type_desc);
-                ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-                check_type_desc(&type_desc, &vs_buffers[i].vars[j].field_types[k]);
-
-                winetest_pop_context();
+                for (k = 0; k < ARRAY_SIZE(field_types); ++k)
+                {
+                    field = type->lpVtbl->GetMemberTypeByIndex(type, k);
+                    hr = field->lpVtbl->GetDesc(field, &type_desc);
+                    ok(hr == S_OK, "Test %u, %u, %u: got hr %#x.\n", i, j, k, hr);
+                    sprintf(prefix, "Test %u, %u, %u", i, j, k);
+                    check_type_desc(prefix, &type_desc, &field_types[k]);
+                }
             }
-
-            winetest_pop_context();
         }
-
-        winetest_pop_context();
     }
 
-    for (i = 0; i < ARRAY_SIZE(vs_bindings); ++i)
-    {
-        D3D11_SHADER_INPUT_BIND_DESC desc;
-
-        winetest_push_context("Binding %u", i);
-
-        hr = reflection->lpVtbl->GetResourceBindingDesc(reflection, i, &desc);
-        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-        check_resource_binding(&desc, &vs_bindings[i]);
-
-        winetest_pop_context();
-    }
-
-    ID3D10Blob_Release(code);
+    ID3D10Blob_Release(vs_code);
     refcount = reflection->lpVtbl->Release(reflection);
-    ok(!refcount, "Got unexpected refcount %lu.\n", refcount);
-
-    code = compile_shader_flags(ps_source, "ps_4_0", D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY);
-    hr = D3DReflect(ID3D10Blob_GetBufferPointer(code), ID3D10Blob_GetBufferSize(code),
-            &IID_ID3D11ShaderReflection, (void **)&reflection);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-
-    hr = reflection->lpVtbl->GetDesc(reflection, &shader_desc);
-    ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-    ok(!shader_desc.ConstantBuffers, "Got %u buffers.\n", shader_desc.ConstantBuffers);
-    ok(shader_desc.BoundResources == ARRAY_SIZE(ps_bindings), "Got %u resources.\n", shader_desc.BoundResources);
-
-    for (i = 0; i < shader_desc.BoundResources; ++i)
-    {
-        D3D11_SHADER_INPUT_BIND_DESC desc;
-
-        winetest_push_context("Binding %u", i);
-
-        hr = reflection->lpVtbl->GetResourceBindingDesc(reflection, i, &desc);
-        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-        check_resource_binding(&desc, &ps_bindings[i]);
-
-        winetest_pop_context();
-    }
-
-    ID3D10Blob_Release(code);
-    refcount = reflection->lpVtbl->Release(reflection);
-    ok(!refcount, "Got unexpected refcount %lu.\n", refcount);
+    ok(!refcount, "Got unexpected refcount %u.\n", refcount);
 }
 
-static void check_parameter_desc(const D3D11_SIGNATURE_PARAMETER_DESC *desc,
-        const D3D11_SIGNATURE_PARAMETER_DESC *expect)
+static BOOL load_d3dcompiler(void)
 {
-    todo_wine_if(strcmp(desc->SemanticName, expect->SemanticName))
-        ok(!strcmp(desc->SemanticName, expect->SemanticName), "Got name %s.\n", debugstr_a(desc->SemanticName));
-    ok(desc->SemanticIndex == expect->SemanticIndex, "Got index %u.\n", desc->SemanticIndex);
-    ok(desc->Register == expect->Register, "Got register %u.\n", desc->Register);
-    todo_wine_if(desc->SystemValueType != expect->SystemValueType)
-        ok(desc->SystemValueType == expect->SystemValueType, "Got sysval %u.\n", desc->SystemValueType);
-    ok(desc->ComponentType == expect->ComponentType, "Got data type %u.\n", desc->ComponentType);
-    ok(desc->Mask == expect->Mask, "Got mask %#x.\n", desc->Mask);
-    todo_wine_if(desc->ReadWriteMask != expect->ReadWriteMask)
-        ok(desc->ReadWriteMask == expect->ReadWriteMask, "Got used mask %#x.\n", desc->ReadWriteMask);
-    ok(desc->Stream == expect->Stream, "Got stream %u.\n", desc->Stream);
-}
+    HMODULE module;
 
-static void test_semantic_reflection(void)
-{
-    D3D11_SIGNATURE_PARAMETER_DESC desc;
-    ID3D11ShaderReflection *reflection;
-    D3D11_SHADER_DESC shader_desc;
-    ID3D10Blob *code = NULL;
-    unsigned int i, j;
-    ULONG refcount;
-    HRESULT hr;
+#if D3D_COMPILER_VERSION == 47
+    if (!(module = LoadLibraryA("d3dcompiler_47.dll"))) return FALSE;
+#else
+    if (!(module = LoadLibraryA("d3dcompiler_43.dll"))) return FALSE;
+#endif
 
-    static const char vs1_source[] =
-        "void main(\n"
-        "        in float4 a : apple,\n"
-        "        out float4 b : banana2,\n"
-        "        inout float4 c : color,\n"
-        "        inout float4 d : depth,\n"
-        "        inout float4 e : sv_position,\n"
-        "        in uint3 f : fruit,\n"
-        "        inout bool2 g : grape,\n"
-        "        in int h : honeydew)\n"
-        "{\n"
-        "    b.yw = a.xz;\n"
-        "}";
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC vs1_inputs[] =
-    {
-        {"apple",       0, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0x5},
-        {"color",       0, 1, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"depth",       0, 2, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"sv_position", 0, 3, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"fruit",       0, 4, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_UINT32, 0x7},
-        {"grape",       0, 5, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_UINT32, 0x3, 0x3},
-        {"honeydew",    0, 6, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_SINT32, 0x1},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC vs1_outputs[] =
-    {
-        {"banana",      2, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0x5},
-        {"color",       0, 1, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"depth",       0, 2, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"sv_position", 0, 3, D3D_NAME_POSITION,  D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"grape",       0, 4, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_UINT32, 0x3, 0xc},
-    };
-
-    static const char vs2_source[] =
-        "void main(inout float4 pos : position)\n"
-        "{\n"
-        "}";
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC vs2_inputs[] =
-    {
-        {"position",    0, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC vs2_outputs[] =
-    {
-        {"position",    0, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC vs2_legacy_outputs[] =
-    {
-        {"SV_Position", 0, 0, D3D_NAME_POSITION, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-    };
-
-    static const char ps1_source[] =
-        "void main(\n"
-        "        in float2 a : apple,\n"
-        "        out float4 b : sv_target2,\n"
-        "        out float c : sv_depth,\n"
-        "        in float4 d : position,\n"
-        "        in float4 e : sv_position)\n"
-        "{\n"
-        "    b = d;\n"
-        "    c = 0;\n"
-        "}";
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC ps1_inputs[] =
-    {
-        {"apple",       0, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0x3},
-        {"position",    0, 1, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"sv_position", 0, 2, D3D_NAME_POSITION,  D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC ps1_outputs[] =
-    {
-        {"sv_target",   2, 2,   D3D_NAME_TARGET, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"sv_depth",    0, ~0u, D3D_NAME_DEPTH,  D3D_REGISTER_COMPONENT_FLOAT32, 0x1, 0xe},
-    };
-
-    static const char ps2_source[] =
-        "void main(\n"
-        "        inout float4 a : color2,\n"
-        "        inout float b : depth,\n"
-        "        in float4 c : position)\n"
-        "{\n"
-        "}";
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC ps2_inputs[] =
-    {
-        {"color",       2, 0, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"depth",       0, 1, D3D_NAME_UNDEFINED, D3D_REGISTER_COMPONENT_FLOAT32, 0x1, 0x1},
-        {"SV_Position", 0, 2, D3D_NAME_POSITION,  D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC ps2_outputs[] =
-    {
-        {"SV_Target",   2, 2,   D3D_NAME_TARGET, D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"SV_Depth",    0, ~0u, D3D_NAME_DEPTH,  D3D_REGISTER_COMPONENT_FLOAT32, 0x1, 0xe},
-    };
-
-    static const char cs1_source[] =
-        "[numthreads(1, 1, 1)]\n"
-        "void main(in uint a : sv_dispatchthreadid)\n"
-        "{\n"
-        "}";
-
-    static const char gs1_source[] =
-        "struct input\n"
-        "{\n"
-        "    float4 a : sv_position;\n"
-        "    float4 b : apple2;\n"
-        "};\n"
-        "struct vertex\n"
-        "{\n"
-        "    float4 a : sv_position;\n"
-        "    float4 b : apple2;\n"
-        "    uint c : sv_primitiveid;\n"
-        "};\n"
-        "[maxvertexcount(1)]\n"
-        "void main(\n"
-        "        point input i[1],\n"
-        "        inout PointStream<vertex> o,\n"
-        "        uint a : sv_primitiveid)\n"
-        "{\n"
-        "    struct vertex v;\n"
-        "    v.a = i[0].a;\n"
-        "    v.b = i[0].b;\n"
-        "    v.c = a;\n"
-        "    o.Append(v);\n"
-        "}";
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC gs1_inputs[] =
-    {
-        {"sv_position",     0, 0,   D3D_NAME_POSITION,      D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"apple",           2, 1,   D3D_NAME_UNDEFINED,     D3D_REGISTER_COMPONENT_FLOAT32, 0xf, 0xf},
-        {"sv_primitiveid",  0, ~0u, D3D_NAME_PRIMITIVE_ID,  D3D_REGISTER_COMPONENT_UINT32,  0x1, 0x1},
-    };
-
-    static const D3D11_SIGNATURE_PARAMETER_DESC gs1_outputs[] =
-    {
-        {"sv_position",     0, 0,   D3D_NAME_POSITION,      D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"apple",           2, 1,   D3D_NAME_UNDEFINED,     D3D_REGISTER_COMPONENT_FLOAT32, 0xf},
-        {"sv_primitiveid",  0, 2,   D3D_NAME_PRIMITIVE_ID,  D3D_REGISTER_COMPONENT_UINT32,  0x1, 0xe},
-    };
-
-    static const struct
-    {
-        const char *source;
-        const char *target;
-        BOOL legacy;
-        const D3D11_SIGNATURE_PARAMETER_DESC *inputs;
-        unsigned int input_count;
-        const D3D11_SIGNATURE_PARAMETER_DESC *outputs;
-        unsigned int output_count;
-    }
-    tests[] =
-    {
-        {vs1_source, "vs_4_0", FALSE, vs1_inputs, ARRAY_SIZE(vs1_inputs), vs1_outputs, ARRAY_SIZE(vs1_outputs)},
-        {vs1_source, "vs_4_0", TRUE,  vs1_inputs, ARRAY_SIZE(vs1_inputs), vs1_outputs, ARRAY_SIZE(vs1_outputs)},
-        {vs2_source, "vs_4_0", FALSE, vs2_inputs, ARRAY_SIZE(vs2_inputs), vs2_outputs, ARRAY_SIZE(vs2_outputs)},
-        {vs2_source, "vs_4_0", TRUE,  vs2_inputs, ARRAY_SIZE(vs2_inputs), vs2_legacy_outputs, ARRAY_SIZE(vs2_legacy_outputs)},
-        {ps1_source, "ps_4_0", FALSE, ps1_inputs, ARRAY_SIZE(ps1_inputs), ps1_outputs, ARRAY_SIZE(ps1_outputs)},
-        {ps2_source, "ps_4_0", TRUE,  ps2_inputs, ARRAY_SIZE(ps2_inputs), ps2_outputs, ARRAY_SIZE(ps2_outputs)},
-        {cs1_source, "cs_4_0", FALSE, NULL, 0, NULL, 0},
-        {gs1_source, "gs_4_0", FALSE, gs1_inputs, ARRAY_SIZE(gs1_inputs), gs1_outputs, ARRAY_SIZE(gs1_outputs)},
-    };
-
-    for (i = 0; i < ARRAY_SIZE(tests); ++i)
-    {
-        winetest_push_context("Test %u", i);
-
-        todo_wine_if (i > 5) code = compile_shader_flags(tests[i].source, tests[i].target,
-                tests[i].legacy ? D3DCOMPILE_ENABLE_BACKWARDS_COMPATIBILITY : 0);
-        if (!code)
-        {
-            winetest_pop_context();
-            continue;
-        }
-
-        hr = D3DReflect(ID3D10Blob_GetBufferPointer(code), ID3D10Blob_GetBufferSize(code),
-                &IID_ID3D11ShaderReflection, (void **)&reflection);
-        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-
-        hr = reflection->lpVtbl->GetDesc(reflection, &shader_desc);
-        ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-        ok(shader_desc.InputParameters == tests[i].input_count,
-                "Got %u input parameters.\n", shader_desc.InputParameters);
-        ok(shader_desc.OutputParameters == tests[i].output_count,
-                "Got %u output parameters.\n", shader_desc.OutputParameters);
-
-        for (j = 0; j < shader_desc.InputParameters; ++j)
-        {
-            winetest_push_context("Input %u", j);
-            hr = reflection->lpVtbl->GetInputParameterDesc(reflection, j, &desc);
-            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-            check_parameter_desc(&desc, &tests[i].inputs[j]);
-            winetest_pop_context();
-        }
-
-        for (j = 0; j < shader_desc.OutputParameters; ++j)
-        {
-            winetest_push_context("Output %u", j);
-            hr = reflection->lpVtbl->GetOutputParameterDesc(reflection, j, &desc);
-            ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
-            check_parameter_desc(&desc, &tests[i].outputs[j]);
-            winetest_pop_context();
-        }
-
-        ID3D10Blob_Release(code);
-        refcount = reflection->lpVtbl->Release(reflection);
-        ok(!refcount, "Got unexpected refcount %lu.\n", refcount);
-
-        winetest_pop_context();
-    }
+    ppD3DCompile = (void *)GetProcAddress(module, "D3DCompile");
+    pD3DReflect = (void *)GetProcAddress(module, "D3DReflect");
+    return TRUE;
 }
 
 START_TEST(hlsl_d3d11)
 {
     HMODULE mod;
 
+    if (!load_d3dcompiler())
+    {
+        win_skip("Could not load DLL.\n");
+        return;
+    }
+
     test_reflection();
-    test_semantic_reflection();
 
     if (!(mod = LoadLibraryA("d3d11.dll")))
     {
@@ -1186,5 +723,4 @@ START_TEST(hlsl_d3d11)
     test_math();
     test_conditionals();
     test_trig();
-    test_sampling();
 }

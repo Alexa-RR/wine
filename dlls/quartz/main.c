@@ -24,15 +24,15 @@
 WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 extern HRESULT WINAPI QUARTZ_DllGetClassObject(REFCLSID, REFIID, LPVOID *) DECLSPEC_HIDDEN;
+extern HRESULT WINAPI QUARTZ_DllCanUnloadNow(void) DECLSPEC_HIDDEN;
 extern BOOL WINAPI QUARTZ_DllMain(HINSTANCE, DWORD, LPVOID) DECLSPEC_HIDDEN;
+
+LONG object_locks = 0;
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
 {
-    if (reason == DLL_PROCESS_DETACH && !reserved)
-    {
+    if (reason == DLL_PROCESS_DETACH)
         video_window_unregister_class();
-        strmbase_release_typelibs();
-    }
     return QUARTZ_DllMain(instance, reason, reserved);
 }
 
@@ -124,15 +124,21 @@ static HRESULT WINAPI DSCF_CreateInstance(IClassFactory *iface, IUnknown *pOuter
 
     if (SUCCEEDED(hres = This->create_instance(pOuter, &punk)))
     {
+        InterlockedIncrement(&object_locks);
         hres = IUnknown_QueryInterface(punk, riid, ppobj);
         IUnknown_Release(punk);
     }
     return hres;
 }
 
-static HRESULT WINAPI DSCF_LockServer(IClassFactory *iface, BOOL lock)
+static HRESULT WINAPI DSCF_LockServer(IClassFactory *iface, BOOL dolock)
 {
-    FIXME("iface %p, lock %d, stub!\n", iface, lock);
+    IClassFactoryImpl *This = impl_from_IClassFactory(iface);
+    FIXME("(%p)->(%d),stub!\n",This,dolock);
+    if(dolock)
+        InterlockedIncrement(&object_locks);
+    else
+        InterlockedDecrement(&object_locks);
     return S_OK;
 }
 
@@ -189,6 +195,17 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     }
     return QUARTZ_DllGetClassObject( rclsid, riid, ppv );
 }
+
+/***********************************************************************
+ *              DllCanUnloadNow (QUARTZ.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    if (!object_locks && QUARTZ_DllCanUnloadNow() == S_OK)
+        return S_OK;
+    return S_FALSE;
+}
+
 
 #define OUR_GUID_ENTRY(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
     { { l, w1, w2, { b1, b2,  b3,  b4,  b5,  b6,  b7,  b8 } } , #name },
@@ -260,13 +277,13 @@ const char * qzdebugstr_guid( const GUID * id )
     return debugstr_guid(id);
 }
 
-int WINAPI AmpFactorToDB(int ampfactor)
+LONG WINAPI AmpFactorToDB(LONG ampfactor)
 {
     FIXME("(%d) Stub!\n", ampfactor);
     return 0;
 }
 
-int WINAPI DBToAmpFactor(int db)
+LONG WINAPI DBToAmpFactor(LONG db)
 {
     FIXME("(%d) Stub!\n", db);
     /* Avoid divide by zero (probably during range computation) in Windows Media Player 6.4 */
@@ -283,8 +300,7 @@ DWORD WINAPI AMGetErrorTextA(HRESULT hr, LPSTR buffer, DWORD maxlen)
     DWORD res;
     WCHAR errorW[MAX_ERROR_TEXT_LEN];
 
-    TRACE("hr %#lx, buffer %p, maxlen %lu.\n", hr, buffer, maxlen);
-
+    TRACE("(%x,%p,%d)\n", hr, buffer, maxlen);
     if (!buffer)
         return 0;
 
@@ -306,7 +322,7 @@ DWORD WINAPI AMGetErrorTextW(HRESULT hr, LPWSTR buffer, DWORD maxlen)
     unsigned int len;
     WCHAR error[MAX_ERROR_TEXT_LEN];
 
-    TRACE("hr %#lx, buffer %p, maxlen %lu.\n", hr, buffer, maxlen);
+    FIXME("(%x,%p,%d) stub\n", hr, buffer, maxlen);
 
     if (!buffer) return 0;
     swprintf(error, ARRAY_SIZE(error), L"Error: 0x%lx", hr);

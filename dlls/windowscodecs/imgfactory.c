@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <assert.h>
 #include <stdarg.h>
 
@@ -83,7 +85,7 @@ static ULONG WINAPI ImagingFactory_AddRef(IWICImagingFactory2 *iface)
     ImagingFactory *This = impl_from_IWICImagingFactory2(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -93,7 +95,7 @@ static ULONG WINAPI ImagingFactory_Release(IWICImagingFactory2 *iface)
     ImagingFactory *This = impl_from_IWICImagingFactory2(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
         HeapFree(GetProcessHeap(), 0, This);
@@ -109,7 +111,7 @@ static HRESULT WINAPI ImagingFactory_CreateDecoderFromFilename(
     IWICStream *stream;
     HRESULT hr;
 
-    TRACE("(%p,%s,%s,%lu,%u,%p)\n", iface, debugstr_w(wzFilename),
+    TRACE("(%p,%s,%s,%u,%u,%p)\n", iface, debugstr_w(wzFilename),
         debugstr_guid(pguidVendor), dwDesiredAccess, metadataOptions, ppIDecoder);
 
     hr = StreamImpl_Create(&stream);
@@ -132,74 +134,76 @@ static HRESULT WINAPI ImagingFactory_CreateDecoderFromFilename(
 static HRESULT find_decoder(IStream *pIStream, const GUID *pguidVendor,
                             WICDecodeOptions metadataOptions, IWICBitmapDecoder **decoder)
 {
-    IEnumUnknown *enumdecoders = NULL;
-    IUnknown *unkdecoderinfo = NULL;
+    IEnumUnknown *enumdecoders;
+    IUnknown *unkdecoderinfo;
+    IWICBitmapDecoderInfo *decoderinfo;
     GUID vendor;
-    HRESULT res, res_wine;
+    HRESULT res;
     ULONG num_fetched;
-    BOOL matches, found;
+    BOOL matches;
 
     *decoder = NULL;
 
     res = CreateComponentEnumerator(WICDecoder, WICComponentEnumerateDefault, &enumdecoders);
     if (FAILED(res)) return res;
 
-    found = FALSE;
-    while (IEnumUnknown_Next(enumdecoders, 1, &unkdecoderinfo, &num_fetched) == S_OK)
+    while (!*decoder)
     {
-        IWICBitmapDecoderInfo *decoderinfo = NULL;
-        IWICWineDecoder *wine_decoder = NULL;
+        res = IEnumUnknown_Next(enumdecoders, 1, &unkdecoderinfo, &num_fetched);
 
-        res = IUnknown_QueryInterface(unkdecoderinfo, &IID_IWICBitmapDecoderInfo, (void**)&decoderinfo);
-        if (FAILED(res)) goto next;
-
-        if (pguidVendor)
+        if (res == S_OK)
         {
-            res = IWICBitmapDecoderInfo_GetVendorGUID(decoderinfo, &vendor);
-            if (FAILED(res) || !IsEqualIID(&vendor, pguidVendor)) goto next;
-        }
+            res = IUnknown_QueryInterface(unkdecoderinfo, &IID_IWICBitmapDecoderInfo, (void**)&decoderinfo);
 
-        res = IWICBitmapDecoderInfo_MatchesPattern(decoderinfo, pIStream, &matches);
-        if (FAILED(res) || !matches) goto next;
-
-        res = IWICBitmapDecoderInfo_CreateInstance(decoderinfo, decoder);
-        if (FAILED(res)) goto next;
-
-        /* FIXME: should use QueryCapability to choose a decoder */
-
-        found = TRUE;
-        res = IWICBitmapDecoder_Initialize(*decoder, pIStream, metadataOptions);
-        if (FAILED(res))
-        {
-            res_wine = IWICBitmapDecoder_QueryInterface(*decoder, &IID_IWICWineDecoder, (void **)&wine_decoder);
-            if (FAILED(res_wine))
+            if (SUCCEEDED(res))
             {
-                IWICBitmapDecoder_Release(*decoder);
-                *decoder = NULL;
-                goto next;
+                if (pguidVendor)
+                {
+                    res = IWICBitmapDecoderInfo_GetVendorGUID(decoderinfo, &vendor);
+                    if (FAILED(res) || !IsEqualIID(&vendor, pguidVendor))
+                    {
+                        IWICBitmapDecoderInfo_Release(decoderinfo);
+                        IUnknown_Release(unkdecoderinfo);
+                        continue;
+                    }
+                }
+
+                res = IWICBitmapDecoderInfo_MatchesPattern(decoderinfo, pIStream, &matches);
+
+                if (SUCCEEDED(res) && matches)
+                {
+                    res = IWICBitmapDecoderInfo_CreateInstance(decoderinfo, decoder);
+
+                    /* FIXME: should use QueryCapability to choose a decoder */
+
+                    if (SUCCEEDED(res))
+                    {
+                        res = IWICBitmapDecoder_Initialize(*decoder, pIStream, metadataOptions);
+
+                        if (FAILED(res))
+                        {
+                            IWICBitmapDecoder_Release(*decoder);
+                            IWICBitmapDecoderInfo_Release(decoderinfo);
+                            IUnknown_Release(unkdecoderinfo);
+                            IEnumUnknown_Release(enumdecoders);
+                            *decoder = NULL;
+                            return res;
+                        }
+                    }
+                }
+
+                IWICBitmapDecoderInfo_Release(decoderinfo);
             }
 
-            res_wine = IWICWineDecoder_Initialize(wine_decoder, pIStream, metadataOptions);
-            if (FAILED(res_wine))
-            {
-                IWICBitmapDecoder_Release(*decoder);
-                *decoder = NULL;
-                goto next;
-            }
-
-            res = res_wine;
+            IUnknown_Release(unkdecoderinfo);
         }
-
-    next:
-        if (wine_decoder) IWICWineDecoder_Release(wine_decoder);
-        if (decoderinfo) IWICBitmapDecoderInfo_Release(decoderinfo);
-        IUnknown_Release(unkdecoderinfo);
-        if (found) break;
+        else
+            break;
     }
 
     IEnumUnknown_Release(enumdecoders);
-    if (!found) res = WINCODEC_ERR_COMPONENTNOTFOUND;
-    return res;
+
+    return WINCODEC_ERR_COMPONENTNOTFOUND;
 }
 
 static HRESULT WINAPI ImagingFactory_CreateDecoderFromStream(
@@ -230,13 +234,13 @@ static HRESULT WINAPI ImagingFactory_CreateDecoderFromStream(
             BYTE data[4];
             ULONG bytesread;
 
-            WARN("failed to load from a stream %#lx\n", res);
+            WARN("failed to load from a stream %#x\n", res);
 
             seek.QuadPart = 0;
             if (IStream_Seek(pIStream, seek, STREAM_SEEK_SET, NULL) == S_OK)
             {
                 if (IStream_Read(pIStream, data, 4, &bytesread) == S_OK)
-                    WARN("first %li bytes of stream=%x %x %x %x\n", bytesread, data[0], data[1], data[2], data[3]);
+                    WARN("first %i bytes of stream=%x %x %x %x\n", bytesread, data[0], data[1], data[2], data[3]);
             }
         }
         *ppIDecoder = NULL;
@@ -251,7 +255,7 @@ static HRESULT WINAPI ImagingFactory_CreateDecoderFromFileHandle(
     IWICStream *stream;
     HRESULT hr;
 
-    TRACE("(%p,%Ix,%s,%u,%p)\n", iface, hFile, debugstr_guid(pguidVendor),
+    TRACE("(%p,%lx,%s,%u,%p)\n", iface, hFile, debugstr_guid(pguidVendor),
         metadataOptions, ppIDecoder);
 
     hr = StreamImpl_Create(&stream);
@@ -709,7 +713,7 @@ static BOOL get_16bpp_format(HBITMAP hbm, WICPixelFormatGUID *format)
     }
     else
     {
-        FIXME("unrecognized bitfields %lx,%lx,%lx\n", bmh.bV4RedMask,
+        FIXME("unrecognized bitfields %x,%x,%x\n", bmh.bV4RedMask,
             bmh.bV4GreenMask, bmh.bV4BlueMask);
         ret = FALSE;
     }
@@ -981,7 +985,7 @@ failed:
 static HRESULT WINAPI ImagingFactory_CreateComponentEnumerator(IWICImagingFactory2 *iface,
     DWORD componentTypes, DWORD options, IEnumUnknown **ppIEnumUnknown)
 {
-    TRACE("(%p,%lu,%lu,%p)\n", iface, componentTypes, options, ppIEnumUnknown);
+    TRACE("(%p,%u,%u,%p)\n", iface, componentTypes, options, ppIEnumUnknown);
     return CreateComponentEnumerator(componentTypes, options, ppIEnumUnknown);
 }
 
@@ -1249,7 +1253,7 @@ static HRESULT WINAPI ComponentFactory_CreateQueryWriterFromReader(IWICComponent
 static HRESULT WINAPI ComponentFactory_CreateMetadataReader(IWICComponentFactory *iface,
         REFGUID format, const GUID *vendor, DWORD options, IStream *stream, IWICMetadataReader **reader)
 {
-    FIXME("%p,%s,%s,%lx,%p,%p: stub\n", iface, debugstr_guid(format), debugstr_guid(vendor),
+    FIXME("%p,%s,%s,%x,%p,%p: stub\n", iface, debugstr_guid(format), debugstr_guid(vendor),
         options, stream, reader);
     return E_NOTIMPL;
 }
@@ -1267,7 +1271,7 @@ static HRESULT WINAPI ComponentFactory_CreateMetadataReaderFromContainer(IWICCom
     BOOL matches;
     LARGE_INTEGER zero;
 
-    TRACE("%p,%s,%s,%lx,%p,%p\n", iface, debugstr_guid(format), debugstr_guid(vendor),
+    TRACE("%p,%s,%s,%x,%p,%p\n", iface, debugstr_guid(format), debugstr_guid(vendor),
         options, stream, reader);
 
     if (!format || !stream || !reader)
@@ -1385,7 +1389,7 @@ start:
 static HRESULT WINAPI ComponentFactory_CreateMetadataWriter(IWICComponentFactory *iface,
         REFGUID format, const GUID *vendor, DWORD options, IWICMetadataWriter **writer)
 {
-    FIXME("%p,%s,%s,%lx,%p: stub\n", iface, debugstr_guid(format), debugstr_guid(vendor), options, writer);
+    FIXME("%p,%s,%s,%x,%p: stub\n", iface, debugstr_guid(format), debugstr_guid(vendor), options, writer);
     return E_NOTIMPL;
 }
 
@@ -1410,12 +1414,8 @@ static HRESULT WINAPI ComponentFactory_CreateQueryReaderFromBlockReader(IWICComp
 static HRESULT WINAPI ComponentFactory_CreateQueryWriterFromBlockWriter(IWICComponentFactory *iface,
         IWICMetadataBlockWriter *block_writer, IWICMetadataQueryWriter **query_writer)
 {
-    TRACE("%p,%p,%p\n", iface, block_writer, query_writer);
-
-    if (!block_writer || !query_writer)
-        return E_INVALIDARG;
-
-    return MetadataQueryWriter_CreateInstance(block_writer, NULL, query_writer);
+    FIXME("%p,%p,%p: stub\n", iface, block_writer, query_writer);
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ComponentFactory_CreateEncoderPropertyBag(IWICComponentFactory *iface,

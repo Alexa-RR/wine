@@ -116,57 +116,57 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
     hItem = 0;
     switch(lpmb->dwStyle & MB_TYPEMASK) {
     case MB_OK:
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCANCEL));
+	DestroyWindow(GetDlgItem(hwnd, IDCANCEL));
 	/* fall through */
     case MB_OKCANCEL:
 	hItem = GetDlgItem(hwnd, IDOK);
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDABORT));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDRETRY));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDIGNORE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDYES));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDNO));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
+	DestroyWindow(GetDlgItem(hwnd, IDABORT));
+	DestroyWindow(GetDlgItem(hwnd, IDRETRY));
+	DestroyWindow(GetDlgItem(hwnd, IDIGNORE));
+	DestroyWindow(GetDlgItem(hwnd, IDYES));
+	DestroyWindow(GetDlgItem(hwnd, IDNO));
+	DestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
+	DestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
 	break;
     case MB_ABORTRETRYIGNORE:
 	hItem = GetDlgItem(hwnd, IDABORT);
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDOK));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCANCEL));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDYES));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDNO));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
+	DestroyWindow(GetDlgItem(hwnd, IDOK));
+	DestroyWindow(GetDlgItem(hwnd, IDCANCEL));
+	DestroyWindow(GetDlgItem(hwnd, IDYES));
+	DestroyWindow(GetDlgItem(hwnd, IDNO));
+	DestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
+	DestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
 	break;
     case MB_YESNO:
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCANCEL));
+	DestroyWindow(GetDlgItem(hwnd, IDCANCEL));
 	/* fall through */
     case MB_YESNOCANCEL:
 	hItem = GetDlgItem(hwnd, IDYES);
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDOK));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDABORT));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDRETRY));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDIGNORE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
+	DestroyWindow(GetDlgItem(hwnd, IDOK));
+	DestroyWindow(GetDlgItem(hwnd, IDABORT));
+	DestroyWindow(GetDlgItem(hwnd, IDRETRY));
+	DestroyWindow(GetDlgItem(hwnd, IDIGNORE));
+	DestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
+	DestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
 	break;
     case MB_RETRYCANCEL:
 	hItem = GetDlgItem(hwnd, IDRETRY);
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDOK));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDABORT));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDIGNORE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDYES));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDNO));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
+	DestroyWindow(GetDlgItem(hwnd, IDOK));
+	DestroyWindow(GetDlgItem(hwnd, IDABORT));
+	DestroyWindow(GetDlgItem(hwnd, IDIGNORE));
+	DestroyWindow(GetDlgItem(hwnd, IDYES));
+	DestroyWindow(GetDlgItem(hwnd, IDNO));
+	DestroyWindow(GetDlgItem(hwnd, IDCONTINUE));
+	DestroyWindow(GetDlgItem(hwnd, IDTRYAGAIN));
 	break;
     case MB_CANCELTRYCONTINUE:
 	hItem = GetDlgItem(hwnd, IDCANCEL);
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDOK));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDABORT));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDIGNORE));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDYES));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDNO));
-	NtUserDestroyWindow(GetDlgItem(hwnd, IDRETRY));
+	DestroyWindow(GetDlgItem(hwnd, IDOK));
+	DestroyWindow(GetDlgItem(hwnd, IDABORT));
+	DestroyWindow(GetDlgItem(hwnd, IDIGNORE));
+	DestroyWindow(GetDlgItem(hwnd, IDYES));
+	DestroyWindow(GetDlgItem(hwnd, IDNO));
+	DestroyWindow(GetDlgItem(hwnd, IDRETRY));
     }
 
     if (hItem) SetWindowLongW(hItem, GWL_STYLE, GetWindowLongW(hItem, GWL_STYLE) | WS_GROUP);
@@ -202,7 +202,7 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
 
     /* Remove Help button unless MB_HELP supplied */
     if (!(lpmb->dwStyle & MB_HELP)) {
-        NtUserDestroyWindow(GetDlgItem(hwnd, IDHELP));
+        DestroyWindow(GetDlgItem(hwnd, IDHELP));
     }
 
     /* Position everything */
@@ -267,7 +267,7 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
     theight = rect.bottom;
 
     SelectObject(hdc, hPrevFont);
-    NtUserReleaseDC( hwnd, hdc );
+    ReleaseDC(hwnd, hdc);
 
     tiheight = 16 + max(iheight, theight);
     wwidth  = tleft + twidth + ileft + borwidth;
@@ -281,16 +281,16 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
     wtop = (mon_info.rcWork.top + mon_info.rcWork.bottom - wheight) / 2;
 
     /* Resize and center the window */
-    NtUserSetWindowPos( hwnd, 0, wleft, wtop, wwidth, wheight,
-                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+    SetWindowPos(hwnd, 0, wleft, wtop, wwidth, wheight,
+		 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW);
 
     /* Position the icon */
-    NtUserSetWindowPos( GetDlgItem(hwnd, MSGBOX_IDICON), 0, ileft, (tiheight - iheight) / 2, 0, 0,
-                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+    SetWindowPos(GetDlgItem(hwnd, MSGBOX_IDICON), 0, ileft, (tiheight - iheight) / 2, 0, 0,
+		 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW);
 
     /* Position the text */
-    NtUserSetWindowPos( GetDlgItem(hwnd, MSGBOX_IDTEXT), 0, tleft, (tiheight - theight) / 2, twidth, theight,
-                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW );
+    SetWindowPos(GetDlgItem(hwnd, MSGBOX_IDTEXT), 0, tleft, (tiheight - theight) / 2, twidth, theight,
+		 SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW);
 
     /* Position the buttons */
     bpos = (wwidth - (bw + bspace) * buttons + bspace) / 2;
@@ -300,23 +300,18 @@ static void MSGBOX_OnInit(HWND hwnd, LPMSGBOXPARAMSW lpmb)
 	hItem = GetDlgItem(hwnd, buttonOrder[i]);
 	if (GetWindowLongW(hItem, GWL_STYLE) & WS_VISIBLE) {
 	    if (buttons++ == ((lpmb->dwStyle & MB_DEFMASK) >> 8)) {
-		NtUserSetFocus(hItem);
+		SetFocus(hItem);
 		SendMessageW( hItem, BM_SETSTYLE, BS_DEFPUSHBUTTON, TRUE );
 	    }
-	    NtUserSetWindowPos( hItem, 0, bpos, tiheight, bw, bh,
-                                SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOREDRAW );
+	    SetWindowPos(hItem, 0, bpos, tiheight, bw, bh,
+			 SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOREDRAW);
 	    bpos += bw + bspace;
 	}
     }
 
     /*handle modal message boxes*/
-<<<<<<< HEAD
     if (lpmb->dwStyle & MB_SYSTEMMODAL)
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-=======
-    if (((lpmb->dwStyle & MB_TASKMODAL) && (lpmb->hwndOwner==NULL)) || (lpmb->dwStyle & MB_SYSTEMMODAL))
-        NtUserSetWindowPos( hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE );
->>>>>>> master
 
     HeapFree( GetProcessHeap(), 0, buffer );
 }
@@ -618,11 +613,13 @@ INT WINAPI MessageBoxIndirectW( LPMSGBOXPARAMSW msgbox )
     int ret;
     UINT i;
     struct ThreadWindows threadWindows;
+    static const WCHAR msg_box_res_nameW[] = { 'M','S','G','B','O','X',0 };
 
-    if (!(hRes = FindResourceExW(user32_module, (LPWSTR)RT_DIALOG, L"MSGBOX", msgbox->dwLanguageId)))
+    if (!(hRes = FindResourceExW(user32_module, (LPWSTR)RT_DIALOG,
+                                 msg_box_res_nameW, msgbox->dwLanguageId)))
     {
         if (!msgbox->dwLanguageId ||
-            !(hRes = FindResourceExW(user32_module, (LPWSTR)RT_DIALOG, L"MSGBOX", LANG_NEUTRAL)))
+            !(hRes = FindResourceExW(user32_module, (LPWSTR)RT_DIALOG, msg_box_res_nameW, LANG_NEUTRAL)))
             return 0;
     }
     if (!(tmplate = LoadResource(user32_module, hRes)))

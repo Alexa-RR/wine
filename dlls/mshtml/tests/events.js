@@ -16,8 +16,6 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-var tests = [];
-
 var test_content_loaded = (function() {
     var calls = "";
 
@@ -26,7 +24,7 @@ var test_content_loaded = (function() {
     }
 
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
 
     window.addEventListener("DOMContentLoaded", record_call("window.capture"), true);
@@ -44,15 +42,13 @@ var test_content_loaded = (function() {
     };
 })();
 
-async_test("content_loaded", test_content_loaded);
-
-sync_test("listener_order", function() {
+function test_listener_order() {
     document.body.innerHTML = '<div></div>';
     var div = document.body.firstChild;
 
     var calls;
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
 
     window.addEventListener("click", record_call("window.click(capture)"), true);
@@ -102,9 +98,11 @@ sync_test("listener_order", function() {
        + "div.click(bubble),new div.onclick,div.click(capture1),div.click(capture2),"
        + "body.onclick,body.click(bubble),body.click(bubble2),document.click(bubble),"
        + "document.onclick,window.click(bubble),", "calls = " + calls);
-});
 
-sync_test("add_listener_in_listener", function() {
+    next_test();
+}
+
+function test_add_listener_in_listener() {
     var calls;
 
     document.body.innerHTML = '<div><div></div></div>';
@@ -112,7 +110,7 @@ sync_test("add_listener_in_listener", function() {
     var div2 = div1.firstChild;
 
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
 
     div1.addEventListener("click", function() {
@@ -128,16 +126,18 @@ sync_test("add_listener_in_listener", function() {
     calls = "";
     div2.click();
     ok(calls === "div2.click", "calls = " + calls);
-});
 
-sync_test("remove_listener_in_listener", function() {
+    next_test();
+}
+
+function test_remove_listener_in_listener() {
     var calls;
 
     document.body.innerHTML = '<div></div>';
     var div = document.body.firstChild;
 
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
 
     var capture = record_call("capture"), bubble = record_call("bubble");
@@ -155,9 +155,11 @@ sync_test("remove_listener_in_listener", function() {
     calls = "";
     div.click();
     ok(calls === "remove,capture,bubble,onclick,", "calls = " + calls);
-});
 
-sync_test("add_remove_listener", function() {
+    next_test();
+}
+
+function test_add_remove_listener() {
     var calls;
 
     document.body.innerHTML = '<div></div>';
@@ -198,9 +200,11 @@ sync_test("add_remove_listener", function() {
     calls = "";
     div.click();
     ok(calls === "", "calls = " + calls);
-});
 
-sync_test("event_phase", function() {
+    next_test();
+}
+
+function test_event_phase() {
     document.body.innerHTML = '<div><div></div></div>';
     var div1 = document.body.firstChild;
     var div2 = div1.firstChild;
@@ -226,16 +230,18 @@ sync_test("event_phase", function() {
 
     div2.click();
     ok(last_event.eventPhase === 3, "last_event.eventPhase = " + last_event.eventPhase);
-});
 
-sync_test("stop_propagation", function() {
+    next_test();
+}
+
+function test_stop_propagation() {
     document.body.innerHTML = '<div><div></div></div>';
     var div1 = document.body.firstChild;
     var div2 = div1.firstChild;
 
     var calls;
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
 
     function stop_propagation(e) {
@@ -298,9 +304,11 @@ sync_test("stop_propagation", function() {
     div2.click();
     ok(calls === "div1.click(capture),div2.click(capture),div2.click(bubble),stop,div1.click(bubble),",
        "calls = " + calls);
-});
 
-sync_test("prevent_default", function() {
+    next_test();
+}
+
+function test_prevent_default() {
     document.body.innerHTML = '<div><a href="about:blank"></a></div>';
     var div = document.body.firstChild;
     var a = div.firstChild;
@@ -316,7 +324,6 @@ sync_test("prevent_default", function() {
     a.addEventListener("click", function(e) {
         calls += "a,";
         ok(e.defaultPrevented === true, "e.defaultPrevented = " + e.defaultPrevented);
-        ok(e.isTrusted === true, "isTrusted = " + e.isTrusted);
     }, true);
 
     calls = "";
@@ -378,23 +385,23 @@ sync_test("prevent_default", function() {
     ok(r === true, "dispatchEvent returned " + r);
     e.preventDefault();
     ok(e.defaultPrevented === false, "defaultPrevented = " + e.defaultPrevented);
-});
 
-sync_test("init_event", function() {
+    next_test();
+}
+
+function test_init_event() {
     var e = document.createEvent("Event");
     var calls;
 
     ok(e.type === "", "type = " + e.type);
     ok(e.cancelable === false, "cancelable = " + e.cancelable);
     ok(e.bubbles === false, "bubbles = " + e.bubbles);
-    ok(e.isTrusted === false, "isTrusted = " + e.isTrusted);
 
     e.initEvent("test", true, false);
     ok(e.type === "test", "type = " + e.type);
     ok(e.cancelable === false, "cancelable = " + e.cancelable);
     ok(e.bubbles === true, "bubbles = " + e.bubbles);
     ok(e.defaultPrevented === false, "defaultPrevented = " + e.defaultPrevented);
-    ok(e.isTrusted === false, "isTrusted = " + e.isTrusted);
 
     e.preventDefault();
     ok(e.defaultPrevented === false, "defaultPrevented = " + e.defaultPrevented);
@@ -409,7 +416,6 @@ sync_test("init_event", function() {
 
     elem.addEventListener("NewTest", function(event) {
         ok(e === event, "e != event");
-        ok(e.isTrusted === false, "isTrusted = " + e.isTrusted);
 
         e.preventDefault();
         ok(e.defaultPrevented === true, "defaultPrevented = " + e.defaultPrevented);
@@ -451,9 +457,11 @@ sync_test("init_event", function() {
 
     document.body.dispatchEvent(e);
     ok(e.target === document.body, "target != body");
-});
 
-sync_test("current_target", function() {
+    next_test();
+}
+
+function test_current_target() {
     document.body.innerHTML = '<div><div></div></div>';
     var parent = document.body.firstChild;
     var child = parent.firstChild;
@@ -480,9 +488,11 @@ sync_test("current_target", function() {
     child.dispatchEvent(e);
     ok(calls === 4, "calls = " + calls + " expected 4");
     ok(e.currentTarget === null, "currentTarget != null");
-});
 
-sync_test("dispatch_event", function() {
+    next_test();
+}
+
+function test_dispatch_event() {
     document.body.innerHTML = '<div><div></div></div>';
     var parent = document.body.firstChild;
     var child = parent.firstChild;
@@ -553,9 +563,11 @@ sync_test("dispatch_event", function() {
     calls = "";
     xhr.dispatchEvent(e);
     ok(calls === "xhr.testing", "calls = " + calls);
-});
 
-sync_test("recursive_dispatch", function() {
+    next_test();
+}
+
+function test_recursive_dispatch() {
     document.body.innerHTML = '<div></div><div></div>';
     var elem1 = document.body.firstChild;
     var elem2 = elem1.nextSibling;
@@ -584,9 +596,11 @@ sync_test("recursive_dispatch", function() {
     elem1.dispatchEvent(e);
     ok(calls === "elem1.test,", "calls = " + calls);
     ok(e.eventPhase === 3, "eventPhase = " + e.eventPhase);
-});
 
-sync_test("time_stamp", function() {
+    next_test();
+}
+
+function test_time_stamp() {
     document.body.innerHTML = '<div></div>';
     var elem = document.body.firstChild;
     var calls, last_time_stamp;
@@ -620,9 +634,11 @@ sync_test("time_stamp", function() {
     calls = 0;
     elem.click();
     ok(calls === 1, "calls = " + calls);
-});
 
-sync_test("mouse_event", function() {
+    next_test();
+}
+
+function test_mouse_event() {
     var e;
 
     e = document.createEvent("MouseEvent");
@@ -711,9 +727,11 @@ sync_test("mouse_event", function() {
     ok(e.shiftKey === true, "shiftKey = " + e.shiftKey);
     ok(e.metaKey === true, "metaKey = " + e.metaKey);
     ok(e.button === 127, "button = " + e.button);
-});
 
-sync_test("ui_event", function() {
+    next_test();
+}
+
+function test_ui_event() {
     var e;
 
     e = document.createEvent("UIEvent");
@@ -726,9 +744,11 @@ sync_test("ui_event", function() {
     ok(e.detail === 3, "detail = " + e.detail);
     todo_wine.
     ok(e.view === window, "view != window");
-});
 
-sync_test("keyboard_event", function() {
+    next_test();
+}
+
+function test_keyboard_event() {
     var e;
 
     e = document.createEvent("KeyboardEvent");
@@ -745,9 +765,11 @@ sync_test("keyboard_event", function() {
     ok(e.location === 0, "location = " + e.location);
     ok(e.detail === 0, "detail = " + e.detail);
     ok(e.which === 0, "which = " + e.which);
-});
 
-sync_test("custom_event", function() {
+    next_test();
+}
+
+function test_custom_event() {
     var e = document.createEvent("CustomEvent");
 
     ok(e.detail === undefined, "detail = " + e.detail);
@@ -757,16 +779,18 @@ sync_test("custom_event", function() {
     ok(e.bubbles === true, "bubbles = " + e.bubbles);
     ok(e.cancelable === false, "cancelable = " + e.cancelable);
     ok(e.detail === 123, "detail = " + e.detail);
-});
 
-async_test("error_event", function() {
+    next_test();
+}
+
+function test_error_event() {
     document.body.innerHTML = '<div><img></img></div>';
     var div = document.body.firstChild;
     var img = div.firstChild;
     var calls = "";
 
     function record_call(msg) {
-        return function() { calls += msg + ","; };
+        return function() { calls += msg + "," };
     }
     var win_onerror = record_call("window.onerror");
     var doc_onerror = record_call("doc.onerror");
@@ -787,27 +811,34 @@ async_test("error_event", function() {
     }, true);
 
     img.src = "about:blank";
-});
+}
 
-async_test("detached_img_error_event", function() {
+function test_detached_img_error_event() {
     var img = new Image();
     img.onerror = function() {
         next_test();
     }
     img.src = "about:blank";
-});
+}
 
-async_test("message event", function() {
-    var listener_called = false;
-
-    window.addEventListener("message", function(e) {
-        listener_called = true;
-        ok(e.data === "test", "e.data = " + e.data);
-        ok(e.bubbles === false, "bubbles = " + e.bubbles);
-        ok(e.cancelable === false, "cancelable = " + e.cancelable);
-        next_test();
-    });
-
-    window.postMessage("test", "http://winetest.example.org");
-    ok(listener_called == false, "listener already called");
-});
+var tests = [
+    test_content_loaded,
+    test_add_remove_listener,
+    test_add_listener_in_listener,
+    test_remove_listener_in_listener,
+    test_event_phase,
+    test_stop_propagation,
+    test_prevent_default,
+    test_init_event,
+    test_current_target,
+    test_dispatch_event,
+    test_recursive_dispatch,
+    test_ui_event,
+    test_mouse_event,
+    test_keyboard_event,
+    test_custom_event,
+    test_error_event,
+    test_detached_img_error_event,
+    test_time_stamp,
+    test_listener_order
+];

@@ -19,13 +19,13 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <sys/ioctl.h>
-#include <unistd.h>
 
 #define NONAMELESSUNION
 #define NONAMELESSSTRUCT
@@ -258,11 +258,9 @@ static inline void wrap_java_call(void)   { __asm__( "mov %0,%%fs" :: "r" (java_
 static inline void unwrap_java_call(void) { __asm__( "mov %0,%%fs" :: "r" (orig_fs) ); }
 static inline void init_java_thread( JavaVM *java_vm )
 {
-    java_fs = *p_java_gdt_sel;
     __asm__( "mov %%fs,%0" : "=r" (orig_fs) );
-    __asm__( "mov %0,%%fs" :: "r" (java_fs) );
     (*java_vm)->AttachCurrentThread( java_vm, &jni_env, 0 );
-    if (!*p_java_gdt_sel) __asm__( "mov %%fs,%0" : "=r" (java_fs) );
+    __asm__( "mov %%fs,%0" : "=r" (java_fs) );
     __asm__( "mov %0,%%fs" :: "r" (orig_fs) );
 }
 
@@ -332,7 +330,7 @@ static int duplicate_fd( HANDLE client, int fd )
 
     if (!wine_server_fd_to_handle( dup(fd), GENERIC_READ | SYNCHRONIZE, 0, &handle ))
         DuplicateHandle( GetCurrentProcess(), handle, client, &ret,
-                         0, FALSE, DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE );
+                         DUPLICATE_SAME_ACCESS, FALSE, DUP_HANDLE_CLOSE_SOURCE );
 
     if (!ret) return -1;
     return HandleToLong( ret );
@@ -348,7 +346,7 @@ static int map_native_handle( union native_handle_buffer *dest, const native_han
     {
         HANDLE ret = 0;
         if (!DuplicateHandle( GetCurrentProcess(), mapping, client, &ret,
-                              0, FALSE, DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE ))
+                              DUPLICATE_SAME_ACCESS, FALSE, DUP_HANDLE_CLOSE_SOURCE ))
             return -ENOSPC;
         dest->handle.numFds = 0;
         dest->handle.numInts = 1;
@@ -689,7 +687,7 @@ static int status_to_android_error( NTSTATUS status )
 
 static jobject load_java_method( jmethodID *method, const char *name, const char *args )
 {
-    jobject object = *p_java_object;
+    jobject object = wine_get_java_object();
 
     if (!*method)
     {
@@ -1165,7 +1163,7 @@ static DWORD CALLBACK device_thread( void *arg )
 
     TRACE( "starting process %x\n", GetCurrentProcessId() );
 
-    if (!(java_vm = *p_java_vm)) return 0;  /* not running under Java */
+    if (!(java_vm = wine_get_java_vm())) return 0;  /* not running under Java */
 
     init_java_thread( java_vm );
 

@@ -19,15 +19,34 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
+#include "config.h"
 
-#define WINE_NO_NAMELESS_EXTENSION
+#include <assert.h>
+#include <stdio.h>
+#include <stdarg.h>
 
-#include "qcap_private.h"
+#define COBJMACROS
+#define NONAMELESSSTRUCT
+#define NONAMELESSUNION
+#include "windef.h"
+#include "winbase.h"
+#include "wingdi.h"
+#include "winerror.h"
+#include "objbase.h"
+#include "uuids.h"
+#include "strmif.h"
 #include "rpcproxy.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+#include "qcap_main.h"
 
-HINSTANCE qcap_instance;
+#include "wine/unicode.h"
+#include "wine/debug.h"
+
+WINE_DEFAULT_DEBUG_CHANNEL(qcap);
+
+static HINSTANCE qcap_instance;
+
+static LONG objects_ref = 0;
 
 struct class_factory
 {
@@ -89,6 +108,11 @@ static HRESULT WINAPI class_factory_CreateInstance(IClassFactory *iface, IUnknow
 static HRESULT WINAPI class_factory_LockServer(IClassFactory *iface, BOOL lock)
 {
     TRACE("iface %p, lock %d.\n", iface, lock);
+
+    if (lock)
+        InterlockedIncrement(&objects_ref);
+    else
+        InterlockedDecrement(&objects_ref);
     return S_OK;
 }
 
@@ -105,7 +129,6 @@ static struct class_factory audio_record_cf = {{&class_factory_vtbl}, audio_reco
 static struct class_factory avi_compressor_cf = {{&class_factory_vtbl}, avi_compressor_create};
 static struct class_factory avi_mux_cf = {{&class_factory_vtbl}, avi_mux_create};
 static struct class_factory capture_graph_cf = {{&class_factory_vtbl}, capture_graph_create};
-static struct class_factory file_writer_cf = {{&class_factory_vtbl}, file_writer_create};
 static struct class_factory smart_tee_cf = {{&class_factory_vtbl}, smart_tee_create};
 static struct class_factory vfw_capture_cf = {{&class_factory_vtbl}, vfw_capture_create};
 
@@ -135,8 +158,6 @@ HRESULT WINAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void **out)
         factory = &capture_graph_cf;
     else if (IsEqualGUID(clsid, &CLSID_CaptureGraphBuilder2))
         factory = &capture_graph_cf;
-    else if (IsEqualGUID(clsid, &CLSID_FileWriter))
-        factory = &file_writer_cf;
     else if (IsEqualGUID(clsid, &CLSID_SmartTee))
         factory = &smart_tee_cf;
     else if (IsEqualGUID(clsid, &CLSID_VfwCapture))
@@ -200,45 +221,26 @@ static const REGFILTER2 reg_smart_tee =
     .u.s2.rgPins2 = reg_smart_tee_pins,
 };
 
-static const REGPINTYPES reg_file_writer_sink_mt = {&GUID_NULL, &GUID_NULL};
-
-static const REGFILTERPINS2 reg_file_writer_pins[1] =
-{
-    {
-        .cInstances = 1,
-        .nMediaTypes = 1,
-        .lpMediaType = &reg_file_writer_sink_mt,
-    },
-};
-
-static const REGFILTER2 reg_file_writer =
-{
-    .dwVersion = 2,
-    .dwMerit = MERIT_DO_NOT_USE,
-    .u.s2.cPins2 = 1,
-    .u.s2.rgPins2 = reg_file_writer_pins,
-};
-
 /***********************************************************************
  *    DllRegisterServer (QCAP.@)
  */
 HRESULT WINAPI DllRegisterServer(void)
 {
+    static const WCHAR avi_muxW[] = {'A','V','I',' ','M','u','x',0};
+    static const WCHAR smart_teeW[] = {'S','m','a','r','t',' ','T','e','e',0};
     IFilterMapper2 *mapper;
     HRESULT hr;
 
-    if (FAILED(hr = __wine_register_resources()))
+    if (FAILED(hr = __wine_register_resources( qcap_instance )))
         return hr;
 
     if (FAILED(hr = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER,
             &IID_IFilterMapper2, (void **)&mapper)))
         return hr;
 
-    IFilterMapper2_RegisterFilter(mapper, &CLSID_AviDest, L"AVI Mux",
+    IFilterMapper2_RegisterFilter(mapper, &CLSID_AviDest, avi_muxW,
             NULL, NULL, NULL, &reg_avi_mux);
-    IFilterMapper2_RegisterFilter(mapper, &CLSID_FileWriter, L"File writer",
-            NULL, NULL, NULL, &reg_file_writer);
-    IFilterMapper2_RegisterFilter(mapper, &CLSID_SmartTee, L"Smart Tee",
+    IFilterMapper2_RegisterFilter(mapper, &CLSID_SmartTee, smart_teeW,
             NULL, NULL, NULL, &reg_smart_tee);
 
     IFilterMapper2_Release(mapper);
@@ -253,7 +255,7 @@ HRESULT WINAPI DllUnregisterServer(void)
     IFilterMapper2 *mapper;
     HRESULT hr;
 
-    if (FAILED(hr = __wine_unregister_resources()))
+    if (FAILED(hr = __wine_unregister_resources( qcap_instance )))
         return hr;
 
     if (FAILED(hr = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER,
@@ -261,9 +263,25 @@ HRESULT WINAPI DllUnregisterServer(void)
         return hr;
 
     IFilterMapper2_UnregisterFilter(mapper, NULL, NULL, &CLSID_AviDest);
-    IFilterMapper2_UnregisterFilter(mapper, NULL, NULL, &CLSID_FileWriter);
     IFilterMapper2_UnregisterFilter(mapper, NULL, NULL, &CLSID_SmartTee);
 
     IFilterMapper2_Release(mapper);
     return S_OK;
+}
+
+/***********************************************************************
+ *    DllCanUnloadNow (QCAP.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    TRACE(".\n");
+
+    return objects_ref ? S_FALSE : S_OK;
+}
+
+DWORD ObjectRefCount(BOOL increment)
+{
+    if (increment)
+        return InterlockedIncrement(&objects_ref);
+    return InterlockedDecrement(&objects_ref);
 }

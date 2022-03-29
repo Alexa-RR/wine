@@ -20,10 +20,14 @@
 
 #define COBJMACROS
 
+#include "config.h"
+
 #include <stdarg.h>
-#include <libxml/parser.h>
-#include <libxml/xmlerror.h>
-#include <libxml/HTMLtree.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+# include <libxml/xmlerror.h>
+# include <libxml/HTMLtree.h>
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -34,6 +38,8 @@
 #include "msxml_private.h"
 
 #include "wine/debug.h"
+
+#ifdef HAVE_LIBXML2
 
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
 
@@ -95,9 +101,9 @@ static HRESULT WINAPI domattr_QueryInterface(
 static ULONG WINAPI domattr_AddRef(
     IXMLDOMAttribute *iface )
 {
-    domattr *attr = impl_from_IXMLDOMAttribute( iface );
-    ULONG ref = InterlockedIncrement( &attr->ref );
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    domattr *This = impl_from_IXMLDOMAttribute( iface );
+    ULONG ref = InterlockedIncrement( &This->ref );
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -107,7 +113,7 @@ static ULONG WINAPI domattr_Release(
     domattr *This = impl_from_IXMLDOMAttribute( iface );
     ULONG ref = InterlockedDecrement( &This->ref );
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     if ( ref == 0 )
     {
         destroy_xmlnode(&This->node);
@@ -732,3 +738,5 @@ IUnknown* create_attribute( xmlNodePtr attribute, BOOL floating )
 
     return (IUnknown*)&This->IXMLDOMAttribute_iface;
 }
+
+#endif

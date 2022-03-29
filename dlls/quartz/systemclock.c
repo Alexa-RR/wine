@@ -25,7 +25,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
-static LONG cookie_counter;
+static int cookie_counter;
 
 struct advise_sink
 {
@@ -42,24 +42,13 @@ struct system_clock
     IUnknown *outer_unk;
     LONG refcount;
 
-    LONG thread_created;
-    BOOL thread_stopped;
-    HANDLE thread;
-    LARGE_INTEGER frequency;
+    BOOL thread_created;
+    HANDLE thread, notify_event, stop_event;
     REFERENCE_TIME last_time;
     CRITICAL_SECTION cs;
-    CONDITION_VARIABLE cv;
 
     struct list sinks;
 };
-
-static REFERENCE_TIME get_current_time(const struct system_clock *clock)
-{
-    LARGE_INTEGER time;
-
-    QueryPerformanceCounter(&time);
-    return (time.QuadPart * 1000) / clock->frequency.QuadPart * 10000;
-}
 
 static inline struct system_clock *impl_from_IUnknown(IUnknown *iface)
 {
@@ -91,7 +80,7 @@ static ULONG WINAPI system_clock_inner_AddRef(IUnknown *iface)
     struct system_clock *clock = impl_from_IUnknown(iface);
     ULONG refcount = InterlockedIncrement(&clock->refcount);
 
-    TRACE("%p increasing refcount to %lu.\n", clock, refcount);
+    TRACE("%p increasing refcount to %u.\n", clock, refcount);
 
     return refcount;
 }
@@ -100,31 +89,24 @@ static ULONG WINAPI system_clock_inner_Release(IUnknown *iface)
 {
     struct system_clock *clock = impl_from_IUnknown(iface);
     ULONG refcount = InterlockedDecrement(&clock->refcount);
-    struct advise_sink *sink, *cursor;
 
-    TRACE("%p decreasing refcount to %lu.\n", clock, refcount);
+    TRACE("%p decreasing refcount to %u.\n", clock, refcount);
 
     if (!refcount)
     {
         if (clock->thread)
         {
-            EnterCriticalSection(&clock->cs);
-            clock->thread_stopped = TRUE;
-            LeaveCriticalSection(&clock->cs);
-            WakeConditionVariable(&clock->cv);
+            SetEvent(clock->stop_event);
             WaitForSingleObject(clock->thread, INFINITE);
             CloseHandle(clock->thread);
+            CloseHandle(clock->notify_event);
+            CloseHandle(clock->stop_event);
         }
-
-        LIST_FOR_EACH_ENTRY_SAFE(sink, cursor, &clock->sinks, struct advise_sink, entry)
-        {
-            list_remove(&sink->entry);
-            heap_free(sink);
-        }
-
         clock->cs.DebugInfo->Spare[0] = 0;
         DeleteCriticalSection(&clock->cs);
         heap_free(clock);
+
+        InterlockedDecrement(&object_locks);
     }
     return refcount;
 }
@@ -146,6 +128,7 @@ static DWORD WINAPI SystemClockAdviseThread(void *param)
     struct system_clock *clock = param;
     struct advise_sink *sink, *cursor;
     REFERENCE_TIME current_time;
+    HANDLE handles[2] = {clock->stop_event, clock->notify_event};
 
     TRACE("Starting advise thread for clock %p.\n", clock);
 
@@ -155,7 +138,7 @@ static DWORD WINAPI SystemClockAdviseThread(void *param)
 
         EnterCriticalSection(&clock->cs);
 
-        current_time = get_current_time(clock);
+        current_time = GetTickCount64() * 10000;
 
         LIST_FOR_EACH_ENTRY_SAFE(sink, cursor, &clock->sinks, struct advise_sink, entry)
         {
@@ -179,47 +162,22 @@ static DWORD WINAPI SystemClockAdviseThread(void *param)
             timeout = min(timeout, (sink->due_time - current_time) / 10000);
         }
 
-        SleepConditionVariableCS(&clock->cv, &clock->cs, timeout);
-        if (clock->thread_stopped)
-        {
-            LeaveCriticalSection(&clock->cs);
-            return 0;
-        }
         LeaveCriticalSection(&clock->cs);
+
+        if (WaitForMultipleObjects(2, handles, FALSE, timeout) == 0)
+            return 0;
     }
 }
 
-static HRESULT add_sink(struct system_clock *clock, DWORD_PTR handle,
-        REFERENCE_TIME due_time, REFERENCE_TIME period, DWORD_PTR *cookie)
+static void notify_thread(struct system_clock *clock)
 {
-    struct advise_sink *sink;
-
-    if (!handle)
-        return E_INVALIDARG;
-
-    if (!cookie)
-        return E_POINTER;
-
-    if (!(sink = heap_alloc_zero(sizeof(*sink))))
-        return E_OUTOFMEMORY;
-
-    sink->handle = (HANDLE)handle;
-    sink->due_time = due_time;
-    sink->period = period;
-    sink->cookie = InterlockedIncrement(&cookie_counter);
-    *cookie = sink->cookie;
-
-    EnterCriticalSection(&clock->cs);
-    list_add_tail(&clock->sinks, &sink->entry);
-    LeaveCriticalSection(&clock->cs);
-
     if (!InterlockedCompareExchange(&clock->thread_created, TRUE, FALSE))
     {
+        clock->notify_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+        clock->stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
         clock->thread = CreateThread(NULL, 0, SystemClockAdviseThread, clock, 0, NULL);
     }
-    WakeConditionVariable(&clock->cv);
-
-    return S_OK;
+    SetEvent(clock->notify_event);
 }
 
 static HRESULT WINAPI SystemClockImpl_QueryInterface(IReferenceClock *iface, REFIID iid, void **out)
@@ -250,7 +208,7 @@ static HRESULT WINAPI SystemClockImpl_GetTime(IReferenceClock *iface, REFERENCE_
         return E_POINTER;
     }
 
-    ret = get_current_time(clock);
+    ret = GetTickCount64() * 10000;
 
     EnterCriticalSection(&clock->cs);
 
@@ -267,28 +225,72 @@ static HRESULT WINAPI SystemClockImpl_AdviseTime(IReferenceClock *iface,
         REFERENCE_TIME base, REFERENCE_TIME offset, HEVENT event, DWORD_PTR *cookie)
 {
     struct system_clock *clock = impl_from_IReferenceClock(iface);
+    struct advise_sink *sink;
 
-    TRACE("clock %p, base %s, offset %s, event %#Ix, cookie %p.\n",
+    TRACE("clock %p, base %s, offset %s, event %#lx, cookie %p.\n",
             clock, debugstr_time(base), debugstr_time(offset), event, cookie);
+
+    if (!event)
+        return E_INVALIDARG;
 
     if (base + offset <= 0)
         return E_INVALIDARG;
 
-    return add_sink(clock, event, base + offset, 0, cookie);
+    if (!cookie)
+        return E_POINTER;
+
+    if (!(sink = heap_alloc_zero(sizeof(*sink))))
+        return E_OUTOFMEMORY;
+
+    sink->handle = (HANDLE)event;
+    sink->due_time = base + offset;
+    sink->period = 0;
+    sink->cookie = InterlockedIncrement(&cookie_counter);
+
+    EnterCriticalSection(&clock->cs);
+    list_add_tail(&clock->sinks, &sink->entry);
+    LeaveCriticalSection(&clock->cs);
+
+    notify_thread(clock);
+
+    *cookie = sink->cookie;
+    return S_OK;
 }
 
 static HRESULT WINAPI SystemClockImpl_AdvisePeriodic(IReferenceClock* iface,
         REFERENCE_TIME start, REFERENCE_TIME period, HSEMAPHORE semaphore, DWORD_PTR *cookie)
 {
     struct system_clock *clock = impl_from_IReferenceClock(iface);
+    struct advise_sink *sink;
 
-    TRACE("clock %p, start %s, period %s, semaphore %#Ix, cookie %p.\n",
+    TRACE("clock %p, start %s, period %s, semaphore %#lx, cookie %p.\n",
             clock, debugstr_time(start), debugstr_time(period), semaphore, cookie);
+
+    if (!semaphore)
+        return E_INVALIDARG;
 
     if (start <= 0 || period <= 0)
         return E_INVALIDARG;
 
-    return add_sink(clock, semaphore, start, period, cookie);
+    if (!cookie)
+        return E_POINTER;
+
+    if (!(sink = heap_alloc_zero(sizeof(*sink))))
+        return E_OUTOFMEMORY;
+
+    sink->handle = (HANDLE)semaphore;
+    sink->due_time = start;
+    sink->period = period;
+    sink->cookie = InterlockedIncrement(&cookie_counter);
+
+    EnterCriticalSection(&clock->cs);
+    list_add_tail(&clock->sinks, &sink->entry);
+    LeaveCriticalSection(&clock->cs);
+
+    notify_thread(clock);
+
+    *cookie = sink->cookie;
+    return S_OK;
 }
 
 static HRESULT WINAPI SystemClockImpl_Unadvise(IReferenceClock *iface, DWORD_PTR cookie)
@@ -296,7 +298,7 @@ static HRESULT WINAPI SystemClockImpl_Unadvise(IReferenceClock *iface, DWORD_PTR
     struct system_clock *clock = impl_from_IReferenceClock(iface);
     struct advise_sink *sink;
 
-    TRACE("clock %p, cookie %#Ix.\n", clock, cookie);
+    TRACE("clock %p, cookie %#lx.\n", clock, cookie);
 
     EnterCriticalSection(&clock->cs);
 
@@ -346,7 +348,6 @@ HRESULT system_clock_create(IUnknown *outer, IUnknown **out)
     list_init(&object->sinks);
     InitializeCriticalSection(&object->cs);
     object->cs.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": SystemClockImpl.cs");
-    QueryPerformanceFrequency(&object->frequency);
 
     TRACE("Created system clock %p.\n", object);
     *out = &object->IUnknown_inner;

@@ -30,11 +30,13 @@
 
 #include "winemm.h"
 
+#include "wine/list.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(mmtime);
 
 typedef struct tagWINE_TIMERENTRY {
+    struct list                 entry;
     UINT                        wDelay;
     UINT                        wResol;
     LPTIMECALLBACK              lpFunc; /* can be lots of things */
@@ -44,8 +46,7 @@ typedef struct tagWINE_TIMERENTRY {
     DWORD                       dwTriggerTime;
 } WINE_TIMERENTRY, *LPWINE_TIMERENTRY;
 
-static WINE_TIMERENTRY timers[16];
-static UINT timers_created;
+static struct list timer_list = LIST_INIT(timer_list);
 
 static CRITICAL_SECTION TIME_cbcrst;
 static CRITICAL_SECTION_DEBUG critsect_debug =
@@ -57,34 +58,33 @@ static CRITICAL_SECTION_DEBUG critsect_debug =
 static CRITICAL_SECTION TIME_cbcrst = { &critsect_debug, -1, 0, 0, 0, 0 };
 
 static    HANDLE                TIME_hMMTimer;
+static    BOOL                  TIME_TimeToDie = TRUE;
 static    CONDITION_VARIABLE    TIME_cv;
+
+/* link timer at the appropriate spot in the list */
+static inline void link_timer( WINE_TIMERENTRY *timer )
+{
+    WINE_TIMERENTRY *next;
+
+    LIST_FOR_EACH_ENTRY( next, &timer_list, WINE_TIMERENTRY, entry )
+        if ((int)(next->dwTriggerTime - timer->dwTriggerTime) >= 0) break;
+
+    list_add_before( &next->entry, &timer->entry );
+}
 
 /*
  * Some observations on the behavior of winmm on Windows.
- *
- * First, the call to timeBeginPeriod(xx) can never be used to
- * lower the timer resolution (i.e. increase the update
- * interval), only to increase the timer resolution (i.e. lower
- * the update interval).
+ * First, the call to timeBeginPeriod(xx) can never be used
+ * to raise the timer resolution, only lower it.
  *
  * Second, a brief survey of a variety of Win 2k and Win X
  * machines showed that a 'standard' (aka default) timer
  * resolution was 1 ms (Win9x is documented as being 1).  However, one 
  * machine had a standard timer resolution of 10 ms.
  *
- * Further, timeBeginPeriod(xx) also affects the resolution of
- * wait calls such as NtDelayExecution() and
- * NtWaitForMultipleObjects() which by default round up their
- * timeout to the nearest multiple of 15.625ms across all Windows
- * versions. In Wine all of those currently work with sub-1ms
- * accuracy.
- *
- * Effective time resolution is a global value that is the max
- * of the resolutions (i.e. min of update intervals) requested by
- * all the processes. A lot of programs seem to do
- * timeBeginPeriod(1) forcing it onto everyone else.
- *
- * Defaulting to 1ms accuracy in winmm should be safe.
+ * Further, if we set our default resolution to 1,
+ * the implementation of timeGetTime becomes GetTickCount(),
+ * and we can optimize the code to reduce overhead.
  *
  * Additionally, a survey of Event behaviors shows that
  * if we request a Periodic event every 50 ms, then Windows
@@ -97,7 +97,6 @@ static    CONDITION_VARIABLE    TIME_cv;
  * no delays.
  *
  *   Jeremy White, October 2004
- *   Arkadiusz Hiler, August 2020
  */
 #define MMSYSTIME_MININTERVAL (1)
 #define MMSYSTIME_MAXINTERVAL (65535)
@@ -107,8 +106,8 @@ static    CONDITION_VARIABLE    TIME_cv;
  */
 static int TIME_MMSysTimeCallback(void)
 {
-    WINE_TIMERENTRY *timer;
-    int i, delta_time;
+    WINE_TIMERENTRY *timer, *to_free;
+    int delta_time;
 
     /* since timeSetEvent() and timeKillEvent() can be called
      * from 16 bit code, there are cases where win16 lock is
@@ -124,22 +123,25 @@ static int TIME_MMSysTimeCallback(void)
 
     for (;;)
     {
-        for (i = 0; i < ARRAY_SIZE(timers); i++)
-            if (timers[i].wTimerID) break;
-        if (i == ARRAY_SIZE(timers)) return -1;
-        timer = timers + i;
-        for (i++; i < ARRAY_SIZE(timers); i++)
+        struct list *ptr = list_head( &timer_list );
+        if (!ptr)
         {
-            if (!timers[i].wTimerID) continue;
-            if (timers[i].dwTriggerTime < timer->dwTriggerTime)
-                timer = timers + i;
+            delta_time = -1;
+            break;
         }
 
-        delta_time = timer->dwTriggerTime - timeGetTime();
+        timer = LIST_ENTRY( ptr, WINE_TIMERENTRY, entry );
+        delta_time = timer->dwTriggerTime - GetTickCount();
         if (delta_time > 0) break;
 
+        list_remove( &timer->entry );
         if (timer->wFlags & TIME_PERIODIC)
+        {
             timer->dwTriggerTime += timer->wDelay;
+            link_timer( timer );  /* restart it */
+            to_free = NULL;
+        }
+        else to_free = timer;
 
         switch(timer->wFlags & (TIME_CALLBACK_EVENT_SET|TIME_CALLBACK_EVENT_PULSE))
         {
@@ -163,12 +165,10 @@ static int TIME_MMSysTimeCallback(void)
 
                 EnterCriticalSection(&WINMM_cs);
                 if (flags & TIME_KILL_SYNCHRONOUS) LeaveCriticalSection(&TIME_cbcrst);
-                if (id != timer->wTimerID) timer = NULL;
             }
             break;
         }
-        if (timer && !(timer->wFlags & TIME_PERIODIC))
-            timer->wTimerID = 0;
+        HeapFree( GetProcessHeap(), 0, to_free );
     }
     return delta_time;
 }
@@ -184,7 +184,7 @@ static DWORD CALLBACK TIME_MMSysTimeThread(LPVOID arg)
     TRACE("Starting main winmm thread\n");
 
     EnterCriticalSection(&WINMM_cs);
-    while (1)
+    while (! TIME_TimeToDie) 
     {
         sleep_time = TIME_MMSysTimeCallback();
 
@@ -214,6 +214,7 @@ static DWORD CALLBACK TIME_MMSysTimeThread(LPVOID arg)
 static void TIME_MMTimeStart(void)
 {
     HMODULE mod;
+    TIME_TimeToDie = 0;
     if (TIME_hMMTimer) return;
 
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)TIME_MMSysTimeThread, &mod);
@@ -241,25 +242,14 @@ void	TIME_MMTimeStop(void)
  */
 MMRESULT WINAPI timeGetSystemTime(LPMMTIME lpTime, UINT wSize)
 {
+
     if (wSize >= sizeof(*lpTime)) {
-        lpTime->wType = TIME_MS;
-        lpTime->u.ms = timeGetTime();
+	lpTime->wType = TIME_MS;
+	lpTime->u.ms = GetTickCount();
+
     }
 
     return 0;
-}
-
-/**************************************************************************
- * 				timeGetTime		[WINMM.@]
- */
-DWORD WINAPI timeGetTime(void)
-{
-    LARGE_INTEGER now, freq;
-
-    QueryPerformanceCounter(&now);
-    QueryPerformanceFrequency(&freq);
-
-    return (now.QuadPart * 1000) / freq.QuadPart;
 }
 
 /**************************************************************************
@@ -268,37 +258,36 @@ DWORD WINAPI timeGetTime(void)
 MMRESULT WINAPI timeSetEvent(UINT wDelay, UINT wResol, LPTIMECALLBACK lpFunc,
                             DWORD_PTR dwUser, UINT wFlags)
 {
-    WORD new_id = 0;
-    int i;
+    WORD 		wNewID = 0;
+    LPWINE_TIMERENTRY	lpNewTimer;
+    LPWINE_TIMERENTRY	lpTimer;
 
-    TRACE("(%u, %u, %p, %08IX, %04X);\n", wDelay, wResol, lpFunc, dwUser, wFlags);
+    TRACE("(%u, %u, %p, %08lX, %04X);\n", wDelay, wResol, lpFunc, dwUser, wFlags);
 
     if (wDelay < MMSYSTIME_MININTERVAL || wDelay > MMSYSTIME_MAXINTERVAL)
 	return 0;
 
-    EnterCriticalSection(&WINMM_cs);
+    lpNewTimer = HeapAlloc(GetProcessHeap(), 0, sizeof(WINE_TIMERENTRY));
+    if (lpNewTimer == NULL)
+	return 0;
 
-    for (i = 0; i < ARRAY_SIZE(timers); i++)
-        if (!timers[i].wTimerID) break;
-    if (i == ARRAY_SIZE(timers))
-    {
-        LeaveCriticalSection(&WINMM_cs);
-        return 0;
-    }
-
-    new_id = ARRAY_SIZE(timers)*(++timers_created) + i;
-    if (!new_id) new_id = ARRAY_SIZE(timers)*(++timers_created) + i;
-
-    timers[i].wDelay = wDelay;
-    timers[i].dwTriggerTime = timeGetTime() + wDelay;
+    lpNewTimer->wDelay = wDelay;
+    lpNewTimer->dwTriggerTime = GetTickCount() + wDelay;
 
     /* FIXME - wResol is not respected, although it is not clear
-       that we could change our precision meaningfully  */
-    timers[i].wResol = wResol;
-    timers[i].lpFunc = lpFunc;
-    timers[i].dwUser = dwUser;
-    timers[i].wFlags = wFlags;
-    timers[i].wTimerID = new_id;
+               that we could change our precision meaningfully  */
+    lpNewTimer->wResol = wResol;
+    lpNewTimer->lpFunc = lpFunc;
+    lpNewTimer->dwUser = dwUser;
+    lpNewTimer->wFlags = wFlags;
+
+    EnterCriticalSection(&WINMM_cs);
+
+    LIST_FOR_EACH_ENTRY( lpTimer, &timer_list, WINE_TIMERENTRY, entry )
+        wNewID = max(wNewID, lpTimer->wTimerID);
+
+    link_timer( lpNewTimer );
+    lpNewTimer->wTimerID = wNewID + 1;
 
     TIME_MMTimeStart();
 
@@ -307,9 +296,9 @@ MMRESULT WINAPI timeSetEvent(UINT wDelay, UINT wResol, LPTIMECALLBACK lpFunc,
     /* Wake the service thread in case there is work to be done */
     WakeConditionVariable(&TIME_cv);
 
-    TRACE("=> %u\n", new_id);
+    TRACE("=> %u\n", wNewID + 1);
 
-    return new_id;
+    return wNewID + 1;
 }
 
 /**************************************************************************
@@ -317,30 +306,37 @@ MMRESULT WINAPI timeSetEvent(UINT wDelay, UINT wResol, LPTIMECALLBACK lpFunc,
  */
 MMRESULT WINAPI timeKillEvent(UINT wID)
 {
-    WINE_TIMERENTRY *timer;
-    WORD flags;
+    WINE_TIMERENTRY *lpSelf = NULL, *lpTimer;
+    DWORD wFlags;
 
     TRACE("(%u)\n", wID);
     EnterCriticalSection(&WINMM_cs);
-
-    timer = &timers[wID % ARRAY_SIZE(timers)];
-    if (timer->wTimerID != wID)
+    /* remove WINE_TIMERENTRY from list */
+    LIST_FOR_EACH_ENTRY( lpTimer, &timer_list, WINE_TIMERENTRY, entry )
     {
-        LeaveCriticalSection(&WINMM_cs);
-        WARN("wID=%u is not a valid timer ID\n", wID);
-        return TIMERR_NOCANDO;
+	if (wID == lpTimer->wTimerID) {
+            lpSelf = lpTimer;
+            list_remove( &lpTimer->entry );
+	    break;
+	}
     }
-
-    timer->wTimerID = 0;
-    flags = timer->wFlags;
+    if (list_empty(&timer_list)) {
+        TIME_TimeToDie = 1;
+        WakeConditionVariable(&TIME_cv);
+    }
     LeaveCriticalSection(&WINMM_cs);
 
-    if (flags & TIME_KILL_SYNCHRONOUS)
+    if (!lpSelf)
     {
-        EnterCriticalSection(&TIME_cbcrst);
-        LeaveCriticalSection(&TIME_cbcrst);
+        WARN("wID=%u is not a valid timer ID\n", wID);
+        return MMSYSERR_INVALPARAM;
     }
-    WakeConditionVariable(&TIME_cv);
+    wFlags = lpSelf->wFlags;
+    if (wFlags & TIME_KILL_SYNCHRONOUS)
+        EnterCriticalSection(&TIME_cbcrst);
+    HeapFree(GetProcessHeap(), 0, lpSelf);
+    if (wFlags & TIME_KILL_SYNCHRONOUS)
+        LeaveCriticalSection(&TIME_cbcrst);
     return TIMERR_NOERROR;
 }
 

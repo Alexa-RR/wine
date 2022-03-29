@@ -114,9 +114,8 @@ struct d3d8_device
     struct wined3d_device_parent device_parent;
     LONG                    ref;
     struct wined3d_device  *wined3d_device;
-    struct wined3d_device_context *immediate_context;
     unsigned int            adapter_ordinal;
-    struct d3d8            *d3d_parent;
+    IDirect3D8             *d3d_parent;
     struct                  d3d8_handle_table handle_table;
 
     /* FVF management */
@@ -186,7 +185,6 @@ struct d3d8_swapchain
     IDirect3DSwapChain8 IDirect3DSwapChain8_iface;
     LONG refcount;
     struct wined3d_swapchain *wined3d_swapchain;
-    struct wined3d_swapchain_state_parent state_parent;
     IDirect3DDevice8 *parent_device;
     unsigned int swap_interval;
 };

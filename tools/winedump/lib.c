@@ -19,10 +19,20 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+#ifdef HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
+#ifdef HAVE_SYS_MMAN_H
+#include <sys/mman.h>
+#endif
 #include <fcntl.h>
 
 #define NONAMELESSUNION
@@ -97,7 +107,7 @@ static void dump_long_import(const void *base, const IMAGE_SECTION_HEADER *ish, 
         {
             const char *imp_debugS = (const char *)base + ish[i].PointerToRawData;
 
-            codeview_dump_symbols(imp_debugS, 0, ish[i].SizeOfRawData);
+            codeview_dump_symbols(imp_debugS, ish[i].SizeOfRawData);
             printf("\n");
         }
     }

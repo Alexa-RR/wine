@@ -147,31 +147,28 @@ static cookie_domain_t *get_cookie_domain(substr_t domain, BOOL create)
 
 static WCHAR *create_cookie_url(substr_t domain, substr_t path, substr_t *ret_path)
 {
-    WCHAR *p, *url;
+    WCHAR user[UNLEN], *p, *url;
     DWORD len, user_len, i;
 
     static const WCHAR cookie_prefix[] = {'C','o','o','k','i','e',':'};
 
-    user_len = 0;
-    if(GetUserNameW(NULL, &user_len) || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-        return NULL;
+    user_len = ARRAY_SIZE(user);
+    if(!GetUserNameW(user, &user_len))
+        return FALSE;
+    user_len--;
 
-    /* user_len already accounts for terminating NULL */
     len = ARRAY_SIZE(cookie_prefix) + user_len + 1 /* @ */ + domain.len + path.len;
-    url = heap_alloc(len * sizeof(WCHAR));
+    url = heap_alloc((len+1) * sizeof(WCHAR));
     if(!url)
         return NULL;
 
     memcpy(url, cookie_prefix, sizeof(cookie_prefix));
     p = url + ARRAY_SIZE(cookie_prefix);
 
-    if(!GetUserNameW(p, &user_len)) {
-        heap_free(url);
-        return NULL;
-    }
+    memcpy(p, user, user_len*sizeof(WCHAR));
     p += user_len;
 
-    *(p - 1) = '@';
+    *p++ = '@';
 
     memcpy(p, domain.str, domain.len*sizeof(WCHAR));
     p += domain.len;
@@ -355,7 +352,7 @@ static BOOL load_persistent_cookie(substr_t domain, substr_t path)
         pbeg = strchr(pend+1, '\n');
         if(!pbeg)
             break;
-        sscanf(pbeg, "%lu %lu %lu %lu %lu", &flags, &expiry.dwLowDateTime, &expiry.dwHighDateTime,
+        sscanf(pbeg, "%u %u %u %u %u", &flags, &expiry.dwLowDateTime, &expiry.dwHighDateTime,
                 &create.dwLowDateTime, &create.dwHighDateTime);
 
         /* skip "*\n" */
@@ -392,6 +389,8 @@ static BOOL load_persistent_cookie(substr_t domain, substr_t path)
 
 static BOOL save_persistent_cookie(cookie_container_t *container)
 {
+    static const WCHAR txtW[] = {'t','x','t',0};
+
     WCHAR cookie_file[MAX_PATH];
     HANDLE cookie_handle;
     cookie_t *cookie_container = NULL, *cookie_iter;
@@ -422,7 +421,7 @@ static BOOL save_persistent_cookie(cookie_container_t *container)
         return TRUE;
     }
 
-    if(!CreateUrlCacheEntryW(container->cookie_url, 0, L"txt", cookie_file, 0))
+    if(!CreateUrlCacheEntryW(container->cookie_url, 0, txtW, cookie_file, 0))
         return FALSE;
 
     cookie_handle = CreateFileW(cookie_file, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
@@ -481,7 +480,7 @@ static BOOL save_persistent_cookie(cookie_container_t *container)
         }
         heap_free(dyn_buf);
 
-        sprintf(buf, "\n%lu\n%lu\n%lu\n%lu\n%lu\n*\n", cookie_container->flags,
+        sprintf(buf, "\n%u\n%u\n%u\n%u\n%u\n*\n", cookie_container->flags,
                 cookie_container->expiry.dwLowDateTime, cookie_container->expiry.dwHighDateTime,
                 cookie_container->create.dwLowDateTime, cookie_container->create.dwHighDateTime);
         if(!WriteFile(cookie_handle, buf, strlen(buf), &bytes_written, NULL)) {
@@ -498,12 +497,13 @@ static BOOL save_persistent_cookie(cookie_container_t *container)
     }
 
     memset(&time, 0, sizeof(time));
-    return CommitUrlCacheEntryW(container->cookie_url, cookie_file, time, time, 0, NULL, 0, L"txt", 0);
+    return CommitUrlCacheEntryW(container->cookie_url, cookie_file, time, time, 0, NULL, 0, txtW, 0);
 }
 
 static BOOL cookie_parse_url(const WCHAR *url, substr_t *host, substr_t *path)
 {
     URL_COMPONENTSW comp = { sizeof(comp) };
+    static const WCHAR rootW[] = {'/',0};
 
     comp.dwHostNameLength = 1;
     comp.dwUrlPathLength = 1;
@@ -516,7 +516,7 @@ static BOOL cookie_parse_url(const WCHAR *url, substr_t *host, substr_t *path)
         comp.dwUrlPathLength--;
 
     *host = substr(comp.lpszHostName, comp.dwHostNameLength);
-    *path = comp.dwUrlPathLength ? substr(comp.lpszUrlPath, comp.dwUrlPathLength) : substr(L"/", 1);
+    *path = comp.dwUrlPathLength ? substr(comp.lpszUrlPath, comp.dwUrlPathLength) : substr(rootW, 1);
     return TRUE;
 }
 
@@ -530,6 +530,8 @@ typedef struct {
 
 static DWORD get_cookie(substr_t host, substr_t path, DWORD flags, cookie_set_t *res)
 {
+    static const WCHAR empty_path[] = { '/',0 };
+
     const WCHAR *p;
     cookie_domain_t *domain;
     cookie_container_t *container;
@@ -544,7 +546,7 @@ static DWORD get_cookie(substr_t host, substr_t path, DWORD flags, cookie_set_t 
         while(p > host.str && p[-1] != '.') p--;
         if(p == host.str) break;
 
-        load_persistent_cookie(substr(p, host.str+host.len-p), substr(L"/", 1));
+        load_persistent_cookie(substr(p, host.str+host.len-p), substr(empty_path, 1));
     }
 
     p = path.str + path.len;
@@ -730,10 +732,10 @@ BOOL WINAPI InternetGetCookieExW(LPCWSTR lpszUrl, LPCWSTR lpszCookieName,
     DWORD res;
     BOOL ret;
 
-    TRACE("(%s, %s, %p, %p, %lx, %p)\n", debugstr_w(lpszUrl),debugstr_w(lpszCookieName), lpCookieData, lpdwSize, flags, reserved);
+    TRACE("(%s, %s, %p, %p, %x, %p)\n", debugstr_w(lpszUrl),debugstr_w(lpszCookieName), lpCookieData, lpdwSize, flags, reserved);
 
     if (flags & ~INTERNET_COOKIE_HTTPONLY)
-        FIXME("flags 0x%08lx not supported\n", flags);
+        FIXME("flags 0x%08x not supported\n", flags);
 
     if (!lpszUrl)
     {
@@ -759,7 +761,7 @@ BOOL WINAPI InternetGetCookieExW(LPCWSTR lpszUrl, LPCWSTR lpszCookieName,
     if(cookie_set.cnt) {
         if(!lpCookieData || cookie_set.string_len+1 > *lpdwSize) {
             *lpdwSize = (cookie_set.string_len + 1) * sizeof(WCHAR);
-            TRACE("returning %lu\n", *lpdwSize);
+            TRACE("returning %u\n", *lpdwSize);
             if(lpCookieData) {
                 SetLastError(ERROR_INSUFFICIENT_BUFFER);
                 ret = FALSE;
@@ -809,7 +811,7 @@ BOOL WINAPI InternetGetCookieExA(LPCSTR lpszUrl, LPCSTR lpszCookieName,
     DWORD len, size = 0;
     BOOL r;
 
-    TRACE("(%s %s %p %p(%lu) %lx %p)\n", debugstr_a(lpszUrl), debugstr_a(lpszCookieName),
+    TRACE("(%s %s %p %p(%u) %x %p)\n", debugstr_a(lpszUrl), debugstr_a(lpszCookieName),
           lpCookieData, lpdwSize, lpdwSize ? *lpdwSize : 0, flags, reserved);
 
     url = heap_strdupAtoW(lpszUrl);
@@ -915,7 +917,7 @@ DWORD set_cookie(substr_t domain, substr_t path, substr_t name, substr_t data, D
     BOOL expired = FALSE, update_persistent = FALSE;
     DWORD cookie_flags = 0, len;
 
-    TRACE("%s %s %s=%s %lx\n", debugstr_wn(domain.str, domain.len), debugstr_wn(path.str, path.len),
+    TRACE("%s %s %s=%s %x\n", debugstr_wn(domain.str, domain.len), debugstr_wn(path.str, path.len),
           debugstr_wn(name.str, name.len), debugstr_wn(data.str, data.len), flags);
 
     memset(&expiry,0,sizeof(expiry));
@@ -972,7 +974,7 @@ DWORD set_cookie(substr_t domain, substr_t path, substr_t name, substr_t data, D
 
             substr_skip(&data, len);
 
-            if(end_ptr > data.str && (end_ptr - data.str < ARRAY_SIZE(buf) - 1)) {
+            if(end_ptr - data.str < ARRAY_SIZE(buf)-1) {
                 memcpy(buf, data.str, data.len*sizeof(WCHAR));
                 buf[data.len] = 0;
 
@@ -1076,11 +1078,11 @@ DWORD WINAPI InternetSetCookieExW(LPCWSTR lpszUrl, LPCWSTR lpszCookieName,
     substr_t host, path, name, data;
     BOOL ret;
 
-    TRACE("(%s, %s, %s, %lx, %Ix)\n", debugstr_w(lpszUrl), debugstr_w(lpszCookieName),
+    TRACE("(%s, %s, %s, %x, %lx)\n", debugstr_w(lpszUrl), debugstr_w(lpszCookieName),
           debugstr_w(lpCookieData), flags, reserved);
 
     if (flags & ~INTERNET_COOKIE_HTTPONLY)
-        FIXME("flags %lx not supported\n", flags);
+        FIXME("flags %x not supported\n", flags);
 
     if (!lpszUrl || !lpCookieData)
     {
@@ -1164,7 +1166,7 @@ DWORD WINAPI InternetSetCookieExA( LPCSTR lpszURL, LPCSTR lpszCookieName, LPCSTR
     WCHAR *data, *url, *name;
     DWORD r;
 
-    TRACE("(%s, %s, %s, %lx, %Ix)\n", debugstr_a(lpszURL), debugstr_a(lpszCookieName),
+    TRACE("(%s, %s, %s, %x, %lx)\n", debugstr_a(lpszURL), debugstr_a(lpszCookieName),
           debugstr_a(lpszCookieData), dwFlags, dwReserved);
 
     url = heap_strdupAtoW(lpszURL);
@@ -1203,7 +1205,7 @@ BOOL WINAPI InternetClearAllPerSiteCookieDecisions( VOID )
 BOOL WINAPI InternetEnumPerSiteCookieDecisionA( LPSTR pszSiteName, ULONG *pcSiteNameSize,
                                                 ULONG *pdwDecision, ULONG dwIndex )
 {
-    FIXME("(%s, %p, %p, 0x%08lx) stub\n",
+    FIXME("(%s, %p, %p, 0x%08x) stub\n",
           debugstr_a(pszSiteName), pcSiteNameSize, pdwDecision, dwIndex);
     return FALSE;
 }
@@ -1221,7 +1223,7 @@ BOOL WINAPI InternetEnumPerSiteCookieDecisionA( LPSTR pszSiteName, ULONG *pcSite
 BOOL WINAPI InternetEnumPerSiteCookieDecisionW( LPWSTR pszSiteName, ULONG *pcSiteNameSize,
                                                 ULONG *pdwDecision, ULONG dwIndex )
 {
-    FIXME("(%s, %p, %p, 0x%08lx) stub\n",
+    FIXME("(%s, %p, %p, 0x%08x) stub\n",
           debugstr_w(pszSiteName), pcSiteNameSize, pdwDecision, dwIndex);
     return FALSE;
 }
@@ -1249,7 +1251,7 @@ BOOL WINAPI InternetGetPerSiteCookieDecisionW( LPCWSTR pwchHostName, ULONG *pRes
  */
 BOOL WINAPI InternetSetPerSiteCookieDecisionA( LPCSTR pchHostName, DWORD dwDecision )
 {
-    FIXME("(%s, 0x%08lx) stub\n", debugstr_a(pchHostName), dwDecision);
+    FIXME("(%s, 0x%08x) stub\n", debugstr_a(pchHostName), dwDecision);
     return FALSE;
 }
 
@@ -1258,7 +1260,7 @@ BOOL WINAPI InternetSetPerSiteCookieDecisionA( LPCSTR pchHostName, DWORD dwDecis
  */
 BOOL WINAPI InternetSetPerSiteCookieDecisionW( LPCWSTR pchHostName, DWORD dwDecision )
 {
-    FIXME("(%s, 0x%08lx) stub\n", debugstr_w(pchHostName), dwDecision);
+    FIXME("(%s, 0x%08x) stub\n", debugstr_w(pchHostName), dwDecision);
     return FALSE;
 }
 

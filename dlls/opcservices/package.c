@@ -199,7 +199,7 @@ static ULONG WINAPI opc_part_enum_AddRef(IOpcPartEnumerator *iface)
     struct opc_part_enum *part_enum = impl_from_IOpcPartEnumerator(iface);
     ULONG refcount = InterlockedIncrement(&part_enum->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -209,7 +209,7 @@ static ULONG WINAPI opc_part_enum_Release(IOpcPartEnumerator *iface)
     struct opc_part_enum *part_enum = impl_from_IOpcPartEnumerator(iface);
     ULONG refcount = InterlockedDecrement(&part_enum->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -360,7 +360,7 @@ static ULONG WINAPI opc_rel_enum_AddRef(IOpcRelationshipEnumerator *iface)
     struct opc_rel_enum *rel_enum = impl_from_IOpcRelationshipEnumerator(iface);
     ULONG refcount = InterlockedIncrement(&rel_enum->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -370,7 +370,7 @@ static ULONG WINAPI opc_rel_enum_Release(IOpcRelationshipEnumerator *iface)
     struct opc_rel_enum *rel_enum = impl_from_IOpcRelationshipEnumerator(iface);
     ULONG refcount = InterlockedDecrement(&rel_enum->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -520,7 +520,7 @@ static ULONG WINAPI opc_content_stream_AddRef(IStream *iface)
     struct opc_content_stream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedIncrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -530,7 +530,7 @@ static ULONG WINAPI opc_content_stream_Release(IStream *iface)
     struct opc_content_stream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedDecrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -546,7 +546,7 @@ static HRESULT WINAPI opc_content_stream_Read(IStream *iface, void *buff, ULONG 
     struct opc_content_stream *stream = impl_from_IStream(iface);
     DWORD read = 0;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buff, size, num_read);
+    TRACE("iface %p, buff %p, size %u, num_read %p.\n", iface, buff, size, num_read);
 
     if (!num_read)
         num_read = &read;
@@ -569,7 +569,7 @@ static HRESULT WINAPI opc_content_stream_Write(IStream *iface, const void *data,
     struct opc_content_stream *stream = impl_from_IStream(iface);
     DWORD written = 0;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, data, size, num_written);
+    TRACE("iface %p, data %p, size %u, num_written %p.\n", iface, data, size, num_written);
 
     if (!num_written)
         num_written = &written;
@@ -597,7 +597,7 @@ static HRESULT WINAPI opc_content_stream_Seek(IStream *iface, LARGE_INTEGER move
     struct opc_content_stream *stream = impl_from_IStream(iface);
     ULARGE_INTEGER pos;
 
-    TRACE("%p, %s, %ld, %p.\n", iface, wine_dbgstr_longlong(move.QuadPart), origin, newpos);
+    TRACE("iface %p, move %s, origin %d, newpos %p.\n", iface, wine_dbgstr_longlong(move.QuadPart), origin, newpos);
 
     switch (origin)
     {
@@ -611,7 +611,7 @@ static HRESULT WINAPI opc_content_stream_Seek(IStream *iface, LARGE_INTEGER move
         pos.QuadPart = stream->content->size.QuadPart + move.QuadPart;
         break;
     default:
-        WARN("Unknown origin mode %ld.\n", origin);
+        WARN("Unknown origin mode %d.\n", origin);
         return E_INVALIDARG;
     }
 
@@ -641,7 +641,7 @@ static HRESULT WINAPI opc_content_stream_CopyTo(IStream *iface, IStream *dest, U
 
 static HRESULT WINAPI opc_content_stream_Commit(IStream *iface, DWORD flags)
 {
-    FIXME("iface %p, flags %#lx stub!\n", iface, flags);
+    FIXME("iface %p, flags %#x stub!\n", iface, flags);
 
     return E_NOTIMPL;
 }
@@ -656,7 +656,7 @@ static HRESULT WINAPI opc_content_stream_Revert(IStream *iface)
 static HRESULT WINAPI opc_content_stream_LockRegion(IStream *iface, ULARGE_INTEGER offset,
         ULARGE_INTEGER size, DWORD lock_type)
 {
-    FIXME("iface %p, offset %s, size %s, lock_type %ld stub!\n", iface, wine_dbgstr_longlong(offset.QuadPart),
+    FIXME("iface %p, offset %s, size %s, lock_type %d stub!\n", iface, wine_dbgstr_longlong(offset.QuadPart),
             wine_dbgstr_longlong(size.QuadPart), lock_type);
 
     return E_NOTIMPL;
@@ -665,7 +665,7 @@ static HRESULT WINAPI opc_content_stream_LockRegion(IStream *iface, ULARGE_INTEG
 static HRESULT WINAPI opc_content_stream_UnlockRegion(IStream *iface, ULARGE_INTEGER offset, ULARGE_INTEGER size,
         DWORD lock_type)
 {
-    FIXME("iface %p, offset %s, size %s, lock_type %ld stub!\n", iface, wine_dbgstr_longlong(offset.QuadPart),
+    FIXME("iface %p, offset %s, size %s, lock_type %d stub!\n", iface, wine_dbgstr_longlong(offset.QuadPart),
             wine_dbgstr_longlong(size.QuadPart), lock_type);
 
     return E_NOTIMPL;
@@ -673,7 +673,7 @@ static HRESULT WINAPI opc_content_stream_UnlockRegion(IStream *iface, ULARGE_INT
 
 static HRESULT WINAPI opc_content_stream_Stat(IStream *iface, STATSTG *statstg, DWORD flag)
 {
-    FIXME("iface %p, statstg %p, flag %ld stub!\n", iface, statstg, flag);
+    FIXME("iface %p, statstg %p, flag %d stub!\n", iface, statstg, flag);
 
     return E_NOTIMPL;
 }
@@ -761,7 +761,7 @@ static ULONG WINAPI opc_part_AddRef(IOpcPart *iface)
     struct opc_part *part = impl_from_IOpcPart(iface);
     ULONG refcount = InterlockedIncrement(&part->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -771,7 +771,7 @@ static ULONG WINAPI opc_part_Release(IOpcPart *iface)
     struct opc_part *part = impl_from_IOpcPart(iface);
     ULONG refcount = InterlockedDecrement(&part->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -933,7 +933,7 @@ static ULONG WINAPI opc_part_set_AddRef(IOpcPartSet *iface)
     struct opc_part_set *part_set = impl_from_IOpcPartSet(iface);
     ULONG refcount = InterlockedIncrement(&part_set->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -943,7 +943,7 @@ static ULONG WINAPI opc_part_set_Release(IOpcPartSet *iface)
     struct opc_part_set *part_set = impl_from_IOpcPartSet(iface);
     ULONG refcount = InterlockedDecrement(&part_set->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -1070,7 +1070,7 @@ static ULONG WINAPI opc_relationship_AddRef(IOpcRelationship *iface)
     struct opc_relationship *relationship = impl_from_IOpcRelationship(iface);
     ULONG refcount = InterlockedIncrement(&relationship->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -1080,7 +1080,7 @@ static ULONG WINAPI opc_relationship_Release(IOpcRelationship *iface)
     struct opc_relationship *relationship = impl_from_IOpcRelationship(iface);
     ULONG refcount = InterlockedDecrement(&relationship->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -1201,11 +1201,12 @@ static HRESULT opc_relationship_create(struct opc_relationship_set *set, const W
         relationship->id = CoTaskMemAlloc(10 * sizeof(WCHAR));
         if (relationship->id)
         {
+            static const WCHAR fmtW[] = {'R','%','0','8','X',0};
             DWORD generated;
 
             /* FIXME: test that generated id is unique */
             RtlGenRandom(&generated, sizeof(generated));
-            swprintf(relationship->id, 10, L"R%08X", generated);
+            swprintf(relationship->id, 10, fmtW, generated);
 
             if (opc_relationshipset_get_rel(set, relationship->id))
             {
@@ -1253,7 +1254,7 @@ static ULONG WINAPI opc_relationship_set_AddRef(IOpcRelationshipSet *iface)
     struct opc_relationship_set *relationship_set = impl_from_IOpcRelationshipSet(iface);
     ULONG refcount = InterlockedIncrement(&relationship_set->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -1263,7 +1264,7 @@ static ULONG WINAPI opc_relationship_set_Release(IOpcRelationshipSet *iface)
     struct opc_relationship_set *relationship_set = impl_from_IOpcRelationshipSet(iface);
     ULONG refcount = InterlockedDecrement(&relationship_set->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -1432,7 +1433,7 @@ static ULONG WINAPI opc_package_AddRef(IOpcPackage *iface)
     struct opc_package *package = impl_from_IOpcPackage(iface);
     ULONG refcount = InterlockedIncrement(&package->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p increasing refcount to %u.\n", iface, refcount);
 
     return refcount;
 }
@@ -1442,7 +1443,7 @@ static ULONG WINAPI opc_package_Release(IOpcPackage *iface)
     struct opc_package *package = impl_from_IOpcPackage(iface);
     ULONG refcount = InterlockedDecrement(&package->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("%p decreasing refcount to %u.\n", iface, refcount);
 
     if (!refcount)
     {
@@ -1732,18 +1733,31 @@ static HRESULT opc_package_collect_content_types(IOpcPackage *package, struct co
 
 static HRESULT opc_package_write_default_type(const WCHAR *ext, const WCHAR *type, IXmlWriter *writer)
 {
+    static const WCHAR contenttypeW[] = {'C','o','n','t','e','n','t','T','y','p','e',0};
+    static const WCHAR extensionW[] = {'E','x','t','e','n','s','i','o','n',0};
+    static const WCHAR defaultW[] = {'D','e','f','a','u','l','t',0};
     HRESULT hr;
 
-    hr = IXmlWriter_WriteStartElement(writer, NULL, L"Default", NULL);
+    hr = IXmlWriter_WriteStartElement(writer, NULL, defaultW, NULL);
     if (SUCCEEDED(hr))
-        hr = IXmlWriter_WriteAttributeString(writer, NULL, L"Extension", NULL, ext);
+        hr = IXmlWriter_WriteAttributeString(writer, NULL, extensionW, NULL, ext);
     if (SUCCEEDED(hr))
-        hr = IXmlWriter_WriteAttributeString(writer, NULL, L"ContentType", NULL, type);
+        hr = IXmlWriter_WriteAttributeString(writer, NULL, contenttypeW, NULL, type);
     return hr;
 }
 
 static HRESULT opc_package_write_contenttypes(IOpcPackage *package, struct zip_archive *archive, IXmlWriter *writer)
 {
+    static const WCHAR uriW[] = {'h','t','t','p',':','/','/','s','c','h','e','m','a','s','.','o','p','e','n','x','m','l','f','o','r','m','a','t','s','.','o','r','g','/',
+            'p','a','c','k','a','g','e','/','2','0','0','6','/','c','o','n','t','e','n','t','-','t','y','p','e','s',0};
+    static const WCHAR relstypeW[] = {'a','p','p','l','i','c','a','t','i','o','n','/','v','n','d','.','o','p','e','n','x','m','l','f','o','r','m','a','t','s','-',
+            'p','a','c','k','a','g','e','.','r','e','l','a','t','i','o','n','s','h','i','p','s','+','x','m','l',0};
+    static const WCHAR contenttypesW[] = {'[','C','o','n','t','e','n','t','_','T','y','p','e','s',']','.','x','m','l',0};
+    static const WCHAR contenttypeW[] = {'C','o','n','t','e','n','t','T','y','p','e',0};
+    static const WCHAR overrideW[] = {'O','v','e','r','r','i','d','e',0};
+    static const WCHAR partnameW[] = {'P','a','r','t','N','a','m','e',0};
+    static const WCHAR typesW[] = {'T','y','p','e','s',0};
+    static const WCHAR relsW[] = {'r','e','l','s',0};
     struct content_type *content_type, *content_type2;
     struct content_types types;
     IStream *content = NULL;
@@ -1760,13 +1774,11 @@ static HRESULT opc_package_write_contenttypes(IOpcPackage *package, struct zip_a
     if (SUCCEEDED(hr))
         hr = IXmlWriter_WriteStartDocument(writer, XmlStandalone_Omit);
     if (SUCCEEDED(hr))
-        hr = IXmlWriter_WriteStartElement(writer, NULL, L"Types",
-                L"http://schemas.openxmlformats.org/package/2006/content-types");
+        hr = IXmlWriter_WriteStartElement(writer, NULL, typesW, uriW);
 
     if (SUCCEEDED(hr) && types.has_rels_part)
     {
-        hr = opc_package_write_default_type(L"rels",
-                L"application/vnd.openxmlformats-package.relationships+xml", writer);
+        hr = opc_package_write_default_type(relsW, relstypeW, writer);
         if (SUCCEEDED(hr))
             hr = IXmlWriter_WriteEndElement(writer);
     }
@@ -1787,17 +1799,17 @@ static HRESULT opc_package_write_contenttypes(IOpcPackage *package, struct zip_a
             BSTR name = NULL;
 
             if (SUCCEEDED(hr))
-                hr = IXmlWriter_WriteStartElement(writer, NULL, L"Override", NULL);
+                hr = IXmlWriter_WriteStartElement(writer, NULL, overrideW, NULL);
             if (SUCCEEDED(hr))
                 hr = IOpcPart_GetName(content_type->u.override.part, &uri);
             if (SUCCEEDED(hr))
                 hr = IOpcPartUri_GetRawUri(uri, &name);
             if (SUCCEEDED(hr))
-                hr = IXmlWriter_WriteAttributeString(writer, NULL, L"PartName", NULL, name);
+                hr = IXmlWriter_WriteAttributeString(writer, NULL, partnameW, NULL, name);
             if (SUCCEEDED(hr))
                 hr = IOpcPart_GetContentType(content_type->u.override.part, &type);
             if (SUCCEEDED(hr))
-                hr = IXmlWriter_WriteAttributeString(writer, NULL, L"ContentType", NULL, type);
+                hr = IXmlWriter_WriteAttributeString(writer, NULL, contenttypeW, NULL, type);
 
             if (uri)
                 IOpcPartUri_Release(uri);
@@ -1819,7 +1831,7 @@ static HRESULT opc_package_write_contenttypes(IOpcPackage *package, struct zip_a
         hr = IXmlWriter_Flush(writer);
 
     if (SUCCEEDED(hr))
-        hr = compress_add_file(archive, L"[Content_Types].xml", content, OPC_COMPRESSION_NORMAL);
+        hr = compress_add_file(archive, contenttypesW, content, OPC_COMPRESSION_NORMAL);
 
     if (content)
         IStream_Release(content);
@@ -1829,12 +1841,16 @@ static HRESULT opc_package_write_contenttypes(IOpcPackage *package, struct zip_a
 
 static HRESULT opc_package_write_rel(IOpcRelationship *rel, IXmlWriter *writer)
 {
+    static const WCHAR relationshipW[] = {'R','e','l','a','t','i','o','n','s','h','i','p',0};
+    static const WCHAR targetW[] = {'T','a','r','g','e','t',0};
+    static const WCHAR typeW[] = {'T','y','p','e',0};
+    static const WCHAR idW[] = {'I','d',0};
     BSTR target_uri;
     HRESULT hr;
     WCHAR *str;
     IUri *uri;
 
-    if (FAILED(hr = IXmlWriter_WriteStartElement(writer, NULL, L"Relationship", NULL)))
+    if (FAILED(hr = IXmlWriter_WriteStartElement(writer, NULL, relationshipW, NULL)))
         return hr;
 
     if (FAILED(hr = IOpcRelationship_GetTargetUri(rel, &uri)))
@@ -1843,7 +1859,7 @@ static HRESULT opc_package_write_rel(IOpcRelationship *rel, IXmlWriter *writer)
     IUri_GetRawUri(uri, &target_uri);
     IUri_Release(uri);
 
-    hr = IXmlWriter_WriteAttributeString(writer, NULL, L"Target", NULL, target_uri);
+    hr = IXmlWriter_WriteAttributeString(writer, NULL, targetW, NULL, target_uri);
     SysFreeString(target_uri);
     if (FAILED(hr))
         return hr;
@@ -1851,7 +1867,7 @@ static HRESULT opc_package_write_rel(IOpcRelationship *rel, IXmlWriter *writer)
     if (FAILED(hr = IOpcRelationship_GetId(rel, &str)))
         return hr;
 
-    hr = IXmlWriter_WriteAttributeString(writer, NULL, L"Id", NULL, str);
+    hr = IXmlWriter_WriteAttributeString(writer, NULL, idW, NULL, str);
     CoTaskMemFree(str);
     if (FAILED(hr))
         return hr;
@@ -1859,7 +1875,7 @@ static HRESULT opc_package_write_rel(IOpcRelationship *rel, IXmlWriter *writer)
     if (FAILED(hr = IOpcRelationship_GetRelationshipType(rel, &str)))
         return hr;
 
-    hr = IXmlWriter_WriteAttributeString(writer, NULL, L"Type", NULL, str);
+    hr = IXmlWriter_WriteAttributeString(writer, NULL, typeW, NULL, str);
     CoTaskMemFree(str);
     if (FAILED(hr))
         return hr;
@@ -1870,6 +1886,9 @@ static HRESULT opc_package_write_rel(IOpcRelationship *rel, IXmlWriter *writer)
 static HRESULT opc_package_write_rels(struct zip_archive *archive, IOpcRelationshipSet *rels,
         IOpcUri *uri, IXmlWriter *writer)
 {
+    static const WCHAR uriW[] = {'h','t','t','p',':','/','/','s','c','h','e','m','a','s','.','o','p','e','n','x','m','l','f','o','r','m','a','t','s','.','o','r','g','/',
+            'p','a','c','k','a','g','e','/','2','0','0','6','/','r','e','l','a','t','i','o','n','s','h','i','p','s',0};
+    static const WCHAR relationshipsW[] = {'R','e','l','a','t','i','o','n','s','h','i','p','s',0};
     IOpcRelationshipEnumerator *enumerator;
     BSTR rels_part_uri = NULL;
     IOpcPartUri *rels_uri;
@@ -1897,8 +1916,7 @@ static HRESULT opc_package_write_rels(struct zip_archive *archive, IOpcRelations
     if (SUCCEEDED(hr))
         hr = IXmlWriter_WriteStartDocument(writer, XmlStandalone_Yes);
     if (SUCCEEDED(hr))
-        hr = IXmlWriter_WriteStartElement(writer, NULL, L"Relationships",
-                L"http://schemas.openxmlformats.org/package/2006/relationships");
+        hr = IXmlWriter_WriteStartElement(writer, NULL, relationshipsW, uriW);
 
     while (has_next)
     {

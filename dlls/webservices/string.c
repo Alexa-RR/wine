@@ -17,7 +17,6 @@
  */
 
 #include <stdarg.h>
-#include <stdlib.h>
 #include <assert.h>
 
 #include "windef.h"
@@ -25,6 +24,7 @@
 #include "webservices.h"
 
 #include "wine/debug.h"
+#include "wine/heap.h"
 #include "wine/list.h"
 #include "webservices_private.h"
 
@@ -100,18 +100,18 @@ static HRESULT grow_dict( struct dictionary *dict, ULONG size )
     if (!dict->dict.strings)
     {
         new_size = max( MIN_DICTIONARY_SIZE, size );
-        if (!(dict->dict.strings = malloc( new_size * sizeof(*dict->dict.strings) ))) return E_OUTOFMEMORY;
-        if (!(dict->sorted = malloc( new_size * sizeof(*dict->sorted) )))
+        if (!(dict->dict.strings = heap_alloc( new_size * sizeof(*dict->dict.strings) ))) return E_OUTOFMEMORY;
+        if (!(dict->sorted = heap_alloc( new_size * sizeof(*dict->sorted) )))
         {
-            free( dict->dict.strings );
+            heap_free( dict->dict.strings );
             dict->dict.strings = NULL;
             return E_OUTOFMEMORY;
         }
-        if (!(dict->sequence = malloc( new_size * sizeof(*dict->sequence) )))
+        if (!(dict->sequence = heap_alloc( new_size * sizeof(*dict->sequence) )))
         {
-            free( dict->dict.strings );
+            heap_free( dict->dict.strings );
             dict->dict.strings = NULL;
-            free( dict->sorted );
+            heap_free( dict->sorted );
             dict->sorted = NULL;
             return E_OUTOFMEMORY;
         }
@@ -120,11 +120,11 @@ static HRESULT grow_dict( struct dictionary *dict, ULONG size )
     }
 
     new_size = max( dict->size * 2, size );
-    if (!(tmp = realloc( dict->dict.strings, new_size * sizeof(*tmp) ))) return E_OUTOFMEMORY;
+    if (!(tmp = heap_realloc( dict->dict.strings, new_size * sizeof(*tmp) ))) return E_OUTOFMEMORY;
     dict->dict.strings = tmp;
-    if (!(tmp_sorted = realloc( dict->sorted, new_size * sizeof(*tmp_sorted) ))) return E_OUTOFMEMORY;
+    if (!(tmp_sorted = heap_realloc( dict->sorted, new_size * sizeof(*tmp_sorted) ))) return E_OUTOFMEMORY;
     dict->sorted = tmp_sorted;
-    if (!(tmp_sequence = realloc( dict->sequence, new_size * sizeof(*tmp_sequence) ))) return E_OUTOFMEMORY;
+    if (!(tmp_sequence = heap_realloc( dict->sequence, new_size * sizeof(*tmp_sequence) ))) return E_OUTOFMEMORY;
     dict->sequence = tmp_sequence;
 
     dict->size = new_size;
@@ -135,13 +135,13 @@ void clear_dict( struct dictionary *dict )
 {
     ULONG i;
     assert( !dict->dict.isConst );
-    for (i = 0; i < dict->dict.stringCount; i++) free( dict->dict.strings[i].bytes );
-    free( dict->dict.strings );
+    for (i = 0; i < dict->dict.stringCount; i++) heap_free( dict->dict.strings[i].bytes );
+    heap_free( dict->dict.strings );
     dict->dict.strings = NULL;
     dict->dict.stringCount = 0;
-    free( dict->sorted );
+    heap_free( dict->sorted );
     dict->sorted = NULL;
-    free( dict->sequence );
+    heap_free( dict->sequence );
     dict->sequence = NULL;
     dict->current_sequence = 0;
     dict->size = 0;
@@ -179,7 +179,7 @@ HRESULT add_xml_string( WS_XML_STRING *str )
     EnterCriticalSection( &dict_cs );
     if ((index = find_string( &dict_builtin, str->bytes, str->length, &id )) == -1)
     {
-        free( str->bytes );
+        heap_free( str->bytes );
         *str = dict_builtin.dict.strings[id];
     }
     else if ((hr = insert_string( &dict_builtin, str->bytes, str->length, index, &id )) == S_OK)
@@ -194,10 +194,10 @@ WS_XML_STRING *alloc_xml_string( const unsigned char *data, ULONG len )
 {
     WS_XML_STRING *ret;
 
-    if (!(ret = calloc( 1, sizeof(*ret) ))) return NULL;
-    if ((ret->length = len) && !(ret->bytes = malloc( len )))
+    if (!(ret = heap_alloc_zero( sizeof(*ret) ))) return NULL;
+    if ((ret->length = len) && !(ret->bytes = heap_alloc( len )))
     {
-        free( ret );
+        heap_free( ret );
         return NULL;
     }
     if (data)
@@ -211,8 +211,8 @@ WS_XML_STRING *alloc_xml_string( const unsigned char *data, ULONG len )
 void free_xml_string( WS_XML_STRING *str )
 {
     if (!str) return;
-    if (!str->dictionary) free( str->bytes );
-    free( str );
+    if (!str->dictionary) heap_free( str->bytes );
+    heap_free( str );
 }
 
 WS_XML_STRING *dup_xml_string( const WS_XML_STRING *src, BOOL use_static_dict )
@@ -223,7 +223,7 @@ WS_XML_STRING *dup_xml_string( const WS_XML_STRING *src, BOOL use_static_dict )
     int index;
     ULONG id;
 
-    if (!(ret = malloc( sizeof(*ret) ))) return NULL;
+    if (!(ret = heap_alloc( sizeof(*ret) ))) return NULL;
     if (src->dictionary)
     {
         *ret = *src;
@@ -241,9 +241,9 @@ WS_XML_STRING *dup_xml_string( const WS_XML_STRING *src, BOOL use_static_dict )
         LeaveCriticalSection( &dict_cs );
         return ret;
     }
-    if (!(data = malloc( src->length )))
+    if (!(data = heap_alloc( src->length )))
     {
-        free( ret );
+        heap_free( ret );
         LeaveCriticalSection( &dict_cs );
         return NULL;
     }

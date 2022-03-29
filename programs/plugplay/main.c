@@ -19,154 +19,15 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <windows.h>
-#include <dbt.h>
 #include "winsvc.h"
 #include "wine/debug.h"
-#include "wine/list.h"
-#include "plugplay.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(plugplay);
 
-static WCHAR plugplayW[] = L"PlugPlay";
+static WCHAR plugplayW[] = {'P','l','u','g','P','l','a','y',0};
 
 static SERVICE_STATUS_HANDLE service_handle;
 static HANDLE stop_event;
-
-void  __RPC_FAR * __RPC_USER MIDL_user_allocate( SIZE_T len )
-{
-    return malloc( len );
-}
-
-void __RPC_USER MIDL_user_free( void __RPC_FAR *ptr )
-{
-    free( ptr );
-}
-
-static CRITICAL_SECTION plugplay_cs;
-static CRITICAL_SECTION_DEBUG plugplay_cs_debug =
-{
-    0, 0, &plugplay_cs,
-    { &plugplay_cs_debug.ProcessLocksList, &plugplay_cs_debug.ProcessLocksList },
-      0, 0, { (DWORD_PTR)(__FILE__ ": plugplay_cs") }
-};
-static CRITICAL_SECTION plugplay_cs = { &plugplay_cs_debug, -1, 0, 0, 0, 0 };
-
-static struct list listener_list = LIST_INIT(listener_list);
-
-struct listener
-{
-    struct list entry;
-    struct list events;
-    CONDITION_VARIABLE cv;
-};
-
-struct event
-{
-    struct list entry;
-    DWORD code;
-    BYTE *data;
-    unsigned int size;
-};
-
-
-static void destroy_listener( struct listener *listener )
-{
-    struct event *event, *next;
-
-    EnterCriticalSection( &plugplay_cs );
-    list_remove( &listener->entry );
-    LeaveCriticalSection( &plugplay_cs );
-
-    LIST_FOR_EACH_ENTRY_SAFE(event, next, &listener->events, struct event, entry)
-    {
-        MIDL_user_free( event->data );
-        list_remove( &event->entry );
-        free( event );
-    }
-    free( listener );
-}
-
-void __RPC_USER plugplay_rpc_handle_rundown( plugplay_rpc_handle handle )
-{
-    destroy_listener( handle );
-}
-
-plugplay_rpc_handle __cdecl plugplay_register_listener(void)
-{
-    struct listener *listener;
-
-    if (!(listener = calloc( 1, sizeof(*listener) )))
-        return NULL;
-
-    list_init( &listener->events );
-    InitializeConditionVariable( &listener->cv );
-
-    EnterCriticalSection( &plugplay_cs );
-    list_add_tail( &listener_list, &listener->entry );
-    LeaveCriticalSection( &plugplay_cs );
-
-    return listener;
-}
-
-DWORD __cdecl plugplay_get_event( plugplay_rpc_handle handle, BYTE **data, unsigned int *size )
-{
-    struct listener *listener = handle;
-    struct event *event;
-    struct list *entry;
-    DWORD ret;
-
-    EnterCriticalSection( &plugplay_cs );
-
-    while (!(entry = list_head( &listener->events )))
-        SleepConditionVariableCS( &listener->cv, &plugplay_cs, INFINITE );
-
-    event = LIST_ENTRY(entry, struct event, entry);
-    list_remove( &event->entry );
-
-    LeaveCriticalSection( &plugplay_cs );
-
-    ret = event->code;
-    *data = event->data;
-    *size = event->size;
-    free( event );
-    return ret;
-}
-
-void __cdecl plugplay_unregister_listener( plugplay_rpc_handle handle )
-{
-    destroy_listener( handle );
-}
-
-void __cdecl plugplay_send_event( DWORD code, const BYTE *data, unsigned int size )
-{
-    struct listener *listener;
-    struct event *event;
-
-    BroadcastSystemMessageW( 0, NULL, WM_DEVICECHANGE, code, (LPARAM)data );
-    BroadcastSystemMessageW( 0, NULL, WM_DEVICECHANGE, DBT_DEVNODES_CHANGED, 0 );
-
-    EnterCriticalSection( &plugplay_cs );
-
-    LIST_FOR_EACH_ENTRY(listener, &listener_list, struct listener, entry)
-    {
-        if (!(event = malloc( sizeof(*event) )))
-            break;
-
-        if (!(event->data = malloc( size )))
-        {
-            free( event );
-            break;
-        }
-
-        event->code = code;
-        memcpy( event->data, data, size );
-        event->size = size;
-        list_add_tail( &listener->events, &event->entry );
-        WakeConditionVariable( &listener->cv );
-    }
-
-    LeaveCriticalSection( &plugplay_cs );
-}
 
 static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_data, LPVOID context )
 {
@@ -190,7 +51,7 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
         SetEvent( stop_event );
         return NO_ERROR;
     default:
-        WINE_FIXME( "got service ctrl %lx\n", ctrl );
+        WINE_FIXME( "got service ctrl %x\n", ctrl );
         status.dwCurrentState = SERVICE_RUNNING;
         SetServiceStatus( service_handle, &status );
         return NO_ERROR;
@@ -199,28 +60,9 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
 
 static void WINAPI ServiceMain( DWORD argc, LPWSTR *argv )
 {
-    unsigned char endpoint[] = "\\pipe\\wine_plugplay";
-    unsigned char protseq[] = "ncacn_np";
     SERVICE_STATUS status;
-    RPC_STATUS err;
 
     WINE_TRACE( "starting service\n" );
-
-    if ((err = RpcServerUseProtseqEpA( protseq, 0, endpoint, NULL )))
-    {
-        ERR("RpcServerUseProtseqEp() failed, error %lu\n", err);
-        return;
-    }
-    if ((err = RpcServerRegisterIf( plugplay_v0_0_s_ifspec, NULL, NULL )))
-    {
-        ERR("RpcServerRegisterIf() failed, error %lu\n", err);
-        return;
-    }
-    if ((err = RpcServerListen( 1, RPC_C_LISTEN_MAX_CALLS_DEFAULT, TRUE )))
-    {
-        ERR("RpcServerListen() failed, error %lu\n", err);
-        return;
-    }
 
     stop_event = CreateEventW( NULL, TRUE, FALSE, NULL );
 
@@ -238,10 +80,6 @@ static void WINAPI ServiceMain( DWORD argc, LPWSTR *argv )
     SetServiceStatus( service_handle, &status );
 
     WaitForSingleObject( stop_event, INFINITE );
-
-    RpcMgmtStopServerListening( NULL );
-    RpcServerUnregisterIf( plugplay_v0_0_s_ifspec, NULL, TRUE );
-    RpcMgmtWaitServerListen();
 
     status.dwCurrentState     = SERVICE_STOPPED;
     status.dwControlsAccepted = 0;

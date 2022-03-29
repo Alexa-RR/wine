@@ -35,7 +35,21 @@
 
 #include "wine/debug.h"
 
-WINE_DEFAULT_DEBUG_CHANNEL(quartz);
+WINE_DEFAULT_DEBUG_CHANNEL(amstream);
+
+static HINSTANCE instance;
+
+/* For the moment, do nothing here. */
+BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
+{
+    switch(fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            instance = hInstDLL;
+            DisableThreadLibraryCalls(hInstDLL);
+	    break;
+    }
+    return TRUE;
+}
 
 /******************************************************************************
  * Multimedia Streams ClassFactory
@@ -60,8 +74,7 @@ struct object_creation_info
 static const struct object_creation_info object_creation[] =
 {
     { &CLSID_AMMultiMediaStream, multimedia_stream_create },
-    { &CLSID_AMDirectDrawStream, ddraw_stream_create },
-    { &CLSID_AMAudioStream, audio_stream_create },
+    { &CLSID_AMDirectDrawStream, multimedia_stream_create },
     { &CLSID_AMAudioData, AMAudioData_create },
     { &CLSID_MediaStreamFilter, filter_create }
 };
@@ -93,7 +106,7 @@ static ULONG WINAPI AMCF_Release(IClassFactory *iface)
     ULONG ref = InterlockedDecrement(&This->ref);
 
     if (ref == 0)
-        free(This);
+	HeapFree(GetProcessHeap(), 0, This);
 
     return ref;
 }
@@ -173,8 +186,8 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
 	return CLASS_E_CLASSNOTAVAILABLE;
     }
 
-    if (!(factory = calloc(1, sizeof(*factory))))
-        return E_OUTOFMEMORY;
+    factory = HeapAlloc(GetProcessHeap(), 0, sizeof(*factory));
+    if (factory == NULL) return E_OUTOFMEMORY;
 
     factory->IClassFactory_iface.lpVtbl = &DSCF_Vtbl;
     factory->ref = 1;
@@ -183,4 +196,28 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
 
     *ppv = &factory->IClassFactory_iface;
     return S_OK;
+}
+
+/***********************************************************************
+ *              DllCanUnloadNow (AMSTREAM.@)
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
+}
+
+/***********************************************************************
+ *		DllRegisterServer (AMSTREAM.@)
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources( instance );
+}
+
+/***********************************************************************
+ *		DllUnregisterServer (AMSTREAM.@)
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources( instance );
 }

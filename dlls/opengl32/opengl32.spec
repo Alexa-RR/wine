@@ -344,7 +344,6 @@
 @ stdcall wglDescribePixelFormat(long long long ptr)
 @ stdcall wglGetCurrentContext()
 @ stdcall wglGetCurrentDC()
-@ stdcall wglGetDefaultProcAddress(str)
 @ stdcall wglGetLayerPaletteEntries(long long long long ptr)
 @ stdcall wglGetPixelFormat(long)
 @ stdcall wglGetProcAddress(str)

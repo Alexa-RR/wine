@@ -65,14 +65,11 @@ static int      (__cdecl *p_wcsnicmp)(LPCWSTR,LPCWSTR,int);
 
 static LPWSTR   (__cdecl *pwcschr)(LPCWSTR, WCHAR);
 static LPWSTR   (__cdecl *pwcsrchr)(LPCWSTR, WCHAR);
-static void*    (__cdecl *pmemchr)(const void*, int, size_t);
 
 static void     (__cdecl *pqsort)(void *,size_t,size_t, int(__cdecl *compar)(const void *, const void *) );
 static void*    (__cdecl *pbsearch)(void *,void*,size_t,size_t, int(__cdecl *compar)(const void *, const void *) );
 static int      (WINAPIV *p_snprintf)(char *, size_t, const char *, ...);
 static int      (WINAPIV *p_snprintf_s)(char *, size_t, size_t, const char *, ...);
-static int      (WINAPIV *p_snwprintf)(WCHAR *, size_t, const WCHAR *, ...);
-static int      (WINAPIV *p_snwprintf_s)(WCHAR *, size_t, size_t, const WCHAR *, ...);
 
 static int      (__cdecl *ptolower)(int);
 static int      (__cdecl *ptoupper)(int);
@@ -86,18 +83,6 @@ static int      (__cdecl *piswdigit)(WCHAR);
 static int      (__cdecl *piswlower)(WCHAR);
 static int      (__cdecl *piswspace)(WCHAR);
 static int      (__cdecl *piswxdigit)(WCHAR);
-
-static int      (__cdecl *pisalnum)(int);
-static int      (__cdecl *pisalpha)(int);
-static int      (__cdecl *piscntrl)(int);
-static int      (__cdecl *pisdigit)(int);
-static int      (__cdecl *pisgraph)(int);
-static int      (__cdecl *pislower)(int);
-static int      (__cdecl *pisprint)(int);
-static int      (__cdecl *pispunct)(int);
-static int      (__cdecl *pisspace)(int);
-static int      (__cdecl *pisupper)(int);
-static int      (__cdecl *pisxdigit)(int);
 
 static void InitFunctionPtrs(void)
 {
@@ -135,13 +120,10 @@ static void InitFunctionPtrs(void)
     X(_wcsnicmp);
     X(wcschr);
     X(wcsrchr);
-    X(memchr);
     X(qsort);
     X(bsearch);
     X(_snprintf);
     X(_snprintf_s);
-    X(_snwprintf);
-    X(_snwprintf_s);
     X(tolower);
     X(toupper);
     X(_strnicmp);
@@ -152,17 +134,6 @@ static void InitFunctionPtrs(void)
     X(iswlower);
     X(iswspace);
     X(iswxdigit);
-    X(isalnum);
-    X(isalpha);
-    X(iscntrl);
-    X(isdigit);
-    X(isgraph);
-    X(islower);
-    X(isprint);
-    X(ispunct);
-    X(isspace);
-    X(isupper);
-    X(isxdigit);
 #undef X
 }
 
@@ -308,10 +279,10 @@ static void one_ltoa_test(int test_num, const ulong2str_t *ulong2str)
     value = ulong2str->value;
     result = p_ltoa(ulong2str->value, dest_str, ulong2str->base);
     ok(result == dest_str,
-       "(test %d): _ltoa(%ld, [out], %d) has result %p, expected: %p\n",
+       "(test %d): _ltoa(%d, [out], %d) has result %p, expected: %p\n",
        test_num, value, ulong2str->base, result, dest_str);
     ok(memcmp(dest_str, ulong2str->Buffer, LARGE_STRI_BUFFER_LENGTH) == 0,
-       "(test %d): _ltoa(%ld, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
+       "(test %d): _ltoa(%d, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
        test_num, value, ulong2str->base, dest_str, ulong2str->Buffer);
 }
 
@@ -327,10 +298,10 @@ static void one_ultoa_test(int test_num, const ulong2str_t *ulong2str)
     value = ulong2str->value;
     result = p_ultoa(ulong2str->value, dest_str, ulong2str->base);
     ok(result == dest_str,
-       "(test %d): _ultoa(%lu, [out], %d) has result %p, expected: %p\n",
+       "(test %d): _ultoa(%u, [out], %d) has result %p, expected: %p\n",
        test_num, value, ulong2str->base, result, dest_str);
     ok(memcmp(dest_str, ulong2str->Buffer, LARGE_STRI_BUFFER_LENGTH) == 0,
-       "(test %d): _ultoa(%lu, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
+       "(test %d): _ultoa(%u, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
        test_num, value, ulong2str->base, dest_str, ulong2str->Buffer);
 }
 
@@ -415,10 +386,10 @@ static void one_ltow_test(int test_num, const ulong2str_t *ulong2str)
     result = p_ltow(value, dest_wstr, ulong2str->base);
     pRtlUnicodeStringToAnsiString(&ansi_str, &unicode_string, 1);
     ok(result == dest_wstr,
-       "(test %d): _ltow(%ld, [out], %d) has result %p, expected: %p\n",
+       "(test %d): _ltow(%d, [out], %d) has result %p, expected: %p\n",
        test_num, value, ulong2str->base, result, dest_wstr);
     ok(memcmp(dest_wstr, expected_wstr, LARGE_STRI_BUFFER_LENGTH * sizeof(WCHAR)) == 0,
-       "(test %d): _ltow(%ld, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
+       "(test %d): _ltow(%d, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
        test_num, value, ulong2str->base, ansi_str.Buffer, ulong2str->Buffer);
     pRtlFreeAnsiString(&ansi_str);
 }
@@ -451,10 +422,10 @@ static void one_ultow_test(int test_num, const ulong2str_t *ulong2str)
     result = p_ultow(value, dest_wstr, ulong2str->base);
     pRtlUnicodeStringToAnsiString(&ansi_str, &unicode_string, 1);
     ok(result == dest_wstr,
-       "(test %d): _ultow(%lu, [out], %d) has result %p, expected: %p\n",
+       "(test %d): _ultow(%u, [out], %d) has result %p, expected: %p\n",
        test_num, value, ulong2str->base, result, dest_wstr);
     ok(memcmp(dest_wstr, expected_wstr, LARGE_STRI_BUFFER_LENGTH * sizeof(WCHAR)) == 0,
-       "(test %d): _ultow(%lu, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
+       "(test %d): _ultow(%u, [out], %d) assigns string \"%s\", expected: \"%s\"\n",
        test_num, value, ulong2str->base, ansi_str.Buffer, ulong2str->Buffer);
     pRtlFreeAnsiString(&ansi_str);
 }
@@ -481,7 +452,7 @@ static void test_ulongtow(void)
         /* Crashes on XP and W2K3 */
         result = p_itow(ulong2str[0].value, NULL, 10);
         ok(result == NULL,
-           "(test a): _itow(%ld, NULL, 10) has result %p, expected: NULL\n",
+           "(test a): _itow(%d, NULL, 10) has result %p, expected: NULL\n",
            ulong2str[0].value, result);
     }
 
@@ -489,7 +460,7 @@ static void test_ulongtow(void)
         /* Crashes on XP and W2K3 */
         result = p_ltow(ulong2str[0].value, NULL, 10);
         ok(result == NULL,
-           "(test b): _ltow(%ld, NULL, 10) has result %p, expected: NULL\n",
+           "(test b): _ltow(%d, NULL, 10) has result %p, expected: NULL\n",
            ulong2str[0].value, result);
     }
 
@@ -497,7 +468,7 @@ static void test_ulongtow(void)
         /* Crashes on XP and W2K3 */
         result = p_ultow(ulong2str[0].value, NULL, 10);
         ok(result == NULL,
-           "(test c): _ultow(%ld, NULL, 10) has result %p, expected: NULL\n",
+           "(test c): _ultow(%d, NULL, 10) has result %p, expected: NULL\n",
            ulong2str[0].value, result);
     }
 }
@@ -959,7 +930,7 @@ static void test_wtoi(void)
 	pRtlCreateUnicodeStringFromAsciiz(&uni, str2long[test_num].str);
 	result = p_wtoi(uni.Buffer);
 	ok(result == str2long[test_num].value,
-           "(test %d): call failed: _wtoi(\"%s\") has result %d, expected: %ld\n",
+           "(test %d): call failed: _wtoi(\"%s\") has result %d, expected: %d\n",
 	   test_num, str2long[test_num].str, result, str2long[test_num].value);
 	pRtlFreeUnicodeString(&uni);
     } /* for */
@@ -973,7 +944,7 @@ static void test_atoi(void)
     for (test_num = 0; test_num < ARRAY_SIZE(str2long); test_num++) {
         result = patoi(str2long[test_num].str);
         ok(result == str2long[test_num].value,
-           "(test %d): call failed: _atoi(\"%s\") has result %d, expected: %ld\n",
+           "(test %d): call failed: _atoi(\"%s\") has result %d, expected: %d\n",
            test_num, str2long[test_num].str, result, str2long[test_num].value);
     }
 }
@@ -986,7 +957,7 @@ static void test_atol(void)
     for (test_num = 0; test_num < ARRAY_SIZE(str2long); test_num++) {
         result = patol(str2long[test_num].str);
         ok(result == str2long[test_num].value,
-           "(test %d): call failed: _atol(\"%s\") has result %d, expected: %ld\n",
+           "(test %d): call failed: _atol(\"%s\") has result %d, expected: %d\n",
            test_num, str2long[test_num].str, result, str2long[test_num].value);
     }
 }
@@ -1001,14 +972,14 @@ static void test_wtol(void)
 	pRtlCreateUnicodeStringFromAsciiz(&uni, str2long[test_num].str);
 	result = p_wtol(uni.Buffer);
 	ok(result == str2long[test_num].value,
-           "(test %d): call failed: _wtol(\"%s\") has result %ld, expected: %ld\n",
+           "(test %d): call failed: _wtol(\"%s\") has result %d, expected: %d\n",
 	   test_num, str2long[test_num].str, result, str2long[test_num].value);
 	pRtlFreeUnicodeString(&uni);
     }
     result = p_wtol( L"\t\xa0\n 12" );
-    ok( result == 12, "got %ld\n", result );
+    ok( result == 12, "got %d\n", result );
     result = p_wtol( L"\x3000 12" );
-    ok( result == 0, "got %ld\n", result );
+    ok( result == 0, "got %d\n", result );
 }
 
 
@@ -1231,10 +1202,10 @@ static void test_wcstol(void)
     for (i = 0; i < ARRAY_SIZE(tests); i++)
     {
         res = pwcstol( tests[i].str, &endpos, tests[i].base );
-        ok( res == tests[i].res, "%u: %s res %08lx\n", i, wine_dbgstr_w(tests[i].str), res );
+        ok( res == tests[i].res, "%u: %s res %08x\n", i, wine_dbgstr_w(tests[i].str), res );
         if (!res) ok( endpos == tests[i].str, "%u: wrong endpos %p/%p\n", i, endpos, tests[i].str );
         ures = pwcstoul( tests[i].str, &endpos, tests[i].base );
-        ok( ures == tests[i].ures, "%u: %s res %08lx\n", i, wine_dbgstr_w(tests[i].str), ures );
+        ok( ures == tests[i].ures, "%u: %s res %08x\n", i, wine_dbgstr_w(tests[i].str), ures );
     }
 
     /* Test various unicode digits */
@@ -1242,14 +1213,14 @@ static void test_wcstol(void)
     {
         WCHAR tmp[] = { zeros[i] + 4, zeros[i], zeros[i] + 5, 0 };
         res = pwcstol(tmp, NULL, 0);
-        ok(res == 405, "with zero = U+%04X: got %ld, expected 405\n", zeros[i], res);
+        ok(res == 405, "with zero = U+%04X: got %d, expected 405\n", zeros[i], res);
         ures = pwcstoul(tmp, NULL, 0);
-        ok(ures == 405, "with zero = U+%04X: got %lu, expected 405\n", zeros[i], ures);
+        ok(ures == 405, "with zero = U+%04X: got %u, expected 405\n", zeros[i], ures);
         tmp[1] = zeros[i] + 10;
         res = pwcstol(tmp, NULL, 16);
-        ok(res == 4, "with zero = U+%04X: got %ld, expected 4\n", zeros[i], res);
+        ok(res == 4, "with zero = U+%04X: got %d, expected 4\n", zeros[i], res);
         ures = pwcstoul(tmp, NULL, 16);
-        ok(ures == 4, "with zero = U+%04X: got %lu, expected 4\n", zeros[i], ures);
+        ok(ures == 4, "with zero = U+%04X: got %u, expected 4\n", zeros[i], ures);
     }
 }
 
@@ -1486,7 +1457,8 @@ static void test__snprintf(void)
     int res;
 
     res = p_snprintf(NULL, 0, teststring);
-    ok(res == lstrlenA(teststring), "_snprintf returned %d, expected %d.\n", res, lstrlenA(teststring));
+    ok(res == lstrlenA(teststring) || broken(res == -1) /* <= w2k */,
+       "_snprintf returned %d, expected %d.\n", res, lstrlenA(teststring));
 
     if (res != -1)
     {
@@ -1516,28 +1488,6 @@ static void test__snprintf(void)
     memset(buffer, 0x7c, sizeof(buffer));
     res = p_snprintf(buffer, 3, "test");
     ok(res == -1, "res = %d\n", res);
-    ok(!memcmp(buffer, "tes", 3), "buf = %s\n", buffer);
-    ok(buffer[3] == 0x7c, "buffer[3] = %x\n", buffer[3]);
-
-    memset(buffer, 0x7c, sizeof(buffer));
-    res = p_snprintf(buffer, 4, "%s", "test");
-    ok(res == 4, "res = %d\n", res);
-    ok(!memcmp(buffer, "test", 4), "buf = %s\n", buffer);
-    ok(buffer[4] == 0x7c, "buffer[4] = %x\n", buffer[4]);
-
-    memset(buffer, 0x7c, sizeof(buffer));
-    res = p_snprintf(buffer, 3, "%s", "test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!memcmp(buffer, "tes", 3), "buf = %s\n", buffer);
-    ok(buffer[3] == 0x7c, "buffer[3] = %x\n", buffer[3]);
-
-    res = p_snprintf(buffer, sizeof(buffer), "%ls", L"test");
-    ok(res == strlen(buffer), "wrong size %d\n", res);
-    ok(!strcmp(buffer, "test"), "got %s\n", debugstr_a(buffer));
-
-    res = p_snprintf(buffer, sizeof(buffer), "%Ls", "test");
-    ok(res == strlen(buffer), "wrong size %d\n", res);
-    ok(!strcmp(buffer, "test"), "got %s\n", debugstr_a(buffer));
 
     res = p_snprintf(buffer, sizeof(buffer), "%I64x %d", (ULONGLONG)0x1234567890, 1);
     ok(res == strlen(buffer), "wrong size %d\n", res);
@@ -1547,36 +1497,9 @@ static void test__snprintf(void)
     ok(res == strlen(buffer), "wrong size %d\n", res);
     ok(!strcmp(buffer, "123456 1"), "got %s\n", debugstr_a(buffer));
 
-    res = p_snprintf(buffer, sizeof(buffer), "%#x %#x", 0, 1);
-    ok(res == lstrlenA(buffer), "wrong size %d\n", res);
-    ok(!strcmp(buffer, "0 0x1"), "got %s\n", debugstr_a(buffer));
-
-    res = p_snprintf(buffer, sizeof(buffer), "%hx %hd", 0x123456, 987654);
-    ok(res == strlen(buffer), "wrong size %d\n", res);
-    ok(!strcmp(buffer, "3456 4614"), "got %s\n", debugstr_a(buffer));
-
     if (sizeof(void *) == 8)
     {
         res = p_snprintf(buffer, sizeof(buffer), "%Ix %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1"), "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%zx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1") || broken(!strcmp(buffer, "zx 878082192")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%tx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1") || broken(!strcmp(buffer, "tx 878082192")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%jx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1") || broken(!strcmp(buffer, "jx 878082192")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%llx %d", (ULONG_PTR)0x1234567890, 1);
         ok(res == strlen(buffer), "wrong size %d\n", res);
         ok(!strcmp(buffer, "1234567890 1"), "got %s\n", debugstr_a(buffer));
     }
@@ -1585,26 +1508,6 @@ static void test__snprintf(void)
         res = p_snprintf(buffer, sizeof(buffer), "%Ix %d", (ULONG_PTR)0x123456, 1);
         ok(res == strlen(buffer), "wrong size %d\n", res);
         ok(!strcmp(buffer, "123456 1"), "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%zx %d", (ULONG_PTR)0x123456, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "123456 1") || broken(!strcmp(buffer, "zx 1193046")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%tx %d", (ULONG_PTR)0x123456, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "123456 1") || broken(!strcmp(buffer, "tx 1193046")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%jx %d", 0x1234567890ull, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1") || broken(!strcmp(buffer, "jx 878082192")),
-           "got %s\n", debugstr_a(buffer));
-
-        res = p_snprintf(buffer, sizeof(buffer), "%llx %d", 0x1234567890ull, 1);
-        ok(res == strlen(buffer), "wrong size %d\n", res);
-        ok(!strcmp(buffer, "1234567890 1") || broken(!strcmp(buffer, "34567890 18")), /* winxp */
-           "got %s\n", debugstr_a(buffer));
     }
 }
 
@@ -1651,167 +1554,6 @@ static void test__snprintf_s(void)
 
 }
 
-static void test__snwprintf(void)
-{
-    const WCHAR *origstring = L"XXXXXXXXXXXX";
-    const WCHAR *teststring = L"hello world";
-    WCHAR buffer[32];
-    int res;
-
-    res = p_snwprintf(NULL, 0, teststring);
-    ok(res == lstrlenW(teststring), "_snprintf returned %d, expected %d.\n", res, lstrlenW(teststring));
-
-    res = p_snwprintf(buffer, lstrlenW(teststring) - 1, teststring);
-    ok(res < 0, "_snprintf returned %d, expected < 0.\n", res);
-
-    wcscpy(buffer,  origstring);
-    res = p_snwprintf(buffer, lstrlenW(teststring), teststring);
-    ok(res == lstrlenW(teststring), "_snprintf returned %d, expected %d.\n", res, lstrlenW(teststring));
-    ok(!wcscmp(buffer, L"hello worldX"), "_snprintf returned buffer %s, expected 'hello worldX'.\n",
-       debugstr_w(buffer));
-
-    wcscpy(buffer, origstring);
-    res = p_snwprintf(buffer, lstrlenW(teststring) + 1, teststring);
-    ok(res == lstrlenW(teststring), "_snprintf returned %d, expected %d.\n", res, lstrlenW(teststring));
-    ok(!wcscmp(buffer, teststring), "_snprintf returned buffer %s, expected %s.\n",
-       debugstr_w(buffer), debugstr_w(teststring));
-
-    memset(buffer, 0xcc, sizeof(buffer));
-    res = p_snwprintf(buffer, 4, L"test");
-    ok(res == 4, "res = %d\n", res);
-    ok(!memcmp(buffer, L"test", 4 * sizeof(WCHAR)), "buf = %s\n", debugstr_w(buffer));
-    ok(buffer[4] == 0xcccc, "buffer[4] = %x\n", buffer[4]);
-
-    memset(buffer, 0xcc, sizeof(buffer));
-    res = p_snwprintf(buffer, 3, L"test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!memcmp(buffer, L"tes", 3 * sizeof(WCHAR)), "buf = %s\n", debugstr_w(buffer));
-    ok(buffer[3] == 0xcccc, "buffer[3] = %x\n", buffer[3]);
-
-    memset(buffer, 0xcc, sizeof(buffer));
-    res = p_snwprintf(buffer, 4, L"%s", L"test");
-    ok(res == 4, "res = %d\n", res);
-    ok(!memcmp(buffer, L"test", 4 * sizeof(WCHAR)), "buf = %s\n", debugstr_w(buffer));
-    ok(buffer[4] == 0xcccc, "buffer[4] = %x\n", buffer[4]);
-
-    memset(buffer, 0xcc, sizeof(buffer));
-    res = p_snwprintf(buffer, 3, L"%s", L"test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!memcmp(buffer, L"tes", 3), "buf = %s\n", debugstr_w(buffer));
-    ok(buffer[3] == 0xcccc, "buffer[3] = %x\n", buffer[3]);
-
-    res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%I64x %d", (ULONGLONG)0x1234567890, 1);
-    ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-    ok(!wcscmp(buffer, L"1234567890 1"), "got %s\n", debugstr_w(buffer));
-
-    res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%I32x %d", 0x123456, 1);
-    ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-    ok(!wcscmp(buffer, L"123456 1"), "got %s\n", debugstr_w(buffer));
-
-    res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%#x %#x", 0, 1);
-    ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-    ok(!wcscmp(buffer, L"0 0x1"), "got %s\n", debugstr_w(buffer));
-
-    res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%hx %hd", 0x123456, 987654);
-    ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-    ok(!wcscmp(buffer, L"3456 4614"), "got %s\n", debugstr_w(buffer));
-
-    if (sizeof(void *) == 8)
-    {
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%Ix %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1"), "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%zx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1") || broken(!wcscmp(buffer, L"zx 878082192")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%tx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1") || broken(!wcscmp(buffer, L"tx 878082192")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%jx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1") || broken(!wcscmp(buffer, L"jx 878082192")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%llx %d", (ULONG_PTR)0x1234567890, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1"), "got %s\n", debugstr_w(buffer));
-    }
-    else
-    {
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%Ix %d", (ULONG_PTR)0x123456, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"123456 1"), "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%zx %d", (ULONG_PTR)0x123456, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"123456 1") || broken(!wcscmp(buffer, L"zx 1193046")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%tx %d", (ULONG_PTR)0x123456, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"123456 1") || broken(!wcscmp(buffer, L"tx 1193046")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%jx %d", 0x1234567890ull, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1") || broken(!wcscmp(buffer, L"jx 878082192")),
-           "got %s\n", debugstr_w(buffer));
-
-        res = p_snwprintf(buffer, ARRAY_SIZE(buffer), L"%llx %d", 0x1234567890ull, 1);
-        ok(res == lstrlenW(buffer), "wrong size %d\n", res);
-        ok(!wcscmp(buffer, L"1234567890 1") || broken(!wcscmp(buffer, L"34567890 18")), /* winxp */
-           "got %s\n", debugstr_w(buffer));
-    }
-}
-
-static void test__snwprintf_s(void)
-{
-    WCHAR buf[32];
-    int res;
-
-    if (!p_snwprintf_s)
-    {
-        win_skip("_snwprintf_s not available\n");
-        return;
-    }
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, sizeof(buf), sizeof(buf), L"test");
-    ok(res == 4, "res = %d\n", res);
-    ok(!wcscmp(buf, L"test"), "buf = %s\n", debugstr_w(buf));
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, 4, 4, L"test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!buf[0], "buf = %s\n", debugstr_w(buf));
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, 5, 4, L"test");
-    ok(res == 4, "res = %d\n", res);
-    ok(!wcscmp(buf, L"test"), "buf = %s\n", debugstr_w(buf));
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, 5, 3, L"test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!wcscmp(buf, L"tes"), "buf = %s\n", debugstr_w(buf));
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, 4, 10, L"test");
-    ok(res == -1, "res = %d\n", res);
-    ok(!buf[0], "buf = %s\n", debugstr_w(buf));
-
-    memset(buf, 0xcc, sizeof(buf));
-    res = p_snwprintf_s(buf, 6, 5, L"test%c", 0);
-    ok(res == 5, "res = %d\n", res);
-    ok(!memcmp(buf, L"test\0", 6 * sizeof(WCHAR)), "buf = %s\n", debugstr_w(buf));
-
-}
-
 static void test_tolower(void)
 {
     int i, ret, exp_ret;
@@ -1836,7 +1578,7 @@ static void test_toupper(void)
 {
 
     int i, ret, exp_ret;
-    char str[3], *p;
+    char str[2], *p;
     WCHAR wc;
 
     ok(ptoupper != NULL, "toupper is not available\n");
@@ -1845,20 +1587,17 @@ static void test_toupper(void)
     {
         str[0] = i;
         str[1] = i >> 8;
-        str[2] = 0;
         p = str;
         wc = RtlAnsiCharToUnicodeChar( &p );
         wc = RtlUpcaseUnicodeChar( wc );
         ret = WideCharToMultiByte( CP_ACP, 0, &wc, 1, str, 2, NULL, NULL );
-        ok(!ret || ret == 1 || ret == 2, "WideCharToMultiByte returned %d\n", ret);
+        ok(ret == 1 || ret == 2, "WideCharToMultiByte returned %d\n", ret);
         if (ret == 2)
             exp_ret = (unsigned char)str[1] + ((unsigned char)str[0] << 8);
-        else if (ret == 1)
-            exp_ret = (unsigned char)str[0];
         else
-            exp_ret = (WCHAR)i;
+            exp_ret = (unsigned char)str[0];
 
-        ret = (WCHAR)ptoupper(i);
+        ret = ptoupper(i);
         ok(ret == exp_ret, "toupper(%x) = %x, expected %x\n", i, ret, exp_ret);
     }
 }
@@ -1990,74 +1729,6 @@ static void test_wctype(void)
     }
 }
 
-/* we could reuse wctypes except for TAB, which doesn't have C1_BLANK for some reason... */
-static const unsigned short ctypes[256] =
-{
-    /* 00 */
-    0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020,
-    0x0020, 0x0028, 0x0028, 0x0028, 0x0028, 0x0028, 0x0020, 0x0020,
-    /* 10 */
-    0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020,
-    0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020,
-    /* 20 */
-    0x0048, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010,
-    0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010,
-    /* 30 */
-    0x0084, 0x0084, 0x0084, 0x0084, 0x0084, 0x0084, 0x0084, 0x0084,
-    0x0084, 0x0084, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010,
-    /* 40 */
-    0x0010, 0x0181, 0x0181, 0x0181, 0x0181, 0x0181, 0x0181, 0x0101,
-    0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101,
-    /* 50 */
-    0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101, 0x0101,
-    0x0101, 0x0101, 0x0101, 0x0010, 0x0010, 0x0010, 0x0010, 0x0010,
-    /* 60 */
-    0x0010, 0x0182, 0x0182, 0x0182, 0x0182, 0x0182, 0x0182, 0x0102,
-    0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102,
-    /* 70 */
-    0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102, 0x0102,
-    0x0102, 0x0102, 0x0102, 0x0010, 0x0010, 0x0010, 0x0010, 0x0020
-};
-
-static void test_ctype(void)
-{
-    int i;
-
-    for (i = -1; i < 256; i++)
-    {
-        unsigned short type = (i >= 0 ? ctypes[i] : 0);
-        ok( pisalnum( i ) == (type & (C1_DIGIT|C1_LOWER|C1_UPPER)), "%u: wrong isalnum %x / %x\n", i, pisalnum(i), type );
-        ok( pisalpha( i ) == (type & (C1_LOWER|C1_UPPER)), "%u: wrong isalpha %x / %x\n", i, pisalpha(i), type );
-        ok( piscntrl( i ) == (type & C1_CNTRL), "%u: wrong iscntrl %x / %x\n", i, piscntrl( i ), type );
-        ok( pisdigit( i ) == (type & C1_DIGIT), "%u: wrong isdigit %x / %x\n", i, pisdigit( i ), type );
-        ok( pisgraph( i ) == (type & (C1_DIGIT|C1_PUNCT|C1_LOWER|C1_UPPER)), "%u: wrong isgraph %x / %x\n", i, pisgraph( i ), type );
-        ok( pislower( i ) == (type & C1_LOWER), "%u: wrong islower %x / %x\n", i, pislower( i ), type );
-        ok( pisprint( i ) == (type & (C1_DIGIT|C1_BLANK|C1_PUNCT|C1_LOWER|C1_UPPER)), "%u: wrong isprint %x / %x\n", i, pisprint( i ), type );
-        ok( pispunct( i ) == (type & C1_PUNCT), "%u: wrong ispunct %x / %x\n", i, pispunct( i ), type );
-        ok( pisspace( i ) == (type & C1_SPACE), "%u: wrong isspace %x / %x\n", i, pisspace( i ), type );
-        ok( pisupper( i ) == (type & C1_UPPER), "%u: wrong isupper %x / %x\n", i, pisupper( i ), type );
-        ok( pisxdigit( i ) == (type & C1_XDIGIT), "%u: wrong isxdigit %x / %x\n", i, pisxdigit( i ), type );
-    }
-}
-
-static void test_memchr(void)
-{
-    const char s[] = "ab";
-    char *r;
-
-    r = pmemchr(s, 'z', 2);
-    ok(!r, "memchr returned %p, expected NULL\n", r);
-
-    r = pmemchr(s, 'a', 2);
-    ok(r == s, "memchr returned %p, expected %p\n", r, s);
-
-    r = pmemchr(s, 0x100 + 'a', 2);
-    ok(r == s, "memchr returned %p, expected %p\n", r, s);
-
-    r = pmemchr(s, -0x100 + 'a', 2);
-    ok(r == s, "memchr returned %p, expected %p\n", r, s);
-}
-
 START_TEST(string)
 {
     InitFunctionPtrs();
@@ -2080,14 +1751,10 @@ START_TEST(string)
     test_bsearch();
     test__snprintf();
     test__snprintf_s();
-    test__snwprintf();
-    test__snwprintf_s();
     test_tolower();
     test_toupper();
     test__strnicmp();
     test_wcsicmp();
     test_sscanf();
     test_wctype();
-    test_ctype();
-    test_memchr();
 }

@@ -215,10 +215,6 @@ static HRESULT WINAPI ddraw_palette_GetEntries(IDirectDrawPalette *iface,
     return hr;
 }
 
-<<<<<<< HEAD
-=======
-/* Some windowed mode wrappers expect this vtbl to be writable. */
->>>>>>> master
 static struct IDirectDrawPaletteVtbl ddraw_palette_vtbl =
 {
     /*** IUnknown ***/

@@ -1,3 +1,6 @@
 MODULE    = wdscore.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
+
+C_SRCS = \
+	wdscore_main.c

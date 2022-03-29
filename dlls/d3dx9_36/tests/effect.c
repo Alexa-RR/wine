@@ -1470,28 +1470,20 @@ static void test_effect_parameter_value_GetMatrixArray(const struct test_effect_
 static void test_effect_parameter_value_GetMatrixPointerArray(const struct test_effect_parameter_value_result *res,
         ID3DXEffect *effect, const DWORD *res_value, D3DXHANDLE parameter, UINT i)
 {
-    union
-    {
-        float f[sizeof(D3DXMATRIX) / sizeof(float)];
-        D3DXMATRIX m;
-    } fvalue[EFFECT_PARAMETER_VALUE_ARRAY_SIZE * sizeof(float) / sizeof(D3DXMATRIX)];
-    D3DXMATRIX *matrix_pointer_array[ARRAY_SIZE(fvalue)];
     const D3DXPARAMETER_DESC *res_desc = &res->desc;
     const char *res_full_name = res->full_name;
-    UINT l, k, m, element, err = 0;
-    union
-    {
-        DWORD d;
-        float f;
-    } cmp = {0xabababab};
     HRESULT hr;
+    DWORD cmp = 0xabababab;
+    FLOAT fvalue[EFFECT_PARAMETER_VALUE_ARRAY_SIZE];
+    D3DXMATRIX *matrix_pointer_array[sizeof(fvalue)/sizeof(D3DXMATRIX)];
+    UINT l, k, m, element, err = 0;
 
     for (element = 0; element <= res_desc->Elements + 1; ++element)
     {
         memset(fvalue, 0xab, sizeof(fvalue));
         for (l = 0; l < element; ++l)
         {
-            matrix_pointer_array[l] = &fvalue[l].m;
+            matrix_pointer_array[l] = (D3DXMATRIX *)&fvalue[l * sizeof(**matrix_pointer_array) / sizeof(FLOAT)];
         }
         hr = effect->lpVtbl->GetMatrixPointerArray(effect, parameter, matrix_pointer_array, element);
         if (!element)
@@ -1499,10 +1491,7 @@ static void test_effect_parameter_value_GetMatrixPointerArray(const struct test_
             ok(hr == D3D_OK, "%u - %s[%u]: GetMatrixPointerArray failed, got %#x, expected %#x\n",
                     i, res_full_name, element, hr, D3D_OK);
 
-            for (m = 0; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[l].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = 0; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
         }
         else if (element <= res_desc->Elements && res_desc->Class == D3DXPC_MATRIX_ROWS)
         {
@@ -1517,27 +1506,20 @@ static void test_effect_parameter_value_GetMatrixPointerArray(const struct test_
                     {
                         if (k < res_desc->Columns && l < res_desc->Rows)
                         {
-                            if (!compare_float(fvalue[m].m.m[l][k], get_float(res_desc->Type,
+                            if (!compare_float(fvalue[m * 16 + l * 4 + k], get_float(res_desc->Type,
                                     &res_value[m * res_desc->Columns * res_desc->Rows + l * res_desc->Columns + k]), 512))
                                 ++err;
                         }
-                        else if (fvalue[m].m.m[l][k] != 0.0f)
-                            ++err;
+                        else if (fvalue[m * 16 + l * 4 + k] != 0.0f) ++err;
                     }
                 }
             }
 
-            for (m = element; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[m].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = element * 16; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
         }
         else
         {
-            for (m = 0; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[m].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = 0; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
 
             ok(hr == D3DERR_INVALIDCALL, "%u - %s[%u]: GetMatrixPointerArray failed, got %#x, expected %#x\n",
                     i, res_full_name, element, hr, D3DERR_INVALIDCALL);
@@ -1670,28 +1652,20 @@ static void test_effect_parameter_value_GetMatrixTransposeArray(const struct tes
 static void test_effect_parameter_value_GetMatrixTransposePointerArray(const struct test_effect_parameter_value_result *res,
         ID3DXEffect *effect, const DWORD *res_value, D3DXHANDLE parameter, UINT i)
 {
-    union
-    {
-        float f[sizeof(D3DXMATRIX) / sizeof(float)];
-        D3DXMATRIX m;
-    } fvalue[EFFECT_PARAMETER_VALUE_ARRAY_SIZE * sizeof(float) / sizeof(D3DXMATRIX)];
-    D3DXMATRIX *matrix_pointer_array[sizeof(fvalue)];
     const D3DXPARAMETER_DESC *res_desc = &res->desc;
     const char *res_full_name = res->full_name;
-    UINT l, k, m, element, err = 0;
-    union
-    {
-        DWORD d;
-        float f;
-    } cmp = {0xabababab};
     HRESULT hr;
+    DWORD cmp = 0xabababab;
+    FLOAT fvalue[EFFECT_PARAMETER_VALUE_ARRAY_SIZE];
+    D3DXMATRIX *matrix_pointer_array[sizeof(fvalue)/sizeof(D3DXMATRIX)];
+    UINT l, k, m, element, err = 0;
 
     for (element = 0; element <= res_desc->Elements + 1; ++element)
     {
         memset(fvalue, 0xab, sizeof(fvalue));
         for (l = 0; l < element; ++l)
         {
-            matrix_pointer_array[l] = &fvalue[l].m;
+            matrix_pointer_array[l] = (D3DXMATRIX *)&fvalue[l * sizeof(**matrix_pointer_array) / sizeof(FLOAT)];
         }
         hr = effect->lpVtbl->GetMatrixTransposePointerArray(effect, parameter, matrix_pointer_array, element);
         if (!element)
@@ -1699,10 +1673,7 @@ static void test_effect_parameter_value_GetMatrixTransposePointerArray(const str
             ok(hr == D3D_OK, "%u - %s[%u]: GetMatrixTransposePointerArray failed, got %#x, expected %#x\n",
                     i, res_full_name, element, hr, D3D_OK);
 
-            for (m = 0; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[m].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = 0; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
         }
         else if (element <= res_desc->Elements && res_desc->Class == D3DXPC_MATRIX_ROWS)
         {
@@ -1717,30 +1688,23 @@ static void test_effect_parameter_value_GetMatrixTransposePointerArray(const str
                     {
                         if (k < res_desc->Columns && l < res_desc->Rows)
                         {
-                            if (!compare_float(fvalue[m].m.m[k][l], get_float(res_desc->Type,
+                            if (!compare_float(fvalue[m * 16 + l + k * 4], get_float(res_desc->Type,
                                     &res_value[m * res_desc->Columns * res_desc->Rows + l * res_desc->Columns + k]), 512))
                                 ++err;
                         }
-                        else if (fvalue[m].m.m[k][l] != 0.0f)
-                            ++err;
+                        else if (fvalue[m * 16 + l + k * 4] != 0.0f) ++err;
                     }
                 }
             }
 
-            for (m = element; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[m].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = element * 16; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
         }
         else
         {
             ok(hr == D3DERR_INVALIDCALL, "%u - %s[%u]: GetMatrixTransposePointerArray failed, got %#x, expected %#x\n",
                     i, res_full_name, element, hr, D3DERR_INVALIDCALL);
 
-            for (m = 0; m < ARRAY_SIZE(fvalue); ++m)
-                for (l = 0; l < ARRAY_SIZE(fvalue[m].f); ++l)
-                    if (fvalue[m].f[l] != cmp.f)
-                        ++err;
+            for (l = 0; l < EFFECT_PARAMETER_VALUE_ARRAY_SIZE; ++l) if (fvalue[l] != *(FLOAT *)&cmp) ++err;
         }
         ok(!err, "%u - %s[%u]: GetMatrixTransposePointerArray failed with %u errors\n", i, res_full_name, element, err);
     }
@@ -3080,12 +3044,6 @@ static void test_effect_states(IDirect3DDevice9 *device)
     hr = D3DXCreateEffect(device, test_effect_states_effect_blob, sizeof(test_effect_states_effect_blob),
             NULL, NULL, 0, NULL, &effect, NULL);
     ok(hr == D3D_OK, "Got result %x, expected 0 (D3D_OK).\n", hr);
-
-    hr = effect->lpVtbl->End(effect);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->BeginPass(effect, 0);
-    ok(hr == D3DERR_INVALIDCALL, "Got result %#x.\n", hr);
 
     /* State affected in passes saved/restored even if no pass
        was performed. States not present in passes are not saved &
@@ -7413,109 +7371,18 @@ static void test_effect_null_shader(void)
 
 static void test_effect_clone(void)
 {
-    D3DXHANDLE parameter, parameter2, technique, technique2, block, annotation;
     IDirect3DDevice9 *device, *device2, *device3;
-    IDirect3DBaseTexture9 *texture, *texture2;
-    ID3DXEffectStateManager *ret_manager;
-    struct test_manager *state_manager;
-    IDirect3DVertexShader9 *vs, *vs2;
     ID3DXEffect *effect, *cloned;
-    unsigned int passes_count;
     HWND window, window2;
-    const char *string;
     ULONG refcount;
     HRESULT hr;
-    float f;
-
-    static const DWORD effect_code[] =
-    {
-#if 0
-        Texture2D tex;
-        float f <float a = 1.0;>;
-        string s;
-        float skipped : register(c4);
-
-        float4 vs0_main(float4 pos : POSITION) : POSITION
-        {
-            return pos;
-        }
-
-        vertexshader vs = compile vs_2_0 vs0_main();
-
-        technique tech0 <float a = 1.0;>
-        {
-            pass p
-            {
-                VertexShader = vs;
-            }
-        }
-
-        float4 vs1_main(float4 pos : POSITION) : POSITION
-        {
-            return skipped;
-        }
-
-        technique tech1
-        {
-            pass p
-            {
-                VertexShader = compile vs_2_0 vs1_main();
-            }
-        }
-#endif
-        0xfeff0901, 0x00000160, 0x00000000, 0x00000007, 0x00000004, 0x0000001c, 0x00000000, 0x00000000,
-        0x00000001, 0x00000004, 0x00786574, 0x00000003, 0x00000000, 0x0000006c, 0x00000000, 0x00000000,
-        0x00000001, 0x00000001, 0x00000000, 0x3f800000, 0x00000003, 0x00000000, 0x00000064, 0x00000000,
-        0x00000000, 0x00000001, 0x00000001, 0x00000002, 0x00000061, 0x00000002, 0x00000066, 0x00000004,
-        0x00000004, 0x0000008c, 0x00000000, 0x00000000, 0x00000002, 0x00000002, 0x00000073, 0x00000003,
-        0x00000000, 0x000000b4, 0x00000000, 0x00000000, 0x00000001, 0x00000001, 0x00000000, 0x00000008,
-        0x70696b73, 0x00646570, 0x00000010, 0x00000004, 0x000000d8, 0x00000000, 0x00000000, 0x00000003,
-        0x00000003, 0x00007376, 0x3f800000, 0x00000003, 0x00000000, 0x00000100, 0x00000000, 0x00000000,
-        0x00000001, 0x00000001, 0x00000002, 0x00000061, 0x00000004, 0x00000010, 0x00000004, 0x00000000,
-        0x00000000, 0x00000000, 0x00000002, 0x00000070, 0x00000006, 0x68636574, 0x00000030, 0x00000005,
-        0x00000010, 0x00000004, 0x00000000, 0x00000000, 0x00000000, 0x00000002, 0x00000070, 0x00000006,
-        0x68636574, 0x00000031, 0x00000005, 0x00000002, 0x00000005, 0x00000006, 0x00000004, 0x00000018,
-        0x00000000, 0x00000000, 0x00000024, 0x00000040, 0x00000000, 0x00000001, 0x00000048, 0x00000044,
-        0x00000074, 0x00000088, 0x00000000, 0x00000000, 0x00000094, 0x000000b0, 0x00000000, 0x00000000,
-        0x000000c0, 0x000000d4, 0x00000000, 0x00000000, 0x00000128, 0x00000001, 0x00000001, 0x000000e4,
-        0x000000e0, 0x00000120, 0x00000000, 0x00000001, 0x00000092, 0x00000000, 0x0000010c, 0x00000108,
-        0x00000154, 0x00000000, 0x00000001, 0x0000014c, 0x00000000, 0x00000001, 0x00000092, 0x00000000,
-        0x00000138, 0x00000134, 0x00000003, 0x00000002, 0x00000003, 0x00000074, 0xfffe0200, 0x0014fffe,
-        0x42415443, 0x0000001c, 0x00000023, 0xfffe0200, 0x00000000, 0x00000000, 0x00000400, 0x0000001c,
-        0x325f7376, 0x4d00305f, 0x6f726369, 0x74666f73, 0x29522820, 0x534c4820, 0x6853204c, 0x72656461,
-        0x6d6f4320, 0x656c6970, 0x30312072, 0xab00312e, 0x0200001f, 0x80000000, 0x900f0000, 0x02000001,
-        0xc00f0000, 0x90e40000, 0x0000ffff, 0x00000002, 0x00000000, 0x00000001, 0x00000000, 0x00000001,
-        0x00000000, 0xffffffff, 0x00000000, 0x00000000, 0x000000a4, 0xfffe0200, 0x0023fffe, 0x42415443,
-        0x0000001c, 0x0000005f, 0xfffe0200, 0x00000001, 0x0000001c, 0x20000400, 0x00000058, 0x00000030,
-        0x00040002, 0x00120001, 0x00000038, 0x00000048, 0x70696b73, 0x00646570, 0x00030000, 0x00010001,
-        0x00000001, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x325f7376, 0x4d00305f,
-        0x6f726369, 0x74666f73, 0x29522820, 0x534c4820, 0x6853204c, 0x72656461, 0x6d6f4320, 0x656c6970,
-        0x30312072, 0xab00312e, 0x02000001, 0xc00f0000, 0xa0000004, 0x0000ffff, 0x00000000, 0x00000000,
-        0xffffffff, 0x00000000, 0x00000001, 0x00000003, 0x00007376,
-    };
 
     if (!(device = create_device(&window)))
         return;
 
-    state_manager = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*state_manager));
-    test_effect_state_manager_init(state_manager, device);
-
-    hr = IDirect3DDevice9_CreateTexture(device, 16, 16, 1, 0, D3DFMT_X8R8G8B8,
-            D3DPOOL_DEFAULT, (IDirect3DTexture9 **)&texture, NULL);
-    ok(hr == D3D_OK, "Failed to create texture, hr %#x.\n", hr);
-
     /* D3DXFX_NOT_CLONEABLE */
-    hr = D3DXCreateEffect(device, effect_code, sizeof(effect_code),
+    hr = D3DXCreateEffect(device, test_effect_preshader_effect_blob, sizeof(test_effect_preshader_effect_blob),
             NULL, NULL, D3DXFX_NOT_CLONEABLE, NULL, &effect, NULL);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    technique = effect->lpVtbl->GetTechniqueByName(effect, "tech0");
-    ok(!!technique, "Expected a technique.\n");
-
-    technique2 = effect->lpVtbl->GetCurrentTechnique(effect);
-    ok(technique2 == technique, "Got unexpected technique %p.\n", technique2);
-
-    hr = effect->lpVtbl->SetTechnique(effect, "tech1");
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
 
     hr = effect->lpVtbl->CloneEffect(effect, NULL, NULL);
@@ -7536,40 +7403,8 @@ static void test_effect_clone(void)
 
     effect->lpVtbl->Release(effect);
 
-    hr = D3DXCreateEffectEx(device, effect_code, sizeof(effect_code),
-            NULL, NULL, "skipped", 0, NULL, &effect, NULL);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetStateManager(effect, &state_manager->ID3DXEffectStateManager_iface);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetTexture(effect, "tex", texture);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetFloat(effect, "f", 123.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetString(effect, "s", "tiny silver hammers");
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetFloat(effect, "f@a", 4.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    annotation = effect->lpVtbl->GetAnnotationByName(effect, "tech0", "a");
-    ok(!!annotation, "Failed to get annotation.\n");
-    hr = effect->lpVtbl->SetFloat(effect, annotation, 4.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    parameter = effect->lpVtbl->GetParameterByName(effect, NULL, "tex");
-    ok(!!parameter, "Failed to get parameter.\n");
-
-    hr = effect->lpVtbl->GetVertexShader(effect, "vs", &vs);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    ok(!effect->lpVtbl->IsParameterUsed(effect, "skipped", "tech1"),
-            "Unexpected IsParameterUsed result.\n");
-
-    hr = effect->lpVtbl->Begin(effect, &passes_count, 0);
+    hr = D3DXCreateEffect(device, test_effect_preshader_effect_blob, sizeof(test_effect_preshader_effect_blob),
+            NULL, NULL, 0, NULL, &effect, NULL);
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
 
     hr = effect->lpVtbl->CloneEffect(effect, NULL, NULL);
@@ -7585,167 +7420,25 @@ static void test_effect_clone(void)
 
     hr = effect->lpVtbl->CloneEffect(effect, device, &cloned);
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
-<<<<<<< HEAD
 
     todo_wine ok(cloned != effect, "Expected new effect instance.\n");
     cloned->lpVtbl->Release(cloned);
-=======
-    ok(cloned != effect, "Expected new effect instance.\n");
-
-    hr = cloned->lpVtbl->GetStateManager(cloned, &ret_manager);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(!ret_manager, "Unexpected state manager %p.\n", ret_manager);
-
-    hr = cloned->lpVtbl->GetTexture(cloned, "tex", &texture2);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(texture2 == texture, "Expected the same texture.\n");
-    IDirect3DBaseTexture9_Release(texture2);
-
-    hr = cloned->lpVtbl->GetVertexShader(cloned, "vs", &vs2);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(vs2 == vs, "Expected the same vertex shader.\n");
-    IDirect3DVertexShader9_Release(vs2);
-
-    ok(!effect->lpVtbl->IsParameterUsed(effect, "skipped", "tech1"),
-            "Unexpected IsParameterUsed result.\n");
-
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, "f", &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 123.0f, "Got float %.8e.\n", f);
-
-    hr = cloned->lpVtbl->GetString(cloned, "s", &string);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(!strcmp(string, "tiny silver hammers"), "Got string %s.\n", debugstr_a(string));
-
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, "f@a", &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 4.0f, "Got float %.8e.\n", f);
-
-    annotation = cloned->lpVtbl->GetAnnotationByName(cloned, "tech0", "a");
-    ok(!!annotation, "Failed to get annotation.\n");
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, annotation, &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 4.0f, "Got float %.8e.\n", f);
-
-    parameter2 = cloned->lpVtbl->GetParameterByName(cloned, NULL, "tex");
-    ok(!!parameter2, "Failed to get parameter.\n");
-    ok(parameter2 != parameter, "Parameters should not match.\n");
-
-    hr = cloned->lpVtbl->BeginPass(cloned, 0);
-    ok(hr == D3DERR_INVALIDCALL, "Got result %#x.\n", hr);
-
-    technique = cloned->lpVtbl->GetTechniqueByName(cloned, "tech0");
-    ok(!!technique, "Expected a technique.\n");
-
-    technique2 = cloned->lpVtbl->GetCurrentTechnique(cloned);
-    ok(technique2 == technique, "Got unexpected technique %p.\n", technique2);
-
-    cloned->lpVtbl->Release(cloned);
-
->>>>>>> master
     /* Try with different device. */
     device2 = create_device(&window2);
-
     hr = effect->lpVtbl->CloneEffect(effect, device2, &cloned);
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
-<<<<<<< HEAD
     todo_wine ok(cloned != effect, "Expected new effect instance.\n");
-=======
-    ok(cloned != effect, "Expected new effect instance.\n");
->>>>>>> master
 
     hr = cloned->lpVtbl->GetDevice(cloned, &device3);
     ok(hr == S_OK, "Failed to get effect device.\n");
     todo_wine ok(device3 == device2, "Unexpected device instance, device3 %p, device2 %p.\n", device3, device2);
     IDirect3DDevice9_Release(device3);
 
-    hr = cloned->lpVtbl->GetTexture(cloned, "tex", &texture2);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(!texture2, "Expected a NULL texture.\n");
-
-    hr = cloned->lpVtbl->GetVertexShader(cloned, "vs", &vs2);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(vs2 != vs, "Expected a different vertex shader.\n");
-    IDirect3DVertexShader9_Release(vs2);
-
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, "f", &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 123.0f, "Got float %.8e.\n", f);
-
-    hr = cloned->lpVtbl->GetString(cloned, "s", &string);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(!strcmp(string, "tiny silver hammers"), "Got string %s.\n", debugstr_a(string));
-
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, "f@a", &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 4.0f, "Got float %.8e.\n", f);
-
-    annotation = cloned->lpVtbl->GetAnnotationByName(cloned, "tech0", "a");
-    ok(!!annotation, "Failed to get annotation.\n");
-    f = 0.0f;
-    hr = cloned->lpVtbl->GetFloat(cloned, annotation, &f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(f == 4.0f, "Got float %.8e.\n", f);
-
-    parameter2 = cloned->lpVtbl->GetParameterByName(cloned, NULL, "tex");
-    ok(!!parameter2, "Failed to get parameter.\n");
-    ok(parameter2 != parameter, "Parameters should not match.\n");
-
-    hr = cloned->lpVtbl->BeginPass(cloned, 0);
-    ok(hr == D3DERR_INVALIDCALL, "Got result %#x.\n", hr);
-
-    technique = cloned->lpVtbl->GetTechniqueByName(cloned, "tech0");
-    ok(!!technique, "Expected a technique.\n");
-
-    technique2 = cloned->lpVtbl->GetCurrentTechnique(cloned);
-    ok(technique2 == technique, "Got unexpected technique %p.\n", technique2);
-
     cloned->lpVtbl->Release(cloned);
 
-<<<<<<< HEAD
-=======
-    hr = effect->lpVtbl->BeginPass(effect, 0);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->EndPass(effect);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->End(effect);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    /* Test parameter blocks (we can't do this above since we can't record a
-     * parameter block while started). */
-
-    hr = effect->lpVtbl->BeginParameterBlock(effect);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->SetFloat(effect, "f", 456.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->CloneEffect(effect, device, &cloned);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    block = cloned->lpVtbl->EndParameterBlock(cloned);
-    ok(!block, "Expected no active parameter block.\n");
-
-    cloned->lpVtbl->Release(cloned);
-
-    block = effect->lpVtbl->EndParameterBlock(effect);
-    ok(!!block, "Expected an active parameter block.\n");
-
-    IDirect3DVertexShader9_Release(vs);
->>>>>>> master
     IDirect3DDevice9_Release(device2);
     DestroyWindow(window2);
     effect->lpVtbl->Release(effect);
-    refcount = state_manager->ID3DXEffectStateManager_iface.lpVtbl->Release(
-            &state_manager->ID3DXEffectStateManager_iface);
-    ok(!refcount, "State manager was not properly freed, refcount %u.\n", refcount);
-    IDirect3DBaseTexture9_Release(texture);
     refcount = IDirect3DDevice9_Release(device);
     ok(!refcount, "Device has %u references left.\n", refcount);
     DestroyWindow(window);
@@ -8041,6 +7734,8 @@ static void test_create_effect_from_file(void)
         "        VertexShader = compile vs_2_0 vs_main();\n"
         "    }\n"
         "}\n";
+    static const WCHAR effect1_filename_w[] = {'e','f','f','e','c','t','1','.','f','x',0};
+    static const WCHAR effect2_filename_w[] = {'e','f','f','e','c','t','2','.','f','x',0};
     WCHAR effect_path_w[MAX_PATH], filename_w[MAX_PATH];
     char effect_path[MAX_PATH], filename[MAX_PATH];
     D3DPRESENT_PARAMETERS present_parameters = {0};
@@ -8097,7 +7792,7 @@ static void test_create_effect_from_file(void)
     create_file("include1.h", include1_wrong, sizeof(include1_wrong) - 1, NULL);
 
     lstrcpyW(filename_w, effect_path_w);
-    lstrcatW(filename_w, L"effect1.fx");
+    lstrcatW(filename_w, effect1_filename_w);
     effect = NULL;
     messages = NULL;
     hr = D3DXCreateEffectFromFileExW(device, filename_w, NULL, NULL, NULL,
@@ -8112,13 +7807,13 @@ static void test_create_effect_from_file(void)
         effect->lpVtbl->Release(effect);
 
     lstrcpyW(filename_w, effect_path_w);
-    lstrcatW(filename_w, L"effect2.fx");
+    lstrcatW(filename_w, effect2_filename_w);
     effect = NULL;
     messages = NULL;
     /* This is apparently broken on native, it ends up using the wrong include. */
     hr = D3DXCreateEffectFromFileExW(device, filename_w, NULL, NULL, NULL,
             0, NULL, &effect, &messages);
-    ok(hr == E_FAIL, "Unexpected error, hr %#x.\n", hr);
+    todo_wine ok(hr == E_FAIL, "Unexpected error, hr %#x.\n", hr);
     if (messages)
     {
         trace("D3DXCreateEffectFromFileExW messages:\n%s", (char *)ID3DXBuffer_GetBufferPointer(messages));
@@ -8134,7 +7829,7 @@ static void test_create_effect_from_file(void)
     delete_file("include2.h");
     delete_directory("include");
 
-    lstrcpyW(filename_w, L"effect2.fx");
+    lstrcpyW(filename_w, effect2_filename_w);
     effect = NULL;
     messages = NULL;
     include.ID3DXInclude_iface.lpVtbl = &d3dxinclude_vtbl;
@@ -8143,7 +7838,7 @@ static void test_create_effect_from_file(void)
      * is "ID3DXEffectCompiler: There were no techniques" */
     hr = D3DXCreateEffectFromFileExW(device, filename_w, NULL, &include.ID3DXInclude_iface, NULL,
             0, NULL, &effect, &messages);
-    ok(hr == E_FAIL, "D3DXInclude test failed with error %#x.\n", hr);
+    todo_wine ok(hr == E_FAIL, "D3DXInclude test failed with error %#x.\n", hr);
     if (messages)
     {
         trace("D3DXCreateEffectFromFileExW messages:\n%s", (char *)ID3DXBuffer_GetBufferPointer(messages));
@@ -8193,9 +7888,9 @@ static void test_effect_find_next_valid_technique(void)
     D3DPRESENT_PARAMETERS present_parameters = {0};
     IDirect3DDevice9 *device;
     D3DXTECHNIQUE_DESC desc;
-    D3DXHANDLE tech, tech2;
     ID3DXEffect *effect;
     IDirect3D9 *d3d;
+    D3DXHANDLE tech;
     ULONG refcount;
     HWND window;
     HRESULT hr;
@@ -8240,12 +7935,9 @@ static void test_effect_find_next_valid_technique(void)
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
     ok(!strcmp(desc.Name, "tech1"), "Got unexpected technique %s.\n", desc.Name);
 
-    tech2 = tech;
-    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech2);
+    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech);
     ok(hr == S_FALSE, "Got result %#x.\n", hr);
-    ok(!tech2, "Unexpected technique handle %p.\n", tech2);
-    /* Test GetTechniqueDesc() with a NULL handle. */
-    hr = effect->lpVtbl->GetTechniqueDesc(effect, tech2, &desc);
+    hr = effect->lpVtbl->GetTechniqueDesc(effect, tech, &desc);
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
     ok(!strcmp(desc.Name, "tech0"), "Got unexpected technique %s.\n", desc.Name);
 
@@ -8261,10 +7953,9 @@ static void test_effect_find_next_valid_technique(void)
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
     ok(!strcmp(desc.Name, "tech1"), "Got unexpected technique %s.\n", desc.Name);
 
-    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech2);
+    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech);
     ok(hr == S_FALSE, "Got result %#x.\n", hr);
-    ok(!tech2, "Unexpected technique handle %p.\n", tech2);
-    hr = effect->lpVtbl->GetTechniqueDesc(effect, tech2, &desc);
+    hr = effect->lpVtbl->GetTechniqueDesc(effect, tech, &desc);
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
     ok(!strcmp(desc.Name, "tech0"), "Got unexpected technique %s.\n", desc.Name);
 
@@ -8290,9 +7981,8 @@ static void test_effect_find_next_valid_technique(void)
     ok(hr == D3D_OK, "Got result %#x.\n", hr);
     ok(!strcmp(desc.Name, "tech1"), "Got unexpected technique %s.\n", desc.Name);
 
-    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech2);
+    hr = effect->lpVtbl->FindNextValidTechnique(effect, tech, &tech);
     ok(hr == S_FALSE, "Got result %#x.\n", hr);
-    ok(!tech2, "Unexpected technique handle %p.\n", tech2);
 
     hr = effect->lpVtbl->FindNextValidTechnique(effect, "nope", &tech);
     ok(hr == D3DERR_INVALIDCALL, "Got result %#x.\n", hr);
@@ -8333,38 +8023,6 @@ static void test_effect_parameter_block(void)
     ULONG refcount;
     HWND window;
     HRESULT hr;
-
-    static const DWORD annotation_code[] =
-    {
-#if 0
-        float f <float a = 1.0;>;
-
-        float4 vs_main(float4 pos : POSITION) : POSITION
-        {
-            return pos;
-        }
-
-        technique tech0
-        {
-            pass p
-            {
-                VertexShader = compile vs_2_0 vs_main();
-            }
-        }
-#endif
-        0xfeff0901, 0x00000080, 0x00000000, 0x00000003, 0x00000000, 0x0000004c, 0x00000000, 0x00000000,
-        0x00000001, 0x00000001, 0x00000000, 0x3f800000, 0x00000003, 0x00000000, 0x00000044, 0x00000000,
-        0x00000000, 0x00000001, 0x00000001, 0x00000002, 0x00000061, 0x00000002, 0x00000066, 0x00000001,
-        0x00000010, 0x00000004, 0x00000000, 0x00000000, 0x00000000, 0x00000002, 0x00000070, 0x00000006,
-        0x68636574, 0x00000030, 0x00000001, 0x00000001, 0x00000002, 0x00000002, 0x00000004, 0x00000020,
-        0x00000000, 0x00000001, 0x00000028, 0x00000024, 0x00000074, 0x00000000, 0x00000001, 0x0000006c,
-        0x00000000, 0x00000001, 0x00000092, 0x00000000, 0x00000058, 0x00000054, 0x00000000, 0x00000001,
-        0x00000000, 0x00000000, 0xffffffff, 0x00000000, 0x00000000, 0x00000074, 0xfffe0200, 0x0014fffe,
-        0x42415443, 0x0000001c, 0x00000023, 0xfffe0200, 0x00000000, 0x00000000, 0x20000400, 0x0000001c,
-        0x325f7376, 0x4d00305f, 0x6f726369, 0x74666f73, 0x29522820, 0x534c4820, 0x6853204c, 0x72656461,
-        0x6d6f4320, 0x656c6970, 0x30312072, 0xab00312e, 0x0200001f, 0x80000000, 0x900f0000, 0x02000001,
-        0xc00f0000, 0x90e40000, 0x0000ffff,
-    };
 
     if (!(window = CreateWindowA("static", "d3dx9_test", WS_OVERLAPPEDWINDOW, 0, 0,
             640, 480, NULL, NULL, NULL, NULL)))
@@ -8675,37 +8333,6 @@ static void test_effect_parameter_block(void)
     ok(hr == D3D_OK, "Got unexpected hr %#x.\n", hr);
     ok(!memcmp(&mat_arr[0], &test_mat, sizeof(test_mat))
             && !memcmp(&mat_arr[1], &test_mat, sizeof(test_mat)), "Got unexpected matrix array.\n");
-
-    refcount = effect->lpVtbl->Release(effect);
-    ok(!refcount, "Got unexpected refcount %u.\n", refcount);
-
-    hr = D3DXCreateEffect(device, annotation_code, sizeof(annotation_code),
-            NULL, NULL, 0, NULL, &effect, NULL);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-
-    hr = effect->lpVtbl->GetFloat(effect, "f@a", &float_value);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(float_value == 1.0f, "Got float %.8e.\n", float_value);
-    hr = effect->lpVtbl->SetFloat(effect, "f@a", 2.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    hr = effect->lpVtbl->GetFloat(effect, "f@a", &float_value);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(float_value == 2.0f, "Got float %.8e.\n", float_value);
-
-    hr = effect->lpVtbl->BeginParameterBlock(effect);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    hr = effect->lpVtbl->SetFloat(effect, "f@a", 3.0f);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    hr = effect->lpVtbl->GetFloat(effect, "f@a", &float_value);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(float_value == 2.0f, "Got float %.8e.\n", float_value);
-    block = effect->lpVtbl->EndParameterBlock(effect);
-    ok(!!block, "Got unexpected block %p.\n", block);
-    hr = effect->lpVtbl->ApplyParameterBlock(effect, block);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    hr = effect->lpVtbl->GetFloat(effect, "f@a", &float_value);
-    ok(hr == D3D_OK, "Got result %#x.\n", hr);
-    ok(float_value == 3.0f, "Got float %.8e.\n", float_value);
 
     refcount = effect->lpVtbl->Release(effect);
     ok(!refcount, "Got unexpected refcount %u.\n", refcount);

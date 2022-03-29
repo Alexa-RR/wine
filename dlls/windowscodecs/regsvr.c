@@ -31,6 +31,7 @@
 #include "ocidl.h"
 
 #include "wine/debug.h"
+#include "wine/unicode.h"
 
 #include "wincodecs_private.h"
 
@@ -147,36 +148,37 @@ static HRESULT unregister_pixelformats(struct regsvr_pixelformat const *list);
 /***********************************************************************
  *		static string constants
  */
-static const WCHAR clsid_keyname[] = L"CLSID";
+static const WCHAR clsid_keyname[] = {
+    'C', 'L', 'S', 'I', 'D', 0 };
 static const char author_valuename[] = "Author";
 static const char friendlyname_valuename[] = "FriendlyName";
-static const WCHAR vendor_valuename[] = L"Vendor";
-static const WCHAR containerformat_valuename[] = L"ContainerFormat";
+static const WCHAR vendor_valuename[] = {'V','e','n','d','o','r',0};
+static const WCHAR containerformat_valuename[] = {'C','o','n','t','a','i','n','e','r','F','o','r','m','a','t',0};
 static const char version_valuename[] = "Version";
 static const char mimetypes_valuename[] = "MimeTypes";
 static const char extensions_valuename[] = "FileExtensions";
-static const WCHAR formats_keyname[] = L"Formats";
-static const WCHAR patterns_keyname[] = L"Patterns";
-static const WCHAR instance_keyname[] = L"Instance";
-static const WCHAR clsid_valuename[] = L"CLSID";
+static const WCHAR formats_keyname[] = {'F','o','r','m','a','t','s',0};
+static const WCHAR patterns_keyname[] = {'P','a','t','t','e','r','n','s',0};
+static const WCHAR instance_keyname[] = {'I','n','s','t','a','n','c','e',0};
+static const WCHAR clsid_valuename[] = {'C','L','S','I','D',0};
 static const char length_valuename[] = "Length";
 static const char position_valuename[] = "Position";
 static const char pattern_valuename[] = "Pattern";
 static const char mask_valuename[] = "Mask";
 static const char endofstream_valuename[] = "EndOfStream";
-static const WCHAR pixelformats_keyname[] = L"PixelFormats";
-static const WCHAR metadataformat_valuename[] = L"MetadataFormat";
+static const WCHAR pixelformats_keyname[] = {'P','i','x','e','l','F','o','r','m','a','t','s',0};
+static const WCHAR metadataformat_valuename[] = {'M','e','t','a','d','a','t','a','F','o','r','m','a','t',0};
 static const char specversion_valuename[] = "SpecVersion";
 static const char requiresfullstream_valuename[] = "RequiresFullStream";
 static const char supportspadding_valuename[] = "SupportsPadding";
 static const char requiresfixedsize_valuename[] = "FixedSize";
-static const WCHAR containers_keyname[] = L"Containers";
+static const WCHAR containers_keyname[] = {'C','o','n','t','a','i','n','e','r','s',0};
 static const char dataoffset_valuename[] = "DataOffset";
 static const char bitsperpixel_valuename[] = "BitLength";
 static const char channelcount_valuename[] = "ChannelCount";
 static const char numericrepresentation_valuename[] = "NumericRepresentation";
 static const char supportstransparency_valuename[] = "SupportsTransparency";
-static const WCHAR channelmasks_keyname[] = L"ChannelMasks";
+static const WCHAR channelmasks_keyname[] = {'C','h','a','n','n','e','l','M','a','s','k','s',0};
 
 /***********************************************************************
  *		register_decoders
@@ -304,7 +306,8 @@ static HRESULT register_decoders(struct regsvr_decoder const *list)
             for (i=0; list->patterns[i].length; i++)
             {
                 HKEY pattern_key;
-                swprintf(buf, 39, L"%i", i);
+                static const WCHAR int_format[] = {'%','i',0};
+                snprintfW(buf, 39, int_format, i);
                 res = RegCreateKeyExW(patterns_key, buf, 0, NULL, 0,
                                       KEY_READ | KEY_WRITE, NULL, &pattern_key, NULL);
                 if (res != ERROR_SUCCESS) break;
@@ -849,7 +852,8 @@ static HRESULT register_metadatareaders(struct regsvr_metadatareader const *list
                 for (i=0; container->patterns[i].length; i++)
                 {
                     HKEY pattern_key;
-                    swprintf(buf, 39, L"%i", i);
+                    static const WCHAR int_format[] = {'%','i',0};
+                    snprintfW(buf, 39, int_format, i);
                     res = RegCreateKeyExW(format_key, buf, 0, NULL, 0,
                                           KEY_READ | KEY_WRITE, NULL, &pattern_key, NULL);
                     if (res != ERROR_SUCCESS) break;
@@ -1028,6 +1032,7 @@ static HRESULT register_pixelformats(struct regsvr_pixelformat const *list)
         if (res != ERROR_SUCCESS) goto error_close_clsid_key;
 
         if (list->channelmasks) {
+            static const WCHAR valuename_format[] = {'%','d',0};
             HKEY masks_key;
             UINT i, mask_size;
             WCHAR mask_valuename[11];
@@ -1039,7 +1044,7 @@ static HRESULT register_pixelformats(struct regsvr_pixelformat const *list)
             if (res != ERROR_SUCCESS) goto error_close_clsid_key;
             for (i=0; i < list->channelcount; i++)
             {
-                swprintf(mask_valuename, ARRAY_SIZE(mask_valuename), L"%d", i);
+                sprintfW(mask_valuename, valuename_format, i);
                 res = RegSetValueExW(masks_key, mask_valuename, 0, REG_BINARY,
                                      list->channelmasks[i], mask_size);
                 if (res != ERROR_SUCCESS) break;
@@ -1135,18 +1140,6 @@ static struct decoder_pattern const bmp_patterns[] = {
     {0}
 };
 
-static const BYTE dds_magic[] = "DDS ";
-
-static GUID const * const dds_formats[] = {
-    &GUID_WICPixelFormat32bppBGRA,
-    NULL
-};
-
-static struct decoder_pattern const dds_patterns[] = {
-    {4,0,dds_magic,mask_all,0},
-    {0}
-};
-
 static const BYTE gif87a_magic[6] = "GIF87a";
 static const BYTE gif89a_magic[6] = "GIF89a";
 
@@ -1184,48 +1177,6 @@ static GUID const * const jpeg_formats[] = {
 
 static struct decoder_pattern const jpeg_patterns[] = {
     {2,0,jpeg_magic,mask_all,0},
-    {0}
-};
-
-static const BYTE wmp_magic_v0[] = {0x49, 0x49, 0xbc, 0x00};
-static const BYTE wmp_magic_v1[] = {0x49, 0x49, 0xbc, 0x01};
-
-static GUID const * const wmp_formats[] = {
-    &GUID_WICPixelFormat128bppRGBAFixedPoint,
-    &GUID_WICPixelFormat128bppRGBAFloat,
-    &GUID_WICPixelFormat128bppRGBFloat,
-    &GUID_WICPixelFormat16bppBGR555,
-    &GUID_WICPixelFormat16bppBGR565,
-    &GUID_WICPixelFormat16bppGray,
-    &GUID_WICPixelFormat16bppGrayFixedPoint,
-    &GUID_WICPixelFormat16bppGrayHalf,
-    &GUID_WICPixelFormat24bppBGR,
-    &GUID_WICPixelFormat24bppRGB,
-    &GUID_WICPixelFormat32bppBGR,
-    &GUID_WICPixelFormat32bppBGR101010,
-    &GUID_WICPixelFormat32bppBGRA,
-    &GUID_WICPixelFormat32bppCMYK,
-    &GUID_WICPixelFormat32bppGrayFixedPoint,
-    &GUID_WICPixelFormat32bppGrayFloat,
-    &GUID_WICPixelFormat32bppRGBE,
-    &GUID_WICPixelFormat40bppCMYKAlpha,
-    &GUID_WICPixelFormat48bppRGB,
-    &GUID_WICPixelFormat48bppRGBFixedPoint,
-    &GUID_WICPixelFormat48bppRGBHalf,
-    &GUID_WICPixelFormat64bppCMYK,
-    &GUID_WICPixelFormat64bppRGBA,
-    &GUID_WICPixelFormat64bppRGBAFixedPoint,
-    &GUID_WICPixelFormat64bppRGBAHalf,
-    &GUID_WICPixelFormat80bppCMYKAlpha,
-    &GUID_WICPixelFormat8bppGray,
-    &GUID_WICPixelFormat96bppRGBFixedPoint,
-    &GUID_WICPixelFormatBlackWhite,
-    NULL
-};
-
-static struct decoder_pattern const wmp_patterns[] = {
-    {4,0,wmp_magic_v0,mask_all,0},
-    {4,0,wmp_magic_v1,mask_all,0},
     {0}
 };
 
@@ -1275,13 +1226,7 @@ static GUID const * const tiff_decode_formats[] = {
     &GUID_WICPixelFormat64bppPRGBA,
     &GUID_WICPixelFormat32bppCMYK,
     &GUID_WICPixelFormat64bppCMYK,
-<<<<<<< HEAD
     &GUID_WICPixelFormat128bppRGBAFloat,
-=======
-    &GUID_WICPixelFormat96bppRGBFloat,
-    &GUID_WICPixelFormat128bppRGBAFloat,
-    &GUID_WICPixelFormat128bppPRGBAFloat,
->>>>>>> master
     NULL
 };
 
@@ -1333,17 +1278,6 @@ static struct regsvr_decoder const decoder_list[] = {
 	bmp_formats,
 	bmp_patterns
     },
-    {   &CLSID_WICDdsDecoder,
-    "The Wine Project",
-    "DDS Decoder",
-    "1.0.0.0",
-    &GUID_VendorMicrosoft,
-    &GUID_ContainerFormatDds,
-    "image/vnd.ms-dds",
-    ".dds",
-    dds_formats,
-    dds_patterns
-    },
     {   &CLSID_WICGifDecoder,
 	"The Wine Project",
 	"GIF Decoder",
@@ -1376,17 +1310,6 @@ static struct regsvr_decoder const decoder_list[] = {
 	".jpg;.jpeg;.jfif",
 	jpeg_formats,
 	jpeg_patterns
-    },
-    {   &CLSID_WICWmpDecoder,
-	"The Wine Project",
-	"JPEG-XR Decoder",
-	"1.0.0.0",
-	&GUID_VendorMicrosoft,
-	&GUID_ContainerFormatWmp,
-	"image/jxr",
-	".jxr;.hdp;.wdp",
-	wmp_formats,
-	wmp_patterns
     },
     {   &CLSID_WICPngDecoder,
 	"The Wine Project",
@@ -1470,6 +1393,11 @@ static GUID const * const tiff_encode_formats[] = {
     NULL
 };
 
+static GUID const * const icns_encode_formats[] = {
+    &GUID_WICPixelFormat32bppBGRA,
+    NULL
+};
+
 static struct regsvr_encoder const encoder_list[] = {
     {   &CLSID_WICBmpEncoder,
 	"The Wine Project",
@@ -1520,6 +1448,16 @@ static struct regsvr_encoder const encoder_list[] = {
 	"image/tiff",
 	".tif;.tiff",
 	tiff_encode_formats
+    },
+    {   &CLSID_WICIcnsEncoder,
+	"The Wine Project",
+	"ICNS Encoder",
+	"1.0.0.0",
+	&GUID_VendorWine,
+	NULL, /* no container format guid */
+	"image/icns",
+	".icns",
+	icns_encode_formats
     },
     { NULL }			/* list terminator */
 };
@@ -1818,13 +1756,6 @@ static BYTE const channel_mask_16bit4[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 
 static BYTE const channel_mask_32bit[] = { 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00 };
 
-<<<<<<< HEAD
-=======
-static BYTE const channel_mask_96bit1[] = { 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
-static BYTE const channel_mask_96bit2[] = { 0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00 };
-static BYTE const channel_mask_96bit3[] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff };
-
->>>>>>> master
 static BYTE const channel_mask_128bit1[] = { 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
 static BYTE const channel_mask_128bit2[] = { 0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 };
 static BYTE const channel_mask_128bit3[] = { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00 };
@@ -1847,10 +1778,6 @@ static BYTE const * const channel_masks_16bit[] = { channel_mask_16bit,
     channel_mask_16bit2, channel_mask_16bit3, channel_mask_16bit4};
 
 static BYTE const * const channel_masks_32bit[] = { channel_mask_32bit };
-<<<<<<< HEAD
-=======
-static BYTE const * const channel_masks_96bit[] = { channel_mask_96bit1, channel_mask_96bit2, channel_mask_96bit3 };
->>>>>>> master
 static BYTE const * const channel_masks_128bit[] = { channel_mask_128bit1, channel_mask_128bit2, channel_mask_128bit3, channel_mask_128bit4 };
 
 static BYTE const * const channel_masks_BGRA5551[] = { channel_mask_5bit,
@@ -2146,20 +2073,6 @@ static struct regsvr_pixelformat const pixelformat_list[] = {
         WICPixelFormatNumericRepresentationUnsignedInteger,
         0
     },
-<<<<<<< HEAD
-=======
-    {   &GUID_WICPixelFormat96bppRGBFloat,
-        "The Wine Project",
-        "96bpp RGBFloat",
-        NULL, /* no version */
-        &GUID_VendorMicrosoft,
-        96, /* bitsperpixel */
-        3, /* channel count */
-        channel_masks_96bit,
-        WICPixelFormatNumericRepresentationFloat,
-        0
-    },
->>>>>>> master
     {   &GUID_WICPixelFormat128bppRGBAFloat,
         "The Wine Project",
         "128bpp RGBAFloat",
@@ -2171,20 +2084,6 @@ static struct regsvr_pixelformat const pixelformat_list[] = {
         WICPixelFormatNumericRepresentationFloat,
         1
     },
-<<<<<<< HEAD
-=======
-    {   &GUID_WICPixelFormat128bppPRGBAFloat,
-        "The Wine Project",
-        "128bpp PRGBAFloat",
-        NULL, /* no version */
-        &GUID_VendorMicrosoft,
-        128, /* bitsperpixel */
-        4, /* channel count */
-        channel_masks_128bit,
-        WICPixelFormatNumericRepresentationFloat,
-        1
-    },
->>>>>>> master
     { NULL }			/* list terminator */
 };
 

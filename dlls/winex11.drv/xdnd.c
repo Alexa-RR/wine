@@ -20,9 +20,12 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <string.h>
-#include <unistd.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -40,6 +43,7 @@
 #include "oleidl.h"
 #include "objidl.h"
 
+#include "wine/unicode.h"
 #include "wine/debug.h"
 #include "wine/list.h"
 
@@ -471,6 +475,8 @@ void X11DRV_XDND_DropEvent( HWND hWnd, XClientMessageEvent *event )
 
     TRACE("effectRequested(0x%x) accept(%d) performed(0x%x) at x(%d),y(%d)\n",
           XDNDDropEffect, accept, effect, XDNDxy.x, XDNDxy.y);
+
+    X11DRV_XDND_FreeDragDropOp();
 
     /* Tell the target we are finished. */
     memset(&e, 0, sizeof(e));

@@ -19,15 +19,22 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
+#include "winedump.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+#ifdef HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
 #include <fcntl.h>
+#include <stdarg.h>
 
 #include "windef.h"
 #include "winbase.h"
-#include "winedump.h"
 
 #include "pshpack1.h"
 

@@ -23,14 +23,14 @@
 
 #include "winnls.h"
 
-struct language {
+typedef struct language {
 	unsigned	id;
 	unsigned	doscp;
 	const char	*name;
 	const char	*country;
-};
+} language_t;
 
 void show_languages(void);
-const struct language *find_language(unsigned id);
+const language_t *find_language(unsigned id);
 
 #endif

@@ -31,6 +31,36 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(wmic);
 
+static const WCHAR biosW[] =
+    {'b','i','o','s',0};
+static const WCHAR computersystemW[] =
+    {'c','o','m','p','u','t','e','r','s','y','s','t','e','m',0};
+static const WCHAR cpuW[] =
+    {'c','p','u',0};
+static const WCHAR logicaldiskW[] =
+    {'L','o','g','i','c','a','l','D','i','s','k',0};
+static const WCHAR nicW[] =
+    {'n','i','c',0};
+static const WCHAR osW[] =
+    {'o','s',0};
+static const WCHAR processW[] =
+    {'p','r','o','c','e','s','s',0};
+
+static const WCHAR win32_biosW[] =
+    {'W','i','n','3','2','_','B','I','O','S',0};
+static const WCHAR win32_computersystemW[] =
+    {'W','i','n','3','2','_','C','o','m','p','u','t','e','r','S','y','s','t','e','m',0};
+static const WCHAR win32_logicaldiskW[] =
+    {'W','i','n','3','2','_','L','o','g','i','c','a','l','D','i','s','k',0};
+static const WCHAR win32_networkadapterW[] =
+    {'W','i','n','3','2','_','N','e','t','w','o','r','k','A','d','a','p','t','e','r',0};
+static const WCHAR win32_operatingsystemW[] =
+    {'W','i','n','3','2','_','O','p','e','r','a','t','i','n','g','S','y','s','t','e','m',0};
+static const WCHAR win32_processW[] =
+    {'W','i','n','3','2','_','P','r','o','c','e','s','s',0};
+static const WCHAR win32_processorW[] =
+    {'W','i','n','3','2','_','P','r','o','c','e','s','s','o','r',0};
+
 static const struct
 {
     const WCHAR *alias;
@@ -38,16 +68,13 @@ static const struct
 }
 alias_map[] =
 {
-    { L"bios", L"Win32_BIOS" },
-    { L"computersystem", L"Win32_ComputerSystem" },
-    { L"cpu", L"Win32_Processor" },
-    { L"LogicalDisk", L"Win32_LogicalDisk" },
-    { L"nic", L"Win32_NetworkAdapter" },
-    { L"os", L"Win32_OperatingSystem" },
-    { L"process", L"Win32_Process" },
-    { L"baseboard", L"Win32_BaseBoard" },
-    { L"diskdrive", L"Win32_DiskDrive" },
-    { L"memorychip", L"Win32_PhysicalMemory" }
+    { biosW, win32_biosW },
+    { computersystemW, win32_computersystemW },
+    { cpuW, win32_processorW },
+    { logicaldiskW, win32_logicaldiskW },
+    { nicW, win32_networkadapterW },
+    { osW, win32_operatingsystemW },
+    { processW, win32_processW }
 };
 
 static const WCHAR *find_class( const WCHAR *alias )
@@ -95,14 +122,14 @@ static WCHAR *find_prop( IWbemClassObject *class, const WCHAR *prop )
 
 static int WINAPIV output_string( HANDLE handle, const WCHAR *msg, ... )
 {
-    va_list va_args;
+    __ms_va_list va_args;
     int len;
     DWORD count;
     WCHAR buffer[8192];
 
-    va_start( va_args, msg );
+    __ms_va_start( va_args, msg );
     len = vswprintf( buffer, ARRAY_SIZE(buffer), msg, va_args );
-    va_end( va_args );
+    __ms_va_end( va_args );
 
     if (!WriteConsoleW( handle, buffer, len, &count, NULL ))
         WriteFile( handle, buffer, len * sizeof(WCHAR), &count, FALSE );
@@ -112,20 +139,21 @@ static int WINAPIV output_string( HANDLE handle, const WCHAR *msg, ... )
 
 static int output_error( int msg )
 {
+    static const WCHAR fmtW[] = {'%','s',0};
     WCHAR buffer[8192];
 
     LoadStringW( GetModuleHandleW(NULL), msg, buffer, ARRAY_SIZE(buffer));
-    return output_string( GetStdHandle(STD_ERROR_HANDLE), L"%s", buffer );
+    return output_string( GetStdHandle(STD_ERROR_HANDLE), fmtW, buffer );
 }
 
 static int output_header( const WCHAR *prop, ULONG column_width )
 {
-    static const WCHAR bomW[] = {0xfeff};
+    static const WCHAR bomW[] = {0xfeff}, fmtW[] = {'%','-','*','s','\r','\n',0};
     int len;
     DWORD count;
     WCHAR buffer[8192];
 
-    len = swprintf( buffer, ARRAY_SIZE(buffer), L"%-*s\r\n", column_width, prop );
+    len = swprintf( buffer, ARRAY_SIZE(buffer), fmtW, column_width, prop );
 
     if (!WriteConsoleW( GetStdHandle(STD_OUTPUT_HANDLE), buffer, len, &count, NULL )) /* redirected */
     {
@@ -139,11 +167,15 @@ static int output_header( const WCHAR *prop, ULONG column_width )
 
 static int output_line( const WCHAR *str, ULONG column_width )
 {
-    return output_string( GetStdHandle(STD_OUTPUT_HANDLE), L"%-*s\r\n", column_width, str );
+    static const WCHAR fmtW[] = {'%','-','*','s','\r','\n',0};
+    return output_string( GetStdHandle(STD_OUTPUT_HANDLE), fmtW, column_width, str );
 }
 
 static int query_prop( const WCHAR *class, const WCHAR *propname )
 {
+    static const WCHAR select_allW[] = {'S','E','L','E','C','T',' ','*',' ','F','R','O','M',' ',0};
+    static const WCHAR cimv2W[] = {'R','O','O','T','\\','C','I','M','V','2',0};
+    static const WCHAR wqlW[] = {'W','Q','L',0};
     HRESULT hr;
     IWbemLocator *locator = NULL;
     IWbemServices *services = NULL;
@@ -167,16 +199,16 @@ static int query_prop( const WCHAR *class, const WCHAR *propname )
                            (void **)&locator );
     if (hr != S_OK) goto done;
 
-    if (!(path = SysAllocString(L"ROOT\\CIMV2" ))) goto done;
+    if (!(path = SysAllocString( cimv2W ))) goto done;
     hr = IWbemLocator_ConnectServer( locator, path, NULL, NULL, NULL, 0, NULL, NULL, &services );
     if (hr != S_OK) goto done;
 
-    len = lstrlenW( class ) + ARRAY_SIZE(L"SELECT * FROM ");
+    len = lstrlenW( class ) + ARRAY_SIZE(select_allW);
     if (!(query = SysAllocStringLen( NULL, len ))) goto done;
-    lstrcpyW( query, L"SELECT * FROM " );
+    lstrcpyW( query, select_allW );
     lstrcatW( query, class );
 
-    if (!(wql = SysAllocString(L"WQL" ))) goto done;
+    if (!(wql = SysAllocString( wqlW ))) goto done;
     hr = IWbemServices_ExecQuery( services, wql, query, flags, NULL, &result );
     if (hr != S_OK) goto done;
 
@@ -235,6 +267,12 @@ done:
 
 int __cdecl wmain(int argc, WCHAR *argv[])
 {
+    static const WCHAR getW[] = {'g','e','t',0};
+    static const WCHAR quitW[] = {'q','u','i','t',0};
+    static const WCHAR exitW[] = {'e','x','i','t',0};
+    static const WCHAR pathW[] = {'p','a','t','h',0};
+    static const WCHAR classW[] = {'c','l','a','s','s',0};
+    static const WCHAR contextW[] = {'c','o','n','t','e','x','t',0};
     const WCHAR *class, *value;
     int i;
 
@@ -244,18 +282,20 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     if (i >= argc)
         goto not_supported;
 
-    if (!wcsicmp( argv[i], L"quit" ) || !wcsicmp( argv[i], L"exit" ))
+    if (!wcsicmp( argv[i], quitW ) ||
+        !wcsicmp( argv[i], exitW ))
     {
         return 0;
     }
 
-    if (!wcsicmp( argv[i], L"class") || !wcsicmp( argv[i], L"context" ))
+    if (!wcsicmp( argv[i], classW) ||
+        !wcsicmp( argv[i], contextW ))
     {
         WINE_FIXME( "command %s not supported\n", debugstr_w(argv[i]) );
         goto not_supported;
     }
 
-    if (!wcsicmp( argv[i], L"path" ))
+    if (!wcsicmp( argv[i], pathW ))
     {
         if (++i >= argc)
         {
@@ -277,7 +317,7 @@ int __cdecl wmain(int argc, WCHAR *argv[])
     if (++i >= argc)
         goto not_supported;
 
-    if (!wcsicmp( argv[i], L"get" ))
+    if (!wcsicmp( argv[i], getW ))
     {
         if (++i >= argc)
             goto not_supported;

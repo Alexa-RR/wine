@@ -1,10 +1,11 @@
 MODULE    = hid.dll
 IMPORTLIB = hid
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	hidd.c \
-	hidp.c
+	hidp.c \
+	main.c
 
 RC_SRCS = version.rc

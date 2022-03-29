@@ -26,7 +26,6 @@
 #include <stdio.h>
 
 #include "windows.h"
-#include "commctrl.h"
 #include "commdlg.h"
 #include "shellapi.h"
 
@@ -105,9 +104,10 @@ static BOOL CLOCK_ResetTimer(void)
 	period = 1000;
 
     if (!SetTimer (Globals.hMainWnd, TIMER_ID, period, NULL)) {
+        static const WCHAR notimersW[] = {'N','o',' ','a','v','a','i','l','a','b','l','e',' ','t','i','m','e','r','s',0};
         WCHAR szApp[MAX_STRING_LEN];
         LoadStringW(Globals.hInstance, IDS_CLOCK, szApp, MAX_STRING_LEN);
-        MessageBoxW(0, L"No available timers", szApp, MB_ICONEXCLAMATION | MB_OK);
+        MessageBoxW(0, notimersW, szApp, MB_ICONEXCLAMATION | MB_OK);
         return FALSE;
     }
     return TRUE;
@@ -390,7 +390,8 @@ int PASCAL WinMain (HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show
     MSG      msg;
     WNDCLASSW class;
 
-    InitCommonControls();
+    static const WCHAR szClassName[] = {'C','L','C','l','a','s','s',0};
+    static const WCHAR szWinName[]   = {'C','l','o','c','k',0};
 
     /* Setup Globals */
     memset(&Globals.hFont, 0, sizeof (Globals.hFont));
@@ -407,13 +408,13 @@ int PASCAL WinMain (HINSTANCE hInstance, HINSTANCE prev, LPSTR cmdline, int show
         class.hCursor       = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
         class.hbrBackground = 0;
         class.lpszMenuName  = 0;
-        class.lpszClassName = L"CLClass";
+        class.lpszClassName = szClassName;
     }
-
+    
     if (!RegisterClassW(&class)) return FALSE;
-
+    
     Globals.MaxX = Globals.MaxY = INITIAL_WINDOW_SIZE;
-    Globals.hMainWnd = CreateWindowW(L"CLClass", L"Clock", WS_OVERLAPPEDWINDOW,
+    Globals.hMainWnd = CreateWindowW(szClassName, szWinName, WS_OVERLAPPEDWINDOW,
                                      CW_USEDEFAULT, CW_USEDEFAULT,
                                      Globals.MaxX, Globals.MaxY, 0,
                                      0, hInstance, 0);

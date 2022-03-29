@@ -75,38 +75,14 @@ static HRESULT to_i4_array( DWORD *values, DWORD count, VARIANT *var )
     return S_OK;
 }
 
-static unsigned int reg_get_access_mask( IWbemContext *context )
-{
-    VARIANT value;
-
-    if (!context) return 0;
-
-    V_VT( &value ) = VT_EMPTY;
-    if (FAILED(IWbemContext_GetValue( context, L"__ProviderArchitecture", 0, &value )))
-        return 0;
-
-    if (FAILED(VariantChangeType( &value, &value, 0, VT_I4 )))
-    {
-        VariantClear( &value );
-        return 0;
-    }
-
-    if (V_I4( &value ) == 32)
-        return KEY_WOW64_32KEY;
-    else if (V_I4( &value ) == 64)
-        return KEY_WOW64_64KEY;
-
-    return 0;
-}
-
-static HRESULT create_key( HKEY root, const WCHAR *subkey, IWbemContext *context, VARIANT *retval )
+static HRESULT create_key( HKEY root, const WCHAR *subkey, VARIANT *retval )
 {
     LONG res;
     HKEY hkey;
 
     TRACE("%p, %s\n", root, debugstr_w(subkey));
 
-    res = RegCreateKeyExW( root, subkey, 0, NULL, 0, reg_get_access_mask( context ), NULL, &hkey, NULL );
+    res = RegCreateKeyExW( root, subkey, 0, NULL, 0, 0, NULL, &hkey, NULL );
     set_variant( VT_UI4, res, NULL, retval );
     if (!res)
     {
@@ -116,20 +92,20 @@ static HRESULT create_key( HKEY root, const WCHAR *subkey, IWbemContext *context
     return HRESULT_FROM_WIN32( res );
 }
 
-HRESULT reg_create_key( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT reg_create_key( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT defkey, subkey, retval;
     IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
+    TRACE("%p, %p\n", in, out);
 
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_defkeyW, 0, &defkey, NULL, NULL );
     if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_subkeynameW, 0, &subkey, NULL, NULL );
     if (hr != S_OK) return hr;
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"CreateKey", PARAM_OUT, &sig );
+    hr = create_signature( class_stdregprovW, method_createkeyW, PARAM_OUT, &sig );
     if (hr != S_OK)
     {
         VariantClear( &subkey );
@@ -145,9 +121,9 @@ HRESULT reg_create_key( IWbemClassObject *obj, IWbemContext *context, IWbemClass
             return hr;
         }
     }
-    hr = create_key( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), context, &retval );
+    hr = create_key( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), &retval );
     if (hr == S_OK && out_params)
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
 
     VariantClear( &subkey );
     IWbemClassObject_Release( sig );
@@ -160,7 +136,7 @@ HRESULT reg_create_key( IWbemClassObject *obj, IWbemContext *context, IWbemClass
     return hr;
 }
 
-static HRESULT enum_key( HKEY root, const WCHAR *subkey, VARIANT *names, IWbemContext *context, VARIANT *retval )
+static HRESULT enum_key( HKEY root, const WCHAR *subkey, VARIANT *names, VARIANT *retval )
 {
     HKEY hkey;
     HRESULT hr = S_OK;
@@ -171,11 +147,11 @@ static HRESULT enum_key( HKEY root, const WCHAR *subkey, VARIANT *names, IWbemCo
 
     TRACE("%p, %s\n", root, debugstr_w(subkey));
 
-    if (!(strings = malloc( count * sizeof(BSTR) ))) return E_OUTOFMEMORY;
-    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_ENUMERATE_SUB_KEYS | reg_get_access_mask( context ), &hkey )))
+    if (!(strings = heap_alloc( count * sizeof(BSTR) ))) return E_OUTOFMEMORY;
+    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_ENUMERATE_SUB_KEYS, &hkey )))
     {
         set_variant( VT_UI4, res, NULL, retval );
-        free( strings );
+        heap_free( strings );
         return S_OK;
     }
     for (;;)
@@ -183,7 +159,7 @@ static HRESULT enum_key( HKEY root, const WCHAR *subkey, VARIANT *names, IWbemCo
         if (i >= count)
         {
             count *= 2;
-            if (!(tmp = realloc( strings, count * sizeof(BSTR) )))
+            if (!(tmp = heap_realloc( strings, count * sizeof(BSTR) )))
             {
                 RegCloseKey( hkey );
                 return E_OUTOFMEMORY;
@@ -211,24 +187,24 @@ static HRESULT enum_key( HKEY root, const WCHAR *subkey, VARIANT *names, IWbemCo
     }
     set_variant( VT_UI4, res, NULL, retval );
     RegCloseKey( hkey );
-    free( strings );
+    heap_free( strings );
     return hr;
 }
 
-HRESULT reg_enum_key( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT reg_enum_key( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT defkey, subkey, names, retval;
     IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
+    TRACE("%p, %p\n", in, out);
 
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_defkeyW, 0, &defkey, NULL, NULL );
     if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_subkeynameW, 0, &subkey, NULL, NULL );
     if (hr != S_OK) return hr;
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"EnumKey", PARAM_OUT, &sig );
+    hr = create_signature( class_stdregprovW, method_enumkeyW, PARAM_OUT, &sig );
     if (hr != S_OK)
     {
         VariantClear( &subkey );
@@ -245,16 +221,16 @@ HRESULT reg_enum_key( IWbemClassObject *obj, IWbemContext *context, IWbemClassOb
         }
     }
     VariantInit( &names );
-    hr = enum_key( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), &names, context, &retval );
+    hr = enum_key( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), &names, &retval );
     if (hr != S_OK) goto done;
     if (out_params)
     {
         if (!V_UI4( &retval ))
         {
-            hr = IWbemClassObject_Put( out_params, L"sNames", 0, &names, CIM_STRING|CIM_FLAG_ARRAY );
+            hr = IWbemClassObject_Put( out_params, param_namesW, 0, &names, CIM_STRING|CIM_FLAG_ARRAY );
             if (hr != S_OK) goto done;
         }
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
     }
 
 done:
@@ -270,8 +246,7 @@ done:
     return hr;
 }
 
-static HRESULT enum_values( HKEY root, const WCHAR *subkey, VARIANT *names, VARIANT *types, IWbemContext *context,
-        VARIANT *retval )
+static HRESULT enum_values( HKEY root, const WCHAR *subkey, VARIANT *names, VARIANT *types, VARIANT *retval )
 {
     HKEY hkey = NULL;
     HRESULT hr = S_OK;
@@ -282,14 +257,14 @@ static HRESULT enum_values( HKEY root, const WCHAR *subkey, VARIANT *names, VARI
 
     TRACE("%p, %s\n", root, debugstr_w(subkey));
 
-    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_QUERY_VALUE | reg_get_access_mask( context ), &hkey ))) goto done;
+    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_QUERY_VALUE, &hkey ))) goto done;
     if ((res = RegQueryInfoKeyW( hkey, NULL, NULL, NULL, NULL, NULL, NULL, &count, &buflen, NULL, NULL, NULL )))
         goto done;
 
     hr = E_OUTOFMEMORY;
-    if (!(buf = malloc( (buflen + 1) * sizeof(WCHAR) ))) goto done;
-    if (!(value_names = malloc( count * sizeof(BSTR) ))) goto done;
-    if (!(value_types = malloc( count * sizeof(DWORD) ))) goto done;
+    if (!(buf = heap_alloc( (buflen + 1) * sizeof(WCHAR) ))) goto done;
+    if (!(value_names = heap_alloc( count * sizeof(BSTR) ))) goto done;
+    if (!(value_types = heap_alloc( count * sizeof(DWORD) ))) goto done;
 
     hr = S_OK;
     for (;;)
@@ -320,26 +295,26 @@ static HRESULT enum_values( HKEY root, const WCHAR *subkey, VARIANT *names, VARI
 done:
     set_variant( VT_UI4, res, NULL, retval );
     RegCloseKey( hkey );
-    free( value_names );
-    free( value_types );
-    free( buf );
+    heap_free( value_names );
+    heap_free( value_types );
+    heap_free( buf );
     return hr;
 }
 
-HRESULT reg_enum_values( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT reg_enum_values( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT defkey, subkey, names, types, retval;
     IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
+    TRACE("%p, %p\n", in, out);
 
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_defkeyW, 0, &defkey, NULL, NULL );
     if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_subkeynameW, 0, &subkey, NULL, NULL );
     if (hr != S_OK) return hr;
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"EnumValues", PARAM_OUT, &sig );
+    hr = create_signature( class_stdregprovW, method_enumvaluesW, PARAM_OUT, &sig );
     if (hr != S_OK)
     {
         VariantClear( &subkey );
@@ -357,18 +332,18 @@ HRESULT reg_enum_values( IWbemClassObject *obj, IWbemContext *context, IWbemClas
     }
     VariantInit( &names );
     VariantInit( &types );
-    hr = enum_values( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), &names, &types, context, &retval );
+    hr = enum_values( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), &names, &types, &retval );
     if (hr != S_OK) goto done;
     if (out_params)
     {
         if (!V_UI4( &retval ))
         {
-            hr = IWbemClassObject_Put( out_params, L"sNames", 0, &names, CIM_STRING|CIM_FLAG_ARRAY );
+            hr = IWbemClassObject_Put( out_params, param_namesW, 0, &names, CIM_STRING|CIM_FLAG_ARRAY );
             if (hr != S_OK) goto done;
-            hr = IWbemClassObject_Put( out_params, L"Types", 0, &types, CIM_SINT32|CIM_FLAG_ARRAY );
+            hr = IWbemClassObject_Put( out_params, param_typesW, 0, &types, CIM_SINT32|CIM_FLAG_ARRAY );
             if (hr != S_OK) goto done;
         }
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
     }
 
 done:
@@ -385,30 +360,22 @@ done:
     return hr;
 }
 
-static HRESULT get_stringvalue( HKEY root, const WCHAR *subkey, const WCHAR *name, VARIANT *value,
-        IWbemContext *context, VARIANT *retval )
+static HRESULT get_stringvalue( HKEY root, const WCHAR *subkey, const WCHAR *name, VARIANT *value, VARIANT *retval )
 {
-    DWORD size, mask, flags = RRF_RT_REG_SZ;
     HRESULT hr = S_OK;
     BSTR str = NULL;
+    DWORD size;
     LONG res;
 
     TRACE("%p, %s, %s\n", root, debugstr_w(subkey), debugstr_w(name));
 
-    mask = reg_get_access_mask( context );
-
-    if (mask & KEY_WOW64_64KEY)
-        flags |= RRF_SUBKEY_WOW6464KEY;
-    else if (mask & KEY_WOW64_32KEY)
-        flags |= RRF_SUBKEY_WOW6432KEY;
-
-    if ((res = RegGetValueW( root, subkey, name, flags, NULL, NULL, &size ))) goto done;
+    if ((res = RegGetValueW( root, subkey, name, RRF_RT_REG_SZ, NULL, NULL, &size ))) goto done;
     if (!(str = SysAllocStringLen( NULL, size / sizeof(WCHAR) - 1 )))
     {
         hr = E_OUTOFMEMORY;
         goto done;
     }
-    if (!(res = RegGetValueW( root, subkey, name, flags, NULL, str, &size )))
+    if (!(res = RegGetValueW( root, subkey, name, RRF_RT_REG_SZ, NULL, str, &size )))
         set_variant( VT_BSTR, 0, str, value );
 
 done:
@@ -417,26 +384,22 @@ done:
     return hr;
 }
 
-HRESULT reg_get_stringvalue( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
+HRESULT reg_get_stringvalue( IWbemClassObject *obj, IWbemClassObject *in, IWbemClassObject **out )
 {
     VARIANT defkey, subkey, name, value, retval;
     IWbemClassObject *sig, *out_params = NULL;
     HRESULT hr;
 
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
+    TRACE("%p, %p\n", in, out);
 
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_defkeyW, 0, &defkey, NULL, NULL );
     if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
+    hr = IWbemClassObject_Get( in, param_subkeynameW, 0, &subkey, NULL, NULL );
     if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sValueName", 0, &name, NULL, NULL );
-    if (hr != S_OK)
-    {
-        VariantClear( &subkey );
-        return hr;
-    }
+    hr = IWbemClassObject_Get( in, param_valuenameW, 0, &name, NULL, NULL );
+    if (hr != S_OK) return hr;
 
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"GetStringValue", PARAM_OUT, &sig );
+    hr = create_signature( class_stdregprovW, method_getstringvalueW, PARAM_OUT, &sig );
     if (hr != S_OK)
     {
         VariantClear( &name );
@@ -455,236 +418,20 @@ HRESULT reg_get_stringvalue( IWbemClassObject *obj, IWbemContext *context, IWbem
         }
     }
     VariantInit( &value );
-    hr = get_stringvalue( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), V_BSTR(&name), &value, context, &retval );
+    hr = get_stringvalue( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), V_BSTR(&name), &value, &retval );
     if (hr != S_OK) goto done;
     if (out_params)
     {
         if (!V_UI4( &retval ))
         {
-            hr = IWbemClassObject_Put( out_params, L"sValue", 0, &value, CIM_STRING );
+            hr = IWbemClassObject_Put( out_params, param_valueW, 0, &value, CIM_STRING );
             if (hr != S_OK) goto done;
         }
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
+        hr = IWbemClassObject_Put( out_params, param_returnvalueW, 0, &retval, CIM_UINT32 );
     }
 
 done:
     VariantClear( &name );
-    VariantClear( &subkey );
-    IWbemClassObject_Release( sig );
-    if (hr == S_OK && out)
-    {
-        *out = out_params;
-        IWbemClassObject_AddRef( out_params );
-    }
-    if (out_params) IWbemClassObject_Release( out_params );
-    return hr;
-}
-
-static void set_stringvalue( HKEY root, const WCHAR *subkey, const WCHAR *name, const WCHAR *value,
-        IWbemContext *context, VARIANT *retval )
-{
-    HKEY hkey;
-    LONG res;
-
-    TRACE("%p, %s, %s, %s\n", root, debugstr_w(subkey), debugstr_w(name), debugstr_w(value));
-
-    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_SET_VALUE | reg_get_access_mask( context ), &hkey )))
-    {
-        set_variant( VT_UI4, res, NULL, retval );
-        return;
-    }
-
-    res = RegSetKeyValueW( hkey, NULL, name, REG_SZ, value, (lstrlenW( value ) + 1) * sizeof(*value) );
-    set_variant( VT_UI4, res, NULL, retval );
-    RegCloseKey( hkey );
-}
-
-HRESULT reg_set_stringvalue( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
-{
-    VARIANT defkey, subkey, name, value, retval;
-    IWbemClassObject *sig, *out_params = NULL;
-    HRESULT hr;
-
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
-
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sValueName", 0, &name, NULL, NULL );
-    if (hr != S_OK)
-    {
-        VariantClear( &subkey );
-        return hr;
-    }
-    hr = IWbemClassObject_Get( in, L"sValue", 0, &value, NULL, NULL );
-    if (hr != S_OK)
-    {
-        VariantClear( &name );
-        VariantClear( &subkey );
-        return hr;
-    }
-
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"SetStringValue", PARAM_OUT, &sig );
-    if (hr != S_OK)
-    {
-        VariantClear( &name );
-        VariantClear( &subkey );
-        VariantClear( &value );
-        return hr;
-    }
-    if (out)
-    {
-        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
-        if (hr != S_OK)
-        {
-            VariantClear( &name );
-            VariantClear( &subkey );
-            VariantClear( &value );
-            IWbemClassObject_Release( sig );
-            return hr;
-        }
-    }
-
-    set_stringvalue( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), V_BSTR(&name), V_BSTR(&value), context, &retval );
-    if (out_params)
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
-
-    VariantClear( &name );
-    VariantClear( &subkey );
-    VariantClear( &value );
-    IWbemClassObject_Release( sig );
-    if (hr == S_OK && out)
-    {
-        *out = out_params;
-        IWbemClassObject_AddRef( out_params );
-    }
-    if (out_params) IWbemClassObject_Release( out_params );
-    return hr;
-}
-
-static void set_dwordvalue( HKEY root, const WCHAR *subkey, const WCHAR *name, DWORD value, IWbemContext *context,
-                            VARIANT *retval )
-{
-    HKEY hkey;
-    LONG res;
-
-    TRACE( "%p, %s, %s, %#lx\n", root, debugstr_w(subkey), debugstr_w(name), value );
-
-    if ((res = RegOpenKeyExW( root, subkey, 0, KEY_SET_VALUE | reg_get_access_mask( context ), &hkey )))
-    {
-        set_variant( VT_UI4, res, NULL, retval );
-        return;
-    }
-
-    res = RegSetKeyValueW( hkey, NULL, name, REG_DWORD, &value, sizeof(value) );
-    set_variant( VT_UI4, res, NULL, retval );
-    RegCloseKey( hkey );
-}
-
-HRESULT reg_set_dwordvalue( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
-{
-    VARIANT defkey, subkey, name, value, retval;
-    IWbemClassObject *sig, *out_params = NULL;
-    HRESULT hr;
-
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
-
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sValueName", 0, &name, NULL, NULL );
-    if (hr != S_OK)
-    {
-        VariantClear( &subkey );
-        return hr;
-    }
-    hr = IWbemClassObject_Get( in, L"uValue", 0, &value, NULL, NULL );
-    if (hr != S_OK)
-    {
-        VariantClear( &name );
-        VariantClear( &subkey );
-        return hr;
-    }
-
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"SetDWORDValue", PARAM_OUT, &sig );
-    if (hr != S_OK)
-    {
-        VariantClear( &name );
-        VariantClear( &subkey );
-        return hr;
-    }
-    if (out)
-    {
-        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
-        if (hr != S_OK)
-        {
-            VariantClear( &name );
-            VariantClear( &subkey );
-            IWbemClassObject_Release( sig );
-            return hr;
-        }
-    }
-    set_dwordvalue( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), V_BSTR(&name), V_UI4(&value), context, &retval );
-    if (out_params)
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
-
-    VariantClear( &name );
-    VariantClear( &subkey );
-    IWbemClassObject_Release( sig );
-    if (hr == S_OK && out)
-    {
-        *out = out_params;
-        IWbemClassObject_AddRef( out_params );
-    }
-    if (out_params) IWbemClassObject_Release( out_params );
-    return hr;
-}
-
-static void delete_key( HKEY root, const WCHAR *subkey, IWbemContext *context, VARIANT *retval )
-{
-    LONG res;
-
-    TRACE("%p, %s\n", root, debugstr_w(subkey));
-
-    res = RegDeleteKeyExW( root, subkey, reg_get_access_mask( context ), 0 );
-    set_variant( VT_UI4, res, NULL, retval );
-}
-
-HRESULT reg_delete_key( IWbemClassObject *obj, IWbemContext *context, IWbemClassObject *in, IWbemClassObject **out )
-{
-    VARIANT defkey, subkey, retval;
-    IWbemClassObject *sig, *out_params = NULL;
-    HRESULT hr;
-
-    TRACE("%p, %p, %p, %p\n", obj, context, in, out);
-
-    hr = IWbemClassObject_Get( in, L"hDefKey", 0, &defkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-    hr = IWbemClassObject_Get( in, L"sSubKeyName", 0, &subkey, NULL, NULL );
-    if (hr != S_OK) return hr;
-
-    hr = create_signature( WBEMPROX_NAMESPACE_CIMV2, L"StdRegProv", L"DeleteKey", PARAM_OUT, &sig );
-    if (hr != S_OK)
-    {
-        VariantClear( &subkey );
-        return hr;
-    }
-    if (out)
-    {
-        hr = IWbemClassObject_SpawnInstance( sig, 0, &out_params );
-        if (hr != S_OK)
-        {
-            VariantClear( &subkey );
-            IWbemClassObject_Release( sig );
-            return hr;
-        }
-    }
-    delete_key( (HKEY)(INT_PTR)V_I4(&defkey), V_BSTR(&subkey), context, &retval );
-    if (out_params)
-        hr = IWbemClassObject_Put( out_params, L"ReturnValue", 0, &retval, CIM_UINT32 );
-
     VariantClear( &subkey );
     IWbemClassObject_Release( sig );
     if (hr == S_OK && out)

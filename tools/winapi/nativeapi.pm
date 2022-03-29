@@ -19,7 +19,6 @@
 package nativeapi;
 
 use strict;
-use warnings 'all';
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 require Exporter;

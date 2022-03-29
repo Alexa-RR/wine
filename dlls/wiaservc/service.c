@@ -69,7 +69,7 @@ ServiceHandler(DWORD ctrl, DWORD event_type, LPVOID event_data, LPVOID context)
         SetEvent(stop_event);
         break;
     default:
-        FIXME("ignoring handle service ctrl %lx\n", ctrl);
+        FIXME("ignoring handle service ctrl %x\n", ctrl);
         UpdateStatus(status.dwCurrentState, NO_ERROR, 0);
         break;
     }
@@ -107,7 +107,8 @@ StartCount(void)
 VOID WINAPI
 ServiceMain(DWORD dwArgc, LPWSTR *lpszArgv)
 {
-    TRACE("(%ld, %p)\n", dwArgc, lpszArgv);
+    static const WCHAR stisvc_nameW[] = {'s','t','i','s','v','c',0};
+    TRACE("(%d, %p)\n", dwArgc, lpszArgv);
 
     stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!stop_event) {
@@ -115,9 +116,9 @@ ServiceMain(DWORD dwArgc, LPWSTR *lpszArgv)
         return;
     }
 
-    status_handle = RegisterServiceCtrlHandlerExW(L"stisvc", ServiceHandler, NULL);
+    status_handle = RegisterServiceCtrlHandlerExW(stisvc_nameW, ServiceHandler, NULL);
     if (!status_handle) {
-        ERR("failed to register handler: %lu\n", GetLastError());
+        ERR("failed to register handler: %u\n", GetLastError());
         return;
     }
 

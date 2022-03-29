@@ -17,7 +17,6 @@
  */
 
 #include <windef.h>
-#include <winuser.h>
 
 #define MAIN_MENU                 0x100
 #define IDM_ANALOG                0x101

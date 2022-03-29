@@ -37,11 +37,10 @@
 #include "kernelbase.h"
 #include "wine/asm.h"
 #include "wine/exception.h"
+#include "wine/server.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(sync);
-
-static const struct _KUSER_SHARED_DATA *user_shared_data = (struct _KUSER_SHARED_DATA *)0x7ffe0000;
 
 /* check if current version is NT or Win95 */
 static inline BOOL is_version_nt(void)
@@ -123,100 +122,38 @@ static BOOL get_open_object_attributes( OBJECT_ATTRIBUTES *attr, UNICODE_STRING 
 
 
 /***********************************************************************
- * Time functions
- ***********************************************************************/
-
-
-/*********************************************************************
- *           GetSystemTimes   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH GetSystemTimes( FILETIME *idle, FILETIME *kernel, FILETIME *user )
-{
-    LARGE_INTEGER idle_time, kernel_time, user_time;
-    SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION *info;
-    ULONG ret_size;
-    DWORD i, cpus = NtCurrentTeb()->Peb->NumberOfProcessors;
-
-    if (!(info = HeapAlloc( GetProcessHeap(), 0, sizeof(*info) * cpus )))
-    {
-        SetLastError( ERROR_OUTOFMEMORY );
-        return FALSE;
-    }
-    if (!set_ntstatus( NtQuerySystemInformation( SystemProcessorPerformanceInformation, info,
-                                                 sizeof(*info) * cpus, &ret_size )))
-    {
-        HeapFree( GetProcessHeap(), 0, info );
-        return FALSE;
-    }
-    idle_time.QuadPart = 0;
-    kernel_time.QuadPart = 0;
-    user_time.QuadPart = 0;
-    for (i = 0; i < cpus; i++)
-    {
-        idle_time.QuadPart += info[i].IdleTime.QuadPart;
-        kernel_time.QuadPart += info[i].KernelTime.QuadPart;
-        user_time.QuadPart += info[i].UserTime.QuadPart;
-    }
-    if (idle)
-    {
-        idle->dwLowDateTime  = idle_time.u.LowPart;
-        idle->dwHighDateTime = idle_time.u.HighPart;
-    }
-    if (kernel)
-    {
-        kernel->dwLowDateTime  = kernel_time.u.LowPart;
-        kernel->dwHighDateTime = kernel_time.u.HighPart;
-    }
-    if (user)
-    {
-        user->dwLowDateTime  = user_time.u.LowPart;
-        user->dwHighDateTime = user_time.u.HighPart;
-    }
-    HeapFree( GetProcessHeap(), 0, info );
-    return TRUE;
-}
-
-
-/******************************************************************************
- *           GetTickCount   (kernelbase.@)
- */
-ULONG WINAPI DECLSPEC_HOTPATCH GetTickCount(void)
-{
-    /* note: we ignore TickCountMultiplier */
-    return user_shared_data->u.TickCount.LowPart;
-}
-
-
-/******************************************************************************
- *           GetTickCount64   (kernelbase.@)
- */
-ULONGLONG WINAPI DECLSPEC_HOTPATCH GetTickCount64(void)
-{
-    ULONG high, low;
-
-    do
-    {
-        high = user_shared_data->u.TickCount.High1Time;
-        low = user_shared_data->u.TickCount.LowPart;
-    }
-    while (high != user_shared_data->u.TickCount.High2Time);
-    /* note: we ignore TickCountMultiplier */
-    return (ULONGLONG)high << 32 | low;
-}
-
-
-/***********************************************************************
  * Waits
  ***********************************************************************/
 
 
-static HANDLE normalize_std_handle( HANDLE handle )
+static HANDLE normalize_handle_if_console( HANDLE handle )
 {
+    static HANDLE wait_event;
+
     if ((handle == (HANDLE)STD_INPUT_HANDLE) ||
         (handle == (HANDLE)STD_OUTPUT_HANDLE) ||
         (handle == (HANDLE)STD_ERROR_HANDLE))
-        return GetStdHandle( HandleToULong(handle) );
+        handle = GetStdHandle( HandleToULong(handle) );
 
+    /* even screen buffer console handles are waitable, and are
+     * handled as a handle to the console itself
+     */
+    if (is_console_handle( handle ))
+    {
+        HANDLE event = 0;
+
+        SERVER_START_REQ( get_console_wait_event )
+        {
+            req->handle = wine_server_obj_handle( console_handle_map( handle ));
+            if (!wine_server_call( req )) event = wine_server_ptr_handle( reply->event );
+        }
+        SERVER_END_REQ;
+        if (event)
+        {
+            if (InterlockedCompareExchangePointer( &wait_event, event, 0 )) NtClose( event );
+            handle = wait_event;
+        }
+    }
     return handle;
 }
 
@@ -229,9 +166,9 @@ HANDLE WINAPI DECLSPEC_HOTPATCH RegisterWaitForSingleObjectEx( HANDLE handle, WA
 {
     HANDLE ret;
 
-    TRACE( "%p %p %p %ld %ld\n", handle, callback, context, timeout, flags );
+    TRACE( "%p %p %p %d %d\n", handle, callback, context, timeout, flags );
 
-    handle = normalize_std_handle( handle );
+    handle = normalize_handle_if_console( handle );
     if (!set_ntstatus( RtlRegisterWait( &ret, handle, callback, context, timeout, flags ))) return NULL;
     return ret;
 }
@@ -246,7 +183,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH SignalObjectAndWait( HANDLE signal, HANDLE wait,
     NTSTATUS status;
     LARGE_INTEGER time;
 
-    TRACE( "%p %p %ld %d\n", signal, wait, timeout, alertable );
+    TRACE( "%p %p %d %d\n", signal, wait, timeout, alertable );
 
     status = NtSignalAndWaitForSingleObject( signal, wait, alertable, get_nt_timeout( &time, timeout ) );
     if (HIWORD(status))
@@ -336,7 +273,7 @@ DWORD WINAPI DECLSPEC_HOTPATCH WaitForMultipleObjectsEx( DWORD count, const HAND
         SetLastError(ERROR_INVALID_PARAMETER);
         return WAIT_FAILED;
     }
-    for (i = 0; i < count; i++) hloc[i] = normalize_std_handle( handles[i] );
+    for (i = 0; i < count; i++) hloc[i] = normalize_handle_if_console( handles[i] );
 
     status = NtWaitForMultipleObjects( count, hloc, !wait_all, alertable,
                                        get_nt_timeout( &time, timeout ) );
@@ -346,51 +283,6 @@ DWORD WINAPI DECLSPEC_HOTPATCH WaitForMultipleObjectsEx( DWORD count, const HAND
         status = WAIT_FAILED;
     }
     return status;
-}
-
-
-/******************************************************************************
- *           WaitForDebugEvent   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH WaitForDebugEvent( DEBUG_EVENT *event, DWORD timeout )
-{
-    NTSTATUS status;
-    LARGE_INTEGER time;
-    DBGUI_WAIT_STATE_CHANGE state;
-
-    for (;;)
-    {
-        status = DbgUiWaitStateChange( &state, get_nt_timeout( &time, timeout ) );
-        switch (status)
-        {
-        case STATUS_SUCCESS:
-            DbgUiConvertStateChangeStructure( &state, event );
-            return TRUE;
-        case STATUS_USER_APC:
-            continue;
-        case STATUS_TIMEOUT:
-            SetLastError( ERROR_SEM_TIMEOUT );
-            return FALSE;
-        default:
-            return set_ntstatus( status );
-        }
-    }
-}
-
-
-/***********************************************************************
- *           WaitOnAddress   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH WaitOnAddress( volatile void *addr, void *cmp, SIZE_T size, DWORD timeout )
-{
-    LARGE_INTEGER to;
-
-    if (timeout != INFINITE)
-    {
-        to.QuadPart = -(LONGLONG)timeout * 10000;
-        return set_ntstatus( RtlWaitOnAddress( (const void *)addr, cmp, size, &to ));
-    }
-    return set_ntstatus( RtlWaitOnAddress( (const void *)addr, cmp, size, NULL ));
 }
 
 
@@ -778,7 +670,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetWaitableTimerEx( HANDLE handle, const LARGE_INT
                                                   REASON_CONTEXT *context, ULONG tolerabledelay )
 {
     static int once;
-    if (!once++) FIXME( "(%p, %p, %ld, %p, %p, %p, %ld) semi-stub\n",
+    if (!once++) FIXME( "(%p, %p, %d, %p, %p, %p, %d) semi-stub\n",
                         handle, when, period, callback, arg, context, tolerabledelay );
 
     return SetWaitableTimer( handle, when, period, callback, arg, FALSE );
@@ -818,7 +710,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateTimerQueueTimer( PHANDLE timer, HANDLE queue
                                                      WAITORTIMERCALLBACK callback, PVOID arg,
                                                      DWORD when, DWORD period, ULONG flags )
 {
-    return set_ntstatus( RtlCreateTimer( queue, timer, callback, arg, when, period, flags ));
+    return set_ntstatus( RtlCreateTimer( timer, queue, callback, arg, when, period, flags ));
 }
 
 
@@ -1016,7 +908,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateIoCompletionPort( HANDLE handle, HANDLE po
     IO_STATUS_BLOCK iosb;
     HANDLE ret = port;
 
-    TRACE( "(%p, %p, %08Ix, %08lx)\n", handle, port, key, threads );
+    TRACE( "(%p, %p, %08lx, %08x)\n", handle, port, key, threads );
 
     if (!port)
     {
@@ -1053,7 +945,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetQueuedCompletionStatus( HANDLE port, LPDWORD co
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER wait_time;
 
-    TRACE( "(%p,%p,%p,%p,%ld)\n", port, count, key, overlapped, timeout );
+    TRACE( "(%p,%p,%p,%p,%d)\n", port, count, key, overlapped, timeout );
 
     *overlapped = NULL;
     status = NtRemoveIoCompletion( port, key, (PULONG_PTR)overlapped, &iosb,
@@ -1081,7 +973,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetQueuedCompletionStatusEx( HANDLE port, OVERLAPP
     LARGE_INTEGER time;
     NTSTATUS ret;
 
-    TRACE( "%p %p %lu %p %lu %u\n", port, entries, count, written, timeout, alertable );
+    TRACE( "%p %p %u %p %u %u\n", port, entries, count, written, timeout, alertable );
 
     ret = NtRemoveIoCompletionEx( port, (FILE_IO_COMPLETION_INFORMATION *)entries, count,
                                   written, get_nt_timeout( &time, timeout ), alertable );
@@ -1099,7 +991,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH GetQueuedCompletionStatusEx( HANDLE port, OVERLAPP
 BOOL WINAPI DECLSPEC_HOTPATCH PostQueuedCompletionStatus( HANDLE port, DWORD count,
                                                           ULONG_PTR key, LPOVERLAPPED overlapped )
 {
-    TRACE( "%p %ld %08Ix %p\n", port, count, key, overlapped );
+    TRACE( "%p %d %08lx %p\n", port, count, key, overlapped );
 
     return set_ntstatus( NtSetIoCompletion( port, key, (ULONG_PTR)overlapped, STATUS_SUCCESS, count ));
 }
@@ -1121,7 +1013,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH CallNamedPipeW( LPCWSTR name, LPVOID input, DWORD 
     BOOL ret;
     DWORD mode;
 
-    TRACE( "%s %p %ld %p %ld %p %ld\n", debugstr_w(name),
+    TRACE( "%s %p %d %p %d %p %d\n", debugstr_w(name),
            input, in_size, output, out_size, read_size, timeout );
 
     pipe = CreateFileW( name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL );
@@ -1185,7 +1077,7 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateNamedPipeW( LPCWSTR name, DWORD open_mode,
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER time;
 
-    TRACE( "(%s, %#08lx, %#08lx, %ld, %ld, %ld, %ld, %p)\n", debugstr_w(name),
+    TRACE( "(%s, %#08x, %#08x, %d, %d, %d, %d, %p)\n", debugstr_w(name),
            open_mode, pipe_mode, instances, out_buff, in_buff, timeout, sa );
 
     if (!RtlDosPathNameToNtPathName_U( name, &nt_name, NULL, NULL ))
@@ -1310,44 +1202,6 @@ BOOL WINAPI DECLSPEC_HOTPATCH DisconnectNamedPipe( HANDLE pipe )
 
 
 /***********************************************************************
- *           GetNamedPipeHandleStateW   (kernelbase.@)
- */
-BOOL WINAPI DECLSPEC_HOTPATCH GetNamedPipeHandleStateW( HANDLE pipe, DWORD *state, DWORD *instances,
-                                                        DWORD *max_count, DWORD *timeout,
-                                                        WCHAR *user, DWORD size )
-{
-    IO_STATUS_BLOCK io;
-
-    FIXME( "%p %p %p %p %p %p %ld: semi-stub\n", pipe, state, instances, max_count, timeout, user, size );
-
-    if (max_count) *max_count = 0;
-    if (timeout) *timeout = 0;
-    if (user && size && !GetEnvironmentVariableW( L"WINEUSERNAME", user, size )) user[0] = 0;
-
-    if (state)
-    {
-        FILE_PIPE_INFORMATION info;
-
-        if (!set_ntstatus( NtQueryInformationFile( pipe, &io, &info, sizeof(info), FilePipeInformation )))
-            return FALSE;
-
-        *state = (info.ReadMode ? PIPE_READMODE_MESSAGE : PIPE_READMODE_BYTE) |
-                 (info.CompletionMode ? PIPE_NOWAIT : PIPE_WAIT);
-    }
-    if (instances)
-    {
-        FILE_PIPE_LOCAL_INFORMATION info;
-
-        if (!set_ntstatus( NtQueryInformationFile( pipe, &io, &info, sizeof(info),
-                                                   FilePipeLocalInformation)))
-            return FALSE;
-        *instances = info.CurrentInstances;
-    }
-    return TRUE;
-}
-
-
-/***********************************************************************
  *           GetNamedPipeInfo   (kernelbase.@)
  */
 BOOL WINAPI DECLSPEC_HOTPATCH GetNamedPipeInfo( HANDLE pipe, LPDWORD flags, LPDWORD out_size,
@@ -1417,7 +1271,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH SetNamedPipeHandleState( HANDLE pipe, LPDWORD mode
     IO_STATUS_BLOCK iosb;
     NTSTATUS status = STATUS_SUCCESS;
 
-    TRACE( "%p %p/%ld %p %p\n", pipe, mode, mode ? *mode : 0, count, timeout );
+    TRACE( "%p %p/%d %p %p\n", pipe, mode, mode ? *mode : 0, count, timeout );
     if (count || timeout) FIXME( "Unsupported arguments\n" );
 
     if (mode)
@@ -1447,7 +1301,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH TransactNamedPipe( HANDLE handle, LPVOID write_buf
     void *cvalue = NULL;
     NTSTATUS status;
 
-    TRACE( "%p %p %lu %p %lu %p %p\n", handle,
+    TRACE( "%p %p %u %p %u %p %p\n", handle,
            write_buf, write_size, read_buf, read_size, bytes_read, overlapped );
 
     if (overlapped)
@@ -1488,7 +1342,7 @@ BOOL WINAPI DECLSPEC_HOTPATCH WaitNamedPipeW( LPCWSTR name, DWORD timeout )
     ULONG wait_size;
     HANDLE pipe_dev;
 
-    TRACE( "%s 0x%08lx\n", debugstr_w(name), timeout );
+    TRACE( "%s 0x%08x\n", debugstr_w(name), timeout );
 
     if (!RtlDosPathNameToNtPathName_U( name, &nt_name, NULL, NULL )) return FALSE;
 

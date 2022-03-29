@@ -28,6 +28,9 @@
  * Silicon Graphics, Inc.
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <assert.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -4767,6 +4770,10 @@ static void fill_image(const PixelStorageModes *psm,
 	  assert(iter2 == &newimage[width*height*
 				    elements_per_group(format,0)]);
        }
+       assert( iter == &((const GLubyte *)userdata)[rowsize*height +
+					psm->unpack_skip_rows * rowsize +
+					psm->unpack_skip_pixels * group_size] );
+
     } /* else */
 } /* fill_image() */
 
@@ -6042,6 +6049,8 @@ static void scaleInternalPackedPixel(int components,
 	    highy_int++;
 	}
     }
+
+    assert(outindex == (widthOut*heightOut - 1));
 } /* scaleInternalPackedPixel() */
 
 /* rowSizeInBytes is at least the width (in bytes) due to padding on

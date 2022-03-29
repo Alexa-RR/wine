@@ -33,6 +33,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(taskschd);
 
+static HINSTANCE schd_instance;
+
 typedef struct
 {
     IClassFactory IClassFactory_iface;
@@ -112,6 +114,24 @@ static const struct IClassFactoryVtbl factory_vtbl =
 
 static TaskScheduler_factory TaskScheduler_cf = { { &factory_vtbl }, TaskService_create };
 
+/******************************************************************
+ *      DllMain
+ */
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)
+{
+    switch (reason)
+    {
+    case DLL_WINE_PREATTACH:
+        return FALSE; /* prefer native version */
+
+    case DLL_PROCESS_ATTACH:
+        schd_instance = hinst;
+        DisableThreadLibraryCalls(hinst);
+        break;
+    }
+    return TRUE;
+}
+
 /***********************************************************************
  *      DllGetClassObject
  */
@@ -134,4 +154,28 @@ HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *obj)
 
     FIXME("class %s/%s is not implemented\n", debugstr_guid(rclsid), debugstr_guid(riid));
     return CLASS_E_CLASSNOTAVAILABLE;
+}
+
+/***********************************************************************
+ *      DllCanUnloadNow
+ */
+HRESULT WINAPI DllCanUnloadNow(void)
+{
+    return S_FALSE;
+}
+
+/***********************************************************************
+ *      DllRegisterServer
+ */
+HRESULT WINAPI DllRegisterServer(void)
+{
+    return __wine_register_resources(schd_instance);
+}
+
+/***********************************************************************
+ *      DllUnregisterServer
+ */
+HRESULT WINAPI DllUnregisterServer(void)
+{
+    return __wine_unregister_resources(schd_instance);
 }

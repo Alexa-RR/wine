@@ -11,6 +11,6 @@
 @ stub ServiceMain
 @ stub WUServiceMain
 @ stub DllInstall
-@ stdcall -private DllMain(long long ptr)
-@ stdcall -private DllRegisterServer()
-@ stdcall -private DllUnregisterServer()
+@ stub DllMain
+@ stub DllRegisterServer
+@ stub DllUnregisterServer

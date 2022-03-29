@@ -40,34 +40,34 @@ static void test_dc_values(void)
 {
     HDC hdc = CreateDCA("DISPLAY", NULL, NULL, NULL);
     COLORREF color;
-    int extra, attr;
+    int extra;
 
     ok( hdc != NULL, "CreateDC failed\n" );
     color = SetBkColor( hdc, 0x12345678 );
-    ok( color == 0xffffff, "initial color %08lx\n", color );
+    ok( color == 0xffffff, "initial color %08x\n", color );
     color = GetBkColor( hdc );
-    ok( color == 0x12345678, "wrong color %08lx\n", color );
+    ok( color == 0x12345678, "wrong color %08x\n", color );
     color = SetBkColor( hdc, 0xffffffff );
-    ok( color == 0x12345678, "wrong color %08lx\n", color );
+    ok( color == 0x12345678, "wrong color %08x\n", color );
     color = GetBkColor( hdc );
-    ok( color == 0xffffffff, "wrong color %08lx\n", color );
+    ok( color == 0xffffffff, "wrong color %08x\n", color );
     color = SetBkColor( hdc, 0 );
-    ok( color == 0xffffffff, "wrong color %08lx\n", color );
+    ok( color == 0xffffffff, "wrong color %08x\n", color );
     color = GetBkColor( hdc );
-    ok( color == 0, "wrong color %08lx\n", color );
+    ok( color == 0, "wrong color %08x\n", color );
 
     color = SetTextColor( hdc, 0xffeeddcc );
-    ok( color == 0, "initial color %08lx\n", color );
+    ok( color == 0, "initial color %08x\n", color );
     color = GetTextColor( hdc );
-    ok( color == 0xffeeddcc, "wrong color %08lx\n", color );
+    ok( color == 0xffeeddcc, "wrong color %08x\n", color );
     color = SetTextColor( hdc, 0xffffffff );
-    ok( color == 0xffeeddcc, "wrong color %08lx\n", color );
+    ok( color == 0xffeeddcc, "wrong color %08x\n", color );
     color = GetTextColor( hdc );
-    ok( color == 0xffffffff, "wrong color %08lx\n", color );
+    ok( color == 0xffffffff, "wrong color %08x\n", color );
     color = SetTextColor( hdc, 0 );
-    ok( color == 0xffffffff, "wrong color %08lx\n", color );
+    ok( color == 0xffffffff, "wrong color %08x\n", color );
     color = GetTextColor( hdc );
-    ok( color == 0, "wrong color %08lx\n", color );
+    ok( color == 0, "wrong color %08x\n", color );
 
     extra = GetTextCharacterExtra( hdc );
     ok( extra == 0, "initial extra %d\n", extra );
@@ -80,19 +80,6 @@ static void test_dc_values(void)
     SetMapMode( hdc, MM_TEXT );
     extra = GetTextCharacterExtra( hdc );
     ok( extra == 123, "initial extra %d\n", extra );
-
-    SetLastError(0xdeadbeef);
-    attr = SetBkMode(ULongToHandle(0xdeadbeef), OPAQUE);
-    ok(!attr, "attr = %x\n", attr);
-    ok(GetLastError() == ERROR_INVALID_HANDLE, "GetLastError() = %lu\n", GetLastError());
-
-    attr = GetBkColor(ULongToHandle(0xdeadbeef));
-    ok(attr == CLR_INVALID, "attr = %x\n", attr);
-
-    SetLastError(0xdeadbeef);
-    attr = GetDeviceCaps(ULongToHandle(0xdeadbeef), TECHNOLOGY);
-    ok(!attr, "GetDeviceCaps rets %d\n", attr);
-    ok(GetLastError() == ERROR_INVALID_HANDLE, "GetLastError() = %lu\n", GetLastError());
 
     DeleteDC( hdc );
 }
@@ -129,7 +116,7 @@ static void test_savedc_2(void)
        ret, wine_dbgstr_rect(&rc));
     ret = GetRegionData(hrgn, sizeof(buffer), rgndata);
     ok(ret == sizeof(RGNDATAHEADER), "got %u\n", ret);
-    ok(!rgndata->rdh.nCount, "got %lu rectangles\n", rgndata->rdh.nCount);
+    ok(!rgndata->rdh.nCount, "got %u rectangles\n", rgndata->rdh.nCount);
     SetRect(&rc, 0, 0, 100, 100);
     ok(EqualRect(&rc, &rc_clip), "rects are not equal: %s - %s\n", wine_dbgstr_rect(&rc),
        wine_dbgstr_rect(&rc_clip));
@@ -144,7 +131,7 @@ static void test_savedc_2(void)
     ok(ret == 1, "GetClipRgn returned %d instead of 1\n", ret);
     ret = GetRegionData(hrgn, sizeof(buffer), rgndata);
     ok(ret == sizeof(RGNDATAHEADER) + sizeof(RECT), "got %u\n", ret);
-    ok(rgndata->rdh.nCount == 1, "got %lu rectangles\n", rgndata->rdh.nCount);
+    ok(rgndata->rdh.nCount == 1, "got %u rectangles\n", rgndata->rdh.nCount);
     SetRect(&rc, 0, 0, 50, 50);
     ok(EqualRect((RECT *)rgndata->Buffer, &rc), "got rect %s\n", wine_dbgstr_rect((RECT *)rgndata->Buffer));
 
@@ -239,11 +226,6 @@ static void test_savedc(void)
        "ret = %d\n", ret);
 
     DeleteDC(hdc);
-
-    SetLastError(0xdeadbeef);
-    ret = SaveDC(ULongToHandle(0xdeadbeef));
-    ok(!ret, "SaveDC returned %u\n", ret);
-    ok(GetLastError() == ERROR_INVALID_HANDLE, "GetLastError() = %lu\n", GetLastError());
 }
 
 static void test_GdiConvertToDevmodeW(void)
@@ -260,10 +242,8 @@ static void test_GdiConvertToDevmodeW(void)
         return;
     }
 
-    memset(&dmA, 0, sizeof(dmA));
-    dmA.dmSize = sizeof(dmA);
     ret = EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dmA);
-    ok(ret, "EnumDisplaySettingsExA error %lu\n", GetLastError());
+    ok(ret, "EnumDisplaySettingsExA error %u\n", GetLastError());
     ok(dmA.dmSize >= FIELD_OFFSET(DEVMODEA, dmICMMethod), "dmSize is too small: %04x\n", dmA.dmSize);
     ok(dmA.dmSize <= sizeof(DEVMODEA), "dmSize is too large: %04x\n", dmA.dmSize);
 
@@ -284,7 +264,7 @@ static void test_GdiConvertToDevmodeW(void)
     ok(dmW->dmSize == FIELD_OFFSET(DEVMODEW, dmICMMethod) + sizeof(dmW->dmICMMethod),
        "wrong size %u\n", dmW->dmSize);
     ok(dmW->dmICMMethod == DMICMMETHOD_NONE,
-       "expected DMICMMETHOD_NONE, got %lu\n", dmW->dmICMMethod);
+       "expected DMICMMETHOD_NONE, got %u\n", dmW->dmICMMethod);
     HeapFree(GetProcessHeap(), 0, dmW);
 
     dmA.dmSize = 1024;
@@ -297,13 +277,13 @@ static void test_GdiConvertToDevmodeW(void)
     dmA.dmSize = 0;
     dmW = pGdiConvertToDevmodeW(&dmA);
     ok(!dmW, "GdiConvertToDevmodeW should fail\n");
-    ok(GetLastError() == 0xdeadbeef, "expected 0xdeadbeef, got %lu\n", GetLastError());
+    ok(GetLastError() == 0xdeadbeef, "expected 0xdeadbeef, got %u\n", GetLastError());
 
     /* this is the minimal dmSize that XP accepts */
     dmA.dmSize = FIELD_OFFSET(DEVMODEA, dmFields);
     dmW = pGdiConvertToDevmodeW(&dmA);
     ok(dmW->dmSize == FIELD_OFFSET(DEVMODEW, dmFields),
-       "expected %04lx, got %04x\n", FIELD_OFFSET(DEVMODEW, dmFields), dmW->dmSize);
+       "expected %04x, got %04x\n", FIELD_OFFSET(DEVMODEW, dmFields), dmW->dmSize);
     HeapFree(GetProcessHeap(), 0, dmW);
 }
 
@@ -364,6 +344,11 @@ static void test_device_caps( HDC hdc, HDC ref_dc, const char *descr, int scale 
                 "wrong caps on %s for %u: %u\n", descr, caps[i],
                 GetDeviceCaps( hdc, caps[i] ) );
 
+        SetLastError( 0xdeadbeef );
+        ret = GetDeviceGammaRamp( hdc, &ramp );
+        ok( !ret, "GetDeviceGammaRamp succeeded on %s\n", descr );
+        ok( GetLastError() == ERROR_INVALID_PARAMETER || broken(GetLastError() == 0xdeadbeef), /* nt4 */
+            "wrong error %u on %s\n", GetLastError(), descr );
         type = GetClipBox( hdc, &rect );
         ok( type == ERROR, "GetClipBox returned %d on %s\n", type, descr );
 
@@ -406,6 +391,17 @@ static void test_device_caps( HDC hdc, HDC ref_dc, const char *descr, int scale 
                 hdc_caps, GetDeviceCaps( ref_dc, caps[i] ), scale );
         }
 
+        SetLastError( 0xdeadbeef );
+        ret = GetDeviceGammaRamp( hdc, &ramp );
+        if (GetObjectType( hdc ) != OBJ_DC || GetDeviceCaps( hdc, TECHNOLOGY ) == DT_RASPRINTER)
+        {
+            ok( !ret, "GetDeviceGammaRamp succeeded on %s (type %d)\n", descr, GetObjectType( hdc ) );
+            ok( GetLastError() == ERROR_INVALID_PARAMETER || broken(GetLastError() == 0xdeadbeef), /* nt4 */
+                "wrong error %u on %s\n", GetLastError(), descr );
+        }
+        else
+            ok( ret || broken(!ret) /* NT4 */, "GetDeviceGammaRamp failed on %s (type %d), error %u\n", descr, GetObjectType( hdc ), GetLastError() );
+
         type = GetBoundsRect( hdc, &rect, 0 );
         ok( type == DCB_RESET || broken(type == DCB_SET) /* XP */,
             "GetBoundsRect returned type %x for %s\n", type, descr );
@@ -415,7 +411,7 @@ static void test_device_caps( HDC hdc, HDC ref_dc, const char *descr, int scale 
                 type, descr );
         type = SetBoundsRect( hdc, NULL, DCB_RESET | DCB_ENABLE );
         ok( type == (DCB_RESET | DCB_DISABLE) || broken(type == (DCB_SET | DCB_ENABLE)) /* XP */,
-            "SetBoundsRect returned %x for %s (hdc type %ld)\n", type, descr, GetObjectType( hdc ) );
+            "SetBoundsRect returned %x for %s (hdc type %d)\n", type, descr, GetObjectType( hdc ) );
 
         SetMapMode( hdc, MM_TEXT );
         Rectangle( hdc, 2, 2, 4, 4 );
@@ -496,6 +492,12 @@ static void test_device_caps( HDC hdc, HDC ref_dc, const char *descr, int scale 
                 "mismatched caps on %s and DIB for %u: %u/%u\n", descr, caps[i],
                 GetDeviceCaps( hdc, caps[i] ), GetDeviceCaps( ref_dc, caps[i] ) );
 
+        SetLastError( 0xdeadbeef );
+        ret = GetDeviceGammaRamp( hdc, &ramp );
+        ok( !ret, "GetDeviceGammaRamp succeeded on %s\n", descr );
+        ok( GetLastError() == ERROR_INVALID_PARAMETER || broken(GetLastError() == 0xdeadbeef), /* nt4 */
+            "wrong error %u on %s\n", GetLastError(), descr );
+
         type = GetClipBox( hdc, &rect );
         ok( type == SIMPLEREGION, "GetClipBox returned %d on memdc for %s\n", type, descr );
         ok( rect.left == 0 && rect.top == 0 && rect.right == 16 && rect.bottom == 16,
@@ -511,29 +513,6 @@ static void test_device_caps( HDC hdc, HDC ref_dc, const char *descr, int scale 
 
         SelectObject( hdc, old );
         DeleteObject( dib );
-    }
-
-    /* Memory DC, metafile DC and enhanced metafile DC support gamma ramp on Win10 1909+. Exclude
-     * these types from tests as they return different results depending on Windows versions */
-    if (GetObjectType( hdc ) != OBJ_MEMDC
-        && GetObjectType( hdc ) != OBJ_METADC
-        && GetObjectType( hdc ) != OBJ_ENHMETADC)
-    {
-        SetLastError( 0xdeadbeef );
-        ret = GetDeviceGammaRamp( hdc, &ramp );
-        if (GetObjectType( hdc ) != OBJ_DC || GetDeviceCaps( hdc, TECHNOLOGY ) == DT_RASPRINTER)
-        {
-            ok( !ret, "GetDeviceGammaRamp succeeded on %s (type %ld)\n", descr, GetObjectType( hdc ) );
-            ok( GetLastError() == ERROR_INVALID_PARAMETER
-                || broken(GetLastError() == 0xdeadbeef) /* nt4 */
-                || broken(GetLastError() == NO_ERROR), /* Printer DC on Win10 1909+ */
-                "wrong error %lu on %s\n", GetLastError(), descr );
-        }
-        else
-        {
-            ok( ret || broken(!ret) /* NT4 */, "GetDeviceGammaRamp failed on %s (type %ld), error %lu\n",
-                descr, GetObjectType( hdc ), GetLastError() );
-        }
     }
 
     /* restore hdc state */
@@ -612,8 +591,6 @@ static void test_CreateCompatibleDC(void)
 
     bitmap = CreateBitmap( 10, 10, 1, 1, NULL );
 
-    memset(&dm, 0, sizeof(dm));
-    dm.dmSize = sizeof(dm);
     bRet = EnumDisplaySettingsA(NULL, ENUM_CURRENT_SETTINGS, &dm);
     ok(bRet, "EnumDisplaySettingsEx failed\n");
     dm.u1.s1.dmScale = 200;
@@ -723,11 +700,11 @@ static void test_DC_bitmap(void)
     oldhbmp = SelectObject( hdcmem, hbmp);
     ok( oldhbmp != NULL, "SelectObject returned NULL\n" ); /* a memdc always has a bitmap selected */
     col = GetPixel( hdcmem, 0, 0);
-    ok( col == 0xffffff, "GetPixel returned %08lx, expected 00ffffff\n", col);
+    ok( col == 0xffffff, "GetPixel returned %08x, expected 00ffffff\n", col);
     col = GetPixel( hdcmem, 1, 1);
-    ok( col == 0x000000, "GetPixel returned %08lx, expected 00000000\n", col);
+    ok( col == 0x000000, "GetPixel returned %08x, expected 00000000\n", col);
     col = GetPixel( hdcmem, 100, 1);
-    ok( col == CLR_INVALID, "GetPixel returned %08lx, expected ffffffff\n", col);
+    ok( col == CLR_INVALID, "GetPixel returned %08x, expected ffffffff\n", col);
     SelectObject( hdcmem, oldhbmp);
     DeleteObject( hbmp);
 
@@ -748,10 +725,10 @@ static void test_DC_bitmap(void)
         ok( oldhbmp != NULL, "SelectObject returned NULL\n" );
         col = GetPixel( hdcmem, 0, 0);
         ok( col == 0xffffff,
-            "GetPixel of a bitmap with 16 bits/pixel returned %08lx, expected 00ffffff\n", col);
+            "GetPixel of a bitmap with 16 bits/pixel returned %08x, expected 00ffffff\n", col);
         col = GetPixel( hdcmem, 1, 1);
         ok( col == 0x000000,
-            "GetPixel of a bitmap with 16 bits/pixel returned returned %08lx, expected 00000000\n", col);
+            "GetPixel of a bitmap with 16 bits/pixel returned returned %08x, expected 00000000\n", col);
     }
     if( oldhbmp) SelectObject( hdcmem, oldhbmp);
     DeleteObject( hbmp);
@@ -764,10 +741,10 @@ static void test_DC_bitmap(void)
         ok( oldhbmp != NULL, "SelectObject returned NULL\n" );
         col = GetPixel( hdcmem, 0, 0);
         ok( col == 0xffffff,
-            "GetPixel of a bitmap with 32 bits/pixel returned %08lx, expected 00ffffff\n", col);
+            "GetPixel of a bitmap with 32 bits/pixel returned %08x, expected 00ffffff\n", col);
         col = GetPixel( hdcmem, 1, 1);
         ok( col == 0x000000,
-            "GetPixel of a bitmap with 32 bits/pixel returned returned %08lx, expected 00000000\n", col);
+            "GetPixel of a bitmap with 32 bits/pixel returned returned %08x, expected 00000000\n", col);
     }
     if( oldhbmp) SelectObject( hdcmem, oldhbmp);
     DeleteObject( hbmp);
@@ -1399,13 +1376,13 @@ static void test_printer_dc(void)
     ok( display_memdc != NULL, "CreateCompatibleDC failed for screen\n" );
 
     ret = GetDeviceCaps( hdc, TECHNOLOGY );
-    ok( ret == DT_RASPRINTER, "wrong type %lu\n", ret );
+    ok( ret == DT_RASPRINTER, "wrong type %u\n", ret );
 
     ret = GetDeviceCaps( memdc, TECHNOLOGY );
-    ok( ret == DT_RASPRINTER, "wrong type %lu\n", ret );
+    ok( ret == DT_RASPRINTER, "wrong type %u\n", ret );
 
     ret = GetDeviceCaps( display_memdc, TECHNOLOGY );
-    ok( ret == DT_RASDISPLAY, "wrong type %lu\n", ret );
+    ok( ret == DT_RASDISPLAY, "wrong type %u\n", ret );
 
     bmp = CreateBitmap( 100, 100, 1, GetDeviceCaps( hdc, BITSPIXEL ), NULL );
     orig = SelectObject( memdc, bmp );
@@ -1427,7 +1404,7 @@ static void test_printer_dc(void)
     ok( BitBlt( display_memdc, 10, 10, 20, 20, memdc, 0, 0, SRCCOPY ), "BitBlt failed\n" );
 
     ret = GetPixel( hdc, 0, 0 );
-    ok( ret == CLR_INVALID, "wrong pixel value %lx\n", ret );
+    ok( ret == CLR_INVALID, "wrong pixel value %x\n", ret );
 
     enhmf_dc = CreateEnhMetaFileA( hdc, NULL, NULL, NULL );
     ok(enhmf_dc != 0, "CreateEnhMetaFileA failed\n");
@@ -1463,12 +1440,12 @@ static void print_something(HDC hdc)
     di.lpszDatatype = NULL;
     di.fwType = 0;
     ret = StartDocA(hdc, &di);
-    ok(ret > 0, "StartDoc failed: %ld\n", ret);
+    ok(ret > 0, "StartDoc failed: %d\n", ret);
 
     strcpy(buf + 2, "\n% ===> before DOWNLOADHEADER <===\n");
     *(WORD *)buf = strlen(buf + 2);
     ret = Escape(hdc, POSTSCRIPT_PASSTHROUGH, 0, buf, NULL);
-    ok(ret == *(WORD *)buf, "POSTSCRIPT_PASSTHROUGH failed: %ld\n", ret);
+    ok(ret == *(WORD *)buf, "POSTSCRIPT_PASSTHROUGH failed: %d\n", ret);
 
     strcpy(buf, "deadbeef");
     ret = ExtEscape(hdc, DOWNLOADHEADER, 0, NULL, sizeof(buf), buf );
@@ -1478,7 +1455,7 @@ static void print_something(HDC hdc)
     strcpy(buf + 2, "\n% ===> after DOWNLOADHEADER <===\n");
     *(WORD *)buf = strlen(buf + 2);
     ret = Escape(hdc, POSTSCRIPT_PASSTHROUGH, 0, buf, NULL);
-    ok(ret == *(WORD *)buf, "POSTSCRIPT_PASSTHROUGH failed: %ld\n", ret);
+    ok(ret == *(WORD *)buf, "POSTSCRIPT_PASSTHROUGH failed: %d\n", ret);
 
     ret = EndDoc(hdc);
     ok(ret == 1, "EndDoc failed\n");
@@ -1558,40 +1535,6 @@ static void test_pscript_printer_dc(void)
     DeleteDC(hdc);
 }
 
-struct screen_region_info
-{
-    HRGN region;
-    INT type;
-};
-
-static BOOL CALLBACK enum_monitor_proc(HMONITOR monitor, HDC hdc, RECT *rect, LPARAM lparam)
-{
-    struct screen_region_info *info = (struct screen_region_info *)lparam;
-    HRGN region;
-
-    if (!info->region)
-    {
-        info->region = CreateRectRgnIndirect(rect);
-        info->type = SIMPLEREGION;
-    }
-    else
-    {
-        region = CreateRectRgnIndirect(rect);
-        info->type = CombineRgn(info->region, info->region, region, RGN_OR);
-        DeleteObject(region);
-    }
-    return TRUE;
-}
-
-static INT get_screen_region_type(void)
-{
-    struct screen_region_info info = {NULL, NULLREGION};
-
-    EnumDisplayMonitors(NULL, NULL, enum_monitor_proc, (LPARAM)&info);
-    DeleteObject(info.region);
-    return info.type;
-}
-
 static void test_clip_box(void)
 {
     DEVMODEA scale_mode = {.dmSize = sizeof(DEVMODEA)};
@@ -1607,7 +1550,7 @@ static void test_clip_box(void)
     SetRect(&screen_rect, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
             GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN),
             GetSystemMetrics(SM_YVIRTUALSCREEN) + GetSystemMetrics(SM_CYVIRTUALSCREEN));
-    screen_type = get_screen_region_type();
+    screen_type = GetSystemMetrics(SM_CMONITORS) > 1 ? COMPLEXREGION : SIMPLEREGION;
 
     dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
     type = GetClipBox(dc, &rect);
@@ -1690,15 +1633,6 @@ static void test_clip_box(void)
     DeleteObject(bitmap);
 }
 
-static void test_SetPixel(void)
-{
-    COLORREF c;
-
-    c = SetPixel((HDC)0xdeadbeef, 0, 0, 0);
-    ok(c == ~0, "SetPixel returned: %lx\n", c);
-}
-
-
 START_TEST(dc)
 {
     test_dc_values();
@@ -1715,5 +1649,4 @@ START_TEST(dc)
     test_printer_dc();
     test_pscript_printer_dc();
     test_clip_box();
-    test_SetPixel();
 }

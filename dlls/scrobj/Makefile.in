@@ -1,7 +1,7 @@
 MODULE    = scrobj.dll
 IMPORTS   = uuid urlmon ole32 oleaut32 xmllite advapi32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	scrobj.c

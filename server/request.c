@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -34,8 +35,12 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
+#ifdef HAVE_SYS_SOCKET_H
+# include <sys/socket.h>
+#endif
+#ifdef HAVE_SYS_WAIT_H
+# include <sys/wait.h>
+#endif
 #ifdef HAVE_SYS_UIO_H
 #include <sys/uio.h>
 #endif
@@ -43,7 +48,9 @@
 #include <sys/un.h>
 #endif
 #include <unistd.h>
+#ifdef HAVE_POLL_H
 #include <poll.h>
+#endif
 #ifdef __APPLE__
 # include <mach/mach_time.h>
 #endif
@@ -59,7 +66,6 @@
 #include "process.h"
 #include "thread.h"
 #include "security.h"
-#include "handle.h"
 #define WANT_REQUEST_HANDLERS
 #include "request.h"
 
@@ -85,8 +91,8 @@ static void master_socket_poll_event( struct fd *fd, int event );
 static const struct object_ops master_socket_ops =
 {
     sizeof(struct master_socket),  /* size */
-    &no_type,                      /* type */
     master_socket_dump,            /* dump */
+    no_get_type,                   /* get_type */
     no_add_queue,                  /* add_queue */
     NULL,                          /* remove_queue */
     NULL,                          /* signaled */
@@ -94,10 +100,9 @@ static const struct object_ops master_socket_ops =
     NULL,                          /* satisfied */
     no_signal,                     /* signal */
     no_get_fd,                     /* get_fd */
-    default_map_access,            /* map_access */
+    no_map_access,                 /* map_access */
     default_get_sd,                /* get_sd */
     default_set_sd,                /* set_sd */
-    no_get_full_name,              /* get_full_name */
     no_lookup_name,                /* lookup_name */
     no_link_name,                  /* link_name */
     NULL,                          /* unlink_name */
@@ -201,7 +206,7 @@ const struct object_attributes *get_req_object_attributes( const struct security
     }
     if (root && attr->rootdir && attr->name_len)
     {
-        if (!(*root = get_handle_obj( current->process, attr->rootdir, 0, NULL ))) return NULL;
+        if (!(*root = get_directory_obj( current->process, attr->rootdir ))) return NULL;
     }
     *sd = attr->sd_len ? (const struct security_descriptor *)(attr + 1) : NULL;
     name->len = attr->name_len;
@@ -519,8 +524,8 @@ int send_client_fd( struct process *process, int fd, obj_handle_t handle )
     return -1;
 }
 
-/* return a monotonic time counter */
-timeout_t monotonic_counter(void)
+/* get current tick count to return to client */
+unsigned int get_tick_count(void)
 {
 #ifdef __APPLE__
     static mach_timebase_info_data_t timebase;
@@ -528,19 +533,19 @@ timeout_t monotonic_counter(void)
     if (!timebase.denom) mach_timebase_info( &timebase );
 #ifdef HAVE_MACH_CONTINUOUS_TIME
     if (&mach_continuous_time != NULL)
-        return mach_continuous_time() * timebase.numer / timebase.denom / 100;
+        return mach_continuous_time() * timebase.numer / timebase.denom / 1000000;
 #endif
-    return mach_absolute_time() * timebase.numer / timebase.denom / 100;
+    return mach_absolute_time() * timebase.numer / timebase.denom / 1000000;
 #elif defined(HAVE_CLOCK_GETTIME)
     struct timespec ts;
 #ifdef CLOCK_MONOTONIC_RAW
     if (!clock_gettime( CLOCK_MONOTONIC_RAW, &ts ))
-        return (timeout_t)ts.tv_sec * TICKS_PER_SEC + ts.tv_nsec / 100;
+        return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #endif
     if (!clock_gettime( CLOCK_MONOTONIC, &ts ))
-        return (timeout_t)ts.tv_sec * TICKS_PER_SEC + ts.tv_nsec / 100;
+        return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #endif
-    return current_time - server_start_time;
+    return (current_time - server_start_time) / 10000;
 }
 
 static void master_socket_dump( struct object *obj, int verbose )
@@ -579,11 +584,7 @@ static void master_socket_poll_event( struct fd *fd, int event )
         int client = accept( get_unix_fd( master_socket->fd ), (struct sockaddr *) &dummy, &len );
         if (client == -1) return;
         fcntl( client, F_SETFL, O_NONBLOCK );
-<<<<<<< HEAD
         if ((process = create_process( client, NULL, 0, NULL, NULL )))
-=======
-        if ((process = create_process( client, NULL, 0, NULL, NULL, NULL, 0, NULL )))
->>>>>>> master
         {
             create_thread( -1, process, NULL );
             release_object( process );
@@ -871,7 +872,7 @@ static void acquire_lock(void)
         !(master_socket->fd = create_anonymous_fd( &master_socket_fd_ops, fd, &master_socket->obj, 0 )))
         fatal_error( "out of memory\n" );
     set_fd_events( master_socket->fd, POLLIN );
-    make_object_permanent( &master_socket->obj );
+    make_object_static( &master_socket->obj );
 }
 
 /* open the master server socket and start waiting for new clients */

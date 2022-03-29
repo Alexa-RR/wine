@@ -1,7 +1,6 @@
-EXTRADEFS = -D_CRTIMP=
+EXTRADEFS = -D_MT -D_MSVCR_VER=0
 MODULE    = msvcrtd.dll
 IMPORTLIB = msvcrtd
-IMPORTS   = ntdll
 PARENTSRC = ../msvcrt
 DELAYIMPORTS = advapi32 user32
 

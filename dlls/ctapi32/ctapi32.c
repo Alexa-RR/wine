@@ -18,79 +18,103 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
 #include <string.h>
-#include <stdarg.h>
-
+#include "wine/library.h"
+#include "wine/debug.h"
 #include "windef.h"
-#include "winbase.h"
 #include "winreg.h"
 #include "winnls.h"
-#include "unixlib.h"
-#include "wine/debug.h"
+#include "ctapi.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ctapi32);
 
 #define FALLBACK_LIBCTAPI "libctapi.so"
+static const WCHAR value_name[] = {'l','i','b','r','a','r','y',0};
 
-static unixlib_handle_t ctapi_handle;
 
-#define CTAPI_CALL( func, params ) __wine_unix_call( ctapi_handle, unix_ ## func, params )
+static IS8 (*pCT_init)(IU16 ctn, IU16 pn) = NULL;
+static IS8 (*pCT_data)(IU16 ctn, IU8 *dad, IU8 *sad, IU16 lenc, IU8 *command,
+	IU16 *lenr, IU8 *response) = NULL;
+static IS8 (*pCT_close)(IU16 ctn) = NULL;
+
+static void *ctapi_handle = NULL;
 
 
 static BOOL load_functions(void) {
-	char soname[MAX_PATH] = FALLBACK_LIBCTAPI;
+	char soname[MAX_PATH] = FALLBACK_LIBCTAPI, buffer[MAX_PATH];
 	LONG result;
 	HKEY key_handle;
 
+	if (pCT_init) /* loaded already */
+                return TRUE;
+
 	/* Try to get name of low level library from registry */
         /* @@ Wine registry key: HKCU\Software\Wine\ctapi32 */
-	result = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Wine\\ctapi32", 0, KEY_READ, &key_handle);
+	result = RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Wine\\ctapi32", 0, KEY_READ, &key_handle);
 	if (result == ERROR_SUCCESS) {
 		DWORD type, size;
 		WCHAR buffer_w[MAX_PATH];
 
 		size = sizeof(buffer_w) - sizeof(WCHAR);  /* Leave space for null termination */
-		result = RegQueryValueExW(key_handle, L"library", NULL, &type, (LPBYTE)buffer_w, &size);
+		result = RegQueryValueExW(key_handle, value_name, NULL, &type, (LPBYTE)buffer_w, &size);
 		if ((result == ERROR_SUCCESS) && (type == REG_SZ)) {
+			int len;
+
 			/* Null termination */
 			buffer_w[size / sizeof(WCHAR)] = '\0';
-			WideCharToMultiByte(CP_UNIXCP, 0, buffer_w, -1, soname, sizeof(soname), NULL, NULL);
+			len = WideCharToMultiByte(CP_UNIXCP, 0, buffer_w, -1, buffer, sizeof(buffer), NULL, NULL);
+			if (len)
+				memcpy(soname, buffer, len);
 		}
 		RegCloseKey(key_handle);
 	}
 
 	TRACE("Loading library '%s'\n", soname);
-        if (!CTAPI_CALL( attach, soname )) return TRUE;
+	ctapi_handle = wine_dlopen(soname, RTLD_NOW, NULL, 0);
+	if (ctapi_handle) {
+		TRACE("Successfully loaded '%s'\n", soname);
+	}
+	else {
+		MESSAGE("Wine cannot find any usable hardware library, ctapi32.dll not working.\n");
+		MESSAGE("Please create the key \"HKEY_CURRENT_USER\\Software\\Wine\\ctapi32\" in your registry\n");
+		MESSAGE("and set the value \"library\" to your library name (e.g. \"libctapi-cyberjack.so.1\" or \"/usr/lib/readers/libctapi.so\").\n");
+                return FALSE;
+	}
 
-	MESSAGE("Wine cannot find any usable hardware library, ctapi32.dll not working.\n");
-	MESSAGE("Please create the key \"HKEY_CURRENT_USER\\Software\\Wine\\ctapi32\" in your registry\n");
-	MESSAGE("and set the value \"library\" to your library name (e.g. \"libctapi-cyberjack.so.1\" or \"/usr/lib/readers/libctapi.so\").\n");
-	return FALSE;
+#define LOAD_FUNCPTR(f) if((p##f = wine_dlsym(ctapi_handle, #f, NULL, 0)) == NULL){WARN("Can't find symbol %s\n", #f); return FALSE;}
+LOAD_FUNCPTR(CT_init);
+LOAD_FUNCPTR(CT_data);
+LOAD_FUNCPTR(CT_close);
+#undef LOAD_FUNCPTR
+
+        return TRUE;
 }
 
 /*
  *  ct-API specific functions
  */
 
-IS8 WINAPI CT_init(IU16 ctn, IU16 pn)
+IS8 WINAPI WIN_CT_init(IU16 ctn, IU16 pn)
 {
-    struct ct_init_params params = { ctn, pn };
-
-    return CTAPI_CALL( ct_init, &params );
+	if (!pCT_init)
+		return ERR_HOST;
+	return pCT_init(ctn, pn);
 }
 
-IS8 WINAPI CT_data(IU16 ctn, IU8 *dad, IU8 *sad, IU16 lenc, IU8 *command, IU16 *lenr, IU8 *response)
+IS8 WINAPI WIN_CT_data(IU16 ctn, IU8 *dad, IU8 *sad, IU16 lenc, IU8 *command, IU16 *lenr, IU8 *response)
 {
-    struct ct_data_params params = { ctn, dad, sad, lenc, command, lenr, response };
-
-    return CTAPI_CALL( ct_data, &params );
+	if (!pCT_data)
+		return ERR_HOST;
+	return pCT_data(ctn, dad, sad, lenc, command, lenr, response);
 }
 
-IS8 WINAPI CT_close(IU16 ctn)
+IS8 WINAPI WIN_CT_close(IU16 ctn)
 {
-    struct ct_close_params params = { ctn };
-
-    return CTAPI_CALL( ct_close, &params );
+	if (!pCT_close)
+		return ERR_HOST;
+	return pCT_close(ctn);
 }
 
 /*
@@ -98,21 +122,19 @@ IS8 WINAPI CT_close(IU16 ctn)
  */
 BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    TRACE("%p,%lx,%p\n", hinstDLL, fdwReason, lpvReserved);
+    TRACE("%p,%x,%p\n", hinstDLL, fdwReason, lpvReserved);
 
     switch (fdwReason)
     {
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(hinstDLL);
-            if (NtQueryVirtualMemory( GetCurrentProcess(), hinstDLL, MemoryWineUnixFuncs,
-                                      &ctapi_handle, sizeof(ctapi_handle), NULL ))
-                return FALSE;
+            /* Try to load low-level library */
             if (!load_functions())
-		return FALSE;
+		return FALSE;  /* error */
             break;
         case DLL_PROCESS_DETACH:
             if (lpvReserved) break;
-            CTAPI_CALL( detach, NULL );
+            if (ctapi_handle) wine_dlclose(ctapi_handle, NULL, 0);
             break;
     }
 

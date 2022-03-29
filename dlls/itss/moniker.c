@@ -283,6 +283,8 @@ static HRESULT WINAPI ITS_IMonikerImpl_GetDisplayName(
     LPOLESTR* ppszDisplayName)
 {
     ITS_IMonikerImpl *This = impl_from_IMoniker(iface);
+    static const WCHAR szFormat[] = {
+        'm','s','-','i','t','s',':','%','s',':',':','%','s',0 };
     DWORD len;
     LPWSTR str;
 
@@ -290,7 +292,7 @@ static HRESULT WINAPI ITS_IMonikerImpl_GetDisplayName(
 
     len = lstrlenW( This->szFile ) + lstrlenW( This->szHtml );
     str = CoTaskMemAlloc( len*sizeof(WCHAR) );
-    swprintf( str, len, L"ms-its:%s::%s", This->szFile, This->szHtml );
+    swprintf( str, len, szFormat, This->szFile, This->szHtml );
 
     *ppszDisplayName = str;
     
@@ -429,7 +431,8 @@ static HRESULT WINAPI ITS_IParseDisplayNameImpl_ParseDisplayName(
     ULONG * pchEaten,
     IMoniker ** ppmkOut)
 {
-    static const WCHAR szPrefix[] = L"@MSITStore:";
+    static const WCHAR szPrefix[] = { 
+        '@','M','S','I','T','S','t','o','r','e',':',0 };
     const DWORD prefix_len = ARRAY_SIZE(szPrefix)-1;
     DWORD n;
 

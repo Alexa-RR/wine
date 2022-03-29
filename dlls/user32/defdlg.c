@@ -61,7 +61,7 @@ static void DEFDLG_SetFocus( HWND hwndCtrl )
 {
     if (SendMessageW( hwndCtrl, WM_GETDLGCODE, 0, 0 ) & DLGC_HASSETSEL)
         SendMessageW( hwndCtrl, EM_SETSEL, 0, -1 );
-    NtUserSetFocus( hwndCtrl );
+    SetFocus( hwndCtrl );
 }
 
 
@@ -102,7 +102,7 @@ static void DEFDLG_RestoreFocus( HWND hwnd, BOOL justActivate )
         if (!IsWindow( infoPtr->hwndFocus )) return;
     }
     if (justActivate)
-        NtUserSetFocus( infoPtr->hwndFocus );
+        SetFocus( infoPtr->hwndFocus );
     else
         DEFDLG_SetFocus( infoPtr->hwndFocus );
     infoPtr->hwndFocus = NULL;
@@ -259,7 +259,7 @@ static LRESULT DEFDLG_Proc( HWND hwnd, UINT msg, WPARAM wParam,
                 WND *wndPtr;
 
                 if (dlgInfo->hUserFont) DeleteObject( dlgInfo->hUserFont );
-                if (dlgInfo->hMenu) NtUserDestroyMenu( dlgInfo->hMenu );
+                if (dlgInfo->hMenu) DestroyMenu( dlgInfo->hMenu );
                 HeapFree( GetProcessHeap(), 0, dlgInfo );
 
                 wndPtr = WIN_GetPtr( hwnd );
@@ -379,7 +379,10 @@ out:
     return dlgInfo;
 }
 
-static LRESULT USER_DefDlgProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
+/***********************************************************************
+ *              DefDlgProcA (USER32.@)
+ */
+LRESULT WINAPI DefDlgProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
     DIALOGINFO *dlgInfo;
     DLGPROC dlgproc;
@@ -433,7 +436,11 @@ static LRESULT USER_DefDlgProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     return GetWindowLongPtrW( hwnd, DWLP_MSGRESULT );
 }
 
-static LRESULT USER_DefDlgProcW( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
+
+/***********************************************************************
+ *              DefDlgProcW (USER32.@)
+ */
+LRESULT WINAPI DefDlgProcW( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
     DIALOGINFO *dlgInfo;
     DLGPROC dlgproc;
@@ -485,28 +492,4 @@ static LRESULT USER_DefDlgProcW( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         return result;
 
     return GetWindowLongPtrW( hwnd, DWLP_MSGRESULT );
-}
-
-LRESULT WINAPI USER_DefDlgProc( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, BOOL unicode )
-{
-    if (unicode)
-        return USER_DefDlgProcW( hwnd, msg, wParam, lParam );
-    else
-        return USER_DefDlgProcA( hwnd, msg, wParam, lParam );
-}
-
-/***********************************************************************
- *              DefDlgProcA (USER32.@)
- */
-LRESULT WINAPI DefDlgProcA( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
-{
-    return user_api->pDefDlgProc( hwnd, msg, wParam, lParam, FALSE );
-}
-
-/***********************************************************************
- *              DefDlgProcW (USER32.@)
- */
-LRESULT WINAPI DefDlgProcW( HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam )
-{
-    return user_api->pDefDlgProc( hwnd, msg, wParam, lParam, TRUE );
 }

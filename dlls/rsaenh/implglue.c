@@ -32,8 +32,8 @@
 
 /* Function prototype copied from dlls/advapi32/crypt.c */
 BOOL WINAPI SystemFunction036(PVOID pbBuffer, ULONG dwLen);
-
-BOOL init_hash_impl(ALG_ID aiAlgid, BCRYPT_HASH_HANDLE *hash_handle)
+        
+BOOL init_hash_impl(ALG_ID aiAlgid, HASH_CONTEXT *pHashContext) 
 {
     BCRYPT_ALG_HANDLE provider;
     NTSTATUS status;
@@ -74,27 +74,27 @@ BOOL init_hash_impl(ALG_ID aiAlgid, BCRYPT_HASH_HANDLE *hash_handle)
 
     if (status) return FALSE;
 
-    status = BCryptCreateHash(provider, hash_handle, NULL, 0, NULL, 0, 0);
+    status = BCryptCreateHash(provider, &pHashContext->bcrypt_hash, NULL, 0, NULL, 0, 0);
     BCryptCloseAlgorithmProvider(provider, 0);
     return !status;
 }
 
-BOOL update_hash_impl(BCRYPT_HASH_HANDLE hash_handle, const BYTE *pbData, DWORD dwDataLen)
+BOOL update_hash_impl(HASH_CONTEXT *pHashContext, const BYTE *pbData, DWORD dwDataLen)
 {
-    BCryptHashData(hash_handle, (UCHAR*)pbData, dwDataLen, 0);
+    BCryptHashData(pHashContext->bcrypt_hash, (UCHAR*)pbData, dwDataLen, 0);
     return TRUE;
 }
 
-BOOL finalize_hash_impl(BCRYPT_HASH_HANDLE hash_handle, BYTE *pbHashValue)
+BOOL finalize_hash_impl(HASH_CONTEXT *pHashContext, BYTE *pbHashValue)
 {
-    BCryptFinishHash(hash_handle, pbHashValue, RSAENH_MAX_HASH_SIZE, 0);
-    BCryptDestroyHash(hash_handle);
+    BCryptFinishHash(pHashContext->bcrypt_hash, pbHashValue, RSAENH_MAX_HASH_SIZE, 0);
+    BCryptDestroyHash(pHashContext->bcrypt_hash);
     return TRUE;
 }
 
-BOOL duplicate_hash_impl(BCRYPT_HASH_HANDLE src_hash_handle, BCRYPT_HASH_HANDLE *dest_hash_handle)
+BOOL duplicate_hash_impl(const HASH_CONTEXT *pSrcHashContext, HASH_CONTEXT *pDestHashContext)
 {
-    return !BCryptDuplicateHash(src_hash_handle, dest_hash_handle, NULL, 0, 0);
+    return !BCryptDuplicateHash(pSrcHashContext->bcrypt_hash, &pDestHashContext->bcrypt_hash, NULL, 0, 0);
 }
 
 BOOL new_key_impl(ALG_ID aiAlgid, KEY_CONTEXT *pKeyContext, DWORD dwKeyLen) 

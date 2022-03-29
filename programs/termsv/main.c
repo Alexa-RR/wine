@@ -24,7 +24,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(termsv);
 
-static WCHAR termserviceW[] = L"TermService";
+static WCHAR termserviceW[] = {'T','e','r','m','S','e','r','v','i','c','e',0};
 
 static SERVICE_STATUS_HANDLE service_handle;
 static HANDLE stop_event;
@@ -51,7 +51,7 @@ static DWORD WINAPI service_handler( DWORD ctrl, DWORD event_type, LPVOID event_
         SetEvent( stop_event );
         return NO_ERROR;
     default:
-        WINE_FIXME( "got service ctrl %lx\n", ctrl );
+        WINE_FIXME( "got service ctrl %x\n", ctrl );
         status.dwCurrentState = SERVICE_RUNNING;
         SetServiceStatus( service_handle, &status );
         return NO_ERROR;

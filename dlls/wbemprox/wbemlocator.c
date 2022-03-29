@@ -56,7 +56,7 @@ static ULONG WINAPI wbem_locator_Release(
     if (!refs)
     {
         TRACE("destroying %p\n", wl);
-        free( wl );
+        heap_free( wl );
     }
     return refs;
 }
@@ -86,16 +86,21 @@ static HRESULT WINAPI wbem_locator_QueryInterface(
 
 static BOOL is_local_machine( const WCHAR *server )
 {
+    static const WCHAR dotW[] = {'.',0};
+    static const WCHAR localhostW[] = {'l','o','c','a','l','h','o','s','t',0};
     WCHAR buffer[MAX_COMPUTERNAME_LENGTH + 1];
     DWORD len = ARRAY_SIZE( buffer );
 
-    if (!server || !wcscmp( server, L"." ) || !wcsicmp( server, L"localhost" )) return TRUE;
+    if (!server || !wcscmp( server, dotW ) || !wcsicmp( server, localhostW )) return TRUE;
     if (GetComputerNameW( buffer, &len ) && !wcsicmp( server, buffer )) return TRUE;
     return FALSE;
 }
 
 static HRESULT parse_resource( const WCHAR *resource, WCHAR **server, WCHAR **namespace )
 {
+    static const WCHAR rootW[] = {'R','O','O','T',0};
+    static const WCHAR cimv2W[] = {'C','I','M','V','2',0};
+    static const WCHAR defaultW[] = {'D','E','F','A','U','L','T',0};
     HRESULT hr = WBEM_E_INVALID_NAMESPACE;
     const WCHAR *p, *q;
     unsigned int len;
@@ -113,7 +118,7 @@ static HRESULT parse_resource( const WCHAR *resource, WCHAR **server, WCHAR **na
         while (*q && *q != '\\' && *q != '/') q++;
         if (!*q) return WBEM_E_INVALID_NAMESPACE;
         len = q - p;
-        if (!(*server = malloc( (len + 1) * sizeof(WCHAR) )))
+        if (!(*server = heap_alloc( (len + 1) * sizeof(WCHAR) )))
         {
             hr = E_OUTOFMEMORY;
             goto done;
@@ -126,7 +131,7 @@ static HRESULT parse_resource( const WCHAR *resource, WCHAR **server, WCHAR **na
     p = q;
     while (*q && *q != '\\' && *q != '/') q++;
     len = q - p;
-    if (len >= ARRAY_SIZE( L"root" ) - 1 && wcsnicmp( L"root", p, len )) goto done;
+    if (len >= ARRAY_SIZE( rootW ) - 1 && wcsnicmp( rootW, p, len )) goto done;
     if (!*q)
     {
         hr = S_OK;
@@ -134,10 +139,12 @@ static HRESULT parse_resource( const WCHAR *resource, WCHAR **server, WCHAR **na
     }
     q++;
     len = lstrlenW( q );
-    if (!(*namespace = malloc( (len + 1) * sizeof(WCHAR) ))) hr = E_OUTOFMEMORY;
+    if (wcsicmp( q, cimv2W ) && wcsicmp( q, defaultW ))
+        goto done;
+    if (!(*namespace = heap_alloc( (len + 1) * sizeof(WCHAR) ))) hr = E_OUTOFMEMORY;
     else
     {
-        memcpy( *namespace, q, len * sizeof(WCHAR) );
+        memcpy( *namespace, p, len * sizeof(WCHAR) );
         (*namespace)[len] = 0;
         hr = S_OK;
     }
@@ -145,8 +152,8 @@ static HRESULT parse_resource( const WCHAR *resource, WCHAR **server, WCHAR **na
 done:
     if (hr != S_OK)
     {
-        free( *server );
-        free( *namespace );
+        heap_free( *server );
+        heap_free( *namespace );
     }
     return hr;
 }
@@ -159,14 +166,14 @@ static HRESULT WINAPI wbem_locator_ConnectServer(
     const BSTR Locale,
     LONG SecurityFlags,
     const BSTR Authority,
-    IWbemContext *context,
+    IWbemContext *pCtx,
     IWbemServices **ppNamespace)
 {
     HRESULT hr;
     WCHAR *server, *namespace;
 
-    TRACE( "%p, %s, %s, %s, %s, %#lx, %s, %p, %p)\n", iface, debugstr_w(NetworkResource), debugstr_w(User),
-           debugstr_w(Password), debugstr_w(Locale), SecurityFlags, debugstr_w(Authority), context, ppNamespace );
+    TRACE("%p, %s, %s, %s, %s, 0x%08x, %s, %p, %p)\n", iface, debugstr_w(NetworkResource), debugstr_w(User),
+          debugstr_w(Password), debugstr_w(Locale), SecurityFlags, debugstr_w(Authority), pCtx, ppNamespace);
 
     hr = parse_resource( NetworkResource, &server, &namespace );
     if (hr != S_OK) return hr;
@@ -174,8 +181,8 @@ static HRESULT WINAPI wbem_locator_ConnectServer(
     if (!is_local_machine( server ))
     {
         FIXME("remote computer not supported\n");
-        free( server );
-        free( namespace );
+        heap_free( server );
+        heap_free( namespace );
         return WBEM_E_TRANSPORT_FAILURE;
     }
     if (User || Password || Authority)
@@ -185,13 +192,13 @@ static HRESULT WINAPI wbem_locator_ConnectServer(
     if (SecurityFlags)
         FIXME("unsupported flags\n");
 
-    hr = WbemServices_create( namespace, context, (void **)ppNamespace );
-    free( namespace );
-    free( server );
+    hr = WbemServices_create( namespace, (void **)ppNamespace );
+    heap_free( namespace );
+    heap_free( server );
     if (SUCCEEDED( hr ))
         return WBEM_NO_ERROR;
 
-    return hr;
+    return WBEM_E_FAILED;
 }
 
 static const IWbemLocatorVtbl wbem_locator_vtbl =
@@ -208,7 +215,8 @@ HRESULT WbemLocator_create( LPVOID *ppObj )
 
     TRACE("(%p)\n", ppObj);
 
-    if (!(wl = malloc( sizeof(*wl) ))) return E_OUTOFMEMORY;
+    wl = heap_alloc( sizeof(*wl) );
+    if (!wl) return E_OUTOFMEMORY;
 
     wl->IWbemLocator_iface.lpVtbl = &wbem_locator_vtbl;
     wl->refs = 1;

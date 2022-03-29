@@ -68,7 +68,7 @@ static UINT CREATE_execute( struct tagMSIVIEW *view, MSIRECORD *record )
     if (cv->bIsTemp && !cv->hold)
         return ERROR_SUCCESS;
 
-    return msi_create_table( cv->db, cv->name, cv->col_info, persist, cv->hold );
+    return msi_create_table( cv->db, cv->name, cv->col_info, persist );
 }
 
 static UINT CREATE_close( struct tagMSIVIEW *view )
@@ -181,7 +181,7 @@ UINT CREATE_CreateView( MSIDATABASE *db, MSIVIEW **view, LPCWSTR table,
         if (!col->table)
             col->table = table;
 
-        if( !(col->type & MSITYPE_TEMPORARY) )
+        if( !col->temporary )
             temp = FALSE;
         else if ( col->type & MSITYPE_KEY )
             tempprim = TRUE;

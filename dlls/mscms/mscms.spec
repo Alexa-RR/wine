@@ -34,7 +34,7 @@
 @ stub DeviceRenameEvent
 @ stdcall DisassociateColorProfileFromDeviceA(str str str)
 @ stdcall DisassociateColorProfileFromDeviceW(wstr wstr wstr)
-@ stdcall -private DllCanUnloadNow()
+#@ stub DllCanUnloadNow
 #@ stub DllGetClassObject
 @ stdcall EnumColorProfilesA(str ptr ptr ptr ptr)
 @ stdcall EnumColorProfilesW(wstr ptr ptr ptr ptr)

@@ -19,6 +19,9 @@
  * rather more efficient than not having a name cache at all.
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include "nbnamecache.h"
 
 typedef struct _NBNameCacheNode

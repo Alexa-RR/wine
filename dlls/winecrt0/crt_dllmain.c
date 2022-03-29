@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#ifdef __WINE_PE_BUILD
+#ifdef _WIN32
 
 #include <stdarg.h>
 #include <stdio.h>

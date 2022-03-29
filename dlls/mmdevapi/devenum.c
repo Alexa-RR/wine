@@ -35,12 +35,32 @@
 #include "audioclient.h"
 #include "endpointvolume.h"
 #include "audiopolicy.h"
-#include "spatialaudioclient.h"
 
 #include "mmdevapi.h"
 #include "devpkey.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(mmdevapi);
+
+static const WCHAR software_mmdevapi[] =
+    { 'S','o','f','t','w','a','r','e','\\',
+      'M','i','c','r','o','s','o','f','t','\\',
+      'W','i','n','d','o','w','s','\\',
+      'C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\',
+      'M','M','D','e','v','i','c','e','s','\\',
+      'A','u','d','i','o',0};
+static const WCHAR reg_render[] =
+    { 'R','e','n','d','e','r',0 };
+static const WCHAR reg_capture[] =
+    { 'C','a','p','t','u','r','e',0 };
+static const WCHAR reg_devicestate[] =
+    { 'D','e','v','i','c','e','S','t','a','t','e',0 };
+static const WCHAR reg_properties[] =
+    { 'P','r','o','p','e','r','t','i','e','s',0 };
+static const WCHAR slashW[] = {'\\',0};
+static const WCHAR reg_out_nameW[] = {'D','e','f','a','u','l','t','O','u','t','p','u','t',0};
+static const WCHAR reg_vout_nameW[] = {'D','e','f','a','u','l','t','V','o','i','c','e','O','u','t','p','u','t',0};
+static const WCHAR reg_in_nameW[] = {'D','e','f','a','u','l','t','I','n','p','u','t',0};
+static const WCHAR reg_vin_nameW[] = {'D','e','f','a','u','l','t','V','o','i','c','e','I','n','p','u','t',0};
 
 static HKEY key_render;
 static HKEY key_capture;
@@ -59,15 +79,16 @@ typedef struct MMDevEnumImpl
     LONG ref;
 } MMDevEnumImpl;
 
+static MMDevEnumImpl *MMDevEnumerator;
+static MMDevice **MMDevice_head;
 static MMDevice *MMDevice_def_rec, *MMDevice_def_play;
+static DWORD MMDevice_count;
 static const IMMDeviceEnumeratorVtbl MMDevEnumVtbl;
 static const IMMDeviceCollectionVtbl MMDevColVtbl;
 static const IMMDeviceVtbl MMDeviceVtbl;
 static const IPropertyStoreVtbl MMDevPropVtbl;
 static const IMMEndpointVtbl MMEndpointVtbl;
 
-static MMDevEnumImpl enumerator;
-static struct list device_list = LIST_INIT(device_list);
 static IMMDevice info_device;
 
 typedef struct MMDevColImpl
@@ -107,7 +128,11 @@ static inline IPropertyBagImpl *impl_from_IPropertyBag(IPropertyBag *iface)
     return CONTAINING_RECORD(iface, IPropertyBagImpl, IPropertyBag_iface);
 }
 
-static const WCHAR propkey_formatW[] = L"{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X},%d";
+static const WCHAR propkey_formatW[] = {
+    '{','%','0','8','X','-','%','0','4','X','-',
+    '%','0','4','X','-','%','0','2','X','%','0','2','X','-',
+    '%','0','2','X','%','0','2','X','%','0','2','X','%','0','2','X',
+    '%','0','2','X','%','0','2','X','}',',','%','d',0 };
 
 static HRESULT MMDevPropStore_OpenPropKey(const GUID *guid, DWORD flow, HKEY *propkey)
 {
@@ -117,14 +142,14 @@ static HRESULT MMDevPropStore_OpenPropKey(const GUID *guid, DWORD flow, HKEY *pr
     StringFromGUID2(guid, buffer, 39);
     if ((ret = RegOpenKeyExW(flow == eRender ? key_render : key_capture, buffer, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, &key)) != ERROR_SUCCESS)
     {
-        WARN("Opening key %s failed with %lu\n", debugstr_w(buffer), ret);
+        WARN("Opening key %s failed with %u\n", debugstr_w(buffer), ret);
         return E_FAIL;
     }
-    ret = RegOpenKeyExW(key, L"Properties", 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, propkey);
+    ret = RegOpenKeyExW(key, reg_properties, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, propkey);
     RegCloseKey(key);
     if (ret != ERROR_SUCCESS)
     {
-        WARN("Opening key Properties failed with %lu\n", ret);
+        WARN("Opening key %s failed with %u\n", debugstr_w(reg_properties), ret);
         return E_FAIL;
     }
     return S_OK;
@@ -148,7 +173,7 @@ static HRESULT MMDevice_GetPropValue(const GUID *devguid, DWORD flow, REFPROPERT
     ret = RegGetValueW(regkey, NULL, buffer, RRF_RT_ANY, &type, NULL, &size);
     if (ret != ERROR_SUCCESS)
     {
-        WARN("Reading %s returned %ld\n", debugstr_w(buffer), ret);
+        WARN("Reading %s returned %d\n", debugstr_w(buffer), ret);
         RegCloseKey(regkey);
         PropVariantClear(pv);
         return S_OK;
@@ -159,32 +184,32 @@ static HRESULT MMDevice_GetPropValue(const GUID *devguid, DWORD flow, REFPROPERT
         case REG_SZ:
         {
             pv->vt = VT_LPWSTR;
-            pv->pwszVal = CoTaskMemAlloc(size);
-            if (!pv->pwszVal)
+            pv->u.pwszVal = CoTaskMemAlloc(size);
+            if (!pv->u.pwszVal)
                 hr = E_OUTOFMEMORY;
             else
-                RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_SZ, NULL, (BYTE*)pv->pwszVal, &size);
+                RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_SZ, NULL, (BYTE*)pv->u.pwszVal, &size);
             break;
         }
         case REG_DWORD:
         {
             pv->vt = VT_UI4;
-            RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_DWORD, NULL, (BYTE*)&pv->ulVal, &size);
+            RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_DWORD, NULL, (BYTE*)&pv->u.ulVal, &size);
             break;
         }
         case REG_BINARY:
         {
             pv->vt = VT_BLOB;
-            pv->blob.cbSize = size;
-            pv->blob.pBlobData = CoTaskMemAlloc(size);
-            if (!pv->blob.pBlobData)
+            pv->u.blob.cbSize = size;
+            pv->u.blob.pBlobData = CoTaskMemAlloc(size);
+            if (!pv->u.blob.pBlobData)
                 hr = E_OUTOFMEMORY;
             else
-                RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_BINARY, NULL, (BYTE*)pv->blob.pBlobData, &size);
+                RegGetValueW(regkey, NULL, buffer, RRF_RT_REG_BINARY, NULL, (BYTE*)pv->u.blob.pBlobData, &size);
             break;
         }
         default:
-            ERR("Unknown/unhandled type: %lu\n", type);
+            ERR("Unknown/unhandled type: %u\n", type);
             PropVariantClear(pv);
             break;
     }
@@ -210,19 +235,19 @@ static HRESULT MMDevice_SetPropValue(const GUID *devguid, DWORD flow, REFPROPERT
     {
         case VT_UI4:
         {
-            ret = RegSetValueExW(regkey, buffer, 0, REG_DWORD, (const BYTE*)&pv->ulVal, sizeof(DWORD));
+            ret = RegSetValueExW(regkey, buffer, 0, REG_DWORD, (const BYTE*)&pv->u.ulVal, sizeof(DWORD));
             break;
         }
         case VT_BLOB:
         {
-            ret = RegSetValueExW(regkey, buffer, 0, REG_BINARY, pv->blob.pBlobData, pv->blob.cbSize);
-            TRACE("Blob %p %lu\n", pv->blob.pBlobData, pv->blob.cbSize);
+            ret = RegSetValueExW(regkey, buffer, 0, REG_BINARY, pv->u.blob.pBlobData, pv->u.blob.cbSize);
+            TRACE("Blob %p %u\n", pv->u.blob.pBlobData, pv->u.blob.cbSize);
 
             break;
         }
         case VT_LPWSTR:
         {
-            ret = RegSetValueExW(regkey, buffer, 0, REG_SZ, (const BYTE*)pv->pwszVal, sizeof(WCHAR)*(1+lstrlenW(pv->pwszVal)));
+            ret = RegSetValueExW(regkey, buffer, 0, REG_SZ, (const BYTE*)pv->u.pwszVal, sizeof(WCHAR)*(1+lstrlenW(pv->u.pwszVal)));
             break;
         }
         default:
@@ -232,7 +257,7 @@ static HRESULT MMDevice_SetPropValue(const GUID *devguid, DWORD flow, REFPROPERT
             break;
     }
     RegCloseKey(regkey);
-    TRACE("Writing %s returned %lu\n", debugstr_w(buffer), ret);
+    TRACE("Writing %s returned %u\n", debugstr_w(buffer), ret);
     return hr;
 }
 
@@ -262,8 +287,9 @@ static HRESULT set_driver_prop_value(GUID *id, const EDataFlow flow, const PROPE
 static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD state, BOOL setdefault)
 {
     HKEY key, root;
-    MMDevice *device, *cur = NULL;
+    MMDevice *cur = NULL;
     WCHAR guidstr[39];
+    DWORD i;
 
     static const PROPERTYKEY deviceinterface_key = {
         {0x233164c8, 0x1b2c, 0x4c7d, {0xbc, 0x68, 0xb6, 0x71, 0x68, 0x7a, 0x25, 0x67}}, 1
@@ -273,8 +299,9 @@ static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD st
         {0xb3f8fa53, 0x0004, 0x438e, {0x90, 0x03, 0x51, 0xa4, 0x6e, 0x13, 0x9b, 0xfc}}, 2
     };
 
-    LIST_FOR_EACH_ENTRY(device, &device_list, MMDevice, entry)
+    for (i = 0; i < MMDevice_count; ++i)
     {
+        MMDevice *device = MMDevice_head[i];
         if (device->flow == flow && IsEqualGUID(&device->devguid, id)){
             cur = device;
             break;
@@ -293,7 +320,11 @@ static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD st
         InitializeCriticalSection(&cur->crst);
         cur->crst.DebugInfo->Spare[0] = (DWORD_PTR)(__FILE__ ": MMDevice.crst");
 
-        list_add_tail(&device_list, &cur->entry);
+        if (!MMDevice_head)
+            MMDevice_head = HeapAlloc(GetProcessHeap(), 0, sizeof(*MMDevice_head));
+        else
+            MMDevice_head = HeapReAlloc(GetProcessHeap(), 0, MMDevice_head, sizeof(*MMDevice_head)*(1+MMDevice_count));
+        MMDevice_head[MMDevice_count++] = cur;
     }else if(cur->ref > 0)
         WARN("Modifying an MMDevice with postitive reference count!\n");
 
@@ -314,18 +345,18 @@ static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD st
     if (RegCreateKeyExW(root, guidstr, 0, NULL, 0, KEY_WRITE|KEY_READ|KEY_WOW64_64KEY, NULL, &key, NULL) == ERROR_SUCCESS)
     {
         HKEY keyprop;
-        RegSetValueExW(key, L"DeviceState", 0, REG_DWORD, (const BYTE*)&state, sizeof(DWORD));
-        if (!RegCreateKeyExW(key, L"Properties", 0, NULL, 0, KEY_WRITE|KEY_READ|KEY_WOW64_64KEY, NULL, &keyprop, NULL))
+        RegSetValueExW(key, reg_devicestate, 0, REG_DWORD, (const BYTE*)&state, sizeof(DWORD));
+        if (!RegCreateKeyExW(key, reg_properties, 0, NULL, 0, KEY_WRITE|KEY_READ|KEY_WOW64_64KEY, NULL, &keyprop, NULL))
         {
             PROPVARIANT pv;
 
             pv.vt = VT_LPWSTR;
-            pv.pwszVal = name;
+            pv.u.pwszVal = name;
             MMDevice_SetPropValue(id, flow, (const PROPERTYKEY*)&DEVPKEY_Device_FriendlyName, &pv);
             MMDevice_SetPropValue(id, flow, (const PROPERTYKEY*)&DEVPKEY_DeviceInterface_FriendlyName, &pv);
             MMDevice_SetPropValue(id, flow, (const PROPERTYKEY*)&DEVPKEY_Device_DeviceDesc, &pv);
 
-            pv.pwszVal = guidstr;
+            pv.u.pwszVal = guidstr;
             MMDevice_SetPropValue(id, flow, &deviceinterface_key, &pv);
 
             set_driver_prop_value(id, flow, &devicepath_key);
@@ -333,7 +364,7 @@ static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD st
             if (FAILED(set_driver_prop_value(id, flow, &PKEY_AudioEndpoint_FormFactor)))
             {
                 pv.vt = VT_UI4;
-                pv.ulVal = (flow == eCapture) ? Microphone : Speakers;
+                pv.u.ulVal = (flow == eCapture) ? Microphone : Speakers;
 
                 MMDevice_SetPropValue(id, flow, &PKEY_AudioEndpoint_FormFactor, &pv);
             }
@@ -366,20 +397,18 @@ static MMDevice *MMDevice_Create(WCHAR *name, GUID *id, EDataFlow flow, DWORD st
     return cur;
 }
 
-HRESULT load_devices_from_reg(void)
+static HRESULT load_devices_from_reg(void)
 {
     DWORD i = 0;
     HKEY root, cur;
     LONG ret;
     DWORD curflow;
 
-    ret = RegCreateKeyExW(HKEY_LOCAL_MACHINE,
-            L"Software\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio", 0, NULL, 0,
-            KEY_WRITE|KEY_READ|KEY_WOW64_64KEY, NULL, &root, NULL);
+    ret = RegCreateKeyExW(HKEY_LOCAL_MACHINE, software_mmdevapi, 0, NULL, 0, KEY_WRITE|KEY_READ|KEY_WOW64_64KEY, NULL, &root, NULL);
     if (ret == ERROR_SUCCESS)
-        ret = RegCreateKeyExW(root, L"Capture", 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_capture, NULL);
+        ret = RegCreateKeyExW(root, reg_capture, 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_capture, NULL);
     if (ret == ERROR_SUCCESS)
-        ret = RegCreateKeyExW(root, L"Render", 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_render, NULL);
+        ret = RegCreateKeyExW(root, reg_render, 0, NULL, 0, KEY_READ|KEY_WRITE|KEY_WOW64_64KEY, NULL, &key_render, NULL);
     RegCloseKey(root);
     cur = key_capture;
     curflow = eCapture;
@@ -387,7 +416,7 @@ HRESULT load_devices_from_reg(void)
     {
         RegCloseKey(key_capture);
         key_render = key_capture = NULL;
-        WARN("Couldn't create key: %lu\n", ret);
+        WARN("Couldn't create key: %u\n", ret);
         return E_FAIL;
     }
 
@@ -416,12 +445,12 @@ HRESULT load_devices_from_reg(void)
             && SUCCEEDED(MMDevice_GetPropValue(&guid, curflow, (const PROPERTYKEY*)&DEVPKEY_Device_FriendlyName, &pv))
             && pv.vt == VT_LPWSTR)
         {
-            DWORD size_bytes = (lstrlenW(pv.pwszVal) + 1) * sizeof(WCHAR);
+            DWORD size_bytes = (lstrlenW(pv.u.pwszVal) + 1) * sizeof(WCHAR);
             WCHAR *name = HeapAlloc(GetProcessHeap(), 0, size_bytes);
-            memcpy(name, pv.pwszVal, size_bytes);
+            memcpy(name, pv.u.pwszVal, size_bytes);
             MMDevice_Create(name, &guid, curflow,
                     DEVICE_STATE_NOTPRESENT, FALSE);
-            CoTaskMemFree(pv.pwszVal);
+            CoTaskMemFree(pv.u.pwszVal);
         }
     } while (1);
 
@@ -448,8 +477,8 @@ static HRESULT set_format(MMDevice *dev)
     IAudioClient_Release(client);
 
     pv.vt = VT_BLOB;
-    pv.blob.cbSize = sizeof(WAVEFORMATEX) + fmt->cbSize;
-    pv.blob.pBlobData = (BYTE*)fmt;
+    pv.u.blob.cbSize = sizeof(WAVEFORMATEX) + fmt->cbSize;
+    pv.u.blob.pBlobData = (BYTE*)fmt;
     MMDevice_SetPropValue(&dev->devguid, dev->flow,
             &PKEY_AudioEngine_DeviceFormat, &pv);
     MMDevice_SetPropValue(&dev->devguid, dev->flow,
@@ -459,7 +488,7 @@ static HRESULT set_format(MMDevice *dev)
     return S_OK;
 }
 
-HRESULT load_driver_devices(EDataFlow flow)
+static HRESULT load_driver_devices(EDataFlow flow)
 {
     WCHAR **ids;
     GUID *guids;
@@ -488,8 +517,17 @@ HRESULT load_driver_devices(EDataFlow flow)
 
 static void MMDevice_Destroy(MMDevice *This)
 {
+    DWORD i;
     TRACE("Freeing %s\n", debugstr_w(This->drv_id));
-    list_remove(&This->entry);
+    /* Since this function is called at destruction time, reordering of the list is unimportant */
+    for (i = 0; i < MMDevice_count; ++i)
+    {
+        if (MMDevice_head[i] == This)
+        {
+            MMDevice_head[i] = MMDevice_head[--MMDevice_count];
+            break;
+        }
+    }
     This->crst.DebugInfo->Spare[0] = 0;
     DeleteCriticalSection(&This->crst);
     HeapFree(GetProcessHeap(), 0, This->drv_id);
@@ -529,7 +567,7 @@ static ULONG WINAPI MMDevice_AddRef(IMMDevice *iface)
     LONG ref;
 
     ref = InterlockedIncrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
@@ -539,7 +577,7 @@ static ULONG WINAPI MMDevice_Release(IMMDevice *iface)
     LONG ref;
 
     ref = InterlockedDecrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
@@ -548,14 +586,12 @@ static HRESULT WINAPI MMDevice_Activate(IMMDevice *iface, REFIID riid, DWORD cls
     HRESULT hr = E_NOINTERFACE;
     MMDevice *This = impl_from_IMMDevice(iface);
 
-    TRACE("(%p)->(%s, %lx, %p, %p)\n", iface, debugstr_guid(riid), clsctx, params, ppv);
+    TRACE("(%p)->(%s, %x, %p, %p)\n", iface, debugstr_guid(riid), clsctx, params, ppv);
 
     if (!ppv)
         return E_POINTER;
 
-    if (IsEqualIID(riid, &IID_IAudioClient) ||
-            IsEqualIID(riid, &IID_IAudioClient2) ||
-            IsEqualIID(riid, &IID_IAudioClient3)){
+    if (IsEqualIID(riid, &IID_IAudioClient)){
         hr = drvs.pGetAudioEndpoint(&This->devguid, iface, (IAudioClient**)ppv);
     }else if (IsEqualIID(riid, &IID_IAudioEndpointVolume) ||
             IsEqualIID(riid, &IID_IAudioEndpointVolumeEx))
@@ -620,24 +656,20 @@ static HRESULT WINAPI MMDevice_Activate(IMMDevice *iface, REFIID riid, DWORD cls
                 IDirectSoundCapture_Release((IDirectSoundCapture*)*ppv);
         }
     }
-    else if (IsEqualIID(riid, &IID_ISpatialAudioClient))
-    {
-        hr = SpatialAudioClient_Create(iface, (ISpatialAudioClient**)ppv);
-    }
     else
         ERR("Invalid/unknown iid %s\n", debugstr_guid(riid));
 
     if (FAILED(hr))
         *ppv = NULL;
 
-    TRACE("Returning %08lx\n", hr);
+    TRACE("Returning %08x\n", hr);
     return hr;
 }
 
 static HRESULT WINAPI MMDevice_OpenPropertyStore(IMMDevice *iface, DWORD access, IPropertyStore **ppv)
 {
     MMDevice *This = impl_from_IMMDevice(iface);
-    TRACE("(%p)->(%lx,%p)\n", This, access, ppv);
+    TRACE("(%p)->(%x,%p)\n", This, access, ppv);
 
     if (!ppv)
         return E_POINTER;
@@ -649,6 +681,11 @@ static HRESULT WINAPI MMDevice_GetId(IMMDevice *iface, WCHAR **itemid)
     MMDevice *This = impl_from_IMMDevice(iface);
     WCHAR *str;
     GUID *id = &This->devguid;
+    static const WCHAR formatW[] = { '{','0','.','0','.','%','u','.','0','0','0','0','0','0','0','0','}','.',
+                                     '{','%','0','8','X','-','%','0','4','X','-',
+                                     '%','0','4','X','-','%','0','2','X','%','0','2','X','-',
+                                     '%','0','2','X','%','0','2','X','%','0','2','X','%','0','2','X',
+                                     '%','0','2','X','%','0','2','X','}',0 };
 
     TRACE("(%p)->(%p)\n", This, itemid);
     if (!itemid)
@@ -656,10 +693,9 @@ static HRESULT WINAPI MMDevice_GetId(IMMDevice *iface, WCHAR **itemid)
     *itemid = str = CoTaskMemAlloc(56 * sizeof(WCHAR));
     if (!str)
         return E_OUTOFMEMORY;
-    wsprintfW(str, L"{0.0.%u.00000000}.{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-              This->flow, id->Data1, id->Data2, id->Data3,
-              id->Data4[0], id->Data4[1], id->Data4[2], id->Data4[3],
-              id->Data4[4], id->Data4[5], id->Data4[6], id->Data4[7]);
+    wsprintfW( str, formatW, This->flow, id->Data1, id->Data2, id->Data3,
+               id->Data4[0], id->Data4[1], id->Data4[2], id->Data4[3],
+               id->Data4[4], id->Data4[5], id->Data4[6], id->Data4[7] );
     TRACE("returning %s\n", wine_dbgstr_w(str));
     return S_OK;
 }
@@ -773,7 +809,7 @@ static ULONG WINAPI MMDevCol_AddRef(IMMDeviceCollection *iface)
 {
     MMDevColImpl *This = impl_from_IMMDeviceCollection(iface);
     LONG ref = InterlockedIncrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
@@ -781,7 +817,7 @@ static ULONG WINAPI MMDevCol_Release(IMMDeviceCollection *iface)
 {
     MMDevColImpl *This = impl_from_IMMDeviceCollection(iface);
     LONG ref = InterlockedDecrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     if (!ref)
         MMDevCol_Destroy(This);
     return ref;
@@ -790,15 +826,16 @@ static ULONG WINAPI MMDevCol_Release(IMMDeviceCollection *iface)
 static HRESULT WINAPI MMDevCol_GetCount(IMMDeviceCollection *iface, UINT *numdevs)
 {
     MMDevColImpl *This = impl_from_IMMDeviceCollection(iface);
-    MMDevice *cur;
+    DWORD i;
 
     TRACE("(%p)->(%p)\n", This, numdevs);
     if (!numdevs)
         return E_POINTER;
 
     *numdevs = 0;
-    LIST_FOR_EACH_ENTRY(cur, &device_list, MMDevice, entry)
+    for (i = 0; i < MMDevice_count; ++i)
     {
+        MMDevice *cur = MMDevice_head[i];
         if ((cur->flow == This->flow || This->flow == eAll)
             && (cur->state & This->state))
             ++(*numdevs);
@@ -809,15 +846,15 @@ static HRESULT WINAPI MMDevCol_GetCount(IMMDeviceCollection *iface, UINT *numdev
 static HRESULT WINAPI MMDevCol_Item(IMMDeviceCollection *iface, UINT n, IMMDevice **dev)
 {
     MMDevColImpl *This = impl_from_IMMDeviceCollection(iface);
-    MMDevice *cur;
-    DWORD i = 0;
+    DWORD i = 0, j = 0;
 
     TRACE("(%p)->(%u, %p)\n", This, n, dev);
     if (!dev)
         return E_POINTER;
 
-    LIST_FOR_EACH_ENTRY(cur, &device_list, MMDevice, entry)
+    for (j = 0; j < MMDevice_count; ++j)
     {
+        MMDevice *cur = MMDevice_head[j];
         if ((cur->flow == This->flow || This->flow == eAll)
             && (cur->state & This->state)
             && i++ == n)
@@ -843,17 +880,34 @@ static const IMMDeviceCollectionVtbl MMDevColVtbl =
 
 HRESULT MMDevEnum_Create(REFIID riid, void **ppv)
 {
-    return IMMDeviceEnumerator_QueryInterface(&enumerator.IMMDeviceEnumerator_iface, riid, ppv);
+    MMDevEnumImpl *This = MMDevEnumerator;
+
+    if (!This)
+    {
+        This = HeapAlloc(GetProcessHeap(), 0, sizeof(*This));
+        *ppv = NULL;
+        if (!This)
+            return E_OUTOFMEMORY;
+        This->ref = 1;
+        This->IMMDeviceEnumerator_iface.lpVtbl = &MMDevEnumVtbl;
+        MMDevEnumerator = This;
+
+        load_devices_from_reg();
+        load_driver_devices(eRender);
+        load_driver_devices(eCapture);
+    }
+    return IMMDeviceEnumerator_QueryInterface(&This->IMMDeviceEnumerator_iface, riid, ppv);
 }
 
 void MMDevEnum_Free(void)
 {
-    MMDevice *device, *next;
-    LIST_FOR_EACH_ENTRY_SAFE(device, next, &device_list, MMDevice, entry)
-        MMDevice_Destroy(device);
+    while (MMDevice_count)
+        MMDevice_Destroy(MMDevice_head[0]);
     RegCloseKey(key_render);
     RegCloseKey(key_capture);
     key_render = key_capture = NULL;
+    HeapFree(GetProcessHeap(), 0, MMDevEnumerator);
+    MMDevEnumerator = NULL;
 }
 
 static HRESULT WINAPI MMDevEnum_QueryInterface(IMMDeviceEnumerator *iface, REFIID riid, void **ppv)
@@ -878,7 +932,7 @@ static ULONG WINAPI MMDevEnum_AddRef(IMMDeviceEnumerator *iface)
 {
     MMDevEnumImpl *This = impl_from_IMMDeviceEnumerator(iface);
     LONG ref = InterlockedIncrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
@@ -886,14 +940,16 @@ static ULONG WINAPI MMDevEnum_Release(IMMDeviceEnumerator *iface)
 {
     MMDevEnumImpl *This = impl_from_IMMDeviceEnumerator(iface);
     LONG ref = InterlockedDecrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    if (!ref)
+        MMDevEnum_Free();
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
 static HRESULT WINAPI MMDevEnum_EnumAudioEndpoints(IMMDeviceEnumerator *iface, EDataFlow flow, DWORD mask, IMMDeviceCollection **devices)
 {
     MMDevEnumImpl *This = impl_from_IMMDeviceEnumerator(iface);
-    TRACE("(%p)->(%u,%lu,%p)\n", This, flow, mask, devices);
+    TRACE("(%p)->(%u,%u,%p)\n", This, flow, mask, devices);
     if (!devices)
         return E_POINTER;
     *devices = NULL;
@@ -928,7 +984,7 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
         return E_NOTFOUND;
 
     lstrcpyW(reg_key, drv_keyW);
-    lstrcatW(reg_key, L"\\");
+    lstrcatW(reg_key, slashW);
     lstrcatW(reg_key, drvs.module_name);
 
     if(RegOpenKeyW(HKEY_CURRENT_USER, reg_key, &key) == ERROR_SUCCESS){
@@ -937,11 +993,11 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
         DWORD size = sizeof(def_id), state;
 
         if(flow == eRender){
-            reg_x_name = L"DefaultOutput";
-            reg_vx_name = L"DefaultVoiceOutput";
+            reg_x_name = reg_out_nameW;
+            reg_vx_name = reg_vout_nameW;
         }else{
-            reg_x_name = L"DefaultInput";
-            reg_vx_name = L"DefaultVoiceInput";
+            reg_x_name = reg_in_nameW;
+            reg_vx_name = reg_vin_nameW;
         }
 
         if(role == eCommunications &&
@@ -990,28 +1046,31 @@ static HRESULT WINAPI MMDevEnum_GetDefaultAudioEndpoint(IMMDeviceEnumerator *ifa
 static HRESULT WINAPI MMDevEnum_GetDevice(IMMDeviceEnumerator *iface, const WCHAR *name, IMMDevice **device)
 {
     MMDevEnumImpl *This = impl_from_IMMDeviceEnumerator(iface);
-    MMDevice *impl;
+    DWORD i=0;
     IMMDevice *dev = NULL;
+
+    static const WCHAR wine_info_deviceW[] = {'W','i','n','e',' ',
+        'i','n','f','o',' ','d','e','v','i','c','e',0};
 
     TRACE("(%p)->(%s,%p)\n", This, debugstr_w(name), device);
 
     if(!name || !device)
         return E_POINTER;
 
-    if(!lstrcmpW(name, L"Wine info device")){
+    if(!lstrcmpW(name, wine_info_deviceW)){
         *device = &info_device;
         return S_OK;
     }
 
-    LIST_FOR_EACH_ENTRY(impl, &device_list, MMDevice, entry)
+    for (i = 0; i < MMDevice_count; ++i)
     {
         HRESULT hr;
         WCHAR *str;
-        dev = &impl->IMMDevice_iface;
+        dev = &MMDevice_head[i]->IMMDevice_iface;
         hr = IMMDevice_GetId(dev, &str);
         if (FAILED(hr))
         {
-            WARN("GetId failed: %08lx\n", hr);
+            WARN("GetId failed: %08x\n", hr);
             continue;
         }
 
@@ -1073,7 +1132,7 @@ static BOOL notify_if_changed(EDataFlow flow, ERole role, HKEY key,
             if(def_dev){
                 hr = IMMDevice_GetId(def_dev, &id);
                 if(FAILED(hr)){
-                    ERR("GetId failed: %08lx\n", hr);
+                    ERR("GetId failed: %08x\n", hr);
                     return FALSE;
                 }
             }else
@@ -1106,7 +1165,7 @@ static BOOL notify_if_changed(EDataFlow flow, ERole role, HKEY key,
     if(def_dev){
         hr = IMMDevice_GetId(def_dev, &id);
         if(FAILED(hr)){
-            ERR("GetId failed: %08lx\n", hr);
+            ERR("GetId failed: %08x\n", hr);
             return FALSE;
         }
     }else
@@ -1127,35 +1186,39 @@ static DWORD WINAPI notif_thread_proc(void *user)
     DWORD size;
 
     lstrcpyW(reg_key, drv_keyW);
-    lstrcatW(reg_key, L"\\");
+    lstrcatW(reg_key, slashW);
     lstrcatW(reg_key, drvs.module_name);
 
     if(RegCreateKeyExW(HKEY_CURRENT_USER, reg_key, 0, NULL, 0,
                 MAXIMUM_ALLOWED, NULL, &key, NULL) != ERROR_SUCCESS){
-        ERR("RegCreateKeyEx failed: %lu\n", GetLastError());
+        ERR("RegCreateKeyEx failed: %u\n", GetLastError());
         return 1;
     }
 
     size = sizeof(out_name);
-    if(RegQueryValueExW(key, L"DefaultOutput", 0, NULL, (BYTE*)out_name, &size) != ERROR_SUCCESS)
+    if(RegQueryValueExW(key, reg_out_nameW, 0, NULL,
+                (BYTE*)out_name, &size) != ERROR_SUCCESS)
         out_name[0] = 0;
 
     size = sizeof(vout_name);
-    if(RegQueryValueExW(key, L"DefaultVoiceOutput", 0, NULL, (BYTE*)vout_name, &size) != ERROR_SUCCESS)
+    if(RegQueryValueExW(key, reg_vout_nameW, 0, NULL,
+                (BYTE*)vout_name, &size) != ERROR_SUCCESS)
         vout_name[0] = 0;
 
     size = sizeof(in_name);
-    if(RegQueryValueExW(key, L"DefaultInput", 0, NULL, (BYTE*)in_name, &size) != ERROR_SUCCESS)
+    if(RegQueryValueExW(key, reg_in_nameW, 0, NULL,
+                (BYTE*)in_name, &size) != ERROR_SUCCESS)
         in_name[0] = 0;
 
     size = sizeof(vin_name);
-    if(RegQueryValueExW(key, L"DefaultVoiceInput", 0, NULL, (BYTE*)vin_name, &size) != ERROR_SUCCESS)
+    if(RegQueryValueExW(key, reg_vin_nameW, 0, NULL,
+                (BYTE*)vin_name, &size) != ERROR_SUCCESS)
         vin_name[0] = 0;
 
     while(1){
         if(RegNotifyChangeKeyValue(key, FALSE, REG_NOTIFY_CHANGE_LAST_SET,
                     NULL, FALSE) != ERROR_SUCCESS){
-            ERR("RegNotifyChangeKeyValue failed: %lu\n", GetLastError());
+            ERR("RegNotifyChangeKeyValue failed: %u\n", GetLastError());
             RegCloseKey(key);
             g_notif_thread = NULL;
             return 1;
@@ -1163,13 +1226,13 @@ static DWORD WINAPI notif_thread_proc(void *user)
 
         EnterCriticalSection(&g_notif_lock);
 
-        notify_if_changed(eRender, eConsole, key, L"DefaultOutput",
+        notify_if_changed(eRender, eConsole, key, reg_out_nameW,
                 out_name, &MMDevice_def_play->IMMDevice_iface);
-        notify_if_changed(eRender, eCommunications, key, L"DefaultVoiceOutput",
+        notify_if_changed(eRender, eCommunications, key, reg_vout_nameW,
                 vout_name, &MMDevice_def_play->IMMDevice_iface);
-        notify_if_changed(eCapture, eConsole, key, L"DefaultInput",
+        notify_if_changed(eCapture, eConsole, key, reg_in_nameW,
                 in_name, &MMDevice_def_rec->IMMDevice_iface);
-        notify_if_changed(eCapture, eCommunications, key, L"DefaultVoiceInput",
+        notify_if_changed(eCapture, eCommunications, key, reg_vin_nameW,
                 vin_name, &MMDevice_def_rec->IMMDevice_iface);
 
         LeaveCriticalSection(&g_notif_lock);
@@ -1205,7 +1268,7 @@ static HRESULT WINAPI MMDevEnum_RegisterEndpointNotificationCallback(IMMDeviceEn
     if(!g_notif_thread){
         g_notif_thread = CreateThread(NULL, 0, notif_thread_proc, NULL, 0, NULL);
         if(!g_notif_thread)
-            ERR("CreateThread failed: %lu\n", GetLastError());
+            ERR("CreateThread failed: %u\n", GetLastError());
     }
 
     LeaveCriticalSection(&g_notif_lock);
@@ -1251,12 +1314,6 @@ static const IMMDeviceEnumeratorVtbl MMDevEnumVtbl =
     MMDevEnum_UnregisterEndpointNotificationCallback
 };
 
-static MMDevEnumImpl enumerator =
-{
-    {&MMDevEnumVtbl},
-    1,
-};
-
 static HRESULT MMDevPropStore_Create(MMDevice *parent, DWORD access, IPropertyStore **ppv)
 {
     MMDevPropStore *This;
@@ -1264,7 +1321,7 @@ static HRESULT MMDevPropStore_Create(MMDevice *parent, DWORD access, IPropertySt
         && access != STGM_WRITE
         && access != STGM_READWRITE)
     {
-        WARN("Invalid access %08lx\n", access);
+        WARN("Invalid access %08x\n", access);
         return E_INVALIDARG;
     }
     This = HeapAlloc(GetProcessHeap(), 0, sizeof(*This));
@@ -1305,7 +1362,7 @@ static ULONG WINAPI MMDevPropStore_AddRef(IPropertyStore *iface)
 {
     MMDevPropStore *This = impl_from_IPropertyStore(iface);
     LONG ref = InterlockedIncrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     return ref;
 }
 
@@ -1313,7 +1370,7 @@ static ULONG WINAPI MMDevPropStore_Release(IPropertyStore *iface)
 {
     MMDevPropStore *This = impl_from_IPropertyStore(iface);
     LONG ref = InterlockedDecrement(&This->ref);
-    TRACE("Refcount now %li\n", ref);
+    TRACE("Refcount now %i\n", ref);
     if (!ref)
         MMDevPropStore_Destroy(This);
     return ref;
@@ -1341,7 +1398,7 @@ static HRESULT WINAPI MMDevPropStore_GetCount(IPropertyStore *iface, DWORD *npro
         i++;
     } while (1);
     RegCloseKey(propkey);
-    TRACE("Returning %li\n", i);
+    TRACE("Returning %i\n", i);
     *nprops = i;
     return S_OK;
 }
@@ -1354,7 +1411,7 @@ static HRESULT WINAPI MMDevPropStore_GetAt(IPropertyStore *iface, DWORD prop, PR
     HRESULT hr;
     HKEY propkey;
 
-    TRACE("(%p)->(%lu,%p)\n", iface, prop, key);
+    TRACE("(%p)->(%u,%p)\n", iface, prop, key);
     if (!key)
         return E_POINTER;
 
@@ -1365,7 +1422,7 @@ static HRESULT WINAPI MMDevPropStore_GetAt(IPropertyStore *iface, DWORD prop, PR
     if (RegEnumValueW(propkey, prop, buffer, &len, NULL, NULL, NULL, NULL) != ERROR_SUCCESS
         || len <= 39)
     {
-        WARN("GetAt %lu failed\n", prop);
+        WARN("GetAt %u failed\n", prop);
         return E_INVALIDARG;
     }
     RegCloseKey(propkey);
@@ -1378,7 +1435,7 @@ static HRESULT WINAPI MMDevPropStore_GetAt(IPropertyStore *iface, DWORD prop, PR
 static HRESULT WINAPI MMDevPropStore_GetValue(IPropertyStore *iface, REFPROPERTYKEY key, PROPVARIANT *pv)
 {
     MMDevPropStore *This = impl_from_IPropertyStore(iface);
-    TRACE("(%p)->(\"%s,%lu\", %p)\n", This, key ? debugstr_guid(&key->fmtid) : NULL, key ? key->pid : 0, pv);
+    TRACE("(%p)->(\"%s,%u\", %p)\n", This, key ? debugstr_guid(&key->fmtid) : NULL, key ? key->pid : 0, pv);
 
     if (!key || !pv)
         return E_POINTER;
@@ -1390,10 +1447,10 @@ static HRESULT WINAPI MMDevPropStore_GetValue(IPropertyStore *iface, REFPROPERTY
     if (IsEqualPropertyKey(*key, PKEY_AudioEndpoint_GUID))
     {
         pv->vt = VT_LPWSTR;
-        pv->pwszVal = CoTaskMemAlloc(39 * sizeof(WCHAR));
-        if (!pv->pwszVal)
+        pv->u.pwszVal = CoTaskMemAlloc(39 * sizeof(WCHAR));
+        if (!pv->u.pwszVal)
             return E_OUTOFMEMORY;
-        StringFromGUID2(&This->parent->devguid, pv->pwszVal, 39);
+        StringFromGUID2(&This->parent->devguid, pv->u.pwszVal, 39);
         return S_OK;
     }
 
@@ -1403,7 +1460,7 @@ static HRESULT WINAPI MMDevPropStore_GetValue(IPropertyStore *iface, REFPROPERTY
 static HRESULT WINAPI MMDevPropStore_SetValue(IPropertyStore *iface, REFPROPERTYKEY key, REFPROPVARIANT pv)
 {
     MMDevPropStore *This = impl_from_IPropertyStore(iface);
-    TRACE("(%p)->(\"%s,%lu\", %p)\n", This, key ? debugstr_guid(&key->fmtid) : NULL, key ? key->pid : 0, pv);
+    TRACE("(%p)->(\"%s,%u\", %p)\n", This, key ? debugstr_guid(&key->fmtid) : NULL, key ? key->pid : 0, pv);
 
     if (!key || !pv)
         return E_POINTER;
@@ -1464,9 +1521,10 @@ static ULONG WINAPI PB_Release(IPropertyBag *iface)
 
 static HRESULT WINAPI PB_Read(IPropertyBag *iface, LPCOLESTR name, VARIANT *var, IErrorLog *log)
 {
+    static const WCHAR dsguid[] = { 'D','S','G','u','i','d', 0 };
     IPropertyBagImpl *This = impl_from_IPropertyBag(iface);
     TRACE("Trying to read %s, type %u\n", debugstr_w(name), var->n1.n2.vt);
-    if (!lstrcmpW(name, L"DSGuid"))
+    if (!lstrcmpW(name, dsguid))
     {
         WCHAR guidstr[39];
         StringFromGUID2(&This->devguid, guidstr,ARRAY_SIZE(guidstr));
@@ -1506,7 +1564,7 @@ static ULONG WINAPI info_device_ps_Release(IPropertyStore *iface)
 static HRESULT WINAPI info_device_ps_GetValue(IPropertyStore *iface,
         REFPROPERTYKEY key, PROPVARIANT *pv)
 {
-    TRACE("(static)->(\"%s,%lu\", %p)\n", debugstr_guid(&key->fmtid), key ? key->pid : 0, pv);
+    TRACE("(static)->(\"%s,%u\", %p)\n", debugstr_guid(&key->fmtid), key ? key->pid : 0, pv);
 
     if (!key || !pv)
         return E_POINTER;
@@ -1515,10 +1573,10 @@ static HRESULT WINAPI info_device_ps_GetValue(IPropertyStore *iface,
     {
         INT size = (lstrlenW(drvs.module_name) + 1) * sizeof(WCHAR);
         pv->vt = VT_LPWSTR;
-        pv->pwszVal = CoTaskMemAlloc(size);
-        if (!pv->pwszVal)
+        pv->u.pwszVal = CoTaskMemAlloc(size);
+        if (!pv->u.pwszVal)
             return E_OUTOFMEMORY;
-        memcpy(pv->pwszVal, drvs.module_name, size);
+        memcpy(pv->u.pwszVal, drvs.module_name, size);
         return S_OK;
     }
 
@@ -1554,7 +1612,7 @@ static ULONG WINAPI info_device_Release(IMMDevice *iface)
 static HRESULT WINAPI info_device_OpenPropertyStore(IMMDevice *iface,
         DWORD access, IPropertyStore **ppv)
 {
-    TRACE("(static)->(%lx, %p)\n", access, ppv);
+    TRACE("(static)->(%x, %p)\n", access, ppv);
     *ppv = &info_device_ps;
     return S_OK;
 }

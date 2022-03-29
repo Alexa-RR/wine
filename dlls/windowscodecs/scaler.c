@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 
 #define COBJMACROS
@@ -89,7 +91,7 @@ static ULONG WINAPI BitmapScaler_AddRef(IWICBitmapScaler *iface)
     BitmapScaler *This = impl_from_IWICBitmapScaler(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     return ref;
 }
@@ -99,7 +101,7 @@ static ULONG WINAPI BitmapScaler_Release(IWICBitmapScaler *iface)
     BitmapScaler *This = impl_from_IWICBitmapScaler(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) refcount=%lu\n", iface, ref);
+    TRACE("(%p) refcount=%u\n", iface, ref);
 
     if (ref == 0)
     {

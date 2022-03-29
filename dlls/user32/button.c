@@ -121,9 +121,10 @@ static const pfPaint btnPaintFunc[MAX_BTN_TYPE] =
 /*********************************************************************
  * button class descriptor
  */
+static const WCHAR buttonW[] = {'B','u','t','t','o','n',0};
 const struct builtin_class_descr BUTTON_builtin_class =
 {
-    L"Button",           /* name */
+    buttonW,             /* name */
     CS_DBLCLKS | CS_VREDRAW | CS_HREDRAW | CS_PARENTDC, /* style  */
     WINPROC_BUTTON,      /* proc */
     NB_EXTRA_BYTES,      /* extra */
@@ -164,7 +165,7 @@ static inline void paint_button( HWND hwnd, LONG style, UINT action )
     {
         HDC hdc = GetDC( hwnd );
         btnPaintFunc[style]( hwnd, hdc, action );
-        NtUserReleaseDC( hwnd, hdc );
+        ReleaseDC( hwnd, hdc );
     }
 }
 
@@ -173,7 +174,7 @@ static inline WCHAR *get_button_text( HWND hwnd )
 {
     static const INT len = 512;
     WCHAR *buffer = HeapAlloc( GetProcessHeap(), 0, (len + 1) * sizeof(WCHAR) );
-    if (buffer) NtUserInternalGetWindowText( hwnd, buffer, len + 1 );
+    if (buffer) InternalGetWindowText( hwnd, buffer, len + 1 );
     return buffer;
 }
 
@@ -246,14 +247,14 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
-        HDC hdc = wParam ? (HDC)wParam : NtUserBeginPaint( hWnd, &ps );
+        HDC hdc = wParam ? (HDC)wParam : BeginPaint( hWnd, &ps );
         if (btnPaintFunc[btn_type])
         {
             int nOldMode = SetBkMode( hdc, OPAQUE );
             (btnPaintFunc[btn_type])( hWnd, hdc, ODA_DRAWENTIRE );
             SetBkMode(hdc, nOldMode); /*  reset painting mode */
         }
-        if (!wParam) NtUserEndPaint( hWnd, &ps );
+        if ( !wParam ) EndPaint( hWnd, &ps );
         break;
     }
 
@@ -262,7 +263,7 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
 	{
 	    SendMessageW( hWnd, BM_SETSTATE, TRUE, 0 );
             set_button_state( hWnd, get_button_state( hWnd ) | BUTTON_BTNPRESSED );
-            NtUserSetCapture( hWnd );
+            SetCapture( hWnd );
 	}
 	break;
 
@@ -277,8 +278,8 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
         }
         /* fall through */
     case WM_LBUTTONDOWN:
-        NtUserSetCapture( hWnd );
-        NtUserSetFocus( hWnd );
+        SetCapture( hWnd );
+        SetFocus( hWnd );
         set_button_state( hWnd, get_button_state( hWnd ) | BUTTON_BTNPRESSED );
         SendMessageW( hWnd, BM_SETSTATE, TRUE, 0 );
         break;
@@ -376,7 +377,7 @@ LRESULT ButtonWndProc_common(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
             if (rc.right > client.right) rc.right = client.right;
             if (rc.bottom > client.bottom) rc.bottom = client.bottom;
             FillRect(hdc, &rc, hbrush);
-            NtUserReleaseDC( hWnd, hdc );
+            ReleaseDC(hWnd, hdc);
         }
 
         if (unicode) DefWindowProcW( hWnd, WM_SETTEXT, wParam, lParam );

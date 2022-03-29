@@ -1035,10 +1035,10 @@ struct RTFTable
 	int numCellsInserted;
 
 	/* v4.1 */
-	/* row_start may be the start row paragraph of the table row,
+	/* tableRowStart may be the start row paragraph of the table row,
 	 * or it may store the end of the previous row if it may still be
 	 * continued, otherwise NULL is stored. */
-	ME_Paragraph *row_start;
+	ME_DisplayItem *tableRowStart;
 
 	/* Table definitions are stored as a stack to support nested tables. */
 	RTFTable *parent;
@@ -1077,6 +1077,13 @@ struct RTFTable
 # define RTFBorderCellLeft       0x31
 # define RTFBorderCellBottom     0x32
 # define RTFBorderCellRight      0x33
+
+/*
+ * Return pointer to new element of type t, or NULL
+ * if no memory available.
+ */
+
+# define        New(t)  (heap_alloc (sizeof (t)))
 
 /* Parser stack size */
 

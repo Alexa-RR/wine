@@ -1,16 +1,12 @@
 MODULE    = mountmgr.sys
-UNIXLIB   = mountmgr.so
 IMPORTS   = uuid advapi32 ntoskrnl
-DELAYIMPORTS = user32
-EXTRAINCL = $(DBUS_CFLAGS) $(HAL_CFLAGS)
-EXTRALIBS = $(DISKARBITRATION_LIBS) $(SYSTEMCONFIGURATION_LIBS) $(CORESERVICES_LIBS) $(SECURITY_LIBS)
-
+DELAYIMPORTS = user32 iphlpapi
 EXTRADLLFLAGS = -Wl,--subsystem,native
+EXTRAINCL = $(DBUS_CFLAGS) $(HAL_CFLAGS)
+EXTRALIBS = $(DISKARBITRATION_LIBS) $(SYSTEMCONFIGURATION_LIBS) $(CORESERVICES_LIBS)
 
 C_SRCS = \
-	cred.c \
 	dbus.c \
 	device.c \
 	diskarb.c \
-	mountmgr.c \
-	unixlib.c
+	mountmgr.c

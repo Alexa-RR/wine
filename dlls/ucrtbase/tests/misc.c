@@ -87,8 +87,7 @@ typedef struct {
     const char *short_date;
     const char *date;
     const char *time;
-    int unk;
-    int refcount;
+    int  unk[2];
     const wchar_t *short_wdayW[7];
     const wchar_t *wdayW[7];
     const wchar_t *short_monW[12];
@@ -101,17 +100,12 @@ typedef struct {
     const wchar_t *locnameW;
 } __lc_time_data;
 
-typedef void (__cdecl *_se_translator_function)(unsigned int code, struct _EXCEPTION_POINTERS *info);
-
 static LONGLONG crt_init_end;
 
 _ACRTIMP int __cdecl _o__initialize_onexit_table(_onexit_table_t *table);
 _ACRTIMP int __cdecl _o__register_onexit_function(_onexit_table_t *table, _onexit_t func);
 _ACRTIMP int __cdecl _o__execute_onexit_table(_onexit_table_t *table);
 _ACRTIMP void *__cdecl _o_malloc(size_t);
-_se_translator_function __cdecl _set_se_translator(_se_translator_function func);
-void** __cdecl __current_exception(void);
-int* __cdecl __processing_throw(void);
 
 static void test__initialize_onexit_table(void)
 {
@@ -336,33 +330,6 @@ static void test___fpe_flt_rounds(void)
     ok((_controlfp(_RC_CHOP, _RC_CHOP) & _RC_CHOP) == _RC_CHOP, "_controlfp(_RC_CHOP, _RC_CHOP) failed\n");
     ret = __fpe_flt_rounds();
     ok(ret == 0, "__fpe_flt_rounds returned %d\n", ret);
-
-    _controlfp(cfp, _MCW_EM | _MCW_RC | _MCW_PC);
-}
-
-static void test__control87_2(void)
-{
-#ifdef __i386__
-    unsigned int x86_cw_init, sse2_cw_init, x86_cw, sse2_cw, r;
-
-    r = __control87_2(0, 0, &x86_cw_init, &sse2_cw_init);
-    ok(r == 1, "__control87_2 returned %d\n", r);
-
-    r = __control87_2(0, _EM_INVALID, &x86_cw, NULL);
-    ok(r == 1, "__control87_2 returned %d\n", r);
-    ok(x86_cw == (x86_cw_init & ~_EM_INVALID), "x86_cw = %x, x86_cw_init = %x\n", x86_cw, x86_cw_init);
-
-    r = __control87_2(0, 0, &x86_cw, &sse2_cw);
-    ok(r == 1, "__control87_2 returned %d\n", r);
-    ok(x86_cw == (x86_cw_init & ~_EM_INVALID), "x86_cw = %x, x86_cw_init = %x\n", x86_cw, x86_cw_init);
-    ok(sse2_cw == sse2_cw_init, "sse2_cw = %x, sse2_cw_init = %x\n", sse2_cw, sse2_cw_init);
-
-    r = _control87(0, 0);
-    ok(r == (x86_cw | sse2_cw | _EM_AMBIGUOUS), "r = %x, expected %x\n",
-            r, x86_cw | sse2_cw | _EM_AMBIGUOUS);
-
-    _control87(x86_cw_init, ~0);
-#endif
 }
 
 static void __cdecl global_invalid_parameter_handler(
@@ -521,36 +488,26 @@ static void test__sopen_s(void)
 
 static void test_lldiv(void)
 {
+    static lldiv_t* (CDECL *p_lldiv)(lldiv_t*,LONGLONG,LONGLONG) = (void*)lldiv;
     lldiv_t r;
 
-    r = lldiv(((LONGLONG)0x111 << 32) + 0x222, (LONGLONG)1 << 32);
+    p_lldiv(&r, (LONGLONG)0x111 << 32 | 0x222, (LONGLONG)1 << 32);
     ok(r.quot == 0x111, "quot = %s\n", wine_dbgstr_longlong(r.quot));
     ok(r.rem == 0x222, "rem = %s\n", wine_dbgstr_longlong(r.rem));
-
-    r = lldiv(((LONGLONG)0x69CF0012 << 32) + 0x0033E78A, 0x30);
-    ok(r.quot == ((LONGLONG)0x02345000 << 32) + 0x600114D2, "quot = %s\n", wine_dbgstr_longlong(r.quot));
-    ok(r.rem == 0x2A, "rem = %s\n", wine_dbgstr_longlong(r.rem));
-
-    r = lldiv(((LONGLONG)0x243A5678 << 32) + 0x9ABCDEF0, (LONGLONG)0x12 << 48);
-    ok(r.quot == 0x0203, "quot = %s\n", wine_dbgstr_longlong(r.quot));
-    ok(r.rem == ((LONGLONG)0x00045678 << 32) + 0x9ABCDEF0, "rem = %s\n", wine_dbgstr_longlong(r.rem));
 }
 
 static void test_isblank(void)
 {
-    int c, r;
+    int c;
 
     for(c = 0; c <= 0xff; c++) {
-        if(c == '\t') {
-            ok(!_isctype(c, _BLANK), "tab shouldn't be blank\n");
+        if(c == '\t' || c == ' ') {
+            if(c == '\t')
+                ok(!_isctype(c, _BLANK), "tab shouldn't be blank\n");
+            else
+                ok(_isctype(c, _BLANK), "space should be blank\n");
             ok(isblank(c), "%d should be blank\n", c);
-            r = _isblank_l(c, NULL);
-            ok(!r || broken(r == _BLANK), "tab shouldn't be blank (got %x)\n", r);
-        } else if(c == ' ') {
-            ok(_isctype(c, _BLANK), "space should be blank\n");
-            ok(isblank(c), "%d should be blank\n", c);
-            r = _isblank_l(c, NULL);
-            ok(r == _BLANK, "space should be blank (got %x)\n", r);
+            ok(_isblank_l(c, NULL), "%d should be blank\n", c);
         } else {
             ok(!_isctype(c, _BLANK), "%d shouldn't be blank\n", c);
             ok(!isblank(c), "%d shouldn't be blank\n", c);
@@ -561,15 +518,17 @@ static void test_isblank(void)
     for(c = 0; c <= 0xffff; c++) {
         if(c == '\t' || c == ' ' || c == 0x3000 || c == 0xfeff) {
             if(c == '\t')
-                ok(!_iswctype_l(c, _BLANK, NULL), "tab shouldn't be blank\n");
+                todo_wine ok(!_iswctype_l(c, _BLANK, NULL), "tab shouldn't be blank\n");
             else
                 ok(_iswctype_l(c, _BLANK, NULL), "%d should be blank\n", c);
             ok(iswblank(c), "%d should be blank\n", c);
             ok(_iswblank_l(c, NULL), "%d should be blank\n", c);
         } else {
-            ok(!_iswctype_l(c, _BLANK, NULL), "%d shouldn't be blank\n", c);
-            ok(!iswblank(c), "%d shouldn't be blank\n", c);
-            ok(!_iswblank_l(c, NULL), "%d shouldn't be blank\n", c);
+            todo_wine_if(c == 0xa0) {
+                ok(!_iswctype_l(c, _BLANK, NULL), "%d shouldn't be blank\n", c);
+                ok(!iswblank(c), "%d shouldn't be blank\n", c);
+                ok(!_iswblank_l(c, NULL), "%d shouldn't be blank\n", c);
+            }
         }
     }
 }
@@ -579,9 +538,6 @@ static struct _exception exception;
 static int CDECL matherr_callback(struct _exception *e)
 {
     exception = *e;
-
-    if (!strcmp(e->name, "acos") && e->arg1 == 2)
-        e->retval = -1;
     return 0;
 }
 
@@ -755,7 +711,6 @@ static void test_math_errors(void)
     double (CDECL *p_func3d)(double, double, double);
     double (CDECL *p_funcdl)(double, long);
     HMODULE module;
-    double d;
     int i;
 
     __setusermatherr(matherr_callback);
@@ -799,7 +754,7 @@ static void test_math_errors(void)
         errno = -1;
         exception.type = -1;
         p_func3d(tests3d[i].a, tests3d[i].b, tests3d[i].c);
-        ok(errno == tests3d[i].error || errno == -1, /* native is not setting errno if FMA3 is supported */
+        ok(errno == tests3d[i].error,
            "%s(%f, %f, %f) got errno %d\n", tests3d[i].func, tests3d[i].a, tests3d[i].b, tests3d[i].c, errno);
         ok(exception.type == tests3d[i].exception,
            "%s(%f, %f, %f) got exception type %d\n", tests3d[i].func, tests3d[i].a, tests3d[i].b, tests3d[i].c, exception.type);
@@ -825,9 +780,6 @@ static void test_math_errors(void)
         ok(exception.arg2 == testsdl[i].b,
            "%s(%f, %ld) got exception arg2 %f\n", testsdl[i].func, testsdl[i].a, testsdl[i].b, exception.arg2);
     }
-
-    d = acos(2.0);
-    ok(d == -1.0, "failed to change log10 return value: %e\n", d);
 }
 
 static void test_asctime(void)
@@ -1041,7 +993,7 @@ static void test_strftime(void)
         { "day1", "day2", "day3", "day4", "day5", "day6", "day7" },
         { "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10", "m11", "m12" },
         { "mon1", "mon2", "mon3", "mon4", "mon5", "mon6", "mon7", "mon8", "mon9", "mon10", "mon11", "mon12" },
-        "tam", "tpm", 0, 0, 0, 1, 0,
+        "tam", "tpm", 0, 0, 0, { 1, 0 },
         { L"D1", L"D2", L"D3", L"D4", L"D5", L"D6", L"D7" },
         { L"Day1", L"Day2", L"Day3", L"Day4", L"Day5", L"Day6", L"Day7" },
         { L"M1", L"M2", L"M3", L"M4", L"M5", L"M6", L"M7", L"M8", L"M9", L"M10", L"M11", L"M12" },
@@ -1115,15 +1067,6 @@ static void test_strftime(void)
     ok(ret == 8, "ret = %d\n", ret);
     ok(!strcmp(buf, "00:00:00"), "buf = \"%s\", expected \"%s\"\n", buf, "00:00:00");
     setlocale(LC_ALL, "C");
-
-    if(!setlocale(LC_TIME, "Japanese_Japan.932")) {
-        win_skip("Japanese_Japan.932 locale not available\n");
-        return;
-    }
-    ret = strftime(buf, sizeof(buf), "%a", &epoch);
-    ok(ret == 2 || broken(ret == 1), "ret = %d\n", ret);
-    ok(!strcmp(buf, "\x96\xd8"), "buf = %s, expected \"\\x96\\xd8\"\n", wine_dbgstr_an(buf, 2));
-    setlocale(LC_ALL, "C");
 }
 
 static LONG* get_failures_counter(HANDLE *map)
@@ -1168,17 +1111,17 @@ static void test_exit(const char *argv0)
     ret = WaitForSingleObject(proc.hProcess, INFINITE);
     ok(ret == WAIT_OBJECT_0, "child process wait failed\n");
     GetExitCodeProcess(proc.hProcess, &ret);
-    ok(ret == 1, "child process exited with code %ld\n", ret);
+    ok(ret == 1, "child process exited with code %d\n", ret);
     CloseHandle(proc.hProcess);
     CloseHandle(proc.hThread);
-    ok(!*failures, "%ld tests failed in child process\n", *failures);
+    ok(!*failures, "%d tests failed in child process\n", *failures);
     free_failures_counter(failures, failures_map);
 
 
     ret = WaitForSingleObject(exit_event, 0);
-    ok(ret == WAIT_OBJECT_0, "exit_event was not set (%lx)\n", ret);
+    ok(ret == WAIT_OBJECT_0, "exit_event was not set (%x)\n", ret);
     ret = WaitForSingleObject(quick_exit_event, 0);
-    ok(ret == WAIT_TIMEOUT, "quick_exit_event should not have be set (%lx)\n", ret);
+    ok(ret == WAIT_TIMEOUT, "quick_exit_event should not have be set (%x)\n", ret);
 
     CloseHandle(exit_event);
     CloseHandle(quick_exit_event);
@@ -1190,7 +1133,7 @@ static void CDECL at_exit_func1(void)
 {
     HANDLE exit_event = CreateEventA(NULL, FALSE, FALSE, "exit_event");
 
-    ok(exit_event != NULL, "CreateEvent failed: %ld\n", GetLastError());
+    ok(exit_event != NULL, "CreateEvent failed: %d\n", GetLastError());
     ok(atexit_called == 1, "atexit_called = %d\n", atexit_called);
     atexit_called++;
     SetEvent(exit_event);
@@ -1211,7 +1154,7 @@ static void CDECL at_quick_exit_func1(void)
 {
     HANDLE quick_exit_event = CreateEventA(NULL, FALSE, FALSE, "quick_exit_event");
 
-    ok(quick_exit_event != NULL, "CreateEvent failed: %ld\n", GetLastError());
+    ok(quick_exit_event != NULL, "CreateEvent failed: %d\n", GetLastError());
     ok(atquick_exit_called == 1, "atquick_exit_called = %d\n", atquick_exit_called);
     atquick_exit_called++;
     SetEvent(quick_exit_event);
@@ -1269,16 +1212,16 @@ static void test_quick_exit(const char *argv0)
     ret = WaitForSingleObject(proc.hProcess, INFINITE);
     ok(ret == WAIT_OBJECT_0, "child process wait failed\n");
     GetExitCodeProcess(proc.hProcess, &ret);
-    ok(ret == 2, "child process exited with code %ld\n", ret);
+    ok(ret == 2, "child process exited with code %d\n", ret);
     CloseHandle(proc.hProcess);
     CloseHandle(proc.hThread);
-    ok(!*failures, "%ld tests failed in child process\n", *failures);
+    ok(!*failures, "%d tests failed in child process\n", *failures);
     free_failures_counter(failures, failures_map);
 
     ret = WaitForSingleObject(quick_exit_event, 0);
-    ok(ret == WAIT_OBJECT_0, "quick_exit_event was not set (%lx)\n", ret);
+    ok(ret == WAIT_OBJECT_0, "quick_exit_event was not set (%x)\n", ret);
     ret = WaitForSingleObject(exit_event, 0);
-    ok(ret == WAIT_TIMEOUT, "exit_event should not have be set (%lx)\n", ret);
+    ok(ret == WAIT_TIMEOUT, "exit_event should not have be set (%x)\n", ret);
 
     CloseHandle(exit_event);
     CloseHandle(quick_exit_event);
@@ -1354,243 +1297,6 @@ static void test_clock(void)
             c, expect_min - thresh, expect_min + max_load_delay);
 }
 
-static void __cdecl se_translator(unsigned int u, EXCEPTION_POINTERS *ep)
-{
-}
-
-static void test_thread_storage(void)
-{
-    void **current_exception;
-    void *processing_throw;
-
-    _set_se_translator(se_translator);
-    current_exception = __current_exception();
-    processing_throw = __processing_throw();
-
-    ok(current_exception+2 == processing_throw,
-            "current_exception = %p, processing_throw = %p\n",
-            current_exception, processing_throw);
-    ok(current_exception[-2] == se_translator,
-            "can't find se_translator in thread storage\n");
-}
-
-static unsigned long fenv_encode(unsigned int e)
-{
-    ok(!(e & ~FE_ALL_EXCEPT), "incorrect argument: %x\n", e);
-
-#if defined(__i386__)
-    return e<<24 | e<<16 | e;
-#elif defined(__x86_64__)
-    return e<<24 | e;
-#else
-    return e;
-#endif
-}
-
-static void test_fenv(void)
-{
-    static const int tests[] = {
-        0,
-        FE_INEXACT,
-        FE_UNDERFLOW,
-        FE_OVERFLOW,
-        FE_DIVBYZERO,
-        FE_INVALID,
-        FE_ALL_EXCEPT,
-    };
-    static const struct {
-        fexcept_t except;
-        unsigned int flag;
-        unsigned int get;
-        fexcept_t expect;
-    } tests2[] = {
-        /* except                   flag                     get             expect */
-        { 0,                        0,                       0,              0 },
-        { FE_ALL_EXCEPT,            FE_INEXACT,              0,              0 },
-        { FE_ALL_EXCEPT,            FE_INEXACT,              FE_ALL_EXCEPT,  FE_INEXACT },
-        { FE_ALL_EXCEPT,            FE_INEXACT,              FE_INEXACT,     FE_INEXACT },
-        { FE_ALL_EXCEPT,            FE_INEXACT,              FE_OVERFLOW,    0 },
-        { FE_ALL_EXCEPT,            FE_ALL_EXCEPT,           FE_ALL_EXCEPT,  FE_ALL_EXCEPT },
-        { FE_ALL_EXCEPT,            FE_ALL_EXCEPT,           FE_INEXACT,     FE_INEXACT },
-        { FE_ALL_EXCEPT,            FE_ALL_EXCEPT,           0,              0 },
-        { FE_ALL_EXCEPT,            FE_ALL_EXCEPT,           ~0,             FE_ALL_EXCEPT },
-        { FE_ALL_EXCEPT,            FE_ALL_EXCEPT,           ~FE_ALL_EXCEPT, 0 },
-        { FE_INEXACT,               FE_ALL_EXCEPT,           FE_ALL_EXCEPT,  FE_INEXACT },
-        { FE_INEXACT,               FE_UNDERFLOW,            FE_ALL_EXCEPT,  0 },
-        { FE_UNDERFLOW,             FE_INEXACT,              FE_ALL_EXCEPT,  0 },
-        { FE_INEXACT|FE_UNDERFLOW,  FE_UNDERFLOW,            FE_ALL_EXCEPT,  FE_UNDERFLOW },
-        { FE_UNDERFLOW,             FE_INEXACT|FE_UNDERFLOW, FE_ALL_EXCEPT,  FE_UNDERFLOW },
-    };
-    fenv_t env, env2;
-    fexcept_t except;
-    int i, ret, flags;
-
-    _clearfp();
-
-    ret = fegetenv(&env);
-    ok(!ret, "fegetenv returned %x\n", ret);
-#if defined(__i386__) || defined(__x86_64__)
-    if (env._Fe_ctl >> 24 != (env._Fe_ctl & 0xff))
-    {
-        win_skip("fenv_t format not supported (too old ucrtbase)\n");
-        return;
-    }
-#endif
-    fesetround(FE_UPWARD);
-    ok(!env._Fe_stat, "env._Fe_stat = %lx\n", env._Fe_stat);
-    ret = fegetenv(&env2);
-    ok(!ret, "fegetenv returned %x\n", ret);
-    ok(env._Fe_ctl != env2._Fe_ctl, "fesetround didn't change _Fe_ctl (%lx).\n", env._Fe_ctl);
-    ret = fesetenv(&env);
-    ok(!ret, "fesetenv returned %x\n", ret);
-    ret = fegetround();
-    ok(ret == FE_TONEAREST, "Got unexpected round mode %#x.\n", ret);
-
-    except = fenv_encode(FE_ALL_EXCEPT);
-    ret = fesetexceptflag(&except, FE_INEXACT|FE_UNDERFLOW);
-    ok(!ret, "fesetexceptflag returned %x\n", ret);
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(except == (FE_INEXACT|FE_UNDERFLOW), "expected %x, got %lx\n", FE_INEXACT|FE_UNDERFLOW, except);
-
-    ret = feclearexcept(~FE_ALL_EXCEPT);
-    ok(!ret, "feclearexceptflag returned %x\n", ret);
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(except == (FE_INEXACT|FE_UNDERFLOW), "expected %x, got %lx\n", FE_INEXACT|FE_UNDERFLOW, except);
-
-    /* no crash, but no-op */
-    ret = fesetexceptflag(NULL, 0);
-    ok(!ret, "fesetexceptflag returned %x\n", ret);
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(except == (FE_INEXACT|FE_UNDERFLOW), "expected %x, got %lx\n", FE_INEXACT|FE_UNDERFLOW, except);
-
-    /* zero clears all */
-    except = 0;
-    ret = fesetexceptflag(&except, FE_ALL_EXCEPT);
-    ok(!ret, "fesetexceptflag returned %x\n", ret);
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(!except, "expected 0, got %lx\n", except);
-
-    ret = fetestexcept(FE_ALL_EXCEPT);
-    ok(!ret, "fetestexcept returned %x\n", ret);
-
-    flags = 0;
-    /* adding bits with flags */
-    for(i=0; i<ARRAY_SIZE(tests); i++) {
-        except = fenv_encode(FE_ALL_EXCEPT);
-        ret = fesetexceptflag(&except, tests[i]);
-        ok(!ret, "Test %d: fesetexceptflag returned %x\n", i, ret);
-
-        ret = fetestexcept(tests[i]);
-        ok(ret == tests[i], "Test %d: expected %x, got %x\n", i, tests[i], ret);
-
-        flags |= tests[i];
-        ret = fetestexcept(FE_ALL_EXCEPT);
-        ok(ret == flags, "Test %d: expected %x, got %x\n", i, flags, ret);
-
-        except = ~0;
-        ret = fegetexceptflag(&except, ~0);
-        ok(!ret, "Test %d: fegetexceptflag returned %x.\n", i, ret);
-        ok(except == fenv_encode(flags),
-                "Test %d: expected %lx, got %lx\n", i, fenv_encode(flags), except);
-
-        except = ~0;
-        ret = fegetexceptflag(&except, tests[i]);
-        ok(!ret, "Test %d: fegetexceptflag returned %x.\n", i, ret);
-        ok(except == fenv_encode(tests[i]),
-                "Test %d: expected %lx, got %lx\n", i, fenv_encode(tests[i]), except);
-    }
-
-    for(i=0; i<ARRAY_SIZE(tests); i++) {
-        ret = feclearexcept(tests[i]);
-        ok(!ret, "Test %d: feclearexceptflag returned %x\n", i, ret);
-
-        flags &= ~tests[i];
-        except = fetestexcept(tests[i]);
-        ok(!except, "Test %d: expected %x, got %lx\n", i, flags, except);
-    }
-
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(!except, "expected 0, got %lx\n", except);
-
-    /* setting bits with except */
-    for(i=0; i<ARRAY_SIZE(tests); i++) {
-        except = fenv_encode(tests[i]);
-        ret = fesetexceptflag(&except, FE_ALL_EXCEPT);
-        ok(!ret, "Test %d: fesetexceptflag returned %x\n", i, ret);
-
-        ret = fetestexcept(tests[i]);
-        ok(ret == tests[i], "Test %d: expected %x, got %x\n", i, tests[i], ret);
-
-        ret = fetestexcept(FE_ALL_EXCEPT);
-        ok(ret == tests[i], "Test %d: expected %x, got %x\n", i, tests[i], ret);
-    }
-
-    for(i=0; i<ARRAY_SIZE(tests2); i++) {
-        _clearfp();
-
-        except = fenv_encode(tests2[i].except);
-        ret = fesetexceptflag(&except, tests2[i].flag);
-        ok(!ret, "Test %d: fesetexceptflag returned %x\n", i, ret);
-
-        ret = fetestexcept(tests2[i].get);
-        ok(ret == tests2[i].expect, "Test %d: expected %lx, got %x\n", i, tests2[i].expect, ret);
-    }
-
-    ret = feclearexcept(FE_ALL_EXCEPT);
-    ok(!ret, "feclearexceptflag returned %x\n", ret);
-    except = fetestexcept(FE_ALL_EXCEPT);
-    ok(!except, "expected 0, got %lx\n", except);
-}
-
-static void test_fopen_exclusive( void )
-{
-    char path[MAX_PATH*2];
-    DWORD len;
-    FILE *fp;
-
-    len = GetTempPathA(MAX_PATH, path);
-    ok(len, "GetTempPathA failed\n");
-    strcat(path, "\\fileexcl.tst");
-
-    SET_EXPECT(global_invalid_parameter_handler);
-    fp = fopen(path, "wx");
-    if(called_global_invalid_parameter_handler)
-    {
-        win_skip("skipping fopen x mode tests.\n");
-        return;
-    }
-    expect_global_invalid_parameter_handler = FALSE;
-    ok(fp != NULL, "creating file with mode wx failed\n");
-    fclose(fp);
-
-    fp = fopen(path, "wx");
-    ok(!fp, "overwrote existing file with mode wx\n");
-    unlink(path);
-
-    fp = fopen(path, "w+x");
-    ok(fp != NULL, "creating file with mode w+x failed\n");
-    fclose(fp);
-
-    fp = fopen(path, "w+x");
-    ok(!fp, "overwrote existing file with mode w+x\n");
-
-    SET_EXPECT(global_invalid_parameter_handler);
-    fp = fopen(path, "rx");
-    CHECK_CALLED(global_invalid_parameter_handler);
-    ok(!fp, "opening file with mode rx succeeded\n");
-    unlink(path);
-
-    SET_EXPECT(global_invalid_parameter_handler);
-    fp = fopen(path, "xw");
-    CHECK_CALLED(global_invalid_parameter_handler);
-    ok(!fp, "creating file with mode xw succeeded\n");
-
-    fp = fopen(path, "wbx");
-    ok(fp != NULL, "creating file with mode wbx failed\n");
-    fclose(fp);
-    unlink(path);
-}
-
 START_TEST(misc)
 {
     int arg_c;
@@ -1616,7 +1322,6 @@ START_TEST(misc)
     test__register_onexit_function();
     test__execute_onexit_table();
     test___fpe_flt_rounds();
-    test__control87_2();
     test__get_narrow_winmain_command_line(arg_v[0]);
     test__sopen_dispatch();
     test__sopen_s();
@@ -1630,7 +1335,4 @@ START_TEST(misc)
     test__stat32();
     test__o_malloc();
     test_clock();
-    test_thread_storage();
-    test_fenv();
-    test_fopen_exclusive();
 }

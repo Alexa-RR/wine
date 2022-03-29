@@ -1,7 +1,7 @@
 MODULE    = wmp.dll
 IMPORTS   = oleaut32 ole32 urlmon shlwapi user32 gdi32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	events.c \

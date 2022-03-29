@@ -41,14 +41,15 @@
 #include <richole.h>
 #include "imm.h"
 #include <textserv.h>
-#include <tom.h>
 #include "usp10.h"
 
-#include "wine/asm.h"
 #include "wine/debug.h"
 #include "wine/heap.h"
 #include "wine/list.h"
-#include "wine/rbtree.h"
+
+#if defined(__i386__) && !defined(__MINGW32__)
+extern const struct ITextHostVtbl itextHostStdcallVtbl DECLSPEC_HIDDEN;
+#endif /* __i386__ */
 
 typedef struct tagME_String
 {
@@ -147,13 +148,11 @@ typedef enum {
 /******************************** structures *************************/
 
 struct tagME_DisplayItem;
-struct tagME_Run;
 
 struct re_object
 {
   struct list entry;
   REOBJECT obj;
-  struct tagME_Run *run; /* ptr to the reobj's run */
 };
 
 typedef struct tagME_Run
@@ -205,7 +204,7 @@ typedef struct tagME_Paragraph
   PARAFORMAT2 fmt;
   ME_String *text;
 
-  struct tagME_Cell *cell; /* v4.1 */
+  struct tagME_DisplayItem *pCell; /* v4.1 */
   ME_BorderRect border;
 
   int nCharOfs;
@@ -216,7 +215,7 @@ typedef struct tagME_Paragraph
   struct para_num para_num;
   ME_Run *eop_run; /* ptr to the end-of-para run */
   struct tagME_DisplayItem *prev_para, *next_para;
-  struct wine_rb_entry marked_entry;
+  struct tagME_DisplayItem *prev_marked, *next_marked;
 } ME_Paragraph;
 
 typedef struct tagME_Cell /* v4.1 */
@@ -227,7 +226,7 @@ typedef struct tagME_Cell /* v4.1 */
   POINT pt;
   int nHeight, nWidth;
   int yTextOffset; /* The text offset is caused by the largest top border. */
-  struct tagME_Cell *prev_cell, *next_cell, *parent_cell;
+  struct tagME_DisplayItem *prev_cell, *next_cell, *parent_cell;
 } ME_Cell;
 
 typedef struct tagME_Row
@@ -273,8 +272,8 @@ typedef struct tagME_TextBuffer
 
 typedef struct tagME_Cursor
 {
-  ME_Paragraph *para;
-  ME_Run *run;
+  ME_DisplayItem *pPara;
+  ME_DisplayItem *pRun;
   int nOffset;
 } ME_Cursor;
 
@@ -380,14 +379,14 @@ typedef struct tagME_InStream ME_InStream;
 
 typedef struct tagME_TextEditor
 {
-  ITextHost2 *texthost;
-  unsigned int bEmulateVersion10 : 1;
-  unsigned int in_place_active : 1;
-  unsigned int have_texthost2 : 1;
+  HWND hWnd, hwndParent;
+  ITextHost *texthost;
+  IUnknown *reOle;
+  BOOL bEmulateVersion10;
   ME_TextBuffer *pBuffer;
   ME_Cursor *pCursors;
-  DWORD props;
-  DWORD scrollbars;
+  DWORD styleFlags;
+  DWORD exStyleFlags;
   int nCursors;
   SIZE sizeWindow;
   int nTotalLength, nLastTotalLength;
@@ -395,6 +394,9 @@ typedef struct tagME_TextEditor
   int nAvailWidth; /* 0 = wrap to client area, else wrap width in twips */
   int nUDArrowX;
   int total_rows;
+  COLORREF rgbBackColor;
+  HBRUSH hbrBackground;
+  BOOL bCaretAtEnd;
   int nEventMask;
   int nModifyStep;
   struct list undo_stack;
@@ -403,15 +405,16 @@ typedef struct tagME_TextEditor
   int nUndoLimit;
   ME_UndoMode nUndoMode;
   int nParagraphs;
-  LONG nLastSelStart, nLastSelEnd;
-  ME_Paragraph *last_sel_start_para, *last_sel_end_para;
+  int nLastSelStart, nLastSelEnd;
+  ME_DisplayItem *pLastSelStartPara, *pLastSelEndPara;
   ME_FontCacheItem pFontCache[HFONT_CACHE_SIZE];
   int nZoomNumerator, nZoomDenominator;
+  RECT prevClientRect;
   RECT rcFormat;
+  BOOL bDefaultFormatRect;
   BOOL bWordWrap;
   int nTextLimit;
   EDITWORDBREAKPROCW pfnWordBreak;
-  IRichEditOle *richole;
   LPRICHEDITOLECALLBACK lpOleCallback;
   /*TEXTMODE variable; contains only one of each of the following options:
    *TM_RICHTEXT or TM_PLAINTEXT
@@ -420,29 +423,27 @@ typedef struct tagME_TextEditor
   int mode;
   BOOL bHideSelection;
   BOOL AutoURLDetect_bEnable;
-  WCHAR password_char;
+  WCHAR cPasswordMask;
   BOOL bHaveFocus;
+  BOOL bDialogMode; /* Indicates that we are inside a dialog window */
   /*for IME */
   int imeStartIndex;
   DWORD selofs; /* The size of the selection bar on the left side of control */
   ME_SelectionType nSelectionType;
+  ME_DisplayItem *first_marked_para;
 
   /* Track previous notified selection */
   CHARRANGE notified_cr;
 
   /* Cache previously set scrollbar info */
   SCROLLINFO vert_si, horz_si;
-  unsigned int vert_sb_enabled : 1;
-  unsigned int horz_sb_enabled : 1;
 
   int caret_height;
   BOOL caret_hidden;
   BOOL bMouseCaptured;
   int wheel_remain;
-  TXTBACKSTYLE back_style;
   struct list style_list;
   struct list reobj_list;
-  struct wine_rb_tree marked_paras;
 } ME_TextEditor;
 
 typedef struct tagME_Context
@@ -458,28 +459,5 @@ typedef struct tagME_Context
   /* those are valid inside ME_WrapTextParagraph and related */
   ME_TextEditor *editor;
 } ME_Context;
-
-struct text_selection
-{
-    ITextSelection ITextSelection_iface;
-    LONG ref;
-
-    struct text_services *services;
-};
-
-struct text_services
-{
-    IUnknown IUnknown_inner;
-    ITextServices ITextServices_iface;
-    IRichEditOle IRichEditOle_iface;
-    ITextDocument2Old ITextDocument2Old_iface;
-    IUnknown *outer_unk;
-    LONG ref;
-    ME_TextEditor *editor;
-    struct text_selection *text_selection;
-    struct list rangelist;
-    struct list clientsites;
-    char spare[256]; /* for bug #12179 */
-};
 
 #endif

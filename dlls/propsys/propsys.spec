@@ -49,7 +49,7 @@
 @ stub InitVariantFromBooleanArray
 @ stdcall InitVariantFromBuffer(ptr long ptr)
 @ stub InitVariantFromDoubleArray
-@ stdcall InitVariantFromFileTime(ptr ptr)
+@ stub InitVariantFromFileTime
 @ stub InitVariantFromFileTimeArray
 @ stdcall InitVariantFromGUIDAsString(ptr ptr)
 @ stub InitVariantFromInt16Array

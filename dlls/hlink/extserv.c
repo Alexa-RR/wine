@@ -76,7 +76,7 @@ static ULONG WINAPI ExtServUnk_AddRef(IUnknown *iface)
     ExtensionService *This = impl_from_IUnknown(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -86,7 +86,7 @@ static ULONG WINAPI ExtServUnk_Release(IUnknown *iface)
     ExtensionService *This = impl_from_IUnknown(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref) {
         heap_free(This->username);
@@ -179,7 +179,7 @@ static HRESULT WINAPI HttpNegotiate_BeginningTransaction(IHttpNegotiate *iface,
 {
     ExtensionService *This = impl_from_IHttpNegotiate(iface);
 
-    TRACE("(%p)->(%s %s %lx %p)\n", This, debugstr_w(szURL), debugstr_w(szHeaders), dwReserved,
+    TRACE("(%p)->(%s %s %x %p)\n", This, debugstr_w(szURL), debugstr_w(szHeaders), dwReserved,
           pszAdditionalHeaders);
 
     if(!pszAdditionalHeaders)
@@ -194,7 +194,7 @@ static HRESULT WINAPI HttpNegotiate_OnResponse(IHttpNegotiate *iface, DWORD dwRe
 {
     ExtensionService *This = impl_from_IHttpNegotiate(iface);
 
-    TRACE("(%p)->(%ld %s %s %p)\n", This, dwResponseCode, debugstr_w(szResponseHeaders),
+    TRACE("(%p)->(%d %s %s %p)\n", This, dwResponseCode, debugstr_w(szResponseHeaders),
           debugstr_w(szRequestHeaders), pszAdditionalRequestHeaders);
 
     *pszAdditionalRequestHeaders = NULL;
@@ -245,9 +245,10 @@ static HRESULT ExtServ_ImplSetAdditionalHeaders(ExtensionService* This, LPCWSTR 
     len = lstrlenW(pwzAdditionalHeaders);
 
     if(len && pwzAdditionalHeaders[len-1] != '\n' && pwzAdditionalHeaders[len-1] != '\r') {
-        This->headers = heap_alloc(len*sizeof(WCHAR) + sizeof(L"\r\n"));
+        static const WCHAR endlW[] = {'\r','\n',0};
+        This->headers = heap_alloc(len*sizeof(WCHAR) + sizeof(endlW));
         memcpy(This->headers, pwzAdditionalHeaders, len*sizeof(WCHAR));
-        memcpy(This->headers+len, L"\r\n", sizeof(L"\r\n"));
+        memcpy(This->headers+len, endlW, sizeof(endlW));
     }else {
         This->headers = hlink_strdupW(pwzAdditionalHeaders);
     }

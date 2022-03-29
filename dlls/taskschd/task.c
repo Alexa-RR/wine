@@ -76,7 +76,7 @@ static ULONG WINAPI DailyTrigger_AddRef(IDailyTrigger *iface)
     DailyTrigger *This = impl_from_IDailyTrigger(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -86,7 +86,7 @@ static ULONG WINAPI DailyTrigger_Release(IDailyTrigger *iface)
     DailyTrigger *This = impl_from_IDailyTrigger(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref)
     {
@@ -108,7 +108,7 @@ static HRESULT WINAPI DailyTrigger_GetTypeInfoCount(IDailyTrigger *iface, UINT *
 static HRESULT WINAPI DailyTrigger_GetTypeInfo(IDailyTrigger *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
     DailyTrigger *This = impl_from_IDailyTrigger(iface);
-    FIXME("(%p)->(%u %lu %p)\n", This, index, lcid, info);
+    FIXME("(%p)->(%u %u %p)\n", This, index, lcid, info);
     return E_NOTIMPL;
 }
 
@@ -116,7 +116,7 @@ static HRESULT WINAPI DailyTrigger_GetIDsOfNames(IDailyTrigger *iface, REFIID ri
                                             UINT count, LCID lcid, DISPID *dispid)
 {
     DailyTrigger *This = impl_from_IDailyTrigger(iface);
-    FIXME("(%p)->(%s %p %u %lu %p)\n", This, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
@@ -124,7 +124,7 @@ static HRESULT WINAPI DailyTrigger_Invoke(IDailyTrigger *iface, DISPID dispid, R
                                      DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
     DailyTrigger *This = impl_from_IDailyTrigger(iface);
-    FIXME("(%p)->(%ld %s %lx %x %p %p %p %p)\n", This, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("(%p)->(%d %s %x %x %p %p %p %p)\n", This, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -360,7 +360,7 @@ static ULONG WINAPI TriggerCollection_AddRef(ITriggerCollection *iface)
     trigger_collection *This = impl_from_ITriggerCollection(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -370,7 +370,7 @@ static ULONG WINAPI TriggerCollection_Release(ITriggerCollection *iface)
     trigger_collection *This = impl_from_ITriggerCollection(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     if(!ref)
         heap_free(This);
@@ -388,7 +388,7 @@ static HRESULT WINAPI TriggerCollection_GetTypeInfoCount(ITriggerCollection *ifa
 static HRESULT WINAPI TriggerCollection_GetTypeInfo(ITriggerCollection *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
     trigger_collection *This = impl_from_ITriggerCollection(iface);
-    FIXME("(%p)->(%u %lu %p)\n", This, index, lcid, info);
+    FIXME("(%p)->(%u %u %p)\n", This, index, lcid, info);
     return E_NOTIMPL;
 }
 
@@ -396,7 +396,7 @@ static HRESULT WINAPI TriggerCollection_GetIDsOfNames(ITriggerCollection *iface,
                                                    UINT count, LCID lcid, DISPID *dispid)
 {
     trigger_collection *This = impl_from_ITriggerCollection(iface);
-    FIXME("(%p)->(%s %p %u %lu %p)\n", This, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
@@ -404,7 +404,7 @@ static HRESULT WINAPI TriggerCollection_Invoke(ITriggerCollection *iface, DISPID
                                                DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
     trigger_collection *This = impl_from_ITriggerCollection(iface);
-    FIXME("(%p)->(%ld %s %lx %x %p %p %p %p)\n", This, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("(%p)->(%d %s %x %x %p %p %p %p)\n", This, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -419,7 +419,7 @@ static HRESULT WINAPI TriggerCollection_get_Count(ITriggerCollection *iface, LON
 static HRESULT WINAPI TriggerCollection_get_Item(ITriggerCollection *iface, LONG index, ITrigger **trigger)
 {
     trigger_collection *This = impl_from_ITriggerCollection(iface);
-    FIXME("(%p)->(%ld %p)\n", This, index, trigger);
+    FIXME("(%p)->(%d %p)\n", This, index, trigger);
     return E_NOTIMPL;
 }
 
@@ -544,21 +544,21 @@ static HRESULT WINAPI RegistrationInfo_GetTypeInfoCount(IRegistrationInfo *iface
 
 static HRESULT WINAPI RegistrationInfo_GetTypeInfo(IRegistrationInfo *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI RegistrationInfo_GetIDsOfNames(IRegistrationInfo *iface, REFIID riid, LPOLESTR *names,
                                                    UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI RegistrationInfo_Invoke(IRegistrationInfo *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                             DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -900,21 +900,21 @@ static HRESULT WINAPI TaskSettings_GetTypeInfoCount(ITaskSettings *iface, UINT *
 
 static HRESULT WINAPI TaskSettings_GetTypeInfo(ITaskSettings *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskSettings_GetIDsOfNames(ITaskSettings *iface, REFIID riid, LPOLESTR *names,
                                                  UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskSettings_Invoke(ITaskSettings *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                           DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -1440,6 +1440,7 @@ static const ITaskSettingsVtbl TaskSettings_vtbl =
 
 static HRESULT TaskSettings_create(ITaskSettings **obj)
 {
+    static const WCHAR exec_time_limit[] = { 'P','T','7','2','H',0 };
     TaskSettings *taskset;
 
     taskset = heap_alloc(sizeof(*taskset));
@@ -1449,7 +1450,7 @@ static HRESULT TaskSettings_create(ITaskSettings **obj)
     taskset->ref = 1;
     /* set the defaults */
     taskset->restart_interval = NULL;
-    taskset->execution_time_limit = heap_strdupW(L"PT72H");
+    taskset->execution_time_limit = heap_strdupW(exec_time_limit);
     taskset->delete_expired_task_after = NULL;
     taskset->restart_count = 0;
     taskset->priority = 7;
@@ -1532,21 +1533,21 @@ static HRESULT WINAPI Principal_GetTypeInfoCount(IPrincipal *iface, UINT *count)
 
 static HRESULT WINAPI Principal_GetTypeInfo(IPrincipal *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI Principal_GetIDsOfNames(IPrincipal *iface, REFIID riid, LPOLESTR *names,
                                               UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI Principal_Invoke(IPrincipal *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                        DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -1731,21 +1732,21 @@ static HRESULT WINAPI ExecAction_GetTypeInfoCount(IExecAction *iface, UINT *coun
 
 static HRESULT WINAPI ExecAction_GetTypeInfo(IExecAction *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ExecAction_GetIDsOfNames(IExecAction *iface, REFIID riid, LPOLESTR *names,
                                                UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI ExecAction_Invoke(IExecAction *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                         DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -1973,21 +1974,21 @@ static HRESULT WINAPI Actions_GetTypeInfoCount(IActionCollection *iface, UINT *c
 
 static HRESULT WINAPI Actions_GetTypeInfo(IActionCollection *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI Actions_GetIDsOfNames(IActionCollection *iface, REFIID riid, LPOLESTR *names,
                                             UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI Actions_Invoke(IActionCollection *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                      DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -2000,7 +2001,7 @@ static HRESULT WINAPI Actions_get_Count(IActionCollection *iface, LONG *count)
 
 static HRESULT WINAPI Actions_get_Item(IActionCollection *iface, LONG index, IAction **action)
 {
-    FIXME("%p,%ld,%p: stub\n", iface, index, action);
+    FIXME("%p,%d,%p: stub\n", iface, index, action);
     return E_NOTIMPL;
 }
 
@@ -2175,21 +2176,21 @@ static HRESULT WINAPI TaskDefinition_GetTypeInfoCount(ITaskDefinition *iface, UI
 
 static HRESULT WINAPI TaskDefinition_GetTypeInfo(ITaskDefinition *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskDefinition_GetIDsOfNames(ITaskDefinition *iface, REFIID riid, LPOLESTR *names,
                                                    UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskDefinition_Invoke(ITaskDefinition *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                             DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -2397,6 +2398,56 @@ static HRESULT WINAPI TaskDefinition_put_Actions(ITaskDefinition *iface, IAction
     return S_OK;
 }
 
+static const WCHAR Task[] = {'T','a','s','k',0};
+static const WCHAR version[] = {'v','e','r','s','i','o','n',0};
+static const WCHAR v1_0[] = {'1','.','0',0};
+static const WCHAR v1_1[] = {'1','.','1',0};
+static const WCHAR v1_2[] = {'1','.','2',0};
+static const WCHAR v1_3[] = {'1','.','3',0};
+static const WCHAR xmlns[] = {'x','m','l','n','s',0};
+static const WCHAR task_ns[] = {'h','t','t','p',':','/','/','s','c','h','e','m','a','s','.','m','i','c','r','o','s','o','f','t','.','c','o','m','/','w','i','n','d','o','w','s','/','2','0','0','4','/','0','2','/','m','i','t','/','t','a','s','k',0};
+static const WCHAR RegistrationInfo[] = {'R','e','g','i','s','t','r','a','t','i','o','n','I','n','f','o',0};
+static const WCHAR Author[] = {'A','u','t','h','o','r',0};
+static const WCHAR Description[] = {'D','e','s','c','r','i','p','t','i','o','n',0};
+static const WCHAR Source[] = {'S','o','u','r','c','e',0};
+static const WCHAR Date[] = {'D','a','t','e',0};
+static const WCHAR Version[] = {'V','e','r','s','i','o','n',0};
+static const WCHAR Documentation[] = {'D','o','c','u','m','e','n','t','a','t','i','o','n',0};
+static const WCHAR URI[] = {'U','R','I',0};
+static const WCHAR SecurityDescriptor[] = {'S','e','c','u','r','i','t','y','D','e','s','c','r','i','p','t','o','r',0};
+static const WCHAR Settings[] = {'S','e','t','t','i','n','g','s',0};
+static const WCHAR Triggers[] = {'T','r','i','g','g','e','r','s',0};
+static const WCHAR Principals[] = {'P','r','i','n','c','i','p','a','l','s',0};
+static const WCHAR principalW[] = {'P','r','i','n','c','i','p','a','l',0};
+static const WCHAR id[] = {'i','d',0};
+static const WCHAR UserId[] = {'U','s','e','r','I','d',0};
+static const WCHAR LogonType[] = {'L','o','g','o','n','T','y','p','e',0};
+static const WCHAR GroupId[] = {'G','r','o','u','p','I','d',0};
+static const WCHAR DisplayName[] = {'D','i','s','p','l','a','y','N','a','m','e',0};
+static const WCHAR HighestAvailable[] = {'H','i','g','h','e','s','t','A','v','a','i','l','a','b','l','e',0};
+static const WCHAR Password[] = {'P','a','s','s','w','o','r','d',0};
+static const WCHAR S4U[] = {'S','4','U',0};
+static const WCHAR InteractiveToken[] = {'I','n','t','e','r','a','c','t','i','v','e','T','o','k','e','n',0};
+static const WCHAR RunLevel[] = {'R','u','n','L','e','v','e','l',0};
+static const WCHAR LeastPrivilege[] = {'L','e','a','s','t','P','r','i','v','i','l','e','g','e',0};
+static const WCHAR actionsW[] = {'A','c','t','i','o','n','s',0};
+static const WCHAR Exec[] = {'E','x','e','c',0};
+static const WCHAR MultipleInstancesPolicy[] = {'M','u','l','t','i','p','l','e','I','n','s','t','a','n','c','e','s','P','o','l','i','c','y',0};
+static const WCHAR IgnoreNew[] = {'I','g','n','o','r','e','N','e','w',0};
+static const WCHAR DisallowStartIfOnBatteries[] = {'D','i','s','a','l','l','o','w','S','t','a','r','t','I','f','O','n','B','a','t','t','e','r','i','e','s',0};
+static const WCHAR AllowStartOnDemand[] = {'A','l','l','o','w','S','t','a','r','t','O','n','D','e','m','a','n','d',0};
+static const WCHAR StopIfGoingOnBatteries[] = {'S','t','o','p','I','f','G','o','i','n','g','O','n','B','a','t','t','e','r','i','e','s',0};
+static const WCHAR AllowHardTerminate[] = {'A','l','l','o','w','H','a','r','d','T','e','r','m','i','n','a','t','e',0};
+static const WCHAR StartWhenAvailable[] = {'S','t','a','r','t','W','h','e','n','A','v','a','i','l','a','b','l','e',0};
+static const WCHAR RunOnlyIfNetworkAvailable[] = {'R','u','n','O','n','l','y','I','f','N','e','t','w','o','r','k','A','v','a','i','l','a','b','l','e',0};
+static const WCHAR Enabled[] = {'E','n','a','b','l','e','d',0};
+static const WCHAR Hidden[] = {'H','i','d','d','e','n',0};
+static const WCHAR RunOnlyIfIdle[] = {'R','u','n','O','n','l','y','I','f','I','d','l','e',0};
+static const WCHAR WakeToRun[] = {'W','a','k','e','T','o','R','u','n',0};
+static const WCHAR ExecutionTimeLimit[] = {'E','x','e','c','u','t','i','o','n','T','i','m','e','L','i','m','i','t',0};
+static const WCHAR Priority[] = {'P','r','i','o','r','i','t','y',0};
+static const WCHAR IdleSettings[] = {'I','d','l','e','S','e','t','t','i','n','g','s',0};
+
 static int xml_indent;
 
 static inline void push_indent(void)
@@ -2416,45 +2467,59 @@ static inline HRESULT write_stringW(IStream *stream, const WCHAR *str)
 
 static void write_indent(IStream *stream)
 {
+    static const WCHAR spacesW[] = {' ',' ',0};
     int i;
     for (i = 0; i < xml_indent; i += 2)
-        write_stringW(stream, L"  ");
+        write_stringW(stream, spacesW);
 }
+
+static const WCHAR start_element[] = {'<',0};
+static const WCHAR start_end_element[] = {'<','/',0};
+static const WCHAR close_element[] = {'>',0};
+static const WCHAR end_empty_element[] = {'/','>',0};
+static const WCHAR eol[] = {'\n',0};
+static const WCHAR spaceW[] = {' ',0};
+static const WCHAR equalW[] = {'=',0};
+static const WCHAR quoteW[] = {'"',0};
 
 static inline HRESULT write_empty_element(IStream *stream, const WCHAR *name)
 {
     write_indent(stream);
-    write_stringW(stream, L"<");
+    write_stringW(stream, start_element);
     write_stringW(stream, name);
-    return write_stringW(stream, L"/>\n");
+    write_stringW(stream, end_empty_element);
+    return write_stringW(stream, eol);
 }
 
 static inline HRESULT write_element(IStream *stream, const WCHAR *name)
 {
     write_indent(stream);
-    write_stringW(stream, L"<");
+    write_stringW(stream, start_element);
     write_stringW(stream, name);
-    return write_stringW(stream, L">\n");
+    write_stringW(stream, close_element);
+    return write_stringW(stream, eol);
 }
 
 static inline HRESULT write_element_end(IStream *stream, const WCHAR *name)
 {
     write_indent(stream);
-    write_stringW(stream, L"</");
+    write_stringW(stream, start_end_element);
     write_stringW(stream, name);
-    return write_stringW(stream, L">\n");
+    write_stringW(stream, close_element);
+    return write_stringW(stream, eol);
 }
 
 static inline HRESULT write_text_value(IStream *stream, const WCHAR *name, const WCHAR *value)
 {
     write_indent(stream);
-    write_stringW(stream, L"<");
+    write_stringW(stream, start_element);
     write_stringW(stream, name);
-    write_stringW(stream, L">");
+    write_stringW(stream, close_element);
     write_stringW(stream, value);
-    write_stringW(stream, L"</");
+    write_stringW(stream, start_end_element);
     write_stringW(stream, name);
-    return write_stringW(stream, L">\n");
+    write_stringW(stream, close_element);
+    return write_stringW(stream, eol);
 }
 
 static HRESULT write_task_attributes(IStream *stream, ITaskDefinition *taskdef)
@@ -2475,23 +2540,35 @@ static HRESULT write_task_attributes(IStream *stream, ITaskDefinition *taskdef)
     switch (level)
     {
     case TASK_COMPATIBILITY_AT:
-        compatibility = L"1.0";
+        compatibility = v1_0;
         break;
     case TASK_COMPATIBILITY_V1:
-        compatibility = L"1.1";
+        compatibility = v1_1;
         break;
     case TASK_COMPATIBILITY_V2:
-        compatibility = L"1.2";
+        compatibility = v1_2;
         break;
     default:
-        compatibility = L"1.3";
+        compatibility = v1_3;
         break;
     }
 
-    write_stringW(stream, L"<Task version=\"");
+    write_stringW(stream, start_element);
+    write_stringW(stream, Task);
+    write_stringW(stream, spaceW);
+    write_stringW(stream, version);
+    write_stringW(stream, equalW);
+    write_stringW(stream, quoteW);
     write_stringW(stream, compatibility);
-    write_stringW(stream, L"\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">");
-    return write_stringW(stream, L"\n");
+    write_stringW(stream, quoteW);
+    write_stringW(stream, spaceW);
+    write_stringW(stream, xmlns);
+    write_stringW(stream, equalW);
+    write_stringW(stream, quoteW);
+    write_stringW(stream, task_ns);
+    write_stringW(stream, quoteW);
+    write_stringW(stream, close_element);
+    return write_stringW(stream, eol);
 }
 
 static HRESULT write_registration_info(IStream *stream, IRegistrationInfo *reginfo)
@@ -2501,9 +2578,9 @@ static HRESULT write_registration_info(IStream *stream, IRegistrationInfo *regin
     VARIANT var;
 
     if (!reginfo)
-        return write_empty_element(stream, L"RegistrationInfo");
+        return write_empty_element(stream, RegistrationInfo);
 
-    hr = write_element(stream, L"RegistrationInfo");
+    hr = write_element(stream, RegistrationInfo);
     if (hr != S_OK) return hr;
 
     push_indent();
@@ -2511,49 +2588,49 @@ static HRESULT write_registration_info(IStream *stream, IRegistrationInfo *regin
     hr = IRegistrationInfo_get_Source(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Source", bstr);
+        hr = write_text_value(stream, Source, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_Date(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Date", bstr);
+        hr = write_text_value(stream, Date, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_Author(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Author", bstr);
+        hr = write_text_value(stream, Author, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_Version(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Version", bstr);
+        hr = write_text_value(stream, Version, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_Description(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Description", bstr);
+        hr = write_text_value(stream, Description, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_Documentation(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"Documentation", bstr);
+        hr = write_text_value(stream, Documentation, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IRegistrationInfo_get_URI(reginfo, &bstr);
     if (hr == S_OK && bstr)
     {
-        hr = write_text_value(stream, L"URI", bstr);
+        hr = write_text_value(stream, URI, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
@@ -2562,7 +2639,7 @@ static HRESULT write_registration_info(IStream *stream, IRegistrationInfo *regin
     {
         if (V_VT(&var) == VT_BSTR)
         {
-            hr = write_text_value(stream, L"SecurityDescriptor", V_BSTR(&var));
+            hr = write_text_value(stream, SecurityDescriptor, V_BSTR(&var));
             VariantClear(&var);
             if (hr != S_OK) return hr;
         }
@@ -2572,7 +2649,7 @@ static HRESULT write_registration_info(IStream *stream, IRegistrationInfo *regin
 
     pop_indent();
 
-    return write_element_end(stream, L"RegistrationInfo");
+    return write_element_end(stream, RegistrationInfo);
 }
 
 static HRESULT write_principal(IStream *stream, IPrincipal *principal)
@@ -2583,9 +2660,9 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
     TASK_RUNLEVEL_TYPE level;
 
     if (!principal)
-        return write_empty_element(stream, L"Principals");
+        return write_empty_element(stream, Principals);
 
-    hr = write_element(stream, L"Principals");
+    hr = write_element(stream, Principals);
     if (hr != S_OK) return hr;
 
     push_indent();
@@ -2594,34 +2671,41 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
     if (hr == S_OK)
     {
         write_indent(stream);
-        write_stringW(stream, L"<Principal id=\"");
+        write_stringW(stream, start_element);
+        write_stringW(stream, principalW);
+        write_stringW(stream, spaceW);
+        write_stringW(stream, id);
+        write_stringW(stream, equalW);
+        write_stringW(stream, quoteW);
         write_stringW(stream, bstr);
-        write_stringW(stream, L"\">\n");
+        write_stringW(stream, quoteW);
+        write_stringW(stream, close_element);
+        write_stringW(stream, eol);
         SysFreeString(bstr);
     }
     else
-        write_element(stream, L"Principal");
+        write_element(stream, principalW);
 
     push_indent();
 
     hr = IPrincipal_get_GroupId(principal, &bstr);
     if (hr == S_OK)
     {
-        hr = write_text_value(stream, L"GroupId", bstr);
+        hr = write_text_value(stream, GroupId, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IPrincipal_get_DisplayName(principal, &bstr);
     if (hr == S_OK)
     {
-        hr = write_text_value(stream, L"DisplayName", bstr);
+        hr = write_text_value(stream, DisplayName, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
     hr = IPrincipal_get_UserId(principal, &bstr);
     if (hr == S_OK && lstrlenW(bstr))
     {
-        hr = write_text_value(stream, L"UserId", bstr);
+        hr = write_text_value(stream, UserId, bstr);
         SysFreeString(bstr);
         if (hr != S_OK) return hr;
     }
@@ -2633,10 +2717,10 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
         switch (level)
         {
         case TASK_RUNLEVEL_HIGHEST:
-            level_str = L"HighestAvailable";
+            level_str = HighestAvailable;
             break;
         case TASK_RUNLEVEL_LUA:
-            level_str = L"LeastPrivilege";
+            level_str = LeastPrivilege;
             break;
         default:
             FIXME("Principal run level %d\n", level);
@@ -2645,7 +2729,7 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
 
         if (level_str)
         {
-            hr = write_text_value(stream, L"RunLevel", level_str);
+            hr = write_text_value(stream, RunLevel, level_str);
             if (hr != S_OK) return hr;
         }
     }
@@ -2657,13 +2741,13 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
         switch (logon)
         {
         case TASK_LOGON_PASSWORD:
-            logon_str = L"Password";
+            logon_str = Password;
             break;
         case TASK_LOGON_S4U:
-            logon_str = L"S4U";
+            logon_str = S4U;
             break;
         case TASK_LOGON_INTERACTIVE_TOKEN:
-            logon_str = L"InteractiveToken";
+            logon_str = InteractiveToken;
             break;
         default:
             FIXME("Principal logon type %d\n", logon);
@@ -2672,22 +2756,22 @@ static HRESULT write_principal(IStream *stream, IPrincipal *principal)
 
         if (logon_str)
         {
-            hr = write_text_value(stream, L"LogonType", logon_str);
+            hr = write_text_value(stream, LogonType, logon_str);
             if (hr != S_OK) return hr;
         }
     }
 
     pop_indent();
-    write_element_end(stream, L"Principal");
+    write_element_end(stream, principalW);
 
     pop_indent();
-    return write_element_end(stream, L"Principals");
+    return write_element_end(stream, Principals);
 }
 
 static HRESULT write_settings(IStream *stream, ITaskSettings *settings)
 {
     if (!settings)
-        return write_empty_element(stream, L"Settings");
+        return write_empty_element(stream, Settings);
 
     FIXME("stub\n");
     return S_OK;
@@ -2696,7 +2780,7 @@ static HRESULT write_settings(IStream *stream, ITaskSettings *settings)
 static HRESULT write_triggers(IStream *stream, ITriggerCollection *triggers)
 {
     if (!triggers)
-        return write_empty_element(stream, L"Triggers");
+        return write_empty_element(stream, Triggers);
 
     FIXME("stub\n");
     return S_OK;
@@ -2706,11 +2790,11 @@ static HRESULT write_actions(IStream *stream, IActionCollection *actions)
 {
     if (!actions)
     {
-        write_element(stream, L"Actions");
+        write_element(stream, actionsW);
         push_indent();
-        write_empty_element(stream, L"Exec");
+        write_empty_element(stream, Exec);
         pop_indent();
-        return write_element_end(stream, L"Actions");
+        return write_element_end(stream, actionsW);
     }
 
     FIXME("stub\n");
@@ -2759,7 +2843,7 @@ static HRESULT WINAPI TaskDefinition_get_XmlText(ITaskDefinition *iface, BSTR *x
 
     pop_indent();
 
-    write_element_end(stream, L"Task");
+    write_element_end(stream, Task);
     IStream_Write(stream, "\0\0", 2, NULL);
 
     p = GlobalLock(hmem);
@@ -2805,15 +2889,17 @@ static HRESULT read_text_value(IXmlReader *reader, WCHAR **value)
 
 static HRESULT read_variantbool_value(IXmlReader *reader, VARIANT_BOOL *vbool)
 {
+    static const WCHAR trueW[] = {'t','r','u','e',0};
+    static const WCHAR falseW[] = {'f','a','l','s','e',0};
     HRESULT hr;
     WCHAR *value;
 
     hr = read_text_value(reader, &value);
     if (hr != S_OK) return hr;
 
-    if (!lstrcmpW(value, L"true"))
+    if (!lstrcmpW(value, trueW))
         *vbool = VARIANT_TRUE;
-    else if (!lstrcmpW(value, L"false"))
+    else if (!lstrcmpW(value, falseW))
         *vbool = VARIANT_FALSE;
     else
     {
@@ -2861,7 +2947,7 @@ static HRESULT read_principal_attributes(IXmlReader *reader, IPrincipal *princip
 
         TRACE("%s=%s\n", debugstr_w(name), debugstr_w(value));
 
-        if (!lstrcmpW(name, L"id"))
+        if (!lstrcmpW(name, id))
             IPrincipal_put_Id(principal, (BSTR)value);
         else
             FIXME("unhandled Principal attribute %s\n", debugstr_w(name));
@@ -2897,7 +2983,7 @@ static HRESULT read_principal(IXmlReader *reader, IPrincipal *principal)
 
             TRACE("/%s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Principal"))
+            if (!lstrcmpW(name, principalW))
                 return S_OK;
 
             break;
@@ -2908,20 +2994,20 @@ static HRESULT read_principal(IXmlReader *reader, IPrincipal *principal)
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"UserId"))
+            if (!lstrcmpW(name, UserId))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IPrincipal_put_UserId(principal, value);
             }
-            else if (!lstrcmpW(name, L"LogonType"))
+            else if (!lstrcmpW(name, LogonType))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                 {
                     TASK_LOGON_TYPE logon = TASK_LOGON_NONE;
 
-                    if (!lstrcmpW(value, L"InteractiveToken"))
+                    if (!lstrcmpW(value, InteractiveToken))
                         logon = TASK_LOGON_INTERACTIVE_TOKEN;
                     else
                         FIXME("unhandled LogonType %s\n", debugstr_w(value));
@@ -2929,14 +3015,14 @@ static HRESULT read_principal(IXmlReader *reader, IPrincipal *principal)
                     IPrincipal_put_LogonType(principal, logon);
                 }
             }
-            else if (!lstrcmpW(name, L"RunLevel"))
+            else if (!lstrcmpW(name, RunLevel))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                 {
                     TASK_RUNLEVEL_TYPE level = TASK_RUNLEVEL_LUA;
 
-                    if (!lstrcmpW(value, L"LeastPrivilege"))
+                    if (!lstrcmpW(value, LeastPrivilege))
                         level = TASK_RUNLEVEL_LUA;
                     else
                         FIXME("unhandled RunLevel %s\n", debugstr_w(value));
@@ -2985,7 +3071,7 @@ static HRESULT read_principals(IXmlReader *reader, ITaskDefinition *taskdef)
 
             TRACE("/%s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Principals"))
+            if (!lstrcmpW(name, Principals))
                 return S_OK;
 
             break;
@@ -2996,7 +3082,7 @@ static HRESULT read_principals(IXmlReader *reader, ITaskDefinition *taskdef)
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Principal"))
+            if (!lstrcmpW(name, principalW))
             {
                 IPrincipal *principal;
 
@@ -3061,7 +3147,7 @@ static HRESULT read_settings(IXmlReader *reader, ITaskSettings *taskset)
 
             TRACE("/%s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Settings"))
+            if (!lstrcmpW(name, Settings))
                 return S_OK;
 
             break;
@@ -3072,14 +3158,14 @@ static HRESULT read_settings(IXmlReader *reader, ITaskSettings *taskset)
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"MultipleInstancesPolicy"))
+            if (!lstrcmpW(name, MultipleInstancesPolicy))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                 {
                     int_val = TASK_INSTANCES_IGNORE_NEW;
 
-                    if (!lstrcmpW(value, L"IgnoreNew"))
+                    if (!lstrcmpW(value, IgnoreNew))
                         int_val = TASK_INSTANCES_IGNORE_NEW;
                     else
                         FIXME("unhandled MultipleInstancesPolicy %s\n", debugstr_w(value));
@@ -3087,79 +3173,79 @@ static HRESULT read_settings(IXmlReader *reader, ITaskSettings *taskset)
                     ITaskSettings_put_MultipleInstances(taskset, int_val);
                 }
             }
-            else if (!lstrcmpW(name, L"DisallowStartIfOnBatteries"))
+            else if (!lstrcmpW(name, DisallowStartIfOnBatteries))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_DisallowStartIfOnBatteries(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"AllowStartOnDemand"))
+            else if (!lstrcmpW(name, AllowStartOnDemand))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_AllowDemandStart(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"StopIfGoingOnBatteries"))
+            else if (!lstrcmpW(name, StopIfGoingOnBatteries))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_StopIfGoingOnBatteries(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"AllowHardTerminate"))
+            else if (!lstrcmpW(name, AllowHardTerminate))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_AllowHardTerminate(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"StartWhenAvailable"))
+            else if (!lstrcmpW(name, StartWhenAvailable))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_StartWhenAvailable(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"RunOnlyIfNetworkAvailable"))
+            else if (!lstrcmpW(name, RunOnlyIfNetworkAvailable))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_RunOnlyIfNetworkAvailable(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"Enabled"))
+            else if (!lstrcmpW(name, Enabled))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_Enabled(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"Hidden"))
+            else if (!lstrcmpW(name, Hidden))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_Hidden(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"RunOnlyIfIdle"))
+            else if (!lstrcmpW(name, RunOnlyIfIdle))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_RunOnlyIfIdle(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"WakeToRun"))
+            else if (!lstrcmpW(name, WakeToRun))
             {
                 hr = read_variantbool_value(reader, &bool_val);
                 if (hr != S_OK) return hr;
                 ITaskSettings_put_WakeToRun(taskset, bool_val);
             }
-            else if (!lstrcmpW(name, L"ExecutionTimeLimit"))
+            else if (!lstrcmpW(name, ExecutionTimeLimit))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     ITaskSettings_put_ExecutionTimeLimit(taskset, value);
             }
-            else if (!lstrcmpW(name, L"Priority"))
+            else if (!lstrcmpW(name, Priority))
             {
                 hr = read_int_value(reader, &int_val);
                 if (hr == S_OK)
                     ITaskSettings_put_Priority(taskset, int_val);
             }
-            else if (!lstrcmpW(name, L"IdleSettings"))
+            else if (!lstrcmpW(name, IdleSettings))
             {
                 hr = read_idle_settings(reader, taskset);
                 if (hr != S_OK) return hr;
@@ -3206,7 +3292,7 @@ static HRESULT read_registration_info(IXmlReader *reader, IRegistrationInfo *inf
 
             TRACE("/%s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"RegistrationInfo"))
+            if (!lstrcmpW(name, RegistrationInfo))
                 return S_OK;
 
             break;
@@ -3217,43 +3303,43 @@ static HRESULT read_registration_info(IXmlReader *reader, IRegistrationInfo *inf
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Author"))
+            if (!lstrcmpW(name, Author))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_Author(info, value);
             }
-            else if (!lstrcmpW(name, L"Description"))
+            else if (!lstrcmpW(name, Description))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_Description(info, value);
             }
-            else if (!lstrcmpW(name, L"Version"))
+            else if (!lstrcmpW(name, Version))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_Version(info, value);
             }
-            else if (!lstrcmpW(name, L"Date"))
+            else if (!lstrcmpW(name, Date))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_Date(info, value);
             }
-            else if (!lstrcmpW(name, L"Documentation"))
+            else if (!lstrcmpW(name, Documentation))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_Documentation(info, value);
             }
-            else if (!lstrcmpW(name, L"URI"))
+            else if (!lstrcmpW(name, URI))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
                     IRegistrationInfo_put_URI(info, value);
             }
-            else if (!lstrcmpW(name, L"Source"))
+            else if (!lstrcmpW(name, Source))
             {
                 hr = read_text_value(reader, &value);
                 if (hr == S_OK)
@@ -3303,26 +3389,26 @@ static HRESULT read_task_attributes(IXmlReader *reader, ITaskDefinition *taskdef
 
         TRACE("%s=%s\n", debugstr_w(name), debugstr_w(value));
 
-        if (!lstrcmpW(name, L"version"))
+        if (!lstrcmpW(name, version))
         {
             TASK_COMPATIBILITY compatibility = TASK_COMPATIBILITY_V2;
 
-            if (!lstrcmpW(value, L"1.0"))
+            if (!lstrcmpW(value, v1_0))
                 compatibility = TASK_COMPATIBILITY_AT;
-            else if (!lstrcmpW(value, L"1.1"))
+            else if (!lstrcmpW(value, v1_1))
                 compatibility = TASK_COMPATIBILITY_V1;
-            else if (!lstrcmpW(value, L"1.2"))
+            else if (!lstrcmpW(value, v1_2))
                 compatibility = TASK_COMPATIBILITY_V2;
-            else if (!lstrcmpW(value, L"1.3"))
+            else if (!lstrcmpW(value, v1_3))
                 compatibility = TASK_COMPATIBILITY_V2_1;
             else
                 FIXME("unknown version %s\n", debugstr_w(value));
 
             ITaskSettings_put_Compatibility(taskset, compatibility);
         }
-        else if (!lstrcmpW(name, L"xmlns"))
+        else if (!lstrcmpW(name, xmlns))
         {
-            if (lstrcmpW(value, L"http://schemas.microsoft.com/windows/2004/02/mit/task"))
+            if (lstrcmpW(value, task_ns))
             {
                 FIXME("unknown namespace %s\n", debugstr_w(value));
                 break;
@@ -3361,7 +3447,7 @@ static HRESULT read_task(IXmlReader *reader, ITaskDefinition *taskdef)
 
             TRACE("/%s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Task"))
+            if (!lstrcmpW(name, Task))
                 return S_OK;
 
             break;
@@ -3372,7 +3458,7 @@ static HRESULT read_task(IXmlReader *reader, ITaskDefinition *taskdef)
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"RegistrationInfo"))
+            if (!lstrcmpW(name, RegistrationInfo))
             {
                 IRegistrationInfo *info;
 
@@ -3381,7 +3467,7 @@ static HRESULT read_task(IXmlReader *reader, ITaskDefinition *taskdef)
                 hr = read_registration_info(reader, info);
                 IRegistrationInfo_Release(info);
             }
-            else if (!lstrcmpW(name, L"Settings"))
+            else if (!lstrcmpW(name, Settings))
             {
                 ITaskSettings *taskset;
 
@@ -3390,11 +3476,11 @@ static HRESULT read_task(IXmlReader *reader, ITaskDefinition *taskdef)
                 hr = read_settings(reader, taskset);
                 ITaskSettings_Release(taskset);
             }
-            else if (!lstrcmpW(name, L"Triggers"))
+            else if (!lstrcmpW(name, Triggers))
                 hr = read_triggers(reader, taskdef);
-            else if (!lstrcmpW(name, L"Principals"))
+            else if (!lstrcmpW(name, Principals))
                 hr = read_principals(reader, taskdef);
-            else if (!lstrcmpW(name, L"Actions"))
+            else if (!lstrcmpW(name, actionsW))
                 hr = read_actions(reader, taskdef);
             else
                 FIXME("unhandled Task element %s\n", debugstr_w(name));
@@ -3436,7 +3522,7 @@ static HRESULT read_xml(IXmlReader *reader, ITaskDefinition *taskdef)
 
             TRACE("Element: %s\n", debugstr_w(name));
 
-            if (!lstrcmpW(name, L"Task"))
+            if (!lstrcmpW(name, Task))
             {
                 hr = read_task_attributes(reader, taskdef);
                 if (hr != S_OK) return hr;
@@ -3637,21 +3723,21 @@ static HRESULT WINAPI TaskService_GetTypeInfoCount(ITaskService *iface, UINT *co
 
 static HRESULT WINAPI TaskService_GetTypeInfo(ITaskService *iface, UINT index, LCID lcid, ITypeInfo **info)
 {
-    FIXME("%p,%u,%lu,%p: stub\n", iface, index, lcid, info);
+    FIXME("%p,%u,%u,%p: stub\n", iface, index, lcid, info);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskService_GetIDsOfNames(ITaskService *iface, REFIID riid, LPOLESTR *names,
                                                 UINT count, LCID lcid, DISPID *dispid)
 {
-    FIXME("%p,%s,%p,%u,%lu,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
+    FIXME("%p,%s,%p,%u,%u,%p: stub\n", iface, debugstr_guid(riid), names, count, lcid, dispid);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskService_Invoke(ITaskService *iface, DISPID dispid, REFIID riid, LCID lcid, WORD flags,
                                          DISPPARAMS *params, VARIANT *result, EXCEPINFO *excepinfo, UINT *argerr)
 {
-    FIXME("%p,%ld,%s,%04lx,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
+    FIXME("%p,%d,%s,%04x,%04x,%p,%p,%p,%p: stub\n", iface, dispid, debugstr_guid(riid), lcid, flags,
           params, result, excepinfo, argerr);
     return E_NOTIMPL;
 }
@@ -3672,18 +3758,18 @@ static HRESULT WINAPI TaskService_GetFolder(ITaskService *iface, BSTR path, ITas
 
 static HRESULT WINAPI TaskService_GetRunningTasks(ITaskService *iface, LONG flags, IRunningTaskCollection **tasks)
 {
-    FIXME("%p,%lx,%p: stub\n", iface, flags, tasks);
+    FIXME("%p,%x,%p: stub\n", iface, flags, tasks);
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI TaskService_NewTask(ITaskService *iface, DWORD flags, ITaskDefinition **definition)
 {
-    TRACE("%p,%lx,%p\n", iface, flags, definition);
+    TRACE("%p,%x,%p\n", iface, flags, definition);
 
     if (!definition) return E_POINTER;
 
     if (flags)
-        FIXME("unsupported flags %lx\n", flags);
+        FIXME("unsupported flags %x\n", flags);
 
     return TaskDefinition_create(definition);
 }
@@ -3696,17 +3782,18 @@ static inline BOOL is_variant_null(const VARIANT *var)
 
 static HRESULT start_schedsvc(void)
 {
+    static const WCHAR scheduleW[] = { 'S','c','h','e','d','u','l','e',0 };
     SC_HANDLE scm, service;
     SERVICE_STATUS_PROCESS status;
     ULONGLONG start_time;
     HRESULT hr = SCHED_E_SERVICE_NOT_RUNNING;
 
-    TRACE("Trying to start Schedule service\n");
+    TRACE("Trying to start %s service\n", debugstr_w(scheduleW));
 
     scm = OpenSCManagerW(NULL, NULL, 0);
     if (!scm) return SCHED_E_SERVICE_NOT_INSTALLED;
 
-    service = OpenServiceW(scm, L"Schedule", SERVICE_START | SERVICE_QUERY_STATUS);
+    service = OpenServiceW(scm, scheduleW, SERVICE_START | SERVICE_QUERY_STATUS);
     if (service)
     {
         if (StartServiceW(service, 0, NULL) || GetLastError() == ERROR_SERVICE_ALREADY_RUNNING)
@@ -3718,7 +3805,7 @@ static HRESULT start_schedsvc(void)
 
                 if (!QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, (BYTE *)&status, sizeof(status), &dummy))
                 {
-                    WARN("failed to query scheduler status (%lu)\n", GetLastError());
+                    WARN("failed to query scheduler status (%u)\n", GetLastError());
                     break;
                 }
 
@@ -3734,15 +3821,15 @@ static HRESULT start_schedsvc(void)
             } while (status.dwCurrentState == SERVICE_START_PENDING);
 
             if (status.dwCurrentState != SERVICE_RUNNING)
-                WARN("scheduler failed to start %lu\n", status.dwCurrentState);
+                WARN("scheduler failed to start %u\n", status.dwCurrentState);
         }
         else
-            WARN("failed to start scheduler service (%lu)\n", GetLastError());
+            WARN("failed to start scheduler service (%u)\n", GetLastError());
 
         CloseServiceHandle(service);
     }
     else
-        WARN("failed to open scheduler service (%lu)\n", GetLastError());
+        WARN("failed to open scheduler service (%u)\n", GetLastError());
 
     CloseServiceHandle(scm);
     return hr;
@@ -3750,13 +3837,13 @@ static HRESULT start_schedsvc(void)
 
 static HRESULT WINAPI TaskService_Connect(ITaskService *iface, VARIANT server, VARIANT user, VARIANT domain, VARIANT password)
 {
-    static WCHAR ncalrpc[] = L"ncalrpc";
+    static WCHAR ncalrpc[] = { 'n','c','a','l','r','p','c',0 };
     TaskService *task_svc = impl_from_ITaskService(iface);
     WCHAR comp_name[MAX_COMPUTERNAME_LENGTH + 1];
     DWORD len;
     HRESULT hr;
     RPC_WSTR binding_str;
-    extern handle_t schrpc_handle;
+    extern handle_t rpc_handle;
 
     TRACE("%p,%s,%s,%s,%s\n", iface, debugstr_variant(&server), debugstr_variant(&user),
           debugstr_variant(&domain), debugstr_variant(&password));
@@ -3795,7 +3882,7 @@ static HRESULT WINAPI TaskService_Connect(ITaskService *iface, VARIANT server, V
 
     hr = RpcStringBindingComposeW(NULL, ncalrpc, NULL, NULL, NULL, &binding_str);
     if (hr != RPC_S_OK) return hr;
-    hr = RpcBindingFromStringBindingW(binding_str, &schrpc_handle);
+    hr = RpcBindingFromStringBindingW(binding_str, &rpc_handle);
     RpcStringFreeW(&binding_str);
     if (hr != RPC_S_OK) return hr;
 
@@ -3803,7 +3890,7 @@ static HRESULT WINAPI TaskService_Connect(ITaskService *iface, VARIANT server, V
     hr = SchRpcHighestVersion(&task_svc->version);
     if (hr != S_OK) return hr;
 
-    TRACE("server version %#lx\n", task_svc->version);
+    TRACE("server version %#x\n", task_svc->version);
 
     lstrcpyW(task_svc->comp_name, comp_name);
     task_svc->connected = TRUE;

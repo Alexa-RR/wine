@@ -1,6 +1,6 @@
 MODULE    = virtdisk.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	virtdisk_main.c

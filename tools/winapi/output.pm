@@ -19,7 +19,6 @@
 package output;
 
 use strict;
-use warnings 'all';
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 require Exporter;
@@ -35,7 +34,6 @@ $output = '_output'->new;
 package _output;
 
 use strict;
-use warnings 'all';
 
 my $stdout_isatty = -t STDOUT;
 my $stderr_isatty = -t STDERR;

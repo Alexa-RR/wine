@@ -85,7 +85,7 @@ static ULONG WINAPI EnumWorkItems_AddRef(IEnumWorkItems *iface)
 {
     EnumWorkItemsImpl *This = impl_from_IEnumWorkItems(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("(%p)->(%lu)\n", This, ref);
+    TRACE("(%p)->(%u)\n", This, ref);
     return ref;
 }
 
@@ -94,7 +94,7 @@ static ULONG WINAPI EnumWorkItems_Release(IEnumWorkItems *iface)
     EnumWorkItemsImpl *This = impl_from_IEnumWorkItems(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p)->(%lu)\n", This, ref);
+    TRACE("(%p)->(%u)\n", This, ref);
 
     if (ref == 0)
     {
@@ -124,6 +124,7 @@ static inline BOOL is_file(const WIN32_FIND_DATAW *data)
 
 static HRESULT WINAPI EnumWorkItems_Next(IEnumWorkItems *iface, ULONG count, LPWSTR **names, ULONG *fetched)
 {
+    static const WCHAR tasksW[] = { '\\','T','a','s','k','s','\\','*',0 };
     EnumWorkItemsImpl *This = impl_from_IEnumWorkItems(iface);
     WCHAR path[MAX_PATH];
     WIN32_FIND_DATAW data;
@@ -131,7 +132,7 @@ static HRESULT WINAPI EnumWorkItems_Next(IEnumWorkItems *iface, ULONG count, LPW
     LPWSTR *list;
     HRESULT hr = S_FALSE;
 
-    TRACE("(%p)->(%lu %p %p)\n", This, count, names, fetched);
+    TRACE("(%p)->(%u %p %p)\n", This, count, names, fetched);
 
     if (!count || !names || (!fetched && count > 1)) return E_INVALIDARG;
 
@@ -145,7 +146,7 @@ static HRESULT WINAPI EnumWorkItems_Next(IEnumWorkItems *iface, ULONG count, LPW
     if (This->handle == INVALID_HANDLE_VALUE)
     {
         GetWindowsDirectoryW(path, MAX_PATH);
-        lstrcatW(path, L"\\Tasks\\*");
+        lstrcatW(path, tasksW);
         This->handle = FindFirstFileW(path, &data);
         if (This->handle == INVALID_HANDLE_VALUE)
             return S_FALSE;
@@ -212,7 +213,7 @@ static HRESULT WINAPI EnumWorkItems_Skip(IEnumWorkItems *iface, ULONG count)
     ULONG fetched;
     HRESULT hr;
 
-    TRACE("(%p)->(%lu)\n", iface, count);
+    TRACE("(%p)->(%u)\n", iface, count);
 
     hr = EnumWorkItems_Next(iface, count, &names, &fetched);
     if (SUCCEEDED(hr))
@@ -416,6 +417,8 @@ static HRESULT WINAPI MSTASK_ITaskScheduler_Activate(ITaskScheduler *iface,
 
 static HRESULT WINAPI MSTASK_ITaskScheduler_Delete(ITaskScheduler *iface, LPCWSTR name)
 {
+    static const WCHAR tasksW[] = { '\\','T','a','s','k','s','\\',0 };
+    static const WCHAR jobW[] = { '.','j','o','b',0 };
     WCHAR task_name[MAX_PATH];
 
     TRACE("%p, %s\n", iface, debugstr_w(name));
@@ -423,9 +426,9 @@ static HRESULT WINAPI MSTASK_ITaskScheduler_Delete(ITaskScheduler *iface, LPCWST
     if (wcschr(name, '.')) return E_INVALIDARG;
 
     GetWindowsDirectoryW(task_name, MAX_PATH);
-    lstrcatW(task_name, L"\\Tasks\\");
+    lstrcatW(task_name, tasksW);
     lstrcatW(task_name, name);
-    lstrcatW(task_name, L".job");
+    lstrcatW(task_name, jobW);
 
     if (!DeleteFileW(task_name))
         return HRESULT_FROM_WIN32(GetLastError());
@@ -456,6 +459,8 @@ static HRESULT WINAPI MSTASK_ITaskScheduler_NewWorkItem(
 
 static HRESULT WINAPI MSTASK_ITaskScheduler_AddWorkItem(ITaskScheduler *iface, LPCWSTR name, IScheduledWorkItem *item)
 {
+    static const WCHAR tasksW[] = { '\\','T','a','s','k','s','\\',0 };
+    static const WCHAR jobW[] = { '.','j','o','b',0 };
     WCHAR task_name[MAX_PATH];
     IPersistFile *pfile;
     HRESULT hr;
@@ -465,9 +470,9 @@ static HRESULT WINAPI MSTASK_ITaskScheduler_AddWorkItem(ITaskScheduler *iface, L
     if (wcschr(name, '.')) return E_INVALIDARG;
 
     GetWindowsDirectoryW(task_name, MAX_PATH);
-    lstrcatW(task_name, L"\\Tasks\\");
+    lstrcatW(task_name, tasksW);
     lstrcatW(task_name, name);
-    lstrcatW(task_name, L".job");
+    lstrcatW(task_name, jobW);
 
     hr = IScheduledWorkItem_QueryInterface(item, &IID_IPersistFile, (void **)&pfile);
     if (hr == S_OK)

@@ -92,6 +92,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(mshtml);
 #define DOM_VK_HOME     VK_HOME
 #define DOM_VK_END      VK_END
 
+static const WCHAR fontW[] = {'f','o','n','t',0};
+static const WCHAR sizeW[] = {'s','i','z','e',0};
+
 void set_dirty(GeckoBrowser *browser, VARIANT_BOOL dirty)
 {
     nsresult nsres;
@@ -102,11 +105,11 @@ void set_dirty(GeckoBrowser *browser, VARIANT_BOOL dirty)
     if(dirty) {
         nsres = nsIEditor_IncrementModificationCount(browser->editor, 1);
         if(NS_FAILED(nsres))
-            ERR("IncrementModificationCount failed: %08lx\n", nsres);
+            ERR("IncrementModificationCount failed: %08x\n", nsres);
     }else {
         nsres = nsIEditor_ResetModificationCount(browser->editor);
         if(NS_FAILED(nsres))
-            ERR("ResetModificationCount failed: %08lx\n", nsres);
+            ERR("ResetModificationCount failed: %08x\n", nsres);
     }
 }
 
@@ -119,7 +122,7 @@ static void do_ns_editor_command(GeckoBrowser *This, const char *cmd)
 
     nsres = nsIController_DoCommand(This->editor_controller, cmd);
     if(NS_FAILED(nsres))
-        ERR("DoCommand(%s) failed: %08lx\n", debugstr_a(cmd), nsres);
+        ERR("DoCommand(%s) failed: %08x\n", debugstr_a(cmd), nsres);
 }
 
 static nsresult get_ns_command_state(GeckoBrowser *This, const char *cmd, nsICommandParams *nsparam)
@@ -129,13 +132,13 @@ static nsresult get_ns_command_state(GeckoBrowser *This, const char *cmd, nsICom
 
     nsres = get_nsinterface((nsISupports*)This->webbrowser, &IID_nsICommandManager, (void**)&cmdmgr);
     if(NS_FAILED(nsres)) {
-        ERR("Could not get nsICommandManager: %08lx\n", nsres);
+        ERR("Could not get nsICommandManager: %08x\n", nsres);
         return nsres;
     }
 
     nsres = nsICommandManager_GetCommandState(cmdmgr, cmd, This->doc->basedoc.window->window_proxy, nsparam);
     if(NS_FAILED(nsres))
-        ERR("GetCommandState(%s) failed: %08lx\n", debugstr_a(cmd), nsres);
+        ERR("GetCommandState(%s) failed: %08x\n", debugstr_a(cmd), nsres);
 
     nsICommandManager_Release(cmdmgr);
     return nsres;
@@ -200,7 +203,7 @@ static nsISelection *get_ns_selection(HTMLDocumentNode *doc)
 
     nsres = nsIDOMWindow_GetSelection(doc->basedoc.window->nswindow, &nsselection);
     if(NS_FAILED(nsres))
-        ERR("GetSelection failed %08lx\n", nsres);
+        ERR("GetSelection failed %08x\n", nsres);
 
     return nsselection;
 
@@ -283,13 +286,13 @@ static void get_font_size(HTMLDocumentNode *doc, WCHAR *ret)
             nsIDOMElement_GetTagName(elem, &tag_str);
             nsAString_GetData(&tag_str, &tag);
 
-            if(!wcsicmp(tag, L"font")) {
+            if(!wcsicmp(tag, fontW)) {
                 nsAString val_str;
                 const PRUnichar *val;
 
                 TRACE("found font tag %p\n", elem);
 
-                get_elem_attr_value(elem, L"size", &val_str, &val);
+                get_elem_attr_value(elem, sizeW, &val_str, &val);
                 if(*val) {
                     TRACE("found size %s\n", debugstr_w(val));
                     lstrcpyW(ret, val);
@@ -330,16 +333,16 @@ static void set_font_size(HTMLDocumentNode *doc, LPCWSTR size)
 
     nsISelection_GetRangeCount(nsselection, &range_cnt);
     if(range_cnt != 1) {
-        FIXME("range_cnt %ld not supprted\n", range_cnt);
+        FIXME("range_cnt %d not supprted\n", range_cnt);
         if(!range_cnt) {
             nsISelection_Release(nsselection);
             return;
         }
     }
 
-    create_nselem(doc, L"font", &elem);
+    create_nselem(doc, fontW, &elem);
 
-    nsAString_InitDepend(&size_str, L"size");
+    nsAString_InitDepend(&size_str, sizeW);
     nsAString_InitDepend(&val_str, size);
 
     nsIDOMElement_SetAttribute(elem, &size_str, &val_str);
@@ -355,7 +358,7 @@ static void set_font_size(HTMLDocumentNode *doc, LPCWSTR size)
         nsISelection_Collapse(nsselection, (nsIDOMNode*)elem, 0);
     }else {
         /* Remove all size attributes from the range */
-        remove_child_attr(elem, L"font", &size_str);
+        remove_child_attr(elem, fontW, &size_str);
         nsISelection_SelectAllChildren(nsselection, (nsIDOMNode*)elem);
     }
 
@@ -565,7 +568,7 @@ static HRESULT exec_forecolor(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *
             nsICommandParams *nsparam = create_nscommand_params();
             char color_str[10];
 
-            sprintf(color_str, "#%02lx%02lx%02lx",
+            sprintf(color_str, "#%02x%02x%02x",
                     V_I4(in)&0xff, (V_I4(in)>>8)&0xff, (V_I4(in)>>16)&0xff);
 
             nsICommandParams_SetCStringValue(nsparam, NSSTATE_ATTRIBUTE, color_str);
@@ -603,7 +606,8 @@ static HRESULT exec_fontsize(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *i
         switch(V_VT(in)) {
         case VT_I4: {
             WCHAR size[10];
-            wsprintfW(size, L"%d", V_I4(in));
+            static const WCHAR format[] = {'%','d',0};
+            wsprintfW(size, format, V_I4(in));
             set_font_size(doc, size);
             break;
         }
@@ -653,10 +657,13 @@ static HRESULT exec_italic(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *in,
 
 static HRESULT query_justify(HTMLDocumentNode *doc, OLECMD *cmd)
 {
+    static const PRUnichar justifycenterW[] = {'j','u','s','t','i','f','y','c','e','n','t','e','r',0};
+    static const PRUnichar justifyrightW[] = {'j','u','s','t','i','f','y','r','i','g','h','t',0};
+
     switch(cmd->cmdID) {
     case IDM_JUSTIFYCENTER:
         TRACE("(%p) IDM_JUSTIFYCENTER\n", doc);
-        cmd->cmdf = query_align_status(doc, L"justifycenter");
+        cmd->cmdf = query_align_status(doc, justifycenterW);
         break;
     case IDM_JUSTIFYLEFT:
         TRACE("(%p) IDM_JUSTIFYLEFT\n", doc);
@@ -668,7 +675,7 @@ static HRESULT query_justify(HTMLDocumentNode *doc, OLECMD *cmd)
         break;
     case IDM_JUSTIFYRIGHT:
         TRACE("(%p) IDM_JUSTIFYRIGHT\n", doc);
-        cmd->cmdf = query_align_status(doc, L"justifyright");
+        cmd->cmdf = query_align_status(doc, justifyrightW);
         break;
     }
 
@@ -792,7 +799,7 @@ static HRESULT exec_composesettings(HTMLDocumentNode *doc, DWORD cmdexecopt, VAR
         return E_INVALIDARG;
     }
 
-    TRACE("(%p)->(%lx %s)\n", doc, cmdexecopt, debugstr_w(V_BSTR(in)));
+    TRACE("(%p)->(%x %s)\n", doc, cmdexecopt, debugstr_w(V_BSTR(in)));
 
     update_doc(doc->browser->doc, UPDATE_UI);
 
@@ -877,7 +884,7 @@ HRESULT editor_exec_paste(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *in, 
 
 static HRESULT exec_setdirty(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *in, VARIANT *out)
 {
-    TRACE("(%p)->(%08lx %p %p)\n", doc, cmdexecopt, in, out);
+    TRACE("(%p)->(%08x %p %p)\n", doc, cmdexecopt, in, out);
 
     if(!in)
         return S_OK;
@@ -952,6 +959,14 @@ static HRESULT query_edit_status(HTMLDocumentNode *doc, OLECMD *cmd)
 
 static INT_PTR CALLBACK hyperlink_dlgproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
+    static const WCHAR wszOther[] = {'(','o','t','h','e','r',')',0};
+    static const WCHAR wszFile[] = {'f','i','l','e',':',0};
+    static const WCHAR wszFtp[] = {'f','t','p',':',0};
+    static const WCHAR wszHttp[] = {'h','t','t','p',':',0};
+    static const WCHAR wszHttps[] = {'h','t','t','p','s',':',0};
+    static const WCHAR wszMailto[] = {'m','a','i','l','t','o',':',0};
+    static const WCHAR wszNews[] = {'n','e','w','s',':',0};
+
     switch (msg)
     {
         case WM_INITDIALOG:
@@ -963,13 +978,13 @@ static INT_PTR CALLBACK hyperlink_dlgproc(HWND hwnd, UINT msg, WPARAM wparam, LP
 
             SetWindowLongPtrW(hwnd, DWLP_USER, lparam);
 
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"(other)");
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"file:");
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"ftp:");
-            def_idx = SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"http:");
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"https:");
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"mailto:");
-            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)L"news:");
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszOther);
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszFile);
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszFtp);
+            def_idx = SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszHttp);
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszHttps);
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszMailto);
+            SendMessageW(hwndCB, CB_INSERTSTRING, -1, (LPARAM)wszNews);
             SendMessageW(hwndCB, CB_SETCURSEL, def_idx, 0);
 
             /* force the updating of the URL edit box */
@@ -1013,7 +1028,7 @@ static INT_PTR CALLBACK hyperlink_dlgproc(HWND hwnd, UINT msg, WPARAM wparam, LP
                     type = HeapAlloc(GetProcessHeap(), 0, (len + 1) * sizeof(WCHAR));
                     SendMessageW((HWND)lparam, CB_GETLBTEXT, item, (LPARAM)type);
 
-                    if (!wcscmp(type, L"(other)"))
+                    if (!wcscmp(type, wszOther))
                         *type = '\0';
 
                     /* get current URL */
@@ -1032,7 +1047,7 @@ static INT_PTR CALLBACK hyperlink_dlgproc(HWND hwnd, UINT msg, WPARAM wparam, LP
                     if (*type != '\0')
                     {
                         memcpy(url, type, (lstrlenW(type) + 1) * sizeof(WCHAR));
-                        if (wcscmp(type, L"mailto:") && wcscmp(type, L"news:"))
+                        if (wcscmp(type, wszMailto) && wcscmp(type, wszNews))
                             memcpy(url + lstrlenW(type), wszSlashSlash, sizeof(wszSlashSlash));
                     }
 
@@ -1063,7 +1078,10 @@ static HRESULT exec_hyperlink(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *
     INT ret;
     HRESULT hres = E_FAIL;
 
-    TRACE("%p, 0x%lx, %p, %p\n", doc, cmdexecopt, in, out);
+    static const WCHAR aW[] = {'a',0};
+    static const WCHAR hrefW[] = {'h','r','e','f',0};
+
+    TRACE("%p, 0x%x, %p, %p\n", doc, cmdexecopt, in, out);
 
     if (cmdexecopt == OLECMDEXECOPT_DONTPROMPTUSER)
     {
@@ -1091,9 +1109,9 @@ static HRESULT exec_hyperlink(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *
         return E_FAIL;
 
     /* create an element for the link */
-    create_nselem(doc, L"a", &anchor_elem);
+    create_nselem(doc, aW, &anchor_elem);
 
-    nsAString_InitDepend(&href_str, L"href");
+    nsAString_InitDepend(&href_str, hrefW);
     nsAString_InitDepend(&ns_url, url);
     nsIDOMElement_SetAttribute(anchor_elem, &href_str, &ns_url);
     nsAString_Finish(&href_str);
@@ -1136,7 +1154,7 @@ static HRESULT exec_hyperlink(HTMLDocumentNode *doc, DWORD cmdexecopt, VARIANT *
     if (cmdexecopt != OLECMDEXECOPT_DONTPROMPTUSER)
         SysFreeString(url);
 
-    TRACE("-- 0x%08lx\n", hres);
+    TRACE("-- 0x%08x\n", hres);
     return hres;
 }
 
@@ -1228,7 +1246,7 @@ HRESULT setup_edit_mode(HTMLDocumentObj *doc)
         hres = IDocHostUIHandler_GetHostInfo(doc->hostui, &hostinfo);
         if(SUCCEEDED(hres))
             /* FIXME: use hostinfo */
-            TRACE("hostinfo = {%lu %08lx %08lx %s %s}\n",
+            TRACE("hostinfo = {%u %08x %08x %s %s}\n",
                     hostinfo.cbSize, hostinfo.dwFlags, hostinfo.dwDoubleClick,
                     debugstr_w(hostinfo.pchHostCss), debugstr_w(hostinfo.pchHostNS));
     }
@@ -1242,9 +1260,11 @@ HRESULT setup_edit_mode(HTMLDocumentObj *doc)
         mon = doc->basedoc.window->mon;
         IMoniker_AddRef(mon);
     }else {
-        hres = CreateURLMoniker(NULL, L"about:blank", &mon);
+        static const WCHAR about_blankW[] = {'a','b','o','u','t',':','b','l','a','n','k',0};
+
+        hres = CreateURLMoniker(NULL, about_blankW, &mon);
         if(FAILED(hres)) {
-            FIXME("CreateURLMoniker failed: %08lx\n", hres);
+            FIXME("CreateURLMoniker failed: %08x\n", hres);
             return hres;
         }
     }

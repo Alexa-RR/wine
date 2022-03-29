@@ -229,10 +229,13 @@ static const WCHAR *basenameW( const WCHAR *filename )
 
 static int add_stream( struct msidb_state *state, const WCHAR *stream_filename )
 {
+    static const WCHAR insert_command[] =
+        {'I','N','S','E','R','T',' ','I','N','T','O',' ','_','S','t','r','e','a','m','s',' ',
+         '(','N','a','m','e',',',' ','D','a','t','a',')',' ','V','A','L','U','E','S',' ','(','?',',',' ','?',')',0};
     MSIHANDLE view = 0, record = 0;
     UINT ret;
 
-    ret = MsiDatabaseOpenViewW( state->database_handle, L"INSERT INTO _Streams (Name, Data) VALUES (?, ?)", &view );
+    ret = MsiDatabaseOpenViewW( state->database_handle, insert_command, &view );
     if (ret != ERROR_SUCCESS)
     {
         ERR( "Failed to open _Streams table.\n" );
@@ -287,10 +290,13 @@ static int add_streams( struct msidb_state *state )
 
 static int kill_stream( struct msidb_state *state, const WCHAR *stream_filename )
 {
+    static const WCHAR delete_command[] =
+        {'D','E','L','E','T','E',' ','F','R','O','M',' ','_','S','t','r','e','a','m','s',' ',
+         'W','H','E','R','E',' ','N','a','m','e',' ','=',' ','?',0};
     MSIHANDLE view = 0, record = 0;
     UINT ret;
 
-    ret = MsiDatabaseOpenViewW( state->database_handle, L"DELETE FROM _Streams WHERE Name = ?", &view );
+    ret = MsiDatabaseOpenViewW( state->database_handle, delete_command, &view );
     if (ret != ERROR_SUCCESS)
     {
         ERR( "Failed to open _Streams table.\n" );
@@ -339,6 +345,9 @@ static int kill_streams( struct msidb_state *state )
 
 static int extract_stream( struct msidb_state *state, const WCHAR *stream_filename )
 {
+    static const WCHAR select_command[] =
+        {'S','E','L','E','C','T',' ','D','a','t','a',' ','F','R','O','M',' ','_','S','t','r','e','a','m','s',' ',
+         'W','H','E','R','E',' ','N','a','m','e',' ','=',' ','?',0};
     HANDLE file = INVALID_HANDLE_VALUE;
     MSIHANDLE view = 0, record = 0;
     DWORD read_size, write_size;
@@ -353,7 +362,7 @@ static int extract_stream( struct msidb_state *state, const WCHAR *stream_filena
         ERR( "Failed to open destination file %s.\n", wine_dbgstr_w(stream_filename) );
         goto cleanup;
     }
-    ret = MsiDatabaseOpenViewW( state->database_handle, L"SELECT Data FROM _Streams WHERE Name = ?", &view );
+    ret = MsiDatabaseOpenViewW( state->database_handle, select_command, &view );
     if (ret != ERROR_SUCCESS)
     {
         ERR( "Failed to open _Streams table.\n" );
@@ -440,6 +449,8 @@ static int import_table( struct msidb_state *state, const WCHAR *table_path )
 
 static int import_tables( struct msidb_state *state )
 {
+    const WCHAR idt_ext[] = { '.','i','d','t',0 };
+    const WCHAR wildcard[] = { '*',0 };
     struct msidb_listentry *data;
 
     LIST_FOR_EACH_ENTRY( data, &state->table_list, struct msidb_listentry, entry )
@@ -449,7 +460,7 @@ static int import_tables( struct msidb_state *state )
         WCHAR *ext;
 
         /* permit specifying tables with wildcards ('Feature*') */
-        if (wcsstr( table_name, L"*" ) != NULL)
+        if (wcsstr( table_name, wildcard ) != NULL)
         {
             WIN32_FIND_DATAW f;
             HANDLE handle;
@@ -473,7 +484,7 @@ static int import_tables( struct msidb_state *state )
                 if (f.cFileName[0] == '.' && f.cFileName[1] == '.' && !f.cFileName[2]) continue;
                 if (f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
                 if ((ext = PathFindExtensionW( f.cFileName )) == NULL) continue;
-                if (lstrcmpW( ext, L".idt" ) != 0) continue;
+                if (lstrcmpW( ext, idt_ext ) != 0) continue;
                 if (!import_table( state, f.cFileName ))
                 {
                     FindClose( handle );
@@ -484,10 +495,10 @@ static int import_tables( struct msidb_state *state )
             continue;
         }
         /* permit specifying tables by filename (*.idt) */
-        if ((ext = PathFindExtensionW( table_name )) == NULL || lstrcmpW( ext, L".idt" ) != 0)
+        if ((ext = PathFindExtensionW( table_name )) == NULL || lstrcmpW( ext, idt_ext ) != 0)
         {
-            /* truncate to 8 characters */
-            swprintf( table_path, ARRAY_SIZE(table_path), L"%.8s.idt", table_name );
+            const WCHAR format[] = { '%','.','8','s','.','i','d','t',0 }; /* truncate to 8 characters */
+            swprintf( table_path, ARRAY_SIZE(table_path), format, table_name );
             table_name = table_path;
         }
         if (!import_table( state, table_name ))
@@ -498,7 +509,9 @@ static int import_tables( struct msidb_state *state )
 
 static int export_table( struct msidb_state *state, const WCHAR *table_name )
 {
-    const WCHAR *format = (state->short_filenames ? L"%.8s.idt" : L"%s.idt");
+    const WCHAR format_dos[] = { '%','.','8','s','.','i','d','t',0 }; /* truncate to 8 characters */
+    const WCHAR format_full[] = { '%','s','.','i','d','t',0 };
+    const WCHAR *format = (state->short_filenames ? format_dos : format_full);
     WCHAR table_path[MAX_PATH];
     UINT ret;
 
@@ -514,10 +527,14 @@ static int export_table( struct msidb_state *state, const WCHAR *table_name )
 
 static int export_all_tables( struct msidb_state *state )
 {
+    static const WCHAR summary_information[] =
+        {'_','S','u','m','m','a','r','y','I','n','f','o','r','m','a','t','i','o','n',0};
+    static const WCHAR query_command[] =
+        {'S','E','L','E','C','T',' ','N','a','m','e',' ','F','R','O','M',' ','_','T','a','b','l','e','s',0};
     MSIHANDLE view = 0;
     UINT ret;
 
-    ret = MsiDatabaseOpenViewW( state->database_handle, L"SELECT Name FROM _Tables", &view );
+    ret = MsiDatabaseOpenViewW( state->database_handle, query_command, &view );
     if (ret != ERROR_SUCCESS)
     {
         ERR( "Failed to open _Tables table.\n" );
@@ -564,7 +581,7 @@ static int export_all_tables( struct msidb_state *state )
     }
     ret = ERROR_SUCCESS;
     /* the _SummaryInformation table is not listed in _Tables */
-    if (!export_table( state, L"_SummaryInformation" ))
+    if (!export_table( state, summary_information ))
     {
         ret = ERROR_FUNCTION_FAILED;
         goto cleanup;
@@ -581,11 +598,12 @@ cleanup:
 
 static int export_tables( struct msidb_state *state )
 {
+    const WCHAR wildcard[] = { '*',0 };
     struct msidb_listentry *data;
 
     LIST_FOR_EACH_ENTRY( data, &state->table_list, struct msidb_listentry, entry )
     {
-        if (lstrcmpW( data->name, L"*" ) == 0)
+        if (lstrcmpW( data->name, wildcard ) == 0)
         {
             if (!export_all_tables( state ))
                 return 0; /* failed, do not commit changes */

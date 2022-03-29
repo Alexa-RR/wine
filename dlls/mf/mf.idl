@@ -16,11 +16,11 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#pragma makedep register
+#pragma makedep header register
 
 [
     helpstring("File scheme handler"),
     threading(both),
     uuid(477ec299-1421-4bdd-971f-7ccb933f21ad)
 ]
-coclass FileSchemePlugin { }
+coclass FileSchemeHandler { }

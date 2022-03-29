@@ -66,7 +66,7 @@ static void __cdecl test_invalid_parameter_handler(const wchar_t *expression,
     ok(function == NULL, "function is not NULL\n");
     ok(file == NULL, "file is not NULL\n");
     ok(line == 0, "line = %u\n", line);
-    ok(arg == 0, "arg = %Ix\n", arg);
+    ok(arg == 0, "arg = %lx\n", (UINT_PTR)arg);
 }
 
 #ifdef __i386__
@@ -251,7 +251,7 @@ static BOOL init(void)
     SetLastError(0xdeadbeef);
     hcrt = LoadLibraryA("msvcr100.dll");
     if (!hcrt) {
-        win_skip("msvcr100.dll not installed (got %ld)\n", GetLastError());
+        win_skip("msvcr100.dll not installed (got %d)\n", GetLastError());
         return FALSE;
     }
 
@@ -374,8 +374,8 @@ static BOOL init(void)
 static void test_wmemcpy_s(void)
 {
     static wchar_t dest[8], buf[32];
-    static const wchar_t tiny[] = L"T\0INY";
-    static const wchar_t big[] = L"atoolongstring";
+    static const wchar_t tiny[] = {'T',0,'I','N','Y',0};
+    static const wchar_t big[] = {'a','t','o','o','l','o','n','g','s','t','r','i','n','g',0};
     const wchar_t XX = 0x5858;     /* two 'X' bytes */
     int ret;
 
@@ -455,8 +455,8 @@ static void test_wmemcpy_s(void)
 static void test_wmemmove_s(void)
 {
     static wchar_t dest[8];
-    static const wchar_t tiny[] = L"T\0INY";
-    static const wchar_t big[] = L"atoolongstring";
+    static const wchar_t tiny[] = {'T',0,'I','N','Y',0};
+    static const wchar_t big[] = {'a','t','o','o','l','o','n','g','s','t','r','i','n','g',0};
     const wchar_t XX = 0x5858;     /* two 'X' bytes */
     int ret;
 
@@ -691,34 +691,34 @@ static void test__SpinWait(void)
     CHECK_CALLED(yield_func);
 
     ul = call_func1(pSpinWait__NumberOfSpins, &sp);
-    ok(ul == 1, "_SpinWait::_NumberOfSpins returned %lu\n", ul);
+    ok(ul == 1, "_SpinWait::_NumberOfSpins returned %u\n", ul);
 
     sp.spin = 2;
     b = call_func1(pSpinWait__ShouldSpinAgain, &sp);
     ok(b, "_SpinWait::_ShouldSpinAgain returned %x\n", b);
-    ok(sp.spin == 1, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == 1, "sp.spin = %u\n", sp.spin);
     b = call_func1(pSpinWait__ShouldSpinAgain, &sp);
     ok(!b, "_SpinWait::_ShouldSpinAgain returned %x\n", b);
-    ok(sp.spin == 0, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == 0, "sp.spin = %u\n", sp.spin);
     b = call_func1(pSpinWait__ShouldSpinAgain, &sp);
     ok(b, "_SpinWait::_ShouldSpinAgain returned %x\n", b);
-    ok(sp.spin == -1, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == -1, "sp.spin = %u\n", sp.spin);
 
     call_func2(pSpinWait__SetSpinCount, &sp, 2);
     b = call_func1(pSpinWait__SpinOnce, &sp);
     ok(b, "_SpinWait::_SpinOnce returned %x\n", b);
-    ok(sp.spin == 1, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == 1, "sp.spin = %u\n", sp.spin);
     b = call_func1(pSpinWait__SpinOnce, &sp);
     ok(b, "_SpinWait::_SpinOnce returned %x\n", b);
-    ok(sp.spin == 0, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == 0, "sp.spin = %u\n", sp.spin);
     SET_EXPECT(yield_func);
     b = call_func1(pSpinWait__SpinOnce, &sp);
     ok(b, "_SpinWait::_SpinOnce returned %x\n", b);
-    ok(sp.spin == 0, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin == 0, "sp.spin = %u\n", sp.spin);
     CHECK_CALLED(yield_func);
     b = call_func1(pSpinWait__SpinOnce, &sp);
     ok(!b, "_SpinWait::_SpinOnce returned %x\n", b);
-    ok(sp.spin==0 || sp.spin==4000, "sp.spin = %lu\n", sp.spin);
+    ok(sp.spin==0 || sp.spin==4000, "sp.spin = %u\n", sp.spin);
 
     call_func1(pSpinWait_dtor, &sp);
 }
@@ -763,7 +763,7 @@ static void test_reader_writer_lock(void)
 
     call_func1(preader_writer_lock_lock, rw_lock);
     thread = CreateThread(NULL, 0, lock_read_thread, rw_lock, 0, NULL);
-    ok(thread != NULL, "CreateThread failed: %ld\n", GetLastError());
+    ok(thread != NULL, "CreateThread failed: %d\n", GetLastError());
     WaitForSingleObject(thread, INFINITE);
     ok(GetExitCodeThread(thread, &d), "GetExitCodeThread failed\n");
     ok(!d, "reader_writer_lock::try_lock_read succeeded on already locked object\n");
@@ -772,7 +772,7 @@ static void test_reader_writer_lock(void)
 
     call_func1(preader_writer_lock_lock_read, rw_lock);
     thread = CreateThread(NULL, 0, lock_read_thread, rw_lock, 0, NULL);
-    ok(thread != NULL, "CreateThread failed: %ld\n", GetLastError());
+    ok(thread != NULL, "CreateThread failed: %d\n", GetLastError());
     WaitForSingleObject(thread, INFINITE);
     ok(GetExitCodeThread(thread, &d), "GetExitCodeThread failed\n");
     ok(d, "reader_writer_lock::try_lock_read failed on object locked for reading\n");
@@ -951,7 +951,7 @@ static void test_ExternalContextBase(void)
     ok(id == 0, "Context::Id() = %u\n", id);
 
     thread = CreateThread(NULL, 0, external_context_thread, NULL, 0, NULL);
-    ok(thread != NULL, "CreateThread failed: %ld\n", GetLastError());
+    ok(thread != NULL, "CreateThread failed: %d\n", GetLastError());
     WaitForSingleObject(thread, INFINITE);
     CloseHandle(thread);
 }

@@ -27,7 +27,6 @@
 #include "winuser.h"
 #include "initguid.h"
 #include "ocidl.h"
-#include "featurestagingapi.h"
 #include "shellscalingapi.h"
 #include "shlwapi.h"
 
@@ -41,10 +40,12 @@ static IUnknown *process_ref;
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
 {
-    TRACE("%p, %lu, %p.\n", instance, reason, reserved);
+    TRACE("(%p, %u, %p)\n", instance, reason, reserved);
 
     switch (reason)
     {
+        case DLL_WINE_PREATTACH:
+            return FALSE;  /* prefer native version */
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(instance);
             shcore_tls = TlsAlloc();
@@ -85,19 +86,12 @@ HRESULT WINAPI GetScaleFactorForMonitor(HMONITOR monitor, DEVICE_SCALE_FACTOR *s
     return S_OK;
 }
 
-DEVICE_SCALE_FACTOR WINAPI GetScaleFactorForDevice(DISPLAY_DEVICE_TYPE device_type)
-{
-    FIXME("%d\n", device_type);
-
-    return SCALE_100_PERCENT;
-}
-
 HRESULT WINAPI _IStream_Read(IStream *stream, void *dest, ULONG size)
 {
     ULONG read;
     HRESULT hr;
 
-    TRACE("%p, %p, %lu.\n", stream, dest, size);
+    TRACE("(%p, %p, %u)\n", stream, dest, size);
 
     hr = IStream_Read(stream, dest, size, &read);
     if (SUCCEEDED(hr) && read != size)
@@ -135,7 +129,7 @@ HRESULT WINAPI _IStream_Write(IStream *stream, const void *src, ULONG size)
     ULONG written;
     HRESULT hr;
 
-    TRACE("%p, %p, %lu.\n", stream, src, size);
+    TRACE("(%p, %p, %u)\n", stream, src, size);
 
     hr = IStream_Write(stream, src, size, &written);
     if (SUCCEEDED(hr) && written != size)
@@ -226,22 +220,22 @@ HRESULT WINAPI IUnknown_SetSite(IUnknown *obj, IUnknown *site)
         return E_FAIL;
 
     hr = IUnknown_QueryInterface(obj, &IID_IObjectWithSite, (void **)&objwithsite);
-    TRACE("ObjectWithSite %p, hr %#lx.\n", objwithsite, hr);
+    TRACE("ObjectWithSite %p, hr %#x.\n", objwithsite, hr);
     if (SUCCEEDED(hr))
     {
         hr = IObjectWithSite_SetSite(objwithsite, site);
-        TRACE("SetSite() hr %#lx.\n", hr);
+        TRACE("SetSite() hr %#x.\n", hr);
         IObjectWithSite_Release(objwithsite);
     }
     else
     {
         hr = IUnknown_QueryInterface(obj, &IID_IInternetSecurityManager, (void **)&sec_manager);
-        TRACE("InternetSecurityManager %p, hr %#lx.\n", sec_manager, hr);
+        TRACE("InternetSecurityManager %p, hr %#x.\n", sec_manager, hr);
         if (FAILED(hr))
             return hr;
 
         hr = IInternetSecurityManager_SetSecuritySite(sec_manager, (IInternetSecurityMgrSite *)site);
-        TRACE("SetSecuritySite() hr %#lx.\n", hr);
+        TRACE("SetSecuritySite() hr %#x.\n", hr);
         IInternetSecurityManager_Release(sec_manager);
     }
 
@@ -251,7 +245,7 @@ HRESULT WINAPI IUnknown_SetSite(IUnknown *obj, IUnknown *site)
 HRESULT WINAPI SetCurrentProcessExplicitAppUserModelID(const WCHAR *appid)
 {
     FIXME("%s: stub\n", debugstr_w(appid));
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 HRESULT WINAPI GetCurrentProcessExplicitAppUserModelID(const WCHAR **appid)
@@ -554,9 +548,7 @@ static HRESULT WINAPI shstream_QueryInterface(IStream *iface, REFIID riid, void 
 
     TRACE("(%p)->(%s, %p)\n", stream, debugstr_guid(riid), out);
 
-    if (IsEqualIID(riid, &IID_IUnknown) ||
-        IsEqualIID(riid, &IID_IStream) ||
-        IsEqualIID(riid, &IID_ISequentialStream))
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IStream))
     {
         *out = iface;
         IStream_AddRef(iface);
@@ -573,7 +565,7 @@ static ULONG WINAPI shstream_AddRef(IStream *iface)
     struct shstream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedIncrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("(%p)->(%u)\n", stream, refcount);
 
     return refcount;
 }
@@ -583,7 +575,7 @@ static ULONG WINAPI memstream_Release(IStream *iface)
     struct shstream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedDecrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("(%p)->(%u)\n", stream, refcount);
 
     if (!refcount)
     {
@@ -599,21 +591,19 @@ static HRESULT WINAPI memstream_Read(IStream *iface, void *buff, ULONG buff_size
     struct shstream *stream = impl_from_IStream(iface);
     DWORD length;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buff, buff_size, read_len);
+    TRACE("(%p)->(%p, %u, %p)\n", stream, buff, buff_size, read_len);
 
     if (stream->u.mem.position >= stream->u.mem.length)
+        length = 0;
+    else
+        length = stream->u.mem.length - stream->u.mem.position;
+
+    length = buff_size > length ? length : buff_size;
+    if (length != 0) /* not at end of buffer and we want to read something */
     {
-        if (read_len)
-            *read_len = 0;
-        return S_FALSE;
+        memmove(buff, stream->u.mem.buffer + stream->u.mem.position, length);
+        stream->u.mem.position += length; /* adjust pointer */
     }
-
-    length = stream->u.mem.length - stream->u.mem.position;
-    if (buff_size < length)
-        length = buff_size;
-
-    memmove(buff, stream->u.mem.buffer + stream->u.mem.position, length);
-    stream->u.mem.position += length;
 
     if (read_len)
         *read_len = length;
@@ -626,7 +616,7 @@ static HRESULT WINAPI memstream_Write(IStream *iface, const void *buff, ULONG bu
     struct shstream *stream = impl_from_IStream(iface);
     DWORD length = stream->u.mem.position + buff_size;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buff, buff_size, written);
+    TRACE("(%p)->(%p, %u, %p)\n", stream, buff, buff_size, written);
 
     if (length < stream->u.mem.position) /* overflow */
         return STG_E_INSUFFICIENTMEMORY;
@@ -654,7 +644,7 @@ static HRESULT WINAPI memstream_Seek(IStream *iface, LARGE_INTEGER move, DWORD o
     struct shstream *stream = impl_from_IStream(iface);
     LARGE_INTEGER tmp;
 
-    TRACE("%p, %s, %ld, %p.\n", iface, wine_dbgstr_longlong(move.QuadPart), origin, new_pos);
+    TRACE("(%p)->(%s, %d, %p)\n", stream, wine_dbgstr_longlong(move.QuadPart), origin, new_pos);
 
     if (origin == STREAM_SEEK_SET)
         tmp = move;
@@ -696,59 +686,27 @@ static HRESULT WINAPI memstream_SetSize(IStream *iface, ULARGE_INTEGER new_size)
     return S_OK;
 }
 
-static HRESULT WINAPI shstream_CopyTo(IStream *iface, IStream *dest, ULARGE_INTEGER size,
-        ULARGE_INTEGER *read_len, ULARGE_INTEGER *written)
+static HRESULT WINAPI shstream_CopyTo(IStream *iface, IStream *pstm, ULARGE_INTEGER size, ULARGE_INTEGER *read_len, ULARGE_INTEGER *written)
 {
     struct shstream *stream = impl_from_IStream(iface);
-    ULARGE_INTEGER total_read, total_written;
-    HRESULT hr = S_OK;
-    BYTE buffer[0x400];
 
-    TRACE("(%p, %p, %s, %p, %p)\n", stream, dest, wine_dbgstr_longlong(size.QuadPart), read_len, written);
-
-    if (!dest)
-        return E_POINTER;
-
-    total_read.QuadPart = 0;
-    total_written.QuadPart = 0;
-
-    while (size.QuadPart > 0)
-    {
-        ULONG chunk_size = size.QuadPart >= sizeof(buffer) ? sizeof(buffer) : size.u.LowPart;
-        ULONG chunk_read, chunk_written;
-
-        hr = IStream_Read(iface, buffer, chunk_size, &chunk_read);
-        if (FAILED(hr))
-            break;
-
-        total_read.QuadPart += chunk_read;
-
-        if (chunk_read)
-        {
-            hr = IStream_Write(dest, buffer, chunk_read, &chunk_written);
-            if (FAILED(hr))
-                break;
-
-            total_written.QuadPart += chunk_written;
-        }
-
-        if (chunk_read != chunk_size)
-            size.QuadPart = 0;
-        else
-            size.QuadPart -= chunk_read;
-    }
+    TRACE("(%p)\n", stream);
 
     if (read_len)
-        read_len->QuadPart = total_read.QuadPart;
-    if (written)
-        written->QuadPart = total_written.QuadPart;
+        read_len->QuadPart = 0;
 
-    return hr;
+    if (written)
+        written->QuadPart = 0;
+
+    /* TODO implement */
+    return E_NOTIMPL;
 }
 
 static HRESULT WINAPI shstream_Commit(IStream *iface, DWORD flags)
 {
-    TRACE("%p, %#lx.\n", iface, flags);
+    struct shstream *stream = impl_from_IStream(iface);
+
+    TRACE("(%p, %#x)\n", stream, flags);
 
     /* Commit is not supported by this stream */
     return E_NOTIMPL;
@@ -788,7 +746,7 @@ static HRESULT WINAPI memstream_Stat(IStream *iface, STATSTG *statstg, DWORD fla
 {
     struct shstream *stream = impl_from_IStream(iface);
 
-    TRACE("%p, %p, %#lx.\n", iface, statstg, flags);
+    TRACE("(%p, %p, %#x)\n", stream, statstg, flags);
 
     memset(statstg, 0, sizeof(*statstg));
     statstg->type = STGTY_STREAM;
@@ -882,7 +840,7 @@ static ULONG WINAPI filestream_Release(IStream *iface)
     struct shstream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedDecrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("(%p)->(%u)\n", stream, refcount);
 
     if (!refcount)
     {
@@ -899,11 +857,11 @@ static HRESULT WINAPI filestream_Read(IStream *iface, void *buff, ULONG size, UL
     struct shstream *stream = impl_from_IStream(iface);
     DWORD read = 0;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buff, size, read_len);
+    TRACE("(%p, %p, %u, %p)\n", stream, buff, size, read_len);
 
     if (!ReadFile(stream->u.file.handle, buff, size, &read, NULL))
     {
-        WARN("error %ld reading file\n", GetLastError());
+        WARN("error %d reading file\n", GetLastError());
         return S_FALSE;
     }
 
@@ -918,7 +876,7 @@ static HRESULT WINAPI filestream_Write(IStream *iface, const void *buff, ULONG s
     struct shstream *stream = impl_from_IStream(iface);
     DWORD written_len = 0;
 
-    TRACE("%p, %p, %lu, %p.\n", iface, buff, size, written);
+    TRACE("(%p, %p, %u, %p)\n", stream, buff, size, written);
 
     switch (stream->u.file.mode & 0xf)
     {
@@ -943,7 +901,7 @@ static HRESULT WINAPI filestream_Seek(IStream *iface, LARGE_INTEGER move, DWORD 
     struct shstream *stream = impl_from_IStream(iface);
     DWORD position;
 
-    TRACE("%p, %s, %ld, %p.\n", iface, wine_dbgstr_longlong(move.QuadPart), origin, new_pos);
+    TRACE("(%p, %s, %d, %p)\n", stream, wine_dbgstr_longlong(move.QuadPart), origin, new_pos);
 
     position = SetFilePointer(stream->u.file.handle, move.u.LowPart, NULL, origin);
     if (position == INVALID_SET_FILE_POINTER)
@@ -1029,7 +987,9 @@ static HRESULT WINAPI filestream_CopyTo(IStream *iface, IStream *dest, ULARGE_IN
 
 static HRESULT WINAPI filestream_Commit(IStream *iface, DWORD flags)
 {
-    TRACE("%p, %#lx.\n", iface, flags);
+    struct shstream *stream = impl_from_IStream(iface);
+
+    TRACE("(%p, %#x)\n", stream, flags);
 
     return S_OK;
 }
@@ -1039,7 +999,7 @@ static HRESULT WINAPI filestream_Stat(IStream *iface, STATSTG *statstg, DWORD fl
     struct shstream *stream = impl_from_IStream(iface);
     BY_HANDLE_FILE_INFORMATION fi;
 
-    TRACE("%p, %p, %#lx.\n", iface, statstg, flags);
+    TRACE("(%p, %p, %#x)\n", stream, statstg, flags);
 
     if (!statstg)
         return STG_E_INVALIDPOINTER;
@@ -1098,7 +1058,7 @@ HRESULT WINAPI SHCreateStreamOnFileEx(const WCHAR *path, DWORD mode, DWORD attri
     struct shstream *stream;
     HANDLE hFile;
 
-    TRACE("%s, %ld, %#lx, %d, %p, %p)\n", debugstr_w(path), mode, attributes,
+    TRACE("(%s, %d, 0x%08X, %d, %p, %p)\n", debugstr_w(path), mode, attributes,
         create, template, ret);
 
     if (!path || !ret || template)
@@ -1176,7 +1136,7 @@ HRESULT WINAPI SHCreateStreamOnFileEx(const WCHAR *path, DWORD mode, DWORD attri
  */
 HRESULT WINAPI SHCreateStreamOnFileW(const WCHAR *path, DWORD mode, IStream **stream)
 {
-    TRACE("%s, %#lx, %p.\n", debugstr_w(path), mode, stream);
+    TRACE("(%s, %#x, %p)\n", debugstr_w(path), mode, stream);
 
     if (!path || !stream)
         return E_INVALIDARG;
@@ -1196,7 +1156,7 @@ HRESULT WINAPI SHCreateStreamOnFileA(const char *path, DWORD mode, IStream **str
     HRESULT hr;
     DWORD len;
 
-    TRACE("%s, %#lx, %p.\n", debugstr_a(path), mode, stream);
+    TRACE("(%s, %#x, %p)\n", debugstr_a(path), mode, stream);
 
     if (!path)
         return HRESULT_FROM_WIN32(ERROR_PATH_NOT_FOUND);
@@ -1218,7 +1178,7 @@ static ULONG WINAPI regstream_Release(IStream *iface)
     struct shstream *stream = impl_from_IStream(iface);
     ULONG refcount = InterlockedDecrement(&stream->refcount);
 
-    TRACE("%p, refcount %lu.\n", iface, refcount);
+    TRACE("(%p)->(%u)\n", stream, refcount);
 
     if (!refcount)
     {
@@ -1268,7 +1228,7 @@ IStream * WINAPI SHOpenRegStream2W(HKEY hKey, const WCHAR *subkey, const WCHAR *
     DWORD length = 0;
     LONG ret;
 
-    TRACE("%p, %s, %s, %#lx.\n", hKey, debugstr_w(subkey), debugstr_w(value), mode);
+    TRACE("(%p, %s, %s, %#x)\n", hKey, debugstr_w(subkey), debugstr_w(value), mode);
 
     if (mode == STGM_READ)
         ret = RegOpenKeyExW(hKey, subkey, 0, KEY_READ, &hStrKey);
@@ -1315,7 +1275,7 @@ IStream * WINAPI SHOpenRegStream2A(HKEY hKey, const char *subkey, const char *va
     WCHAR *subkeyW = NULL, *valueW = NULL;
     IStream *stream;
 
-    TRACE("%p, %s, %s, %#lx.\n", hKey, debugstr_a(subkey), debugstr_a(value), mode);
+    TRACE("(%p, %s, %s, %#x)\n", hKey, debugstr_a(subkey), debugstr_a(value), mode);
 
     if (subkey && FAILED(SHStrDupA(subkey, &subkeyW)))
         return NULL;
@@ -1339,7 +1299,7 @@ IStream * WINAPI SHOpenRegStreamA(HKEY hkey, const char *subkey, const char *val
     WCHAR *subkeyW = NULL, *valueW = NULL;
     IStream *stream;
 
-    TRACE("%p, %s, %s, %#lx.\n", hkey, debugstr_a(subkey), debugstr_a(value), mode);
+    TRACE("(%p, %s, %s, %#x)\n", hkey, debugstr_a(subkey), debugstr_a(value), mode);
 
     if (subkey && FAILED(SHStrDupA(subkey, &subkeyW)))
         return NULL;
@@ -1402,7 +1362,7 @@ IStream * WINAPI SHOpenRegStreamW(HKEY hkey, const WCHAR *subkey, const WCHAR *v
 {
     IStream *stream;
 
-    TRACE("%p, %s, %s, %#lx.\n", hkey, debugstr_w(subkey), debugstr_w(value), mode);
+    TRACE("(%p, %s, %s, %#x)\n", hkey, debugstr_w(subkey), debugstr_w(value), mode);
     stream = SHOpenRegStream2W(hkey, subkey, value, mode);
     return stream ? stream : &dummyregstream.IStream_iface;
 }
@@ -1444,7 +1404,7 @@ static ULONG WINAPI threadref_AddRef(IUnknown *iface)
     struct threadref *threadref = threadref_impl_from_IUnknown(iface);
     LONG refcount = InterlockedIncrement(threadref->refcount);
 
-    TRACE("%p, refcount %ld.\n", threadref, refcount);
+    TRACE("(%p, %d)\n", threadref, refcount);
 
     return refcount;
 }
@@ -1454,7 +1414,7 @@ static ULONG WINAPI threadref_Release(IUnknown *iface)
     struct threadref *threadref = threadref_impl_from_IUnknown(iface);
     LONG refcount = InterlockedDecrement(threadref->refcount);
 
-    TRACE("%p, refcount %ld.\n", threadref, refcount);
+    TRACE("(%p, %d)\n", threadref, refcount);
 
     if (!refcount)
         heap_free(threadref);
@@ -1627,7 +1587,7 @@ BOOL WINAPI SHCreateThread(LPTHREAD_START_ROUTINE thread_proc, void *data, DWORD
     struct thread_data thread_data;
     BOOL called = FALSE;
 
-    TRACE("%p, %p, %#lx, %p.\n", thread_proc, data, flags, callback);
+    TRACE("(%p, %p, %#x, %p)\n", thread_proc, data, flags, callback);
 
     thread_data.thread_proc = thread_proc;
     thread_data.callback = callback;
@@ -1949,7 +1909,7 @@ DWORD WINAPI SHCopyKeyA(HKEY hkey_src, const char *subkey, HKEY hkey_dst, DWORD 
     WCHAR *subkeyW = NULL;
     DWORD ret;
 
-    TRACE("%p, %s, %p, %ld.\n", hkey_src, debugstr_a(subkey), hkey_dst, reserved);
+    TRACE("(%p, %s, %p, %d)\n", hkey_src, debugstr_a(subkey), hkey_dst, reserved);
 
     if (subkey && FAILED(SHStrDupA(subkey, &subkeyW)))
         return 0;
@@ -1970,7 +1930,7 @@ DWORD WINAPI SHCopyKeyW(HKEY hkey_src, const WCHAR *subkey, HKEY hkey_dst, DWORD
     DWORD max_data_len = 0, i;
     DWORD ret = 0;
 
-    TRACE("%p, %s, %p, %ld.\n", hkey_src, debugstr_w(subkey), hkey_dst, reserved);
+    TRACE("(%p, %s, %p, %d)\n", hkey_src, debugstr_w(subkey), hkey_dst, reserved);
 
     if (!hkey_dst || !hkey_src)
         return ERROR_INVALID_PARAMETER;
@@ -2055,7 +2015,7 @@ DWORD WINAPI SHCopyKeyW(HKEY hkey_src, const WCHAR *subkey, HKEY hkey_dst, DWORD
  */
 LONG WINAPI SHEnumKeyExA(HKEY hkey, DWORD index, char *subkey, DWORD *length)
 {
-    TRACE("%p, %ld, %s, %p.\n", hkey, index, debugstr_a(subkey), length);
+    TRACE("(%p, %d, %s, %p)\n", hkey, index, debugstr_a(subkey), length);
 
     return RegEnumKeyExA(hkey, index, subkey, length, NULL, NULL, NULL, NULL);
 }
@@ -2065,7 +2025,7 @@ LONG WINAPI SHEnumKeyExA(HKEY hkey, DWORD index, char *subkey, DWORD *length)
  */
 LONG WINAPI SHEnumKeyExW(HKEY hkey, DWORD index, WCHAR *subkey, DWORD *length)
 {
-    TRACE("%p, %ld, %s, %p.\n", hkey, index, debugstr_w(subkey), length);
+    TRACE("(%p, %d, %s, %p)\n", hkey, index, debugstr_w(subkey), length);
 
     return RegEnumKeyExW(hkey, index, subkey, length, NULL, NULL, NULL, NULL);
 }
@@ -2076,7 +2036,7 @@ LONG WINAPI SHEnumKeyExW(HKEY hkey, DWORD index, WCHAR *subkey, DWORD *length)
 LONG WINAPI SHEnumValueA(HKEY hkey, DWORD index, char *value, DWORD *length, DWORD *type,
         void *data, DWORD *data_len)
 {
-    TRACE("%p, %ld, %s, %p, %p, %p, %p.\n", hkey, index, debugstr_a(value), length, type, data, data_len);
+    TRACE("(%p, %d, %s, %p, %p, %p, %p)\n", hkey, index, debugstr_a(value), length, type, data, data_len);
 
     return RegEnumValueA(hkey, index, value, length, NULL, type, data, data_len);
 }
@@ -2087,7 +2047,7 @@ LONG WINAPI SHEnumValueA(HKEY hkey, DWORD index, char *value, DWORD *length, DWO
 LONG WINAPI SHEnumValueW(HKEY hkey, DWORD index, WCHAR *value, DWORD *length, DWORD *type,
         void *data, DWORD *data_len)
 {
-    TRACE("%p, %ld, %s, %p, %p, %p, %p.\n", hkey, index, debugstr_w(value), length, type, data, data_len);
+    TRACE("(%p, %d, %s, %p, %p, %p, %p)\n", hkey, index, debugstr_w(value), length, type, data, data_len);
 
     return RegEnumValueW(hkey, index, value, length, NULL, type, data, data_len);
 }
@@ -2266,7 +2226,7 @@ DWORD WINAPI SHRegGetPathA(HKEY hkey, const char *subkey, const char *value, cha
 {
     DWORD length = MAX_PATH;
 
-    TRACE("%p, %s, %s, %p, %#lx.\n", hkey, debugstr_a(subkey), debugstr_a(value), path, flags);
+    TRACE("(%p, %s, %s, %p, %#x)\n", hkey, debugstr_a(subkey), debugstr_a(value), path, flags);
 
     return SHGetValueA(hkey, subkey, value, 0, path, &length);
 }
@@ -2278,7 +2238,7 @@ DWORD WINAPI SHRegGetPathW(HKEY hkey, const WCHAR *subkey, const WCHAR *value, W
 {
     DWORD length = MAX_PATH;
 
-    TRACE("%p, %s, %s, %p, %#lx.\n", hkey, debugstr_w(subkey), debugstr_w(value), path, flags);
+    TRACE("(%p, %s, %s, %p, %d)\n", hkey, debugstr_w(subkey), debugstr_w(value), path, flags);
 
     return SHGetValueW(hkey, subkey, value, 0, path, &length);
 }
@@ -2292,7 +2252,7 @@ DWORD WINAPI SHSetValueW(HKEY hkey, const WCHAR *subkey, const WCHAR *value, DWO
     DWORD ret = ERROR_SUCCESS, dummy;
     HKEY hsubkey;
 
-    TRACE("%p, %s, %s, %ld, %p, %ld.\n", hkey, debugstr_w(subkey), debugstr_w(value),
+    TRACE("(%p, %s, %s, %d, %p, %d)\n", hkey, debugstr_w(subkey), debugstr_w(value),
             type, data, data_len);
 
     if (subkey && *subkey)
@@ -2319,7 +2279,7 @@ DWORD WINAPI SHSetValueA(HKEY hkey, const char *subkey, const char *value,
     DWORD ret = ERROR_SUCCESS, dummy;
     HKEY hsubkey;
 
-    TRACE("%p, %s, %s, %ld, %p, %ld.\n", hkey, debugstr_a(subkey), debugstr_a(value),
+    TRACE("(%p, %s, %s, %d, %p, %d)\n", hkey, debugstr_a(subkey), debugstr_a(value),
             type, data, data_len);
 
     if (subkey && *subkey)
@@ -2342,7 +2302,7 @@ DWORD WINAPI SHSetValueA(HKEY hkey, const char *subkey, const char *value,
  */
 DWORD WINAPI SHRegSetPathA(HKEY hkey, const char *subkey, const char *value, const char *path, DWORD flags)
 {
-    FIXME("%p, %s, %s, %s, %#lx - semi-stub\n", hkey, debugstr_a(subkey),
+    FIXME("(%p, %s, %s, %s, %#x) - semi-stub\n", hkey, debugstr_a(subkey),
             debugstr_a(value), debugstr_a(path), flags);
 
     /* FIXME: PathUnExpandEnvStringsA() */
@@ -2355,7 +2315,7 @@ DWORD WINAPI SHRegSetPathA(HKEY hkey, const char *subkey, const char *value, con
  */
 DWORD WINAPI SHRegSetPathW(HKEY hkey, const WCHAR *subkey, const WCHAR *value, const WCHAR *path, DWORD flags)
 {
-    FIXME("%p, %s, %s, %s, %#lx semi-stub\n", hkey, debugstr_w(subkey),
+    FIXME("(%p, %s, %s, %s, %#x) - semi-stub\n", hkey, debugstr_w(subkey),
             debugstr_w(value), debugstr_w(path), flags);
 
     /* FIXME: PathUnExpandEnvStringsW(); */
@@ -2400,7 +2360,7 @@ BOOL WINAPI IsOS(DWORD feature)
     platform = osvi.dwPlatformId;
 
 #define ISOS_RETURN(x) \
-    TRACE("(%#lx) ret %d\n",feature,(x)); \
+    TRACE("(0x%x) ret=%d\n",feature,(x)); \
     return (x)
 
     switch(feature)  {
@@ -2498,25 +2458,7 @@ BOOL WINAPI IsOS(DWORD feature)
 
 #undef ISOS_RETURN
 
-    WARN("(%#lx) unknown parameter\n", feature);
+    WARN("(0x%x) unknown parameter\n", feature);
 
     return FALSE;
-}
-
-/*************************************************************************
- * SubscribeFeatureStateChangeNotification        [SHCORE.@]
- */
-void WINAPI SubscribeFeatureStateChangeNotification(FEATURE_STATE_CHANGE_SUBSCRIPTION *subscription,
-                                                    FEATURE_STATE_CHANGE_CALLBACK *callback, void *context)
-{
-    FIXME("(%p, %p, %p) stub\n", subscription, callback, context);
-}
-
-/*************************************************************************
- * GetFeatureEnabledState        [SHCORE.@]
- */
-FEATURE_ENABLED_STATE WINAPI GetFeatureEnabledState(UINT32 feature, FEATURE_CHANGE_TIME change_time)
-{
-    FIXME("(%u, %u) stub\n", feature, change_time);
-    return FEATURE_ENABLED_STATE_DEFAULT;
 }

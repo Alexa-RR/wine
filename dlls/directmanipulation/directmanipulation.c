@@ -30,7 +30,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(manipulation);
 
-<<<<<<< HEAD
 static HINSTANCE dm_instance;
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
@@ -66,8 +65,6 @@ HRESULT WINAPI DllCanUnloadNow(void)
 }
 
 
-=======
->>>>>>> master
 struct directmanipulation
 {
     IDirectManipulationManager2 IDirectManipulationManager2_iface;
@@ -113,11 +110,7 @@ ULONG WINAPI update_manager_AddRef(IDirectManipulationUpdateManager *iface)
     struct directupdatemanager *This = impl_from_IDirectManipulationUpdateManager(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     return ref;
 }
@@ -127,11 +120,7 @@ ULONG WINAPI update_manager_Release(IDirectManipulationUpdateManager *iface)
     struct directupdatemanager *This = impl_from_IDirectManipulationUpdateManager(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     if (!ref)
     {
@@ -151,11 +140,7 @@ static HRESULT WINAPI update_manager_RegisterWaitHandleCallback(IDirectManipulat
 static HRESULT WINAPI update_manager_UnregisterWaitHandleCallback(IDirectManipulationUpdateManager *iface, DWORD cookie)
 {
     struct directupdatemanager *This = impl_from_IDirectManipulationUpdateManager(iface);
-<<<<<<< HEAD
     FIXME("%p, %x\n", This, cookie);
-=======
-    FIXME("%p, %lx\n", This, cookie);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -237,11 +222,7 @@ static ULONG WINAPI primary_AddRef(IDirectManipulationPrimaryContent *iface)
     struct primarycontext *This = impl_from_IDirectManipulationPrimaryContent(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     return ref;
 }
@@ -251,11 +232,7 @@ static ULONG WINAPI primary_Release(IDirectManipulationPrimaryContent *iface)
     struct primarycontext *This = impl_from_IDirectManipulationPrimaryContent(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     if (!ref)
     {
@@ -276,11 +253,7 @@ static HRESULT WINAPI primary_SetSnapPoints(IDirectManipulationPrimaryContent *i
             const float *points, DWORD count)
 {
     struct primarycontext *This = impl_from_IDirectManipulationPrimaryContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %d, %p, %d\n", This, motion, points, count);
-=======
-    FIXME("%p, %d, %p, %ld\n", This, motion, points, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -324,11 +297,7 @@ static HRESULT WINAPI primary_SetVerticalAlignment(IDirectManipulationPrimaryCon
 static HRESULT WINAPI primary_GetInertiaEndTransform(IDirectManipulationPrimaryContent *iface, float *matrix, DWORD count)
 {
     struct primarycontext *This = impl_from_IDirectManipulationPrimaryContent(iface);
-<<<<<<< HEAD
     FIXME("%p,  %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p,  %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -394,22 +363,14 @@ static HRESULT WINAPI content_SetContentRect(IDirectManipulationContent *iface, 
 static HRESULT WINAPI content_GetViewport(IDirectManipulationContent *iface, REFIID riid, void **object)
 {
     struct primarycontext *This = impl_from_IDirectManipulationContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %p\n", This, debugstr_guid(riid), object);
-=======
-    FIXME("%p, %s, %p\n", This, debugstr_guid(riid), object);
->>>>>>> master
     return E_NOTIMPL;
 }
 
 static HRESULT WINAPI content_GetTag(IDirectManipulationContent *iface, REFIID riid, void **object, UINT32 *id)
 {
     struct primarycontext *This = impl_from_IDirectManipulationContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %p, %p\n", This, debugstr_guid(riid), object, id);
-=======
-    FIXME("%p, %s, %p, %p\n", This, debugstr_guid(riid), object, id);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -424,11 +385,7 @@ static HRESULT WINAPI content_GetOutputTransform(IDirectManipulationContent *ifa
                     float *matrix, DWORD count)
 {
     struct primarycontext *This = impl_from_IDirectManipulationContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p, %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -436,11 +393,7 @@ static HRESULT WINAPI content_GetContentTransform(IDirectManipulationContent *if
                     float *matrix, DWORD count)
 {
     struct primarycontext *This = impl_from_IDirectManipulationContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p, %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -448,11 +401,7 @@ static HRESULT WINAPI content_SyncContentTransform(IDirectManipulationContent *i
                     const float *matrix, DWORD count)
 {
     struct primarycontext *This = impl_from_IDirectManipulationContent(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p, %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -505,11 +454,7 @@ static ULONG WINAPI viewport_AddRef(IDirectManipulationViewport2 *iface)
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     return ref;
 }
@@ -519,11 +464,7 @@ static ULONG WINAPI viewport_Release(IDirectManipulationViewport2 *iface)
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     if (!ref)
     {
@@ -584,11 +525,7 @@ static HRESULT WINAPI viewport_GetTag(IDirectManipulationViewport2 *iface, REFII
 static HRESULT WINAPI viewport_SetTag(IDirectManipulationViewport2 *iface, IUnknown *object, UINT32 id)
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %p\n", This, object, id);
-=======
-    FIXME("%p, %p, %u\n", This, object, id);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -618,11 +555,7 @@ static HRESULT WINAPI viewport_SetViewportTransform(IDirectManipulationViewport2
                     const float *matrix, DWORD count)
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p, %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -630,11 +563,7 @@ static HRESULT WINAPI viewport_SyncDisplayTransform(IDirectManipulationViewport2
                     const float *matrix, DWORD count)
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
-<<<<<<< HEAD
     FIXME("%p, %p, %d\n", This, matrix, count);
-=======
-    FIXME("%p, %p, %ld\n", This, matrix, count);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -681,11 +610,7 @@ static HRESULT WINAPI viewport_SetViewportOptions(IDirectManipulationViewport2 *
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
     FIXME("%p, %d\n", This, options);
-<<<<<<< HEAD
     return E_NOTIMPL;
-=======
-    return S_OK;
->>>>>>> master
 }
 
 static HRESULT WINAPI viewport_AddConfiguration(IDirectManipulationViewport2 *iface, DIRECTMANIPULATION_CONFIGURATION configuration)
@@ -734,11 +659,7 @@ static HRESULT WINAPI viewport_AddEventHandler(IDirectManipulationViewport2 *ifa
 static HRESULT WINAPI viewport_RemoveEventHandler(IDirectManipulationViewport2 *iface, DWORD cookie)
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
-<<<<<<< HEAD
     FIXME("%p, %d\n", This, cookie);
-=======
-    FIXME("%p, %ld\n", This, cookie);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -780,11 +701,7 @@ static HRESULT WINAPI viewport_AddBehavior(IDirectManipulationViewport2 *iface, 
 static HRESULT WINAPI viewport_RemoveBehavior(IDirectManipulationViewport2 *iface, DWORD cookie)
 {
     struct directviewport *This = impl_from_IDirectManipulationViewport2(iface);
-<<<<<<< HEAD
     FIXME("%p, %d\n", This, cookie);
-=======
-    FIXME("%p, %ld\n", This, cookie);
->>>>>>> master
     return E_NOTIMPL;
 }
 
@@ -868,11 +785,7 @@ static ULONG WINAPI direct_manip_AddRef(IDirectManipulationManager2 *iface)
     struct directmanipulation *This = impl_from_IDirectManipulationManager2(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     return ref;
 }
@@ -882,11 +795,7 @@ static ULONG WINAPI direct_manip_Release(IDirectManipulationManager2 *iface)
     struct directmanipulation *This = impl_from_IDirectManipulationManager2(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
-<<<<<<< HEAD
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     if (!ref)
     {
@@ -1028,25 +937,15 @@ static HRESULT WINAPI DirectManipulation_CreateInstance(IClassFactory *iface, IU
 
 struct directcompositor
 {
-<<<<<<< HEAD
     IDirectManipulationCompositor IDirectManipulationCompositor_iface;
-=======
-    IDirectManipulationCompositor2 IDirectManipulationCompositor2_iface;
->>>>>>> master
     IDirectManipulationFrameInfoProvider IDirectManipulationFrameInfoProvider_iface;
     IDirectManipulationUpdateManager *manager;
     LONG ref;
 };
 
-<<<<<<< HEAD
 static inline struct directcompositor *impl_from_IDirectManipulationCompositor(IDirectManipulationCompositor *iface)
 {
     return CONTAINING_RECORD(iface, struct directcompositor, IDirectManipulationCompositor_iface);
-=======
-static inline struct directcompositor *impl_from_IDirectManipulationCompositor2(IDirectManipulationCompositor2 *iface)
-{
-    return CONTAINING_RECORD(iface, struct directcompositor, IDirectManipulationCompositor2_iface);
->>>>>>> master
 }
 
 static inline struct directcompositor *impl_from_IDirectManipulationFrameInfoProvider(IDirectManipulationFrameInfoProvider *iface)
@@ -1054,22 +953,12 @@ static inline struct directcompositor *impl_from_IDirectManipulationFrameInfoPro
     return CONTAINING_RECORD(iface, struct directcompositor, IDirectManipulationFrameInfoProvider_iface);
 }
 
-<<<<<<< HEAD
 static HRESULT WINAPI compositor_QueryInterface(IDirectManipulationCompositor *iface, REFIID riid, void **ppv)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
 
     if (IsEqualGUID(riid, &IID_IUnknown) ||
         IsEqualGUID(riid, &IID_IDirectManipulationCompositor))
-=======
-static HRESULT WINAPI compositor_QueryInterface(IDirectManipulationCompositor2 *iface, REFIID riid, void **ppv)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
-
-    if (IsEqualGUID(riid, &IID_IUnknown) ||
-        IsEqualGUID(riid, &IID_IDirectManipulationCompositor) ||
-        IsEqualGUID(riid, &IID_IDirectManipulationCompositor2))
->>>>>>> master
     {
         IUnknown_AddRef(iface);
         *ppv = iface;
@@ -1086,40 +975,22 @@ static HRESULT WINAPI compositor_QueryInterface(IDirectManipulationCompositor2 *
     return E_NOINTERFACE;
 }
 
-<<<<<<< HEAD
 static ULONG WINAPI compositor_AddRef(IDirectManipulationCompositor *iface)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
 
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-static ULONG WINAPI compositor_AddRef(IDirectManipulationCompositor2 *iface)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
-    ULONG ref = InterlockedIncrement(&This->ref);
-
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     return ref;
 }
 
-<<<<<<< HEAD
 static ULONG WINAPI compositor_Release(IDirectManipulationCompositor *iface)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
     ULONG ref = InterlockedDecrement(&This->ref);
 
     TRACE("(%p) ref=%u\n", This, ref);
-=======
-static ULONG WINAPI compositor_Release(IDirectManipulationCompositor2 *iface)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
-    ULONG ref = InterlockedDecrement(&This->ref);
-
-    TRACE("(%p) ref=%lu\n", This, ref);
->>>>>>> master
 
     if (!ref)
     {
@@ -1130,43 +1001,24 @@ static ULONG WINAPI compositor_Release(IDirectManipulationCompositor2 *iface)
     return ref;
 }
 
-<<<<<<< HEAD
 static HRESULT WINAPI compositor_AddContent(IDirectManipulationCompositor *iface, IDirectManipulationContent *content,
                 IUnknown *device, IUnknown *parent, IUnknown *child)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
-=======
-static HRESULT WINAPI compositor_AddContent(IDirectManipulationCompositor2 *iface, IDirectManipulationContent *content,
-                IUnknown *device, IUnknown *parent, IUnknown *child)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
->>>>>>> master
     FIXME("%p, %p, %p, %p, %p\n", This, content, device, parent, child);
     return E_NOTIMPL;
 }
 
-<<<<<<< HEAD
 static HRESULT WINAPI compositor_RemoveContent(IDirectManipulationCompositor *iface, IDirectManipulationContent *content)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
-=======
-static HRESULT WINAPI compositor_RemoveContent(IDirectManipulationCompositor2 *iface, IDirectManipulationContent *content)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
->>>>>>> master
     FIXME("%p, %p\n", This, content);
     return E_NOTIMPL;
 }
 
-<<<<<<< HEAD
 static HRESULT WINAPI compositor_SetUpdateManager(IDirectManipulationCompositor *iface, IDirectManipulationUpdateManager *manager)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
-=======
-static HRESULT WINAPI compositor_SetUpdateManager(IDirectManipulationCompositor2 *iface, IDirectManipulationUpdateManager *manager)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
->>>>>>> master
     TRACE("%p, %p\n", This, manager);
 
     if(!manager)
@@ -1177,32 +1029,14 @@ static HRESULT WINAPI compositor_SetUpdateManager(IDirectManipulationCompositor2
     return S_OK;
 }
 
-<<<<<<< HEAD
 static HRESULT WINAPI compositor_Flush(IDirectManipulationCompositor *iface)
 {
     struct directcompositor *This = impl_from_IDirectManipulationCompositor(iface);
-=======
-static HRESULT WINAPI compositor_Flush(IDirectManipulationCompositor2 *iface)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
->>>>>>> master
     FIXME("%p\n", This);
     return E_NOTIMPL;
 }
 
-<<<<<<< HEAD
 static const struct IDirectManipulationCompositorVtbl  compositorVtbl =
-=======
-static HRESULT WINAPI compositor_AddContentWithCrossProcessChaining(IDirectManipulationCompositor2 *iface,
-                IDirectManipulationPrimaryContent *content, IUnknown *device, IUnknown *parentvisual, IUnknown *childvisual)
-{
-    struct directcompositor *This = impl_from_IDirectManipulationCompositor2(iface);
-    FIXME("%p %p %p %p %p\n", This, content, device, parentvisual, childvisual);
-    return E_NOTIMPL;
-}
-
-static const struct IDirectManipulationCompositor2Vtbl compositorVtbl =
->>>>>>> master
 {
     compositor_QueryInterface,
     compositor_AddRef,
@@ -1210,42 +1044,25 @@ static const struct IDirectManipulationCompositor2Vtbl compositorVtbl =
     compositor_AddContent,
     compositor_RemoveContent,
     compositor_SetUpdateManager,
-<<<<<<< HEAD
     compositor_Flush
-=======
-    compositor_Flush,
-    compositor_AddContentWithCrossProcessChaining
->>>>>>> master
 };
 
 static HRESULT WINAPI provider_QueryInterface(IDirectManipulationFrameInfoProvider *iface, REFIID riid, void **ppv)
 {
     struct directcompositor *This = impl_from_IDirectManipulationFrameInfoProvider(iface);
-<<<<<<< HEAD
     return IDirectManipulationCompositor_QueryInterface(&This->IDirectManipulationCompositor_iface, riid, ppv);
-=======
-    return IDirectManipulationCompositor2_QueryInterface(&This->IDirectManipulationCompositor2_iface, riid, ppv);
->>>>>>> master
 }
 
 static ULONG WINAPI provider_AddRef(IDirectManipulationFrameInfoProvider *iface)
 {
     struct directcompositor *This = impl_from_IDirectManipulationFrameInfoProvider(iface);
-<<<<<<< HEAD
     return IDirectManipulationCompositor_AddRef(&This->IDirectManipulationCompositor_iface);
-=======
-    return IDirectManipulationCompositor2_AddRef(&This->IDirectManipulationCompositor2_iface);
->>>>>>> master
 }
 
 static ULONG WINAPI provider_Release(IDirectManipulationFrameInfoProvider *iface)
 {
     struct directcompositor *This = impl_from_IDirectManipulationFrameInfoProvider(iface);
-<<<<<<< HEAD
     return IDirectManipulationCompositor_Release(&This->IDirectManipulationCompositor_iface);
-=======
-    return IDirectManipulationCompositor2_Release(&This->IDirectManipulationCompositor2_iface);
->>>>>>> master
 }
 
 static HRESULT WINAPI provider_GetNextFrameInfo(IDirectManipulationFrameInfoProvider *iface, ULONGLONG *time,
@@ -1277,21 +1094,12 @@ static HRESULT WINAPI DirectCompositor_CreateInstance(IClassFactory *iface, IUnk
     if (!object)
         return E_OUTOFMEMORY;
 
-<<<<<<< HEAD
     object->IDirectManipulationCompositor_iface.lpVtbl = &compositorVtbl;
     object->IDirectManipulationFrameInfoProvider_iface.lpVtbl = &providerVtbl;
     object->ref = 1;
 
     ret = compositor_QueryInterface(&object->IDirectManipulationCompositor_iface, riid, ppv);
     compositor_Release(&object->IDirectManipulationCompositor_iface);
-=======
-    object->IDirectManipulationCompositor2_iface.lpVtbl = &compositorVtbl;
-    object->IDirectManipulationFrameInfoProvider_iface.lpVtbl = &providerVtbl;
-    object->ref = 1;
-
-    ret = compositor_QueryInterface(&object->IDirectManipulationCompositor2_iface, riid, ppv);
-    compositor_Release(&object->IDirectManipulationCompositor2_iface);
->>>>>>> master
 
     return ret;
 }

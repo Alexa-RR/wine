@@ -18,21 +18,31 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #define COBJMACROS
 
 #include <stdarg.h>
 
-#include <libxml/parser.h>
-#include <libxml/parserInternals.h>
-#include <libxml/xmlerror.h>
-#include <libxml/HTMLtree.h>
-#include <libxslt/pattern.h>
-#include <libxslt/transform.h>
-#include <libxslt/imports.h>
-#include <libxslt/variables.h>
-#include <libxslt/xsltutils.h>
-#include <libxslt/xsltInternals.h>
-#include <libxslt/documents.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+# include <libxml/parserInternals.h>
+# include <libxml/xmlerror.h>
+# include <libxml/HTMLtree.h>
+# ifdef SONAME_LIBXSLT
+#  ifdef HAVE_LIBXSLT_PATTERN_H
+#   include <libxslt/pattern.h>
+#  endif
+#  ifdef HAVE_LIBXSLT_TRANSFORM_H
+#   include <libxslt/transform.h>
+#  endif
+#  include <libxslt/imports.h>
+#  include <libxslt/variables.h>
+#  include <libxslt/xsltutils.h>
+#  include <libxslt/xsltInternals.h>
+#  include <libxslt/documents.h>
+# endif
+#endif
 
 #include "windef.h"
 #include "winbase.h"
@@ -45,7 +55,27 @@
 
 #include "wine/debug.h"
 
+#ifdef HAVE_LIBXML2
+
 WINE_DEFAULT_DEBUG_CHANNEL(msxml);
+
+#ifdef SONAME_LIBXSLT
+extern void* libxslt_handle;
+# define MAKE_FUNCPTR(f) extern typeof(f) * p##f
+MAKE_FUNCPTR(xsltApplyStylesheet);
+MAKE_FUNCPTR(xsltApplyStylesheetUser);
+MAKE_FUNCPTR(xsltCleanupGlobals);
+MAKE_FUNCPTR(xsltFreeStylesheet);
+MAKE_FUNCPTR(xsltFreeTransformContext);
+MAKE_FUNCPTR(xsltNewTransformContext);
+MAKE_FUNCPTR(xsltNextImport);
+MAKE_FUNCPTR(xsltParseStylesheetDoc);
+MAKE_FUNCPTR(xsltQuoteUserParams);
+MAKE_FUNCPTR(xsltSaveResultTo);
+# undef MAKE_FUNCPTR
+#else
+WINE_DECLARE_DEBUG_CHANNEL(winediag);
+#endif
 
 static const IID IID_xmlnode = {0x4f2f4ba2,0xb822,0x11df,{0x8b,0x8a,0x68,0x50,0xdf,0xd7,0x20,0x85}};
 
@@ -107,7 +137,7 @@ static ULONG WINAPI SupportErrorInfo_AddRef(ISupportErrorInfo *iface)
 {
     SupportErrorInfo *This = impl_from_ISupportErrorInfo(iface);
     ULONG ref = InterlockedIncrement(&This->ref);
-    TRACE("%p, refcount %ld.\n", iface, ref );
+    TRACE("(%p)->(%d)\n", This, ref );
     return ref;
 }
 
@@ -116,9 +146,9 @@ static ULONG WINAPI SupportErrorInfo_Release(ISupportErrorInfo *iface)
     SupportErrorInfo *This = impl_from_ISupportErrorInfo(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("%p, refcount %ld.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
 
-    if (!ref)
+    if (ref == 0)
         heap_free(This);
 
     return ref;
@@ -958,6 +988,8 @@ HRESULT node_get_xml(xmlnode *This, BOOL ensure_eol, BSTR *ret)
     return *ret ? S_OK : E_OUTOFMEMORY;
 }
 
+#ifdef SONAME_LIBXSLT
+
 /* duplicates xmlBufferWriteQuotedString() logic */
 static void xml_write_quotedstring(xmlOutputBufferPtr buf, const xmlChar *string)
 {
@@ -1058,7 +1090,7 @@ static void transform_write_text(xmlDocPtr result, xsltStylesheetPtr style, xmlO
     res = NULL;                                          \
     while (st != NULL) {                                 \
         if (st->name != NULL) { res = st->name; break; } \
-        st = xsltNextImport(st);                         \
+        st = pxsltNextImport(st);                        \
     }}
 
 #undef XSLT_GET_IMPORT_INT
@@ -1067,7 +1099,7 @@ static void transform_write_text(xmlDocPtr result, xsltStylesheetPtr style, xmlO
     res = -1;                                           \
     while (st != NULL) {                                \
         if (st->name != -1) { res = st->name; break; }  \
-        st = xsltNextImport(st);                        \
+        st = pxsltNextImport(st);                       \
     }}
 
 static void transform_write_xmldecl(xmlDocPtr result, xsltStylesheetPtr style, BOOL omit_encoding, xmlOutputBufferPtr output)
@@ -1234,8 +1266,13 @@ static HRESULT node_transform_write_to_bstr(xsltStylesheetPtr style, xmlDocPtr r
             return E_OUTOFMEMORY;
 
         hr = node_transform_write(style, result, TRUE, "UTF-16", output);
+#ifdef LIBXML2_NEW_BUFFER
         content = xmlBufContent(output->conv);
         len = xmlBufUse(output->conv);
+#else
+        content = xmlBufferContent(output->conv);
+        len = xmlBufferLength(output->conv);
+#endif
         /* UTF-16 encoder places UTF-16 bom, we don't need it for BSTR */
         content += sizeof(WCHAR);
         *str = SysAllocStringLen((WCHAR*)content, len/sizeof(WCHAR) - 1);
@@ -1329,7 +1366,7 @@ static HRESULT import_loader_onDataAvailable(void *ctxt, char *ptr, DWORD len)
 
     inputbuffer = xmlParserInputBufferCreateIO(import_loader_io_read, import_loader_io_close, buffer,
             XML_CHAR_ENCODING_NONE);
-    *input = xmlNewIOInputStream(NULL, inputbuffer, XML_CHAR_ENCODING_NONE);
+    *input = xmlNewIOInputStream(ctxt, inputbuffer, XML_CHAR_ENCODING_NONE);
     if (!*input)
         xmlFreeParserInputBuffer(inputbuffer);
 
@@ -1350,7 +1387,7 @@ static HRESULT xslt_doc_get_uri(const xmlChar *uri, void *_ctxt, xsltLoadType ty
     SysFreeString(uriW);
     if (FAILED(hr))
     {
-        WARN("Failed to create href uri, %#lx.\n", hr);
+        WARN("Failed to create href uri, %#x.\n", hr);
         return hr;
     }
 
@@ -1364,14 +1401,14 @@ static HRESULT xslt_doc_get_uri(const xmlChar *uri, void *_ctxt, xsltLoadType ty
         SysFreeString(baseuriW);
         if (FAILED(hr))
         {
-            WARN("Failed to create base uri, %#lx.\n", hr);
+            WARN("Failed to create base uri, %#x.\n", hr);
             return hr;
         }
 
         hr = CoInternetCombineIUri(base_uri, href_uri, 0, doc_uri, 0);
         IUri_Release(base_uri);
         if (FAILED(hr))
-            WARN("Failed to combine uris, hr %#lx.\n", hr);
+            WARN("Failed to combine uris, %#x.\n", hr);
     }
     else
     {
@@ -1463,23 +1500,27 @@ failed:
     return doc;
 }
 
+#endif /* SONAME_LIBXSLT */
+
 HRESULT node_transform_node_params(const xmlnode *This, IXMLDOMNode *stylesheet, BSTR *p,
     ISequentialStream *stream, const struct xslprocessor_params *params)
 {
+#ifdef SONAME_LIBXSLT
     xsltStylesheetPtr xsltSS;
     xmlDocPtr sheet_doc;
     HRESULT hr = S_OK;
     xmlnode *sheet;
 
-    if (!stylesheet || (!p && !stream)) return E_INVALIDARG;
+    if (!libxslt_handle) return E_NOTIMPL;
+    if (!stylesheet || !p) return E_INVALIDARG;
 
-    if (p) *p = NULL;
+    *p = NULL;
 
     sheet = get_node_obj(stylesheet);
     if(!sheet) return E_FAIL;
 
     sheet_doc = xmlCopyDoc(sheet->node->doc, 1);
-    xsltSS = xsltParseStylesheetDoc(sheet_doc);
+    xsltSS = pxsltParseStylesheetDoc(sheet_doc);
     if (xsltSS)
     {
         const char **xslparams = NULL;
@@ -1503,19 +1544,19 @@ HRESULT node_transform_node_params(const xmlnode *This, IXMLDOMNode *stylesheet,
 
         if (xslparams)
         {
-            xsltTransformContextPtr ctxt = xsltNewTransformContext(xsltSS, This->node->doc);
+            xsltTransformContextPtr ctxt = pxsltNewTransformContext(xsltSS, This->node->doc);
 
             /* push parameters to user context */
-            xsltQuoteUserParams(ctxt, xslparams);
-            result = xsltApplyStylesheetUser(xsltSS, This->node->doc, NULL, NULL, NULL, ctxt);
-            xsltFreeTransformContext(ctxt);
+            pxsltQuoteUserParams(ctxt, xslparams);
+            result = pxsltApplyStylesheetUser(xsltSS, This->node->doc, NULL, NULL, NULL, ctxt);
+            pxsltFreeTransformContext(ctxt);
 
             for (i = 0; i < params->count*2; i++)
                 heap_free((char*)xslparams[i]);
             heap_free(xslparams);
         }
         else
-            result = xsltApplyStylesheet(xsltSS, This->node->doc, NULL);
+            result = pxsltApplyStylesheet(xsltSS, This->node->doc, NULL);
 
         if (result)
         {
@@ -1526,14 +1567,19 @@ HRESULT node_transform_node_params(const xmlnode *This, IXMLDOMNode *stylesheet,
             xmlFreeDoc(result);
         }
 
-        xsltFreeStylesheet(xsltSS);
+        pxsltFreeStylesheet(xsltSS);
     }
     else
         xmlFreeDoc(sheet_doc);
 
-    if (p && !*p) *p = SysAllocStringLen(NULL, 0);
+    if(!*p) *p = SysAllocStringLen(NULL, 0);
 
     return hr;
+#else
+    ERR_(winediag)("libxslt headers were not found at compile time. Expect problems.\n");
+
+    return E_NOTIMPL;
+#endif
 }
 
 HRESULT node_transform_node(const xmlnode *node, IXMLDOMNode *stylesheet, BSTR *p)
@@ -1717,9 +1763,14 @@ static HRESULT WINAPI unknode_GetTypeInfo(
     LCID lcid,
     ITypeInfo** ppTInfo )
 {
-    TRACE("%p, %u, %lx, %p.\n", iface, iTInfo, lcid, ppTInfo);
+    unknode *This = unknode_from_IXMLDOMNode( iface );
+    HRESULT hr;
 
-    return get_typeinfo(IXMLDOMNode_tid, ppTInfo);
+    TRACE("(%p)->(%u %u %p)\n", This, iTInfo, lcid, ppTInfo);
+
+    hr = get_typeinfo(IXMLDOMNode_tid, ppTInfo);
+
+    return hr;
 }
 
 static HRESULT WINAPI unknode_GetIDsOfNames(
@@ -1730,10 +1781,12 @@ static HRESULT WINAPI unknode_GetIDsOfNames(
     LCID lcid,
     DISPID* rgDispId )
 {
+    unknode *This = unknode_from_IXMLDOMNode( iface );
+
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%p, %s, %p, %u, %lx, %p.\n", iface, debugstr_guid(riid), rgszNames, cNames,
+    TRACE("(%p)->(%s %p %u %u %p)\n", This, debugstr_guid(riid), rgszNames, cNames,
           lcid, rgDispId);
 
     if(!rgszNames || cNames == 0 || !rgDispId)
@@ -1760,16 +1813,17 @@ static HRESULT WINAPI unknode_Invoke(
     EXCEPINFO* pExcepInfo,
     UINT* puArgErr )
 {
+    unknode *This = unknode_from_IXMLDOMNode( iface );
     ITypeInfo *typeinfo;
     HRESULT hr;
 
-    TRACE("%p, %ld, %s, %lx, %d, %p, %p, %p, %p.\n", iface, dispIdMember, debugstr_guid(riid),
+    TRACE("(%p)->(%d %s %d %d %p %p %p %p)\n", This, dispIdMember, debugstr_guid(riid),
           lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr);
 
     hr = get_typeinfo(IXMLDOMNode_tid, &typeinfo);
     if(SUCCEEDED(hr))
     {
-        hr = ITypeInfo_Invoke(typeinfo, iface, dispIdMember, wFlags, pDispParams,
+        hr = ITypeInfo_Invoke(typeinfo, &This->IXMLDOMNode_iface, dispIdMember, wFlags, pDispParams,
                 pVarResult, pExcepInfo, puArgErr);
         ITypeInfo_Release(typeinfo);
     }
@@ -2270,3 +2324,4 @@ IXMLDOMNode *create_node( xmlNodePtr node )
     if(FAILED(hr)) return NULL;
     return ret;
 }
+#endif

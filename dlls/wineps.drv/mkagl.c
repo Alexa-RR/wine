@@ -19,7 +19,9 @@
 #include "config.h"
 
 #include <sys/types.h>
-#include <dirent.h>
+#ifdef HAVE_DIRENT_H
+# include <dirent.h>
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

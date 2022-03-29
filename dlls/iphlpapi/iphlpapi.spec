@@ -10,12 +10,12 @@
 @ stdcall AllocateAndGetUdpTableFromStack( ptr long long long )
 @ stdcall CancelIPChangeNotify( ptr )
 @ stdcall CancelMibChangeNotify2( ptr )
-@ stdcall ConvertGuidToStringA( ptr ptr long )
-@ stdcall ConvertGuidToStringW( ptr ptr long )
-@ stdcall ConvertInterfaceAliasToLuid( wstr ptr )
+#@ stub ConvertGuidToStringA
+#@ stub ConvertGuidToStringW
+#@ stub ConvertInterfaceAliasToLuid
 @ stdcall ConvertInterfaceGuidToLuid( ptr ptr )
 @ stdcall ConvertInterfaceIndexToLuid( long ptr )
-@ stdcall ConvertInterfaceLuidToAlias( ptr ptr long )
+#@ stub ConvertInterfaceLuidToAlias
 @ stdcall ConvertInterfaceLuidToGuid( ptr ptr )
 @ stdcall ConvertInterfaceLuidToIndex( ptr ptr )
 @ stdcall ConvertInterfaceLuidToNameA( ptr ptr long )
@@ -32,7 +32,7 @@
 #@ stub ConvertRemoteInterfaceLuidToGuid
 #@ stub ConvertRemoteInterfaceLuidToIndex
 #@ stub ConvertStringToGuidA
-@ stdcall ConvertStringToGuidW( wstr ptr )
+#@ stub ConvertStringToGuidW
 #@ stub ConvertStringToInterfacePhysicalAddress
 #@ stub CPNatfwtCreateProviderInstance
 #@ stub CPNatfwtDeregisterProviderInstance
@@ -89,7 +89,6 @@
 @ stub GetIcmpStatsFromStack
 @ stdcall GetIfEntry( ptr )
 @ stdcall GetIfEntry2( ptr )
-@ stdcall GetIfEntry2Ex( long ptr )
 @ stub GetIfEntryFromStack
 #@ stub GetIfStackTable
 @ stdcall GetIfTable( ptr ptr long )
@@ -157,7 +156,7 @@
 @ stdcall Icmp6SendEcho2(ptr ptr ptr ptr ptr ptr ptr long ptr ptr long long)
 @ stdcall IcmpCloseHandle(ptr)
 @ stdcall IcmpCreateFile()
-@ stdcall IcmpParseReplies(ptr long)
+@ stub IcmpParseReplies
 @ stdcall IcmpSendEcho2Ex(ptr ptr ptr ptr long long ptr long ptr ptr long long)
 @ stdcall IcmpSendEcho2(ptr ptr ptr ptr long ptr long ptr ptr long long)
 @ stdcall IcmpSendEcho(ptr long ptr long ptr ptr long long)
@@ -237,7 +236,7 @@
 @ stdcall NotifyAddrChange( ptr ptr )
 @ stdcall NotifyIpInterfaceChange( long ptr ptr long ptr )
 @ stdcall NotifyRouteChange( ptr ptr )
-@ stdcall NotifyRouteChange2( long ptr ptr long ptr )
+#@ stub NotifyRouteChange2
 @ stub NotifyRouteChangeEx
 #@ stub NotifyStableUnicastIpAddressTable
 #@ stub NotifyTeredoPortChange

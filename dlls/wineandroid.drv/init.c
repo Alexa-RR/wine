@@ -21,10 +21,10 @@
 #define NONAMELESSSTRUCT
 #define NONAMELESSUNION
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdarg.h>
 #include <string.h>
-#include <dlfcn.h>
 #include <link.h>
 
 #include "windef.h"
@@ -32,6 +32,7 @@
 #include "winreg.h"
 #include "android.h"
 #include "wine/server.h"
+#include "wine/library.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(android);
@@ -40,18 +41,25 @@ unsigned int screen_width = 0;
 unsigned int screen_height = 0;
 RECT virtual_screen_rect = { 0, 0, 0, 0 };
 
+MONITORINFOEXW default_monitor =
+{
+    sizeof(default_monitor),    /* cbSize */
+    { 0, 0, 0, 0 },             /* rcMonitor */
+    { 0, 0, 0, 0 },             /* rcWork */
+    MONITORINFOF_PRIMARY,       /* dwFlags */
+    { '\\','\\','.','\\','D','I','S','P','L','A','Y','1',0 }   /* szDevice */
+};
+
 static const unsigned int screen_bpp = 32;  /* we don't support other modes */
 
-static RECT monitor_rc_work;
 static int device_init_done;
-static BOOL force_display_devices_refresh;
 
 typedef struct
 {
     struct gdi_physdev dev;
 } ANDROID_PDEVICE;
 
-static const struct user_driver_funcs android_drv_funcs;
+static const struct gdi_dc_funcs android_drv_funcs;
 
 
 /******************************************************************************
@@ -65,22 +73,14 @@ void init_monitors( int width, int height )
 
     virtual_screen_rect.right = width;
     virtual_screen_rect.bottom = height;
-    monitor_rc_work = virtual_screen_rect;
+    default_monitor.rcMonitor = default_monitor.rcWork = virtual_screen_rect;
 
     if (!hwnd || !IsWindowVisible( hwnd )) return;
     if (!GetWindowRect( hwnd, &rect )) return;
-    if (rect.top) monitor_rc_work.bottom = rect.top;
-    else monitor_rc_work.top = rect.bottom;
+    if (rect.top) default_monitor.rcWork.bottom = rect.top;
+    else default_monitor.rcWork.top = rect.bottom;
     TRACE( "found tray %p %s work area %s\n", hwnd,
-           wine_dbgstr_rect( &rect ), wine_dbgstr_rect( &monitor_rc_work ));
-
-    if (*p_java_vm) /* if we're notified from Java thread, update registry */
-    {
-        UINT32 num_path, num_mode;
-        force_display_devices_refresh = TRUE;
-        /* trigger refresh in win32u */
-        NtUserGetDisplayConfigBufferSizes( QDC_ONLY_ACTIVE_PATHS, &num_path, &num_mode );
-    }
+           wine_dbgstr_rect( &rect ), wine_dbgstr_rect( &default_monitor.rcWork ));
 }
 
 
@@ -105,7 +105,7 @@ void set_screen_dpi( DWORD dpi )
  */
 static void fetch_display_metrics(void)
 {
-    if (*p_java_vm) return;  /* for Java threads it will be set when the top view is created */
+    if (wine_get_java_vm()) return;  /* for Java threads it will be set when the top view is created */
 
     SERVER_START_REQ( get_window_rectangles )
     {
@@ -152,14 +152,14 @@ static ANDROID_PDEVICE *create_android_physdev(void)
 /**********************************************************************
  *           ANDROID_CreateDC
  */
-static BOOL CDECL ANDROID_CreateDC( PHYSDEV *pdev, LPCWSTR device, LPCWSTR output,
-                                    const DEVMODEW *initData )
+static BOOL CDECL ANDROID_CreateDC( PHYSDEV *pdev, LPCWSTR driver, LPCWSTR device,
+                                    LPCWSTR output, const DEVMODEW* initData )
 {
     ANDROID_PDEVICE *physdev = create_android_physdev();
 
     if (!physdev) return FALSE;
 
-    push_dc_driver( pdev, &physdev->dev, &android_drv_funcs.dc_funcs );
+    push_dc_driver( pdev, &physdev->dev, &android_drv_funcs );
     return TRUE;
 }
 
@@ -173,7 +173,7 @@ static BOOL CDECL ANDROID_CreateCompatibleDC( PHYSDEV orig, PHYSDEV *pdev )
 
     if (!physdev) return FALSE;
 
-    push_dc_driver( pdev, &physdev->dev, &android_drv_funcs.dc_funcs );
+    push_dc_driver( pdev, &physdev->dev, &android_drv_funcs );
     return TRUE;
 }
 
@@ -200,22 +200,30 @@ LONG CDECL ANDROID_ChangeDisplaySettingsEx( LPCWSTR devname, LPDEVMODEW devmode,
 
 
 /***********************************************************************
- *           ANDROID_UpdateDisplayDevices
+ *           ANDROID_GetMonitorInfo
  */
-void CDECL ANDROID_UpdateDisplayDevices( const struct gdi_device_manager *device_manager,
-                                         BOOL force, void *param )
+BOOL CDECL ANDROID_GetMonitorInfo( HMONITOR handle, LPMONITORINFO info )
 {
-    if (force || force_display_devices_refresh)
+    if (handle != (HMONITOR)1)
     {
-        struct gdi_monitor gdi_monitor =
-        {
-            .rc_monitor = virtual_screen_rect,
-            .rc_work = monitor_rc_work,
-            .state_flags = DISPLAY_DEVICE_ACTIVE | DISPLAY_DEVICE_ATTACHED,
-        };
-        device_manager->add_monitor( &gdi_monitor, param );
-        force_display_devices_refresh = FALSE;
+        SetLastError( ERROR_INVALID_HANDLE );
+        return FALSE;
     }
+    info->rcMonitor = default_monitor.rcMonitor;
+    info->rcWork = default_monitor.rcWork;
+    info->dwFlags = default_monitor.dwFlags;
+    if (info->cbSize >= sizeof(MONITORINFOEXW))
+        lstrcpyW( ((MONITORINFOEXW *)info)->szDevice, default_monitor.szDevice );
+    return TRUE;
+}
+
+
+/***********************************************************************
+ *           ANDROID_EnumDisplayMonitors
+ */
+BOOL CDECL ANDROID_EnumDisplayMonitors( HDC hdc, LPRECT rect, MONITORENUMPROC proc, LPARAM lp )
+{
+    return proc( (HMONITOR)1, 0, &default_monitor.rcMonitor, lp );
 }
 
 
@@ -261,41 +269,168 @@ BOOL CDECL ANDROID_EnumDisplaySettingsEx( LPCWSTR name, DWORD n, LPDEVMODEW devm
 /**********************************************************************
  *           ANDROID_wine_get_wgl_driver
  */
-static struct opengl_funcs * CDECL ANDROID_wine_get_wgl_driver( UINT version )
+static struct opengl_funcs * CDECL ANDROID_wine_get_wgl_driver( PHYSDEV dev, UINT version )
 {
-    return get_wgl_driver( version );
+    struct opengl_funcs *ret;
+
+    if (!(ret = get_wgl_driver( version )))
+    {
+        dev = GET_NEXT_PHYSDEV( dev, wine_get_wgl_driver );
+        ret = dev->funcs->wine_get_wgl_driver( dev, version );
+    }
+    return ret;
 }
 
 
-static const struct user_driver_funcs android_drv_funcs =
+static const struct gdi_dc_funcs android_drv_funcs =
 {
-    .dc_funcs.pCreateCompatibleDC = ANDROID_CreateCompatibleDC,
-    .dc_funcs.pCreateDC = ANDROID_CreateDC,
-    .dc_funcs.pDeleteDC = ANDROID_DeleteDC,
-    .dc_funcs.priority = GDI_PRIORITY_GRAPHICS_DRV,
-
-    .pGetKeyNameText = ANDROID_GetKeyNameText,
-    .pMapVirtualKeyEx = ANDROID_MapVirtualKeyEx,
-    .pVkKeyScanEx = ANDROID_VkKeyScanEx,
-    .pSetCursor = ANDROID_SetCursor,
-    .pChangeDisplaySettingsEx = ANDROID_ChangeDisplaySettingsEx,
-    .pEnumDisplaySettingsEx = ANDROID_EnumDisplaySettingsEx,
-    .pUpdateDisplayDevices = ANDROID_UpdateDisplayDevices,
-    .pCreateWindow = ANDROID_CreateWindow,
-    .pDestroyWindow = ANDROID_DestroyWindow,
-    .pMsgWaitForMultipleObjectsEx = ANDROID_MsgWaitForMultipleObjectsEx,
-    .pSetCapture = ANDROID_SetCapture,
-    .pSetLayeredWindowAttributes = ANDROID_SetLayeredWindowAttributes,
-    .pSetParent = ANDROID_SetParent,
-    .pSetWindowRgn = ANDROID_SetWindowRgn,
-    .pSetWindowStyle = ANDROID_SetWindowStyle,
-    .pShowWindow = ANDROID_ShowWindow,
-    .pUpdateLayeredWindow = ANDROID_UpdateLayeredWindow,
-    .pWindowMessage = ANDROID_WindowMessage,
-    .pWindowPosChanging = ANDROID_WindowPosChanging,
-    .pWindowPosChanged = ANDROID_WindowPosChanged,
-    .pwine_get_wgl_driver = ANDROID_wine_get_wgl_driver,
+    NULL,                               /* pAbortDoc */
+    NULL,                               /* pAbortPath */
+    NULL,                               /* pAlphaBlend */
+    NULL,                               /* pAngleArc */
+    NULL,                               /* pArc */
+    NULL,                               /* pArcTo */
+    NULL,                               /* pBeginPath */
+    NULL,                               /* pBlendImage */
+    NULL,                               /* pChord */
+    NULL,                               /* pCloseFigure */
+    ANDROID_CreateCompatibleDC,         /* pCreateCompatibleDC */
+    ANDROID_CreateDC,                   /* pCreateDC */
+    ANDROID_DeleteDC,                   /* pDeleteDC */
+    NULL,                               /* pDeleteObject */
+    NULL,                               /* pDeviceCapabilities */
+    NULL,                               /* pEllipse */
+    NULL,                               /* pEndDoc */
+    NULL,                               /* pEndPage */
+    NULL,                               /* pEndPath */
+    NULL,                               /* pEnumFonts */
+    NULL,                               /* pEnumICMProfiles */
+    NULL,                               /* pExcludeClipRect */
+    NULL,                               /* pExtDeviceMode */
+    NULL,                               /* pExtEscape */
+    NULL,                               /* pExtFloodFill */
+    NULL,                               /* pExtSelectClipRgn */
+    NULL,                               /* pExtTextOut */
+    NULL,                               /* pFillPath */
+    NULL,                               /* pFillRgn */
+    NULL,                               /* pFlattenPath */
+    NULL,                               /* pFontIsLinked */
+    NULL,                               /* pFrameRgn */
+    NULL,                               /* pGdiComment */
+    NULL,                               /* pGetBoundsRect */
+    NULL,                               /* pGetCharABCWidths */
+    NULL,                               /* pGetCharABCWidthsI */
+    NULL,                               /* pGetCharWidth */
+    NULL,                               /* pGetCharWidthInfo */
+    NULL,                               /* pGetDeviceCaps */
+    NULL,                               /* pGetDeviceGammaRamp */
+    NULL,                               /* pGetFontData */
+    NULL,                               /* pGetFontRealizationInfo */
+    NULL,                               /* pGetFontUnicodeRanges */
+    NULL,                               /* pGetGlyphIndices */
+    NULL,                               /* pGetGlyphOutline */
+    NULL,                               /* pGetICMProfile */
+    NULL,                               /* pGetImage */
+    NULL,                               /* pGetKerningPairs */
+    NULL,                               /* pGetNearestColor */
+    NULL,                               /* pGetOutlineTextMetrics */
+    NULL,                               /* pGetPixel */
+    NULL,                               /* pGetSystemPaletteEntries */
+    NULL,                               /* pGetTextCharsetInfo */
+    NULL,                               /* pGetTextExtentExPoint */
+    NULL,                               /* pGetTextExtentExPointI */
+    NULL,                               /* pGetTextFace */
+    NULL,                               /* pGetTextMetrics */
+    NULL,                               /* pGradientFill */
+    NULL,                               /* pIntersectClipRect */
+    NULL,                               /* pInvertRgn */
+    NULL,                               /* pLineTo */
+    NULL,                               /* pModifyWorldTransform */
+    NULL,                               /* pMoveTo */
+    NULL,                               /* pOffsetClipRgn */
+    NULL,                               /* pOffsetViewportOrg */
+    NULL,                               /* pOffsetWindowOrg */
+    NULL,                               /* pPaintRgn */
+    NULL,                               /* pPatBlt */
+    NULL,                               /* pPie */
+    NULL,                               /* pPolyBezier */
+    NULL,                               /* pPolyBezierTo */
+    NULL,                               /* pPolyDraw */
+    NULL,                               /* pPolyPolygon */
+    NULL,                               /* pPolyPolyline */
+    NULL,                               /* pPolygon */
+    NULL,                               /* pPolyline */
+    NULL,                               /* pPolylineTo */
+    NULL,                               /* pPutImage */
+    NULL,                               /* pRealizeDefaultPalette */
+    NULL,                               /* pRealizePalette */
+    NULL,                               /* pRectangle */
+    NULL,                               /* pResetDC */
+    NULL,                               /* pRestoreDC */
+    NULL,                               /* pRoundRect */
+    NULL,                               /* pSaveDC */
+    NULL,                               /* pScaleViewportExt */
+    NULL,                               /* pScaleWindowExt */
+    NULL,                               /* pSelectBitmap */
+    NULL,                               /* pSelectBrush */
+    NULL,                               /* pSelectClipPath */
+    NULL,                               /* pSelectFont */
+    NULL,                               /* pSelectPalette */
+    NULL,                               /* pSelectPen */
+    NULL,                               /* pSetArcDirection */
+    NULL,                               /* pSetBkColor */
+    NULL,                               /* pSetBkMode */
+    NULL,                               /* pSetBoundsRect */
+    NULL,                               /* pSetDCBrushColor */
+    NULL,                               /* pSetDCPenColor */
+    NULL,                               /* pSetDIBitsToDevice */
+    NULL,                               /* pSetDeviceClipping */
+    NULL,                               /* pSetDeviceGammaRamp */
+    NULL,                               /* pSetLayout */
+    NULL,                               /* pSetMapMode */
+    NULL,                               /* pSetMapperFlags */
+    NULL,                               /* pSetPixel */
+    NULL,                               /* pSetPolyFillMode */
+    NULL,                               /* pSetROP2 */
+    NULL,                               /* pSetRelAbs */
+    NULL,                               /* pSetStretchBltMode */
+    NULL,                               /* pSetTextAlign */
+    NULL,                               /* pSetTextCharacterExtra */
+    NULL,                               /* pSetTextColor */
+    NULL,                               /* pSetTextJustification */
+    NULL,                               /* pSetViewportExt */
+    NULL,                               /* pSetViewportOrg */
+    NULL,                               /* pSetWindowExt */
+    NULL,                               /* pSetWindowOrg */
+    NULL,                               /* pSetWorldTransform */
+    NULL,                               /* pStartDoc */
+    NULL,                               /* pStartPage */
+    NULL,                               /* pStretchBlt */
+    NULL,                               /* pStretchDIBits */
+    NULL,                               /* pStrokeAndFillPath */
+    NULL,                               /* pStrokePath */
+    NULL,                               /* pUnrealizePalette */
+    NULL,                               /* pWidenPath */
+    NULL,                               /* pD3DKMTCheckVidPnExclusiveOwnership */
+    NULL,                               /* pD3DKMTSetVidPnSourceOwner */
+    ANDROID_wine_get_wgl_driver,        /* wine_get_wgl_driver */
+    NULL,                               /* wine_get_vulkan_driver */
+    GDI_PRIORITY_GRAPHICS_DRV           /* priority */
 };
+
+
+/******************************************************************************
+ *           ANDROID_get_gdi_driver
+ */
+const struct gdi_dc_funcs * CDECL ANDROID_get_gdi_driver( unsigned int version )
+{
+    if (version != WINE_GDI_DRIVER_VERSION)
+    {
+        ERR( "version mismatch, gdi32 wants %u but wineandroid has %u\n", version, WINE_GDI_DRIVER_VERSION );
+        return NULL;
+    }
+    return &android_drv_funcs;
+}
 
 
 static const JNINativeMethod methods[] =
@@ -309,7 +444,7 @@ static const JNINativeMethod methods[] =
 
 #define DECL_FUNCPTR(f) typeof(f) * p##f = NULL
 #define LOAD_FUNCPTR(lib, func) do { \
-    if ((p##func = dlsym( lib, #func )) == NULL) \
+    if ((p##func = wine_dlsym( lib, #func, NULL, 0 )) == NULL) \
         { ERR( "can't find symbol %s\n", #func); return; } \
     } while(0)
 
@@ -432,8 +567,9 @@ static void load_hardware_libs(void)
     const struct hw_module_t *module;
     int ret;
     void *libhardware;
+    char error[256];
 
-    if ((libhardware = dlopen( "libhardware.so", RTLD_GLOBAL )))
+    if ((libhardware = wine_dlopen( "libhardware.so", RTLD_GLOBAL, error, sizeof(error) )))
     {
         LOAD_FUNCPTR( libhardware, hw_get_module );
     }
@@ -442,9 +578,9 @@ static void load_hardware_libs(void)
         /* Android >= N disallows loading libhardware, so we load libandroid (which imports
          * libhardware), and then we can find libhardware in the list of loaded libraries.
          */
-        if (!dlopen( "libandroid.so", RTLD_GLOBAL ))
+        if (!wine_dlopen( "libandroid.so", RTLD_GLOBAL, error, sizeof(error) ))
         {
-            ERR( "failed to load libandroid.so: %s\n", dlerror() );
+            ERR( "failed to load libandroid.so: %s\n", error );
             return;
         }
         dl_iterate_phdr( enum_libs, 0 );
@@ -467,15 +603,16 @@ static void load_hardware_libs(void)
 static void load_android_libs(void)
 {
     void *libandroid, *liblog;
+    char error[1024];
 
-    if (!(libandroid = dlopen( "libandroid.so", RTLD_GLOBAL )))
+    if (!(libandroid = wine_dlopen( "libandroid.so", RTLD_GLOBAL, error, sizeof(error) )))
     {
-        ERR( "failed to load libandroid.so: %s\n", dlerror() );
+        ERR( "failed to load libandroid.so: %s\n", error );
         return;
     }
-    if (!(liblog = dlopen( "liblog.so", RTLD_GLOBAL )))
+    if (!(liblog = wine_dlopen( "liblog.so", RTLD_GLOBAL, error, sizeof(error) )))
     {
-        ERR( "failed to load liblog.so: %s\n", dlerror() );
+        ERR( "failed to load liblog.so: %s\n", error );
         return;
     }
     LOAD_FUNCPTR( liblog, __android_log_print );
@@ -486,29 +623,16 @@ static void load_android_libs(void)
 #undef DECL_FUNCPTR
 #undef LOAD_FUNCPTR
 
-JavaVM **p_java_vm = NULL;
-jobject *p_java_object = NULL;
-unsigned short *p_java_gdt_sel = NULL;
-
 static BOOL process_attach(void)
 {
     jclass class;
-    jobject object;
+    jobject object = wine_get_java_object();
     JNIEnv *jni_env;
     JavaVM *java_vm;
-    void *ntdll;
-
-    if (!(ntdll = dlopen( "ntdll.so", RTLD_NOW ))) return FALSE;
-
-    p_java_vm = dlsym( ntdll, "java_vm" );
-    p_java_object = dlsym( ntdll, "java_object" );
-    p_java_gdt_sel = dlsym( ntdll, "java_gdt_sel" );
-
-    object = *p_java_object;
 
     load_hardware_libs();
 
-    if ((java_vm = *p_java_vm))  /* running under Java */
+    if ((java_vm = wine_get_java_vm()))  /* running under Java */
     {
 #ifdef __i386__
         WORD old_fs;
@@ -524,7 +648,6 @@ static BOOL process_attach(void)
         __asm__( "mov %0,%%fs" :: "r" (old_fs) );
 #endif
     }
-    __wine_set_user_driver( &android_drv_funcs, WINE_GDI_DRIVER_VERSION );
     return TRUE;
 }
 

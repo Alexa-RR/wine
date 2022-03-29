@@ -708,7 +708,7 @@ interface IMultiLanguage2 : IUnknown
         [in] LANGID LangId,
         [out] IEnumScript **ppEnumScript);
 
-    HRESULT ValidateCodePageEx(
+    HRESULT ValidateCodePageEx( /* undocumented on MSDN */
         [in] UINT uiCodePage,
         [in] HWND hwnd,
         [in] DWORD dwfIODControl);

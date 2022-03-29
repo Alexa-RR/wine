@@ -19,7 +19,6 @@
 package c_function;
 
 use strict;
-use warnings 'all';
 
 sub new($)
 {

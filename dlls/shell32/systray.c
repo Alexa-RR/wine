@@ -37,6 +37,8 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(systray);
 
+static const WCHAR classname[] = /* Shell_TrayWnd */ {'S','h','e','l','l','_','T','r','a','y','W','n','d','\0'};
+
 struct notify_data  /* platform-independent format for NOTIFYICONDATA */
 {
     LONG  hWnd;
@@ -76,7 +78,7 @@ BOOL WINAPI Shell_NotifyIconA(DWORD dwMessage, PNOTIFYICONDATAA pnid)
         pnid->cbSize != NOTIFYICONDATAA_V3_SIZE &&
         pnid->cbSize != sizeof(NOTIFYICONDATAA))
     {
-        WARN("Invalid cbSize (%ld) - using only Win95 fields (size=%ld)\n",
+        WARN("Invalid cbSize (%d) - using only Win95 fields (size=%d)\n",
             pnid->cbSize, NOTIFYICONDATAA_V1_SIZE);
         cbSize = NOTIFYICONDATAA_V1_SIZE;
     }
@@ -130,7 +132,7 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
     struct notify_data *data = &data_buffer;
     BOOL ret;
 
-    TRACE("dwMessage = %ld, nid->cbSize=%ld\n", dwMessage, nid->cbSize);
+    TRACE("dwMessage = %d, nid->cbSize=%d\n", dwMessage, nid->cbSize);
 
     /* Validate the cbSize so that WM_COPYDATA doesn't crash the application */
     if (nid->cbSize != NOTIFYICONDATAW_V1_SIZE &&
@@ -140,14 +142,14 @@ BOOL WINAPI Shell_NotifyIconW(DWORD dwMessage, PNOTIFYICONDATAW nid)
     {
         NOTIFYICONDATAW newNid;
 
-        WARN("Invalid cbSize (%ld) - using only Win95 fields (size=%ld)\n",
+        WARN("Invalid cbSize (%d) - using only Win95 fields (size=%d)\n",
             nid->cbSize, NOTIFYICONDATAW_V1_SIZE);
         CopyMemory(&newNid, nid, NOTIFYICONDATAW_V1_SIZE);
         newNid.cbSize = NOTIFYICONDATAW_V1_SIZE;
         return Shell_NotifyIconW(dwMessage, &newNid);
     }
 
-    tray = FindWindowExW(0, NULL, L"Shell_TrayWnd", NULL);
+    tray = FindWindowExW(0, NULL, classname, NULL);
     if (!tray) return FALSE;
 
     cds.dwData = dwMessage;

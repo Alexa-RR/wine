@@ -219,17 +219,10 @@ static BOOL i386_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
         if (NtQueryInformationThread(csw->hThread, ThreadBasicInformation, &info,
                                      sizeof(info), NULL) == STATUS_SUCCESS)
         {
-<<<<<<< HEAD
             curr_switch = (DWORD_PTR)info.TebBaseAddress + FIELD_OFFSET(TEB, SystemReserved1[0]);
             if (!sw_read_mem(csw, curr_switch, &p, sizeof(p)))
             {
                 WARN("Can't read TEB:SystemReserved1[0]\n");
-=======
-            curr_switch = (DWORD_PTR)info.TebBaseAddress + FIELD_OFFSET(TEB, SystemReserved1);
-            if (!sw_read_mem(csw, curr_switch, &p, sizeof(p)))
-            {
-                WARN("Can't read TEB:SystemReserved1\n");
->>>>>>> master
                 goto done_err;
             }
             next_switch = p;
@@ -259,7 +252,7 @@ static BOOL i386_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
                 p = sw_xlat_addr(csw, &tmp);
                 if (!sw_read_mem(csw, p, &frame16, sizeof(frame16)))
                 {
-                    WARN("Bad stack frame 0x%08lx\n", p);
+                    WARN("Bad stack frame 0x%08x\n", p);
                     goto done_err;
                 }
                 curr_switch = (DWORD_PTR)frame16.frame32;
@@ -323,7 +316,7 @@ static BOOL i386_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
 
                 if (!sw_read_mem(csw, p, &frame16, sizeof(frame16)))
                 {
-                    WARN("Bad stack frame 0x%08lx\n", p);
+                    WARN("Bad stack frame 0x%08x\n", p);
                     goto done_err;
                 }
                 curr_switch = (DWORD_PTR)frame16.frame32;
@@ -340,16 +333,16 @@ static BOOL i386_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
 
                 if (!sw_read_mem(csw, p, &frame16, sizeof(frame16)))
                 {
-                    WARN("Bad stack frame 0x%08lx\n", p);
+                    WARN("Bad stack frame 0x%08x\n", p);
                     goto done_err;
                 }
 
                 TRACE("Got a 16 bit stack switch:"
                       "\n\tframe32: %p"
-                      "\n\tedx:%08lx ecx:%08lx ebp:%08lx"
+                      "\n\tedx:%08x ecx:%08x ebp:%08x"
                       "\n\tds:%04x es:%04x fs:%04x gs:%04x"
-                      "\n\tcall_from_ip:%08lx module_cs:%04lx relay=%08lx"
-                      "\n\tentry_ip:%04x entry_point:%08lx"
+                      "\n\tcall_from_ip:%08x module_cs:%04x relay=%08x"
+                      "\n\tentry_ip:%04x entry_point:%08x"
                       "\n\tbp:%04x ip:%04x cs:%04x\n",
                       frame16.frame32,
                       frame16.edx, frame16.ecx, frame16.ebp,
@@ -410,7 +403,7 @@ static BOOL i386_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
                 frame->AddrStack.Offset = context->x86.Esp;
                 frame->AddrFrame.Offset = context->x86.Ebp;
                 if (frame->AddrReturn.Offset != context->x86.Eip)
-                    FIXME("new PC=%s different from Eip=%lx\n",
+                    FIXME("new PC=%s different from Eip=%x\n",
                           wine_dbgstr_longlong(frame->AddrReturn.Offset), context->x86.Eip);
                 frame->AddrPC.Offset = context->x86.Eip;
             }
@@ -611,16 +604,6 @@ static void *i386_fetch_context_reg(union ctx *pctx, unsigned regno, unsigned *s
     case CV_REG_FS: *size = sizeof(ctx->SegFs); return &ctx->SegFs;
     case CV_REG_GS: *size = sizeof(ctx->SegGs); return &ctx->SegGs;
 
-    case CV_REG_XMM0 + 0: *size = 16; return &ctx->ExtendedRegisters[10*16];
-    case CV_REG_XMM0 + 1: *size = 16; return &ctx->ExtendedRegisters[11*16];
-    case CV_REG_XMM0 + 2: *size = 16; return &ctx->ExtendedRegisters[12*16];
-    case CV_REG_XMM0 + 3: *size = 16; return &ctx->ExtendedRegisters[13*16];
-    case CV_REG_XMM0 + 4: *size = 16; return &ctx->ExtendedRegisters[14*16];
-    case CV_REG_XMM0 + 5: *size = 16; return &ctx->ExtendedRegisters[15*16];
-    case CV_REG_XMM0 + 6: *size = 16; return &ctx->ExtendedRegisters[16*16];
-    case CV_REG_XMM0 + 7: *size = 16; return &ctx->ExtendedRegisters[17*16];
-
-    case CV_REG_MXCSR: *size = sizeof(DWORD); return &ctx->ExtendedRegisters[24];
     }
     FIXME("Unknown register %x\n", regno);
     return NULL;

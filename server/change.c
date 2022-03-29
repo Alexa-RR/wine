@@ -20,6 +20,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <assert.h>
 #include <fcntl.h>
@@ -31,8 +32,9 @@
 #include <limits.h>
 #include <dirent.h>
 #include <errno.h>
-#include <unistd.h>
-#include <poll.h>
+#ifdef HAVE_POLL_H
+# include <poll.h>
+#endif
 #ifdef HAVE_SYS_INOTIFY_H
 #include <sys/inotify.h>
 #endif
@@ -86,7 +88,7 @@ struct dir
     uid_t          uid;      /* file stat.st_uid */
     struct list    entry;    /* entry in global change notifications list */
     unsigned int   filter;   /* notification filter */
-    volatile int   notified; /* SIGIO counter */
+    int            notified; /* SIGIO counter */
     int            want_data; /* return change data */
     int            subtree;  /* do we want to watch subdirectories? */
     struct list    change_records;   /* data for the change */
@@ -101,14 +103,15 @@ static struct security_descriptor *dir_get_sd( struct object *obj );
 static int dir_set_sd( struct object *obj, const struct security_descriptor *sd,
                        unsigned int set_info );
 static void dir_dump( struct object *obj, int verbose );
+static struct object_type *dir_get_type( struct object *obj );
 static int dir_close_handle( struct object *obj, struct process *process, obj_handle_t handle );
 static void dir_destroy( struct object *obj );
 
 static const struct object_ops dir_ops =
 {
     sizeof(struct dir),       /* size */
-    &file_type,               /* type */
     dir_dump,                 /* dump */
+    dir_get_type,             /* get_type */
     add_queue,                /* add_queue */
     remove_queue,             /* remove_queue */
     default_fd_signaled,      /* signaled */
@@ -116,10 +119,9 @@ static const struct object_ops dir_ops =
     no_satisfied,             /* satisfied */
     no_signal,                /* signal */
     dir_get_fd,               /* get_fd */
-    default_map_access,       /* map_access */
+    default_fd_map_access,    /* map_access */
     dir_get_sd,               /* get_sd */
     dir_set_sd,               /* set_sd */
-    no_get_full_name,         /* get_full_name */
     no_lookup_name,           /* lookup_name */
     no_link_name,             /* link_name */
     NULL,                     /* unlink_name */
@@ -144,7 +146,6 @@ static const struct fd_ops dir_fd_ops =
     default_fd_get_file_info,    /* get_file_info */
     no_fd_get_volume_info,       /* get_volume_info */
     default_fd_ioctl,            /* ioctl */
-    default_fd_cancel_async,     /* cancel_async */
     default_fd_queue_async,      /* queue_async */
     default_fd_reselect_async    /* reselect_async */
 };
@@ -292,6 +293,13 @@ static void dir_dump( struct object *obj, int verbose )
     fprintf( stderr, "Dirfile fd=%p filter=%08x\n", dir->fd, dir->filter );
 }
 
+static struct object_type *dir_get_type( struct object *obj )
+{
+    static const WCHAR name[] = {'F','i','l','e'};
+    static const struct unicode_str str = { name, sizeof(name) };
+    return get_object_type( &str );
+}
+
 /* enter here directly from SIGIO signal handler */
 void do_change_notify( int unix_fd )
 {
@@ -301,7 +309,7 @@ void do_change_notify( int unix_fd )
     LIST_FOR_EACH_ENTRY( dir, &change_list, struct dir, entry )
     {
         if (get_unix_fd( dir->fd ) != unix_fd) continue;
-        dir->notified = 1;
+        interlocked_xchg_add( &dir->notified, 1 );
         break;
     }
 }
@@ -313,9 +321,8 @@ void sigio_callback(void)
 
     LIST_FOR_EACH_ENTRY( dir, &change_list, struct dir, entry )
     {
-        if (!dir->notified) continue;
-        dir->notified = 0;
-        fd_async_wake_up( dir->fd, ASYNC_TYPE_WAIT, STATUS_ALERTED );
+        if (interlocked_xchg( &dir->notified, 0 ))
+            fd_async_wake_up( dir->fd, ASYNC_TYPE_WAIT, STATUS_ALERTED );
     }
 }
 
@@ -344,7 +351,6 @@ static int dir_set_sd( struct object *obj, const struct security_descriptor *sd,
                        unsigned int set_info )
 {
     struct dir *dir = (struct dir *)obj;
-<<<<<<< HEAD
     struct fd *fd;
     int ret;
 
@@ -354,50 +360,6 @@ static int dir_set_sd( struct object *obj, const struct security_descriptor *sd,
     ret = set_file_sd( obj, fd, &dir->mode, &dir->uid, sd, set_info );
     release_object( fd );
     return ret;
-=======
-    const struct sid *owner;
-    struct stat st;
-    mode_t mode;
-    int unix_fd;
-
-    assert( obj->ops == &dir_ops );
-
-    unix_fd = get_dir_unix_fd( dir );
-
-    if (unix_fd == -1 || fstat( unix_fd, &st ) == -1) return 1;
-
-    if (set_info & OWNER_SECURITY_INFORMATION)
-    {
-        owner = sd_get_owner( sd );
-        if (!owner)
-        {
-            set_error( STATUS_INVALID_SECURITY_DESCR );
-            return 0;
-        }
-        if (!obj->sd || !equal_sid( owner, sd_get_owner( obj->sd ) ))
-        {
-            /* FIXME: get Unix uid and call fchown */
-        }
-    }
-    else if (obj->sd)
-        owner = sd_get_owner( obj->sd );
-    else
-        owner = token_get_user( current->process->token );
-
-    if (set_info & DACL_SECURITY_INFORMATION)
-    {
-        /* keep the bits that we don't map to access rights in the ACL */
-        mode = st.st_mode & (S_ISUID|S_ISGID|S_ISVTX);
-        mode |= sd_to_mode( sd, owner );
-
-        if (((st.st_mode ^ mode) & (S_IRWXU|S_IRWXG|S_IRWXO)) && fchmod( unix_fd, mode ) == -1)
-        {
-            file_set_error();
-            return 0;
-        }
-    }
-    return 1;
->>>>>>> master
 }
 
 static struct change_record *get_first_change_record( struct dir *dir )
@@ -412,6 +374,7 @@ static int dir_close_handle( struct object *obj, struct process *process, obj_ha
 {
     struct dir *dir = (struct dir *)obj;
 
+    if (!fd_close_handle( obj, process, handle )) return 0;
     if (obj->handle_count == 1) release_dir_cache_entry( dir ); /* closing last handle, release cache */
     return 1;  /* ok to close */
 }

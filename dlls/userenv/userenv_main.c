@@ -35,6 +35,21 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL( userenv );
 
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+{
+    TRACE("%p %d %p\n", hinstDLL, fdwReason, lpvReserved);
+
+    switch (fdwReason)
+    {
+    case DLL_WINE_PREATTACH:
+        return FALSE;  /* prefer native version */
+    case DLL_PROCESS_ATTACH:
+        DisableThreadLibraryCalls(hinstDLL);
+        break;
+    }
+    return TRUE;
+}
+
 static BOOL get_reg_value(WCHAR *env, HKEY hkey, const WCHAR *name, WCHAR *val, DWORD size)
 {
     DWORD type, res_size=0;
@@ -243,10 +258,7 @@ BOOL WINAPI CreateEnvironmentBlock( LPVOID* lpEnvironment,
             }
 
             if (get_reg_value(env, hkey, L"Public", buf, UNICODE_STRING_MAX_CHARS))
-            {
                 set_env_var(&env, L"ALLUSERSPROFILE", buf);
-                set_env_var(&env, L"ProgramData", buf);
-            }
         }
         else
         {
@@ -349,7 +361,7 @@ BOOL WINAPI ExpandEnvironmentStringsForUserA( HANDLE hToken, LPCSTR lpSrc,
 {
     BOOL ret;
 
-    TRACE("%p %s %p %ld\n", hToken, debugstr_a(lpSrc), lpDest, dwSize);
+    TRACE("%p %s %p %d\n", hToken, debugstr_a(lpSrc), lpDest, dwSize);
 
     ret = ExpandEnvironmentStringsA( lpSrc, lpDest, dwSize );
     TRACE("<- %s\n", debugstr_a(lpDest));
@@ -361,7 +373,7 @@ BOOL WINAPI ExpandEnvironmentStringsForUserW( HANDLE hToken, LPCWSTR lpSrc,
 {
     BOOL ret;
 
-    TRACE("%p %s %p %ld\n", hToken, debugstr_w(lpSrc), lpDest, dwSize);
+    TRACE("%p %s %p %d\n", hToken, debugstr_w(lpSrc), lpDest, dwSize);
 
     ret = ExpandEnvironmentStringsW( lpSrc, lpDest, dwSize );
     TRACE("<- %s\n", debugstr_w(lpDest));
@@ -406,6 +418,7 @@ BOOL WINAPI GetUserProfileDirectoryA( HANDLE hToken, LPSTR lpProfileDir,
 BOOL WINAPI GetUserProfileDirectoryW( HANDLE hToken, LPWSTR lpProfileDir,
                      LPDWORD lpcchSize )
 {
+    static const WCHAR slashW[] = {'\\',0};
     TOKEN_USER *t;
     WCHAR *userW = NULL, *dirW = NULL;
     DWORD len, dir_len, domain_len;
@@ -446,7 +459,7 @@ BOOL WINAPI GetUserProfileDirectoryW( HANDLE hToken, LPWSTR lpProfileDir,
         goto done;
     }
     lstrcpyW( lpProfileDir, dirW );
-    lstrcatW( lpProfileDir, L"\\" );
+    lstrcatW( lpProfileDir, slashW );
     lstrcatW( lpProfileDir, userW );
     *lpcchSize = len;
     ret = TRUE;
@@ -520,8 +533,11 @@ end:
     return ret;
 }
 
+static const WCHAR ProfileListW[] = {'S','o','f','t','w','a','r','e','\\','M','i','c','r','o','s','o','f','t','\\','W','i','n','d','o','w','s',' ','N','T','\\','C','u','r','r','e','n','t','V','e','r','s','i','o','n','\\','P','r','o','f','i','l','e','L','i','s','t',0};
+
 BOOL WINAPI GetProfilesDirectoryW( LPWSTR lpProfilesDir, LPDWORD lpcchSize )
 {
+    static const WCHAR ProfilesDirectory[] = {'P','r','o','f','i','l','e','s','D','i','r','e','c','t','o','r','y',0};
     LONG l;
     HKEY key;
     BOOL ret = FALSE;
@@ -536,15 +552,13 @@ BOOL WINAPI GetProfilesDirectoryW( LPWSTR lpProfilesDir, LPDWORD lpcchSize )
         return FALSE;
     }
 
-    l = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                      L"Software\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
-                      0, KEY_READ, &key);
+    l = RegOpenKeyExW(HKEY_LOCAL_MACHINE, ProfileListW, 0, KEY_READ, &key);
     if (l)
     {
         SetLastError(l);
         return FALSE;
     }
-    l = RegQueryValueExW(key, L"ProfilesDirectory", NULL, NULL, NULL, &len);
+    l = RegQueryValueExW(key, ProfilesDirectory, NULL, NULL, NULL, &len);
     if (l)
     {
         SetLastError(l);
@@ -556,7 +570,7 @@ BOOL WINAPI GetProfilesDirectoryW( LPWSTR lpProfilesDir, LPDWORD lpcchSize )
         SetLastError(ERROR_OUTOFMEMORY);
         goto end;
     }
-    l = RegQueryValueExW(key, L"ProfilesDirectory", NULL, NULL,
+    l = RegQueryValueExW(key, ProfilesDirectory, NULL, NULL,
                              (BYTE *)unexpanded_profiles_dir, &len);
     if (l)
     {
@@ -648,7 +662,7 @@ BOOL WINAPI LeaveCriticalPolicySection(HANDLE hSection)
 DWORD WINAPI GetAppliedGPOListW(DWORD dwFlags, LPCWSTR pMachineName, PSID pSidUser, GUID *pGuidExtension,
         PGROUP_POLICY_OBJECTW *ppGPOList)
 {
-    FIXME("(%lx %s %p %s %p)\n", dwFlags, debugstr_w(pMachineName), pSidUser, debugstr_guid(pGuidExtension), ppGPOList);
+    FIXME("(%x %s %p %s %p)\n", dwFlags, debugstr_w(pMachineName), pSidUser, debugstr_guid(pGuidExtension), ppGPOList);
     return ERROR_ACCESS_DENIED;
 }
 
@@ -681,7 +695,7 @@ BOOL WINAPI USERENV_138( int csidl, LPCSTR lnk_dir, LPCSTR lnk_filename,
             LPCSTR work_directory, WORD hotkey, DWORD win_state, LPCSTR comment,
             LPCSTR loc_filename_resfile, DWORD loc_filename_resid)
 {
-    FIXME("(%d,%s,%s,%s,%s,%ld,%s,0x%x,%ld,%s,%s,%ld) - stub\n", csidl, debugstr_a(lnk_dir),
+    FIXME("(%d,%s,%s,%s,%s,%d,%s,0x%x,%d,%s,%s,%d) - stub\n", csidl, debugstr_a(lnk_dir),
             debugstr_a(lnk_filename), debugstr_a(lnk_target), debugstr_a(lnk_iconfile),
             lnk_iconid, debugstr_a(work_directory), hotkey, win_state,
             debugstr_a(comment), debugstr_a(loc_filename_resfile), loc_filename_resid );

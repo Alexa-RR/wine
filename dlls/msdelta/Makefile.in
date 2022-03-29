@@ -1,3 +1,6 @@
 MODULE    = msdelta.dll
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
+
+C_SRCS = \
+	msdelta_main.c

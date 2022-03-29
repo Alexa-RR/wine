@@ -1,7 +1,6 @@
 MODULE    = winver.exe
-IMPORTS   = shell32 comctl32
-
-EXTRADLLFLAGS = -mwindows
+APPMODE   = -mwindows
+IMPORTS   = shell32
 
 C_SRCS = winver.c
 

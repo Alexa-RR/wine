@@ -77,7 +77,7 @@ static string_table *init_stringtable( int entries, UINT codepage )
 
     st = msi_alloc( sizeof (string_table) );
     if( !st )
-        return NULL;
+        return NULL;    
     if( entries < 1 )
         entries = 1;
 
@@ -85,7 +85,7 @@ static string_table *init_stringtable( int entries, UINT codepage )
     if( !st->strings )
     {
         msi_free( st );
-        return NULL;
+        return NULL;    
     }
 
     st->sorted = msi_alloc( sizeof (UINT) * entries );
@@ -139,11 +139,13 @@ static int st_find_free_entry( string_table *st )
             return i;
 
     /* dynamically resize */
-    sz = st->maxcount + 1 + st->maxcount / 2;
-    if (!(p = msi_realloc( st->strings, sz * sizeof(*p) ))) return -1;
-    memset( p + st->maxcount, 0, (sz - st->maxcount) * sizeof(*p) );
+    sz = st->maxcount + 1 + st->maxcount/2;
+    p = msi_realloc_zero( st->strings, sz * sizeof(struct msistring) );
+    if( !p )
+        return -1;
 
-    if (!(s = msi_realloc( st->sorted, sz * sizeof(*s) )))
+    s = msi_realloc( st->sorted, sz*sizeof(UINT) );
+    if( !s )
     {
         msi_free( p );
         return -1;
@@ -345,7 +347,7 @@ const WCHAR *msi_string_lookup( const string_table *st, UINT id, int *len )
     if( id == 0 )
     {
         if (len) *len = 0;
-        return L"";
+        return szEmpty;
     }
     if( id >= st->maxcount )
         return NULL;
@@ -463,12 +465,12 @@ HRESULT msi_init_string_table( IStorage *stg )
     UINT ret;
 
     /* create the StringPool stream... add the zero string to it*/
-    ret = write_stream_data(stg, L"_StringPool", zero, sizeof zero, TRUE);
+    ret = write_stream_data(stg, szStringPool, zero, sizeof zero, TRUE);
     if (ret != ERROR_SUCCESS)
         return E_FAIL;
 
     /* create the StringData stream... make it zero length */
-    ret = write_stream_data(stg, L"_StringData", NULL, 0, TRUE);
+    ret = write_stream_data(stg, szStringData, NULL, 0, TRUE);
     if (ret != ERROR_SUCCESS)
         return E_FAIL;
 
@@ -483,10 +485,10 @@ string_table *msi_load_string_table( IStorage *stg, UINT *bytes_per_strref )
     UINT r, datasize = 0, poolsize = 0, codepage;
     DWORD i, count, offset, len, n, refs;
 
-    r = read_stream_data( stg, L"_StringPool", TRUE, (BYTE **)&pool, &poolsize );
+    r = read_stream_data( stg, szStringPool, TRUE, (BYTE **)&pool, &poolsize );
     if( r != ERROR_SUCCESS)
         goto end;
-    r = read_stream_data( stg, L"_StringData", TRUE, (BYTE **)&data, &datasize );
+    r = read_stream_data( stg, szStringData, TRUE, (BYTE **)&data, &datasize );
     if( r != ERROR_SUCCESS)
         goto end;
 
@@ -544,15 +546,15 @@ string_table *msi_load_string_table( IStorage *stg, UINT *bytes_per_strref )
 
         r = add_string( st, n, data+offset, len, refs, TRUE );
         if( r != n )
-            ERR( "Failed to add string %lu\n", n );
+            ERR("Failed to add string %d\n", n );
         n++;
         offset += len;
     }
 
     if ( datasize != offset )
-        ERR( "string table load failed! (%u != %lu), please report\n", datasize, offset );
+        ERR("string table load failed! (%08x != %08x), please report\n", datasize, offset );
 
-    TRACE( "loaded %lu strings\n", count );
+    TRACE("Loaded %d strings\n", count);
 
 end:
     msi_free( pool );
@@ -650,11 +652,11 @@ UINT msi_save_string_table( const string_table *st, IStorage *storage, UINT *byt
     }
 
     /* write the streams */
-    r = write_stream_data( storage, L"_StringData", data, datasize, TRUE );
+    r = write_stream_data( storage, szStringData, data, datasize, TRUE );
     TRACE("Wrote StringData r=%08x\n", r);
     if( r )
         goto err;
-    r = write_stream_data( storage, L"_StringPool", pool, poolsize, TRUE );
+    r = write_stream_data( storage, szStringPool, pool, poolsize, TRUE );
     TRACE("Wrote StringPool r=%08x\n", r);
     if( r )
         goto err;

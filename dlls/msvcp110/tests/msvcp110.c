@@ -37,8 +37,6 @@ static __int64 (__cdecl *p_tr2_sys__Last_write_time_wchar)(WCHAR const*);
 static void (__cdecl *p_tr2_sys__Last_write_time_set)(char const*, __int64);
 static void (__cdecl *p_tr2_sys__Last_write_time_set_wchar)(WCHAR const*, __int64);
 
-static const BYTE *p_byte_reverse_table;
-
 static HMODULE msvcp;
 #define SETNOFAIL(x,y) x = (void*)GetProcAddress(msvcp,y)
 #define SET(x,y) do { SETNOFAIL(x,y); ok(x != NULL, "Export '%s' not found\n", y); } while(0)
@@ -78,7 +76,6 @@ static BOOL init(void)
         SET(p_tr2_sys__Last_write_time_set_wchar,
                 "?_Last_write_time@sys@tr2@std@@YAXPB_W_J@Z");
     }
-    SET(p_byte_reverse_table, "?_Byte_reverse_table@details@Concurrency@@3QBEB");
     return TRUE;
 }
 
@@ -87,6 +84,8 @@ static void test_tr2_sys__Last_write_time(void)
     HANDLE file;
     int ret;
     FILETIME lwt;
+    static const WCHAR fileW[] = {'t','r','2','_','t','e','s','t','_','d','i','r','/','f','1',0};
+    static const WCHAR not_existW[] = {'n','o','t','_','e','x','i','s','t',0};
     __int64 last_write_time, newtime, margin_of_error = 10 * TICKSPERSEC;
     ret = p_tr2_sys__Make_dir("tr2_test_dir");
     ok(ret == 1, "test_tr2_sys__Make_dir(): expect 1 got %d\n", ret);
@@ -101,7 +100,7 @@ static void test_tr2_sys__Last_write_time(void)
     ok(last_write_time != newtime, "last_write_time should have changed: %s\n",
             wine_dbgstr_longlong(last_write_time));
 
-    last_write_time = p_tr2_sys__Last_write_time_wchar(L"tr2_test_dir/f1");
+    last_write_time = p_tr2_sys__Last_write_time_wchar(fileW);
     ok(last_write_time == newtime,
             "last_write_time and last_write_time_wchar returned different times (%s != %s)\n",
             wine_dbgstr_longlong(last_write_time), wine_dbgstr_longlong(newtime));
@@ -133,7 +132,7 @@ static void test_tr2_sys__Last_write_time(void)
             "don't fit the formula, last_write_time is %s\n", wine_dbgstr_longlong(last_write_time));
 
     newtime = 123456789;
-    p_tr2_sys__Last_write_time_set_wchar(L"tr2_test_dir/f1", newtime);
+    p_tr2_sys__Last_write_time_set_wchar(fileW, newtime);
     newtime = p_tr2_sys__Last_write_time("tr2_test_dir/f1");
     file = CreateFileA("tr2_test_dir/f1", 0, FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
             NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, 0);
@@ -150,7 +149,7 @@ static void test_tr2_sys__Last_write_time(void)
     last_write_time = p_tr2_sys__Last_write_time("not_exist");
     ok(errno == 0xdeadbeef, "tr2_sys__Last_write_time(): errno expect 0xdeadbeef, got %d\n", errno);
     ok(last_write_time == 0, "expect 0 got %s\n", wine_dbgstr_longlong(last_write_time));
-    last_write_time = p_tr2_sys__Last_write_time_wchar(L"not_exist");
+    last_write_time = p_tr2_sys__Last_write_time_wchar(not_existW);
     ok(errno == 0xdeadbeef, "tr2_sys__Last_write_time_wchar(): errno expect 0xdeadbeef, got %d\n", errno);
     ok(last_write_time == 0, "expect 0 got %s\n", wine_dbgstr_longlong(last_write_time));
     last_write_time = p_tr2_sys__Last_write_time(NULL);
@@ -161,7 +160,7 @@ static void test_tr2_sys__Last_write_time(void)
     errno = 0xdeadbeef;
     p_tr2_sys__Last_write_time_set("not_exist", newtime);
     ok(errno == 0xdeadbeef, "tr2_sys__Last_write_time(): errno expect 0xdeadbeef, got %d\n", errno);
-    p_tr2_sys__Last_write_time_set_wchar(L"not_exist", newtime);
+    p_tr2_sys__Last_write_time_set_wchar(not_existW, newtime);
     ok(errno == 0xdeadbeef, "tr2_sys__Last_write_time(): errno expect 0xdeadbeef, got %d\n", errno);
     p_tr2_sys__Last_write_time_set(NULL, newtime);
     ok(errno == 0xdeadbeef, "tr2_sys__Last_write_time(): errno expect 0xdeadbeef, got %d\n", errno);
@@ -208,31 +207,10 @@ static void test_vbtable_size_exports(void)
     }
 }
 
-static BYTE byte_reverse(BYTE b)
-{
-    b = ((b & 0xf0) >> 4) | ((b & 0x0f) << 4);
-    b = ((b & 0xcc) >> 2) | ((b & 0x33) << 2);
-    b = ((b & 0xaa) >> 1) | ((b & 0x55) << 1);
-    return b;
-}
-
-static void test_data_exports(void)
-{
-    unsigned int i;
-
-    ok(IsBadWritePtr((BYTE *)p_byte_reverse_table, 256), "byte_reverse_table is writeable.\n");
-    for (i = 0; i < 256; ++i)
-    {
-        ok(p_byte_reverse_table[i] == byte_reverse(i), "Got unexpected byte %#x, expected %#x.\n",
-                p_byte_reverse_table[i], byte_reverse(i));
-    }
-}
-
 START_TEST(msvcp110)
 {
     if(!init()) return;
     test_tr2_sys__Last_write_time();
     test_vbtable_size_exports();
-    test_data_exports();
     FreeLibrary(msvcp);
 }

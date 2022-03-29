@@ -78,6 +78,7 @@ static const struct epm_endpoints
 
 static BOOL start_rpcss(void)
 {
+    static const WCHAR rpcssW[] = {'R','p','c','S','s',0};
     SC_HANDLE scm, service;
     SERVICE_STATUS_PROCESS status;
     BOOL ret = FALSE;
@@ -89,7 +90,7 @@ static BOOL start_rpcss(void)
         ERR( "failed to open service manager\n" );
         return FALSE;
     }
-    if (!(service = OpenServiceW( scm, L"RpcSs", SERVICE_START | SERVICE_QUERY_STATUS )))
+    if (!(service = OpenServiceW( scm, rpcssW, SERVICE_START | SERVICE_QUERY_STATUS )))
     {
         ERR( "failed to open RpcSs service\n" );
         CloseServiceHandle( scm );
@@ -116,7 +117,7 @@ static BOOL start_rpcss(void)
         } while (status.dwCurrentState == SERVICE_START_PENDING);
 
         if (status.dwCurrentState != SERVICE_RUNNING)
-            WARN( "RpcSs failed to start %lu\n", status.dwCurrentState );
+            WARN( "RpcSs failed to start %u\n", status.dwCurrentState );
     }
     else ERR( "failed to start RpcSs service\n" );
 
@@ -182,7 +183,7 @@ static RPC_STATUS get_epm_handle_server(RPC_BINDING_HANDLE *epm_handle)
 
 static LONG WINAPI rpc_filter(EXCEPTION_POINTERS *__eptr)
 {
-    switch (__eptr->ExceptionRecord->ExceptionCode)
+    switch (GetExceptionCode())
     {
         case EXCEPTION_ACCESS_VIOLATION:
         case EXCEPTION_ILLEGAL_INSTRUCTION:
@@ -206,12 +207,12 @@ static RPC_STATUS epm_register( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bindin
   TRACE(" ifid=%s\n", debugstr_guid(&If->InterfaceId.SyntaxGUID));
   for (i=0; i<BindingVector->Count; i++) {
     RpcBinding* bind = BindingVector->BindingH[i];
-    TRACE(" protseq[%ld]=%s\n", i, debugstr_a(bind->Protseq));
-    TRACE(" endpoint[%ld]=%s\n", i, debugstr_a(bind->Endpoint));
+    TRACE(" protseq[%d]=%s\n", i, debugstr_a(bind->Protseq));
+    TRACE(" endpoint[%d]=%s\n", i, debugstr_a(bind->Endpoint));
   }
   if (UuidVector) {
     for (i=0; i<UuidVector->Count; i++)
-      TRACE(" obj[%ld]=%s\n", i, debugstr_guid(UuidVector->Uuid[i]));
+      TRACE(" obj[%d]=%s\n", i, debugstr_guid(UuidVector->Uuid[i]));
   }
 
   if (!BindingVector->Count) return RPC_S_OK;
@@ -270,7 +271,7 @@ static RPC_STATUS epm_register( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bindin
                   continue;
           }
           if (status2 != RPC_S_OK)
-              ERR("ept_insert failed with error %ld\n", status2);
+              ERR("ept_insert failed with error %d\n", status2);
           status = status2; /* FIXME: convert status? */
           break;
       }
@@ -354,12 +355,12 @@ RPC_STATUS WINAPI RpcEpUnregister( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bin
   TRACE(" ifid=%s\n", debugstr_guid(&If->InterfaceId.SyntaxGUID));
   for (i=0; i<BindingVector->Count; i++) {
     RpcBinding* bind = BindingVector->BindingH[i];
-    TRACE(" protseq[%ld]=%s\n", i, debugstr_a(bind->Protseq));
-    TRACE(" endpoint[%ld]=%s\n", i, debugstr_a(bind->Endpoint));
+    TRACE(" protseq[%d]=%s\n", i, debugstr_a(bind->Protseq));
+    TRACE(" endpoint[%d]=%s\n", i, debugstr_a(bind->Endpoint));
   }
   if (UuidVector) {
     for (i=0; i<UuidVector->Count; i++)
-      TRACE(" obj[%ld]=%s\n", i, debugstr_guid(UuidVector->Uuid[i]));
+      TRACE(" obj[%d]=%s\n", i, debugstr_guid(UuidVector->Uuid[i]));
   }
 
   entries = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*entries) * BindingVector->Count * (UuidVector ? UuidVector->Count : 1));
@@ -407,7 +408,7 @@ RPC_STATUS WINAPI RpcEpUnregister( RPC_IF_HANDLE IfSpec, RPC_BINDING_VECTOR *Bin
       if (status2 == RPC_S_SERVER_UNAVAILABLE)
           status2 = EPT_S_NOT_REGISTERED;
       if (status2 != RPC_S_OK)
-          ERR("ept_insert failed with error %ld\n", status2);
+          ERR("ept_insert failed with error %d\n", status2);
       status = status2; /* FIXME: convert status? */
   }
   RpcBindingFree(&handle);
@@ -501,7 +502,7 @@ RPC_STATUS WINAPI RpcEpResolveBinding( RPC_BINDING_HANDLE Binding, RPC_IF_HANDLE
     if (!resolved_endpoint)
     {
       status = TowerExplode(towers[i], NULL, NULL, NULL, &resolved_endpoint, NULL);
-      TRACE("status = %ld\n", status);
+      TRACE("status = %d\n", status);
     }
     I_RpcFree(towers[i]);
   }

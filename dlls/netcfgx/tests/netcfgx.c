@@ -25,6 +25,8 @@
 
 static void create_configuration(void)
 {
+    static const WCHAR tcpipW[] = {'M','S','_','T','C','P','I','P',0};
+    static const WCHAR myclient[] = {'M','Y',' ','C','L','I','E','N','T',0};
     HRESULT hr;
     INetCfg *config = NULL;
     INetCfgLock *netlock = NULL;
@@ -36,11 +38,11 @@ static void create_configuration(void)
     if(SUCCEEDED(hr))
     {
         hr = INetCfg_QueryInterface(config, &IID_INetCfgLock, (LPVOID*)&netlock);
-        ok(hr == S_OK, "got 0x%08lx\n", hr);
+        ok(hr == S_OK, "got 0x%08x\n", hr);
 
-        hr = INetCfgLock_AcquireWriteLock(netlock, 5000, L"MY CLIENT", &client);
+        hr = INetCfgLock_AcquireWriteLock(netlock, 5000, myclient, &client);
         ok(hr == S_OK ||
-           hr == E_ACCESSDENIED /* Not run as admin */, "got 0x%08lx\n", hr);
+           hr == E_ACCESSDENIED /* Not run as admin */, "got 0x%08x\n", hr);
         if(hr == S_OK)
         {
             trace("Lock value: %s\n", wine_dbgstr_w(client));
@@ -50,27 +52,27 @@ static void create_configuration(void)
             trace("Not run with Admin permissions\n");
 
         hr = INetCfg_Initialize(config, NULL);
-        ok(hr == S_OK, "got 0x%08lx\n", hr);
+        ok(hr == S_OK, "got 0x%08x\n", hr);
 
         /* AcquireWriteLock needs to be run before Initialize */
-        hr = INetCfgLock_AcquireWriteLock(netlock, 5000, L"MY CLIENT", &client);
-        todo_wine ok(hr == NETCFG_E_ALREADY_INITIALIZED || hr == E_ACCESSDENIED, "got 0x%08lx\n", hr);
+        hr = INetCfgLock_AcquireWriteLock(netlock, 5000, myclient, &client);
+        todo_wine ok(hr == NETCFG_E_ALREADY_INITIALIZED || hr == E_ACCESSDENIED, "got 0x%08x\n", hr);
 
-        hr =  INetCfg_FindComponent(config, L"MS_TCPIP", &component);
-        todo_wine ok(hr == S_OK, "got 0x%08lx\n", hr);
+        hr =  INetCfg_FindComponent(config, tcpipW, &component);
+        todo_wine ok(hr == S_OK, "got 0x%08x\n", hr);
         if(hr == S_OK)
         {
             INetCfgComponent_Release(component);
         }
 
         hr = INetCfg_Apply(config);
-        todo_wine ok(hr == S_OK || hr == NETCFG_E_NO_WRITE_LOCK, "got 0x%08lx\n", hr);
+        todo_wine ok(hr == S_OK || hr == NETCFG_E_NO_WRITE_LOCK, "got 0x%08x\n", hr);
 
         hr = INetCfg_Uninitialize(config);
-        ok(hr == S_OK, "got 0x%08lx\n", hr);
+        ok(hr == S_OK, "got 0x%08x\n", hr);
 
         hr = INetCfgLock_ReleaseWriteLock(netlock);
-        ok(hr == S_OK, "got 0x%08lx\n", hr);
+        ok(hr == S_OK, "got 0x%08x\n", hr);
 
         INetCfgLock_Release(netlock);
         INetCfg_Release(config);

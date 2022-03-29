@@ -47,7 +47,7 @@ void DSOUND_RecalcVolPan(PDSVOLUMEPAN volpan)
 	double temp;
 	TRACE("(%p)\n",volpan);
 
-	TRACE("Vol=%ld Pan=%ld\n", volpan->lVolume, volpan->lPan);
+	TRACE("Vol=%d Pan=%d\n", volpan->lVolume, volpan->lPan);
 	/* the AmpFactors are expressed in 16.16 fixed point */
 
 	/* FIXME: use calculated vol and pan ampfactors */
@@ -56,7 +56,7 @@ void DSOUND_RecalcVolPan(PDSVOLUMEPAN volpan)
 	temp = (double) (volpan->lVolume + (volpan->lPan < 0 ? volpan->lPan : 0));
 	volpan->dwTotalAmpFactor[1] = (ULONG) (pow(2.0, temp / 600.0) * 0xffff);
 
-	TRACE("left = %lx, right = %lx\n", volpan->dwTotalAmpFactor[0], volpan->dwTotalAmpFactor[1]);
+	TRACE("left = %x, right = %x\n", volpan->dwTotalAmpFactor[0], volpan->dwTotalAmpFactor[1]);
 }
 
 void DSOUND_AmpFactorToVolPan(PDSVOLUMEPAN volpan)
@@ -64,7 +64,7 @@ void DSOUND_AmpFactorToVolPan(PDSVOLUMEPAN volpan)
     double left,right;
     TRACE("(%p)\n",volpan);
 
-    TRACE("left=%lx, right=%lx\n",volpan->dwTotalAmpFactor[0],volpan->dwTotalAmpFactor[1]);
+    TRACE("left=%x, right=%x\n",volpan->dwTotalAmpFactor[0],volpan->dwTotalAmpFactor[1]);
     if (volpan->dwTotalAmpFactor[0]==0)
         left=-10000;
     else
@@ -83,7 +83,7 @@ void DSOUND_AmpFactorToVolPan(PDSVOLUMEPAN volpan)
     if (volpan->lPan < -10000)
         volpan->lPan=-10000;
 
-    TRACE("Vol=%ld Pan=%ld\n", volpan->lVolume, volpan->lPan);
+    TRACE("Vol=%d Pan=%d\n", volpan->lVolume, volpan->lPan);
 }
 
 /**
@@ -142,7 +142,7 @@ void DSOUND_RecalcFormat(IDirectSoundBufferImpl *dsb)
 	{
 		dsb->mix_channels = ichannels;
 		if (ichannels > 32) {
-			FIXME("Copying %lu channels is unsupported, limiting to first 32\n", ichannels);
+			FIXME("Copying %u channels is unsupported, limiting to first 32\n", ichannels);
 			dsb->mix_channels = 32;
 		}
 	}
@@ -193,7 +193,7 @@ void DSOUND_RecalcFormat(IDirectSoundBufferImpl *dsb)
 	else
 	{
 		if (ichannels > 2)
-			FIXME("Conversion from %lu to %lu channels is not implemented, falling back to stereo\n", ichannels, ochannels);
+			FIXME("Conversion from %u to %u channels is not implemented, falling back to stereo\n", ichannels, ochannels);
 		dsb->mix_channels = 2;
 	}
 }
@@ -248,7 +248,7 @@ void DSOUND_CheckEvent(const IDirectSoundBufferImpl *dsb, DWORD playpos, int len
         }
     }
 
-    TRACE("Not stopped: first notify: %u (%lu), left notify: %u (%lu), range: [%lu,%lu)\n",
+    TRACE("Not stopped: first notify: %u (%u), left notify: %u (%u), range: [%u,%u)\n",
             first, dsb->notifies[first].dwOffset,
             left, dsb->notifies[left].dwOffset,
             playpos, (playpos + len) % dsb->buflen);
@@ -259,7 +259,7 @@ void DSOUND_CheckEvent(const IDirectSoundBufferImpl *dsb, DWORD playpos, int len
             if(dsb->notifies[check].dwOffset >= playpos + len)
                 break;
 
-            TRACE("Signalling %p (%lu)\n", dsb->notifies[check].hEventNotify, dsb->notifies[check].dwOffset);
+            TRACE("Signalling %p (%u)\n", dsb->notifies[check].hEventNotify, dsb->notifies[check].dwOffset);
             SetEvent(dsb->notifies[check].hEventNotify);
         }
     }
@@ -269,53 +269,28 @@ void DSOUND_CheckEvent(const IDirectSoundBufferImpl *dsb, DWORD playpos, int len
             if(dsb->notifies[check].dwOffset >= (playpos + len) % dsb->buflen)
                 break;
 
-            TRACE("Signalling %p (%lu)\n", dsb->notifies[check].hEventNotify, dsb->notifies[check].dwOffset);
+            TRACE("Signalling %p (%u)\n", dsb->notifies[check].hEventNotify, dsb->notifies[check].dwOffset);
             SetEvent(dsb->notifies[check].hEventNotify);
         }
     }
 }
 
 static inline float get_current_sample(const IDirectSoundBufferImpl *dsb,
-        BYTE *buffer, DWORD buflen, DWORD mixpos, DWORD channel)
+        DWORD mixpos, DWORD channel)
 {
-    if (mixpos >= buflen && !(dsb->playflags & DSBPLAY_LOOPING))
+    if (mixpos >= dsb->buflen && !(dsb->playflags & DSBPLAY_LOOPING))
         return 0.0f;
-    return dsb->get(dsb, buffer + (mixpos % buflen), channel);
+    return dsb->get(dsb, mixpos % dsb->buflen, channel);
 }
 
 static UINT cp_fields_noresample(IDirectSoundBufferImpl *dsb, bitsputfunc put, UINT ostride, UINT count)
 {
     UINT istride = dsb->pwfx->nBlockAlign;
-<<<<<<< HEAD
-=======
-    UINT ostride = dsb->device->pwfx->nChannels * sizeof(float);
-    UINT committed_samples = 0;
->>>>>>> master
     DWORD channel, i;
-
-    if (!secondarybuffer_is_audible(dsb))
-        return count;
-
-    if(dsb->use_committed) {
-        committed_samples = (dsb->writelead - dsb->committed_mixpos) / istride;
-        committed_samples = committed_samples <= count ? committed_samples : count;
-    }
-
-    for (i = 0; i < committed_samples; i++)
+    for (i = 0; i < count; i++)
         for (channel = 0; channel < dsb->mix_channels; channel++)
-<<<<<<< HEAD
             put(dsb, i * ostride, channel, get_current_sample(dsb,
                 dsb->sec_mixpos + i * istride, channel));
-=======
-            dsb->put(dsb, i * ostride, channel, get_current_sample(dsb, dsb->committedbuff,
-                dsb->writelead, dsb->committed_mixpos + i * istride, channel));
-
-    for (; i < count; i++)
-        for (channel = 0; channel < dsb->mix_channels; channel++)
-            dsb->put(dsb, i * ostride, channel, get_current_sample(dsb, dsb->buffer->memory,
-                dsb->buflen, dsb->sec_mixpos + i * istride, channel));
-
->>>>>>> master
     return count;
 }
 
@@ -364,11 +339,6 @@ static UINT cp_fields_resample_hq(IDirectSoundBufferImpl *dsb, bitsputfunc put,
 {
     UINT i, channel;
     UINT istride = dsb->pwfx->nBlockAlign;
-<<<<<<< HEAD
-=======
-    UINT ostride = dsb->device->pwfx->nChannels * sizeof(float);
-    UINT committed_samples = 0;
->>>>>>> master
 
     LONG64 freqAcc_start = *freqAccNum;
     LONG64 freqAcc_end = freqAcc_start + count * dsb->freqAdjustNum;
@@ -384,11 +354,6 @@ static UINT cp_fields_resample_hq(IDirectSoundBufferImpl *dsb, bitsputfunc put,
     len += fir_cachesize;
     len *= sizeof(float);
 
-    *freqAccNum = freqAcc_end % dsb->freqAdjustDen;
-
-    if (!secondarybuffer_is_audible(dsb))
-        return max_ipos;
-
     if (!dsb->device->cp_buffer) {
         dsb->device->cp_buffer = HeapAlloc(GetProcessHeap(), 0, len);
         dsb->device->cp_buffer_len = len;
@@ -400,24 +365,16 @@ static UINT cp_fields_resample_hq(IDirectSoundBufferImpl *dsb, bitsputfunc put,
     fir_copy = dsb->device->cp_buffer;
     intermediate = fir_copy + fir_cachesize;
 
-    if(dsb->use_committed) {
-        committed_samples = (dsb->writelead - dsb->committed_mixpos) / istride;
-        committed_samples = committed_samples <= required_input ? committed_samples : required_input;
-    }
 
     /* Important: this buffer MUST be non-interleaved
      * if you want -msse3 to have any effect.
      * This is good for CPU cache effects, too.
      */
     itmp = intermediate;
-    for (channel = 0; channel < channels; channel++) {
-        for (i = 0; i < committed_samples; i++)
-            *(itmp++) = get_current_sample(dsb, dsb->committedbuff,
-                dsb->writelead, dsb->committed_mixpos + i * istride, channel);
-        for (; i < required_input; i++)
-            *(itmp++) = get_current_sample(dsb, dsb->buffer->memory,
-                    dsb->buflen, dsb->sec_mixpos + i * istride, channel);
-    }
+    for (channel = 0; channel < channels; channel++)
+        for (i = 0; i < required_input; i++)
+            *(itmp++) = get_current_sample(dsb,
+                    dsb->sec_mixpos + i * istride, channel);
 
     for(i = 0; i < count; ++i) {
         UINT int_fir_steps = (freqAcc_start + i * dsb->freqAdjustNum) * dsbfirstep / dsb->freqAdjustDen;
@@ -446,6 +403,8 @@ static UINT cp_fields_resample_hq(IDirectSoundBufferImpl *dsb, bitsputfunc put,
         }
     }
 
+    *freqAccNum = freqAcc_end % dsb->freqAdjustDen;
+
     return max_ipos;
 }
 
@@ -472,12 +431,6 @@ static void cp_fields(IDirectSoundBufferImpl *dsb, bitsputfunc put,
     }
 
     dsb->sec_mixpos = ipos;
-
-    if(dsb->use_committed) {
-        dsb->committed_mixpos += adv * dsb->pwfx->nBlockAlign;
-        if(dsb->committed_mixpos >= dsb->writelead)
-            dsb->use_committed = FALSE;
-    }
 }
 
 /**
@@ -594,7 +547,7 @@ static void DSOUND_MixerVol(const IDirectSoundBufferImpl *dsb, INT frames)
 	UINT channels = dsb->device->pwfx->nChannels, chan;
 
 	TRACE("(%p,%d)\n",dsb,frames);
-	TRACE("left = %lx, right = %lx\n", dsb->volpan.dwTotalAmpFactor[0],
+	TRACE("left = %x, right = %x\n", dsb->volpan.dwTotalAmpFactor[0],
 		dsb->volpan.dwTotalAmpFactor[1]);
 
 	if ((!(dsb->dsbd.dwFlags & DSBCAPS_CTRLPAN) || (dsb->volpan.lPan == 0)) &&
@@ -635,20 +588,18 @@ static DWORD DSOUND_MixInBuffer(IDirectSoundBufferImpl *dsb, float *mix_buffer, 
 	float *ibuf;
 	DWORD oldpos;
 
-	TRACE("sec_mixpos=%ld/%ld\n", dsb->sec_mixpos, dsb->buflen);
-	TRACE("(%p, frames=%ld)\n",dsb,frames);
+	TRACE("sec_mixpos=%d/%d\n", dsb->sec_mixpos, dsb->buflen);
+	TRACE("(%p, frames=%d)\n",dsb,frames);
 
 	/* Resample buffer to temporary buffer specifically allocated for this purpose, if needed */
 	oldpos = dsb->sec_mixpos;
 	DSOUND_MixToTemporary(dsb, frames);
 	ibuf = dsb->device->tmp_buffer;
 
-	if (secondarybuffer_is_audible(dsb)) {
-		/* Apply volume if needed */
-		DSOUND_MixerVol(dsb, frames);
+	/* Apply volume if needed */
+	DSOUND_MixerVol(dsb, frames);
 
-		mixieee32(ibuf, mix_buffer, frames * dsb->device->pwfx->nChannels);
-	}
+	mixieee32(ibuf, mix_buffer, frames * dsb->device->pwfx->nChannels);
 
 	/* check for notification positions */
 	if (dsb->dsbd.dwFlags & DSBCAPS_CTRLPOSITIONNOTIFY &&
@@ -675,8 +626,8 @@ static DWORD DSOUND_MixOne(IDirectSoundBufferImpl *dsb, float *mix_buffer, DWORD
 {
 	DWORD primary_done = 0;
 
-	TRACE("(%p, frames=%ld)\n",dsb,frames);
-	TRACE("looping=%ld, leadin=%ld\n", dsb->playflags, dsb->leadin);
+	TRACE("(%p, frames=%d)\n",dsb,frames);
+	TRACE("looping=%d, leadin=%d\n", dsb->playflags, dsb->leadin);
 
 	/* If leading in, only mix about 20 ms, and 'skip' mixing the rest, for more fluid pointer advancement */
 	/* FIXME: Is this needed? */
@@ -691,14 +642,14 @@ static DWORD DSOUND_MixOne(IDirectSoundBufferImpl *dsb, float *mix_buffer, DWORD
 
 	dsb->leadin = FALSE;
 
-	TRACE("frames (primary) = %li\n", frames);
+	TRACE("frames (primary) = %i\n", frames);
 
 	/* First try to mix to the end of the buffer if possible
 	 * Theoretically it would allow for better optimization
 	*/
 	primary_done += DSOUND_MixInBuffer(dsb, mix_buffer, frames);
 
-	TRACE("total mixed data=%ld\n", primary_done);
+	TRACE("total mixed data=%d\n", primary_done);
 
 	/* Report back the total prebuffered amount for this buffer */
 	return primary_done;
@@ -722,16 +673,20 @@ static void DSOUND_MixToPrimary(const DirectSoundDevice *device, float *mix_buff
 	/* unless we find a running buffer, all have stopped */
 	*all_stopped = TRUE;
 
-	TRACE("(frames %ld)\n", frames);
+	TRACE("(frames %d)\n", frames);
 	for (i = 0; i < device->nrofbuffers; i++) {
 		dsb = device->buffers[i];
 
-		TRACE("MixToPrimary for %p, state=%ld\n", dsb, dsb->state);
+		TRACE("MixToPrimary for %p, state=%d\n", dsb, dsb->state);
 
 		if (dsb->buflen && dsb->state) {
-			TRACE("Checking %p, frames=%ld\n", dsb, frames);
+			TRACE("Checking %p, frames=%d\n", dsb, frames);
 			AcquireSRWLockShared(&dsb->lock);
-			if (dsb->state != STATE_STOPPED) {
+			/* if buffer is stopping it is stopped now */
+			if (dsb->state == STATE_STOPPING) {
+				dsb->state = STATE_STOPPED;
+				DSOUND_CheckEvent(dsb, 0, 0);
+			} else if (dsb->state != STATE_STOPPED) {
 
 				/* if the buffer was starting, it must be playing now */
 				if (dsb->state == STATE_STARTING)
@@ -766,7 +721,7 @@ static void DSOUND_WaveQueue(DirectSoundDevice *device, LPBYTE pos, DWORD bytes)
 
 	hr = IAudioRenderClient_GetBuffer(device->render, bytes / device->pwfx->nBlockAlign, &buffer);
 	if(FAILED(hr)){
-		WARN("GetBuffer failed: %08lx\n", hr);
+		WARN("GetBuffer failed: %08x\n", hr);
 		return;
 	}
 
@@ -774,7 +729,7 @@ static void DSOUND_WaveQueue(DirectSoundDevice *device, LPBYTE pos, DWORD bytes)
 
 	hr = IAudioRenderClient_ReleaseBuffer(device->render, bytes / device->pwfx->nBlockAlign, 0);
 	if(FAILED(hr)) {
-		ERR("ReleaseBuffer failed: %08lx\n", hr);
+		ERR("ReleaseBuffer failed: %08x\n", hr);
 		IAudioRenderClient_ReleaseBuffer(device->render, 0, 0);
 		return;
 	}
@@ -796,8 +751,7 @@ static void DSOUND_WaveQueue(DirectSoundDevice *device, LPBYTE pos, DWORD bytes)
  */
 static void DSOUND_PerformMix(DirectSoundDevice *device)
 {
-	DWORD block, pad_bytes, frames;
-	UINT32 pad_frames;
+	DWORD block, pad_frames, pad_bytes, frames;
 	HRESULT hr;
 
 	TRACE("(%p)\n", device);
@@ -807,7 +761,7 @@ static void DSOUND_PerformMix(DirectSoundDevice *device)
 
 	hr = IAudioClient_GetCurrentPadding(device->client, &pad_frames);
 	if(FAILED(hr)){
-		WARN("GetCurrentPadding failed: %08lx\n", hr);
+		WARN("GetCurrentPadding failed: %08x\n", hr);
 		LeaveCriticalSection(&device->mixlock);
 		return;
 	}
@@ -841,7 +795,7 @@ static void DSOUND_PerformMix(DirectSoundDevice *device)
 
 		hr = IAudioRenderClient_GetBuffer(device->render, frames, (BYTE **)&buffer);
 		if(FAILED(hr)){
-			WARN("GetBuffer failed: %08lx\n", hr);
+			WARN("GetBuffer failed: %08x\n", hr);
 			LeaveCriticalSection(&device->mixlock);
 			return;
 		}
@@ -861,7 +815,7 @@ static void DSOUND_PerformMix(DirectSoundDevice *device)
 
 		hr = IAudioRenderClient_ReleaseBuffer(device->render, frames, 0);
 		if(FAILED(hr))
-			ERR("ReleaseBuffer failed: %08lx\n", hr);
+			ERR("ReleaseBuffer failed: %08x\n", hr);
 
 		device->pad += frames * block;
 	} else if (!device->stopped) {
@@ -895,9 +849,9 @@ DWORD CALLBACK DSOUND_mixthread(void *p)
 		 */
 		ret = WaitForSingleObject(dev->sleepev, dev->sleeptime);
 		if (ret == WAIT_FAILED)
-			WARN("wait returned error %lu %08lx!\n", GetLastError(), GetLastError());
+			WARN("wait returned error %u %08x!\n", GetLastError(), GetLastError());
 		else if (ret != WAIT_OBJECT_0)
-			WARN("wait returned %08lx!\n", ret);
+			WARN("wait returned %08x!\n", ret);
 		if (!dev->ref)
 			break;
 

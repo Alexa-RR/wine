@@ -1,7 +1,7 @@
 MODULE    = infosoft.dll
 IMPORTS   = uuid advapi32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	infosoft_main.c \

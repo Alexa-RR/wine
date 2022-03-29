@@ -170,7 +170,7 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
     VARIANT tmp;
     HRESULT hr;
 
-    TRACE("(%p)->(%d, %d, %Id, %p, %p, %p, %Id, %ld, %p, %d, %d, %lx)\n", This,
+    TRACE("(%p)->(%d, %d, %ld, %p, %p, %p, %ld, %d, %p, %d, %d, %x)\n", This,
           src_type, dst_type, src_len, dst_len, src, dst, dst_max_len,
           src_status, dst_status, precision, scale, flags);
 
@@ -313,7 +313,7 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
 
     case DBTYPE_I4:
     {
-        LONG *d = dst;
+        signed int *d = dst;
         switch(src_type)
         {
         case DBTYPE_EMPTY:       *d = 0; hr = S_OK;                              break;
@@ -670,7 +670,11 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
         {
             WCHAR szBuff[39];
             const GUID *id = src;
-            wsprintfW(szBuff, L"{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+            static const WCHAR format[] = {
+                '{','%','0','8','X','-','%','0','4','X','-','%','0','4','X','-',
+                '%','0','2','X','%','0','2','X','-',
+                '%','0','2','X','%','0','2','X','%','0','2','X','%','0','2','X','%','0','2','X','%','0','2','X','}',0};
+            wsprintfW(szBuff, format,
                 id->Data1, id->Data2, id->Data3,
                 id->Data4[0], id->Data4[1], id->Data4[2], id->Data4[3],
                 id->Data4[4], id->Data4[5], id->Data4[6], id->Data4[7] );
@@ -701,14 +705,18 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
         case DBTYPE_DBTIMESTAMP:
         {
             WCHAR szBuff[64];
+            static const WCHAR format1[] = {
+                  '%','0','4','d','-','%','0','2','d','-','%','0','2','d',' ','%','0','2','d',':','%','0','2','d',
+                  ':','%','0','2','d', 0};
+            static const WCHAR format2[] = {
+                  '%','0','4','d','-','%','0','2','d','-','%','0','2','d',' ','%','0','2','d',':','%','0','2','d',
+                  ':','%','0','2','d','.','%','0','9','d', 0};
             DBTIMESTAMP *ts = src;
 
             if(ts->fraction == 0)
-                wsprintfW(szBuff, L"%04d-%02d-%02d %02d:%02d:%02d", ts->year, ts->month, ts->day, ts->hour,
-                        ts->minute, ts->second);
+                wsprintfW(szBuff, format1, ts->year, ts->month, ts->day, ts->hour, ts->minute, ts->second);
             else
-                wsprintfW(szBuff, L"%04d-%02d-%02d %02d:%02d:%02d.%09d", ts->year, ts->month, ts->day, ts->hour,
-                        ts->minute, ts->second, ts->fraction );
+                wsprintfW(szBuff, format2, ts->year, ts->month, ts->day, ts->hour, ts->minute, ts->second, ts->fraction );
             *d = SysAllocString(szBuff);
             hr = *d ? S_OK : E_OUTOFMEMORY;
             break;
@@ -1113,7 +1121,7 @@ static HRESULT WINAPI convert_DataConvert(IDataConvert* iface,
                 hr = SafeArrayAccessData(V_ARRAY((VARIANT*)src), (VOID**)&data);
                 if(FAILED(hr))
                 {
-                    ERR("SafeArrayAccessData Failed = 0x%08lx\n", hr);
+                    ERR("SafeArrayAccessData Failed = 0x%08x\n", hr);
                     return hr;
                 }
 
@@ -1613,7 +1621,7 @@ static HRESULT WINAPI dcinfo_GetInfo(IDCInfo *iface, ULONG num, DCINFOTYPE types
     ULONG i;
     DCINFO *infos;
 
-    TRACE("(%p)->(%ld, %p, %p)\n", This, num, types, info_ptr);
+    TRACE("(%p)->(%d, %p, %p)\n", This, num, types, info_ptr);
 
     *info_ptr = infos = CoTaskMemAlloc(num * sizeof(*infos));
     if(!infos) return E_OUTOFMEMORY;
@@ -1641,7 +1649,7 @@ static HRESULT WINAPI dcinfo_SetInfo(IDCInfo* iface, ULONG num, DCINFO info[])
     ULONG i;
     HRESULT hr = S_OK;
 
-    TRACE("(%p)->(%ld, %p)\n", This, num, info);
+    TRACE("(%p)->(%d, %p)\n", This, num, info);
 
     for(i = 0; i < num; i++)
     {
@@ -1658,7 +1666,7 @@ static HRESULT WINAPI dcinfo_SetInfo(IDCInfo* iface, ULONG num, DCINFO info[])
             break;
 
         default:
-            FIXME("Unhandled info type %ld (vt %x)\n", info[i].eInfoType, V_VT(&info[i].vData));
+            FIXME("Unhandled info type %d (vt %x)\n", info[i].eInfoType, V_VT(&info[i].vData));
         }
     }
     return hr;

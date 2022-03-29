@@ -29,6 +29,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(atl);
 
 #define ATLVer1Size FIELD_OFFSET(_ATL_MODULEW, dwAtlBuildVer)
 
+HINSTANCE atl_instance;
+
 typedef unsigned char cpp_bool;
 
 static ICatRegister *catreg;
@@ -70,7 +72,7 @@ HRESULT WINAPI AtlUnadvise(IUnknown *pUnkCP, const IID *iid, DWORD dw)
     IConnectionPoint *cp;
     HRESULT hres;
 
-    TRACE("%p %p %ld\n", pUnkCP, iid, dw);
+    TRACE("%p %p %d\n", pUnkCP, iid, dw);
 
     if(!pUnkCP)
         return E_INVALIDARG;
@@ -121,6 +123,7 @@ HRESULT WINAPI AtlUnmarshalPtr(IStream *stm, const IID *iid, IUnknown **ppUnk)
  */
 HDC WINAPI AtlCreateTargetDC( HDC hdc, DVTARGETDEVICE *dv )
 {
+    static const WCHAR displayW[] = {'d','i','s','p','l','a','y',0};
     const WCHAR *driver = NULL, *device = NULL, *port = NULL;
     DEVMODEW *devmode = NULL;
 
@@ -136,7 +139,7 @@ HDC WINAPI AtlCreateTargetDC( HDC hdc, DVTARGETDEVICE *dv )
     else
     {
         if (hdc) return hdc;
-        driver = L"display";
+        driver = displayW;
     }
     return CreateDCW( driver, device, port, devmode );
 }
@@ -210,7 +213,7 @@ HRESULT WINAPI AtlInternalQueryInterface(void* this, const _ATL_INTMAP_ENTRY* pE
 
     while (pEntries[i].pFunc != 0)
     {
-        TRACE("Trying entry %i (%s %Ix %p)\n",i,debugstr_guid(pEntries[i].piid),
+        TRACE("Trying entry %i (%s %lx %p)\n",i,debugstr_guid(pEntries[i].piid),
               pEntries[i].dw, pEntries[i].pFunc);
 
         if (!pEntries[i].piid || IsEqualGUID(iid,pEntries[i].piid))
@@ -233,7 +236,7 @@ HRESULT WINAPI AtlInternalQueryInterface(void* this, const _ATL_INTMAP_ENTRY* pE
         }
         i++;
     }
-    TRACE("Done returning (0x%lx)\n",rc);
+    TRACE("Done returning (0x%x)\n",rc);
     return rc;
 }
 
@@ -291,7 +294,7 @@ HRESULT WINAPI AtlModuleAddTermFunc(_ATL_MODULE *pM, _ATL_TERMFUNC *pFunc, DWORD
 {
     _ATL_TERMFUNC_ELEM *termfunc_elem;
 
-    TRACE("version %04x (%p %p %Id)\n", _ATL_VER, pM, pFunc, dw);
+    TRACE("version %04x (%p %p %ld)\n", _ATL_VER, pM, pFunc, dw);
 
     if (_ATL_VER > _ATL_VER_30 || pM->cbSize > ATLVer1Size) {
         termfunc_elem = HeapAlloc(GetProcessHeap(), 0, sizeof(_ATL_TERMFUNC_ELEM));
@@ -339,10 +342,12 @@ HRESULT WINAPI AtlLoadTypeLib(HINSTANCE inst, LPCOLESTR lpszIndex,
     WCHAR *path;
     HRESULT hres;
 
+    static const WCHAR tlb_extW[] = {'.','t','l','b',0};
+
     TRACE("(%p %s %p %p)\n", inst, debugstr_w(lpszIndex), pbstrPath, ppTypeLib);
 
     index_len = lpszIndex ? lstrlenW(lpszIndex) : 0;
-    path = heap_alloc((MAX_PATH+index_len)*sizeof(WCHAR) + sizeof(L".tlb"));
+    path = heap_alloc((MAX_PATH+index_len)*sizeof(WCHAR) + sizeof(tlb_extW));
     if(!path)
         return E_OUTOFMEMORY;
 
@@ -362,7 +367,7 @@ HRESULT WINAPI AtlLoadTypeLib(HINSTANCE inst, LPCOLESTR lpszIndex,
         for(ptr = path+path_len-1; ptr > path && *ptr != '\\' && *ptr != '.'; ptr--);
         if(*ptr != '.')
             ptr = path+path_len;
-        lstrcpyW(ptr, L".tlb");
+        memcpy(ptr, tlb_extW, sizeof(tlb_extW));
         hres = LoadTypeLib(path, &typelib);
     }
 
@@ -488,7 +493,7 @@ HRESULT WINAPI AtlComModuleGetClassObject(_ATL_COM_MODULE *pm, REFCLSID rclsid, 
                 hres = (*iter)->pfnGetClassObject((*iter)->pfnCreateInstance, &IID_IUnknown, (void**)&(*iter)->pCF);
             if((*iter)->pCF)
                 hres = IUnknown_QueryInterface((*iter)->pCF, riid, ppv);
-            TRACE("returning %p (%08lx)\n", *ppv, hres);
+            TRACE("returning %p (%08x)\n", *ppv, hres);
             return hres;
         }
     }
@@ -513,7 +518,7 @@ HRESULT WINAPI AtlComModuleGetClassObject(_ATL_COM_MODULE *pm, REFCLSID rclsid, 
                 hres = (*iter)->pfnGetClassObject((*iter)->pfnCreateInstance, &IID_IUnknown, (void**)&(*iter)->pCache->pCF);
             if((*iter)->pCache->pCF)
                 hres = IUnknown_QueryInterface((*iter)->pCache->pCF, riid, ppv);
-            TRACE("returning %p (%08lx)\n", *ppv, hres);
+            TRACE("returning %p (%08x)\n", *ppv, hres);
             return hres;
         }
     }
@@ -533,7 +538,7 @@ HRESULT WINAPI AtlComModuleRegisterClassObjects(_ATL_COM_MODULE *module, DWORD c
     IUnknown *unk;
     HRESULT hres;
 
-    TRACE("(%p %lx %lx)\n", module, context, flags);
+    TRACE("(%p %x %x)\n", module, context, flags);
 
     if(!module)
         return E_INVALIDARG;
@@ -561,7 +566,7 @@ HRESULT WINAPI AtlComModuleRegisterClassObjects(_ATL_COM_MODULE *module, DWORD c
     IUnknown *unk;
     HRESULT hres;
 
-    TRACE("(%p %lx %lx)\n", module, context, flags);
+    TRACE("(%p %x %x)\n", module, context, flags);
 
     if(!module)
         return E_INVALIDARG;
@@ -776,15 +781,20 @@ HRESULT WINAPI AtlRegisterClassCategoriesHelper(REFCLSID clsid, const struct _AT
     }
 
     if(!reg) {
-        WCHAR reg_path[256] = L"CLSID\\", *ptr = reg_path+6;
+        WCHAR reg_path[256] = {'C','L','S','I','D','\\'}, *ptr = reg_path+6;
+
+        static const WCHAR implemented_catW[] =
+            {'I','m','p','l','e','m','e','n','t','e','d',' ','C','a','t','e','g','o','r','i','e','s',0};
+        static const WCHAR required_catW[] =
+            {'R','e','q','u','i','r','e','d',' ','C','a','t','e','g','o','r','i','e','s',0};
 
         ptr += StringFromGUID2(clsid, ptr, 64)-1;
         *ptr++ = '\\';
 
-        lstrcpyW(ptr, L"Implemented Categories");
+        memcpy(ptr, implemented_catW, sizeof(implemented_catW));
         RegDeleteKeyW(HKEY_CLASSES_ROOT, reg_path);
 
-        lstrcpyW(ptr, L"Required Categories");
+        memcpy(ptr, required_catW, sizeof(required_catW));
         RegDeleteKeyW(HKEY_CLASSES_ROOT, reg_path);
     }
 
@@ -964,10 +974,11 @@ DWORD WINAPI AtlGetVersion(void *pReserved)
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    TRACE("(0x%p, %ld, %p)\n", hinstDLL, fdwReason, lpvReserved);
+    TRACE("(0x%p, %d, %p)\n", hinstDLL, fdwReason, lpvReserved);
 
     switch(fdwReason) {
     case DLL_PROCESS_ATTACH:
+        atl_instance = hinstDLL;
         DisableThreadLibraryCalls(hinstDLL);
         break;
     case DLL_PROCESS_DETACH:

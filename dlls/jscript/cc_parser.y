@@ -30,7 +30,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(jscript);
 
 %lex-param { parser_ctx_t *ctx }
 %parse-param { parser_ctx_t *ctx }
-%define api.prefix {cc_parser_}
 %define api.pure
 %start CCExpr
 
@@ -162,7 +161,7 @@ CCLogicalORExpression
 CCLogicalANDExpression
     : CCBitwiseORExpression         { $$ = $1; }
     | CCBitwiseANDExpression tAND CCBitwiseORExpression
-                                    { $$ = ccval_bool(get_ccbool($1) && get_ccbool($3)); }
+                                    { FIXME("'&&' expression not implemented\n"); ctx->hres = E_NOTIMPL; YYABORT; }
 
 CCBitwiseORExpression
     : CCBitwiseXORExpression        { $$ = $1; }

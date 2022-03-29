@@ -21,12 +21,22 @@
 
 #define COBJMACROS
 
-#include <stdarg.h>
+#include "config.h"
 
+#include <stdarg.h>
+#ifdef HAVE_LIBXML2
+# include <libxml/parser.h>
+# include <libxml/xmlerror.h>
+#endif
+
+#include "windef.h"
+#include "winbase.h"
+#include "winerror.h"
+#include "winuser.h"
 #include "ole2.h"
 #include "msxml6.h"
 
-#include "msxml_dispex.h"
+#include "msxml_private.h"
 
 #include "wine/debug.h"
 
@@ -83,7 +93,7 @@ static ULONG WINAPI parseError_AddRef(
 {
     parse_error_t *This = impl_from_IXMLDOMParseError2( iface );
     ULONG ref = InterlockedIncrement( &This->ref );
-    TRACE("%p, refcount %lu.\n", iface, ref);
+    TRACE("(%p)->(%d)\n", This, ref);
     return ref;
 }
 
@@ -93,9 +103,8 @@ static ULONG WINAPI parseError_Release(
     parse_error_t *This = impl_from_IXMLDOMParseError2( iface );
     ULONG ref = InterlockedDecrement( &This->ref );
 
-    TRACE("%p, refcount %lu.\n", iface, ref);
-
-    if (!ref)
+    TRACE("(%p)->(%d)\n", This, ref);
+    if ( ref == 0 )
     {
         SysFreeString(This->url);
         SysFreeString(This->reason);

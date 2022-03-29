@@ -28,8 +28,6 @@ enum type_id
     INetFwProfile_tid,
     INetFwRules_tid,
     IUPnPNAT_tid,
-    IStaticPortMappingCollection_tid,
-    IStaticPortMapping_tid,
     last_tid
 };
 

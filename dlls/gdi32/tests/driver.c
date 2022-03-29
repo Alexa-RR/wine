@@ -29,22 +29,16 @@
 #include "winternl.h"
 #include "dwmapi.h"
 #include "ddk/d3dkmthk.h"
-#include "initguid.h"
-#include "setupapi.h"
-#include "ntddvdeo.h"
 
 #include "wine/test.h"
 
-static const WCHAR display1W[] = L"\\\\.\\DISPLAY1";
-
-DEFINE_DEVPROPKEY(DEVPROPKEY_GPU_LUID, 0x60b193cb, 0x5276, 0x4d0f, 0x96, 0xfc, 0xf1, 0x73, 0xab, 0xad, 0x3e, 0xc6, 2);
+static const WCHAR display1W[] = {'\\','\\','.','\\','D','I','S','P','L','A','Y','1',0};
 
 static NTSTATUS (WINAPI *pD3DKMTCheckOcclusion)(const D3DKMT_CHECKOCCLUSION *);
 static NTSTATUS (WINAPI *pD3DKMTCheckVidPnExclusiveOwnership)(const D3DKMT_CHECKVIDPNEXCLUSIVEOWNERSHIP *);
 static NTSTATUS (WINAPI *pD3DKMTCloseAdapter)(const D3DKMT_CLOSEADAPTER *);
 static NTSTATUS (WINAPI *pD3DKMTCreateDevice)(D3DKMT_CREATEDEVICE *);
 static NTSTATUS (WINAPI *pD3DKMTDestroyDevice)(const D3DKMT_DESTROYDEVICE *);
-static NTSTATUS (WINAPI *pD3DKMTOpenAdapterFromDeviceName)(D3DKMT_OPENADAPTERFROMDEVICENAME *);
 static NTSTATUS (WINAPI *pD3DKMTOpenAdapterFromGdiDisplayName)(D3DKMT_OPENADAPTERFROMGDIDISPLAYNAME *);
 static NTSTATUS (WINAPI *pD3DKMTOpenAdapterFromHdc)(D3DKMT_OPENADAPTERFROMHDC *);
 static NTSTATUS (WINAPI *pD3DKMTSetVidPnSourceOwner)(const D3DKMT_SETVIDPNSOURCEOWNER *);
@@ -68,15 +62,15 @@ static void test_D3DKMTOpenAdapterFromGdiDisplayName(void)
 
     close_adapter_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCloseAdapter(&close_adapter_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     /* Invalid parameters */
     status = pD3DKMTOpenAdapterFromGdiDisplayName(NULL);
-    ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#x.\n", status);
 
     memset(&open_adapter_gdi_desc, 0, sizeof(open_adapter_gdi_desc));
     status = pD3DKMTOpenAdapterFromGdiDisplayName(&open_adapter_gdi_desc);
-    ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#x.\n", status);
 
     /* Open adapter */
     for (i = 0; EnumDisplayDevicesW(NULL, i, &display_device, 0); ++i)
@@ -84,20 +78,23 @@ static void test_D3DKMTOpenAdapterFromGdiDisplayName(void)
         lstrcpyW(open_adapter_gdi_desc.DeviceName, display_device.DeviceName);
         status = pD3DKMTOpenAdapterFromGdiDisplayName(&open_adapter_gdi_desc);
         if (display_device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP)
-            ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+            ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
         else
         {
-            ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#lx.\n", status);
+            ok(status == STATUS_UNSUCCESSFUL, "Got unexpected return code %#x.\n", status);
             continue;
         }
 
         ok(open_adapter_gdi_desc.hAdapter, "Expect not null.\n");
-        ok(open_adapter_gdi_desc.AdapterLuid.LowPart || open_adapter_gdi_desc.AdapterLuid.HighPart,
-           "Expect LUID not zero.\n");
+        if (display_device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
+            ok(open_adapter_gdi_desc.VidPnSourceId == 0, "Got unexpected value %#x.\n",
+               open_adapter_gdi_desc.VidPnSourceId);
+        else
+            ok(open_adapter_gdi_desc.VidPnSourceId, "Got unexpected value %#x.\n", open_adapter_gdi_desc.VidPnSourceId);
 
         close_adapter_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
         status = pD3DKMTCloseAdapter(&close_adapter_desc);
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     }
 }
 
@@ -111,24 +108,19 @@ static void test_D3DKMTOpenAdapterFromHdc(void)
     HDC hdc;
     DWORD i;
 
-    if (!pD3DKMTOpenAdapterFromHdc)
+    if (!pD3DKMTOpenAdapterFromHdc || pD3DKMTOpenAdapterFromHdc(NULL) == STATUS_PROCEDURE_NOT_FOUND)
     {
-        win_skip("D3DKMTOpenAdapterFromHdc() is missing.\n");
+        skip("D3DKMTOpenAdapterFromHdc() is unavailable.\n");
         return;
     }
 
     /* Invalid parameters */
-    /* Passing a NULL pointer crashes on Windows 10 >= 2004 */
-    if (0) status = pD3DKMTOpenAdapterFromHdc(NULL);
+    status = pD3DKMTOpenAdapterFromHdc(NULL);
+    todo_wine ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     memset(&open_adapter_hdc_desc, 0, sizeof(open_adapter_hdc_desc));
     status = pD3DKMTOpenAdapterFromHdc(&open_adapter_hdc_desc);
-    if (status == STATUS_PROCEDURE_NOT_FOUND)
-    {
-        win_skip("D3DKMTOpenAdapterFromHdc() is not supported.\n");
-        return;
-    }
-    todo_wine ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    todo_wine ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     /* Open adapter */
     for (i = 0; EnumDisplayDevicesW(NULL, i, &display_device, 0); ++i)
@@ -141,15 +133,21 @@ static void test_D3DKMTOpenAdapterFromHdc(void)
         hdc = CreateDCW(0, display_device.DeviceName, 0, NULL);
         open_adapter_hdc_desc.hDc = hdc;
         status = pD3DKMTOpenAdapterFromHdc(&open_adapter_hdc_desc);
-        todo_wine ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        todo_wine ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
         todo_wine ok(open_adapter_hdc_desc.hAdapter, "Expect not null.\n");
+        if (display_device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
+            ok(open_adapter_hdc_desc.VidPnSourceId == 0, "Got unexpected value %#x.\n",
+               open_adapter_hdc_desc.VidPnSourceId);
+        else
+            todo_wine ok(open_adapter_hdc_desc.VidPnSourceId, "Got unexpected value %#x.\n",
+                         open_adapter_hdc_desc.VidPnSourceId);
         DeleteDC(hdc);
 
         if (status == STATUS_SUCCESS)
         {
             close_adapter_desc.hAdapter = open_adapter_hdc_desc.hAdapter;
             status = pD3DKMTCloseAdapter(&close_adapter_desc);
-            ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+            ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
         }
     }
 
@@ -159,12 +157,12 @@ static void test_D3DKMTOpenAdapterFromHdc(void)
     status = pD3DKMTOpenAdapterFromHdc(&open_adapter_hdc_desc);
     ReleaseDC(0, hdc);
     todo_wine ok(status == (adapter_count > 1 ? STATUS_INVALID_PARAMETER : STATUS_SUCCESS),
-                 "Got unexpected return code %#lx.\n", status);
+                 "Got unexpected return code %#x.\n", status);
     if (status == STATUS_SUCCESS)
     {
         close_adapter_desc.hAdapter = open_adapter_hdc_desc.hAdapter;
         status = pD3DKMTCloseAdapter(&close_adapter_desc);
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     }
 }
 
@@ -181,11 +179,11 @@ static void test_D3DKMTCloseAdapter(void)
 
     /* Invalid parameters */
     status = pD3DKMTCloseAdapter(NULL);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     memset(&close_adapter_desc, 0, sizeof(close_adapter_desc));
     status = pD3DKMTCloseAdapter(&close_adapter_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 }
 
 static void test_D3DKMTCreateDevice(void)
@@ -204,20 +202,20 @@ static void test_D3DKMTCreateDevice(void)
 
     /* Invalid parameters */
     status = pD3DKMTCreateDevice(NULL);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     memset(&create_device_desc, 0, sizeof(create_device_desc));
     status = pD3DKMTCreateDevice(&create_device_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     lstrcpyW(open_adapter_gdi_desc.DeviceName, display1W);
     status = pD3DKMTOpenAdapterFromGdiDisplayName(&open_adapter_gdi_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     /* Create device */
     create_device_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCreateDevice(&create_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     ok(create_device_desc.hDevice, "Expect not null.\n");
     ok(create_device_desc.pCommandBuffer == NULL, "Expect null.\n");
     ok(create_device_desc.CommandBufferSize == 0, "Got wrong value %#x.\n", create_device_desc.CommandBufferSize);
@@ -228,11 +226,11 @@ static void test_D3DKMTCreateDevice(void)
 
     destroy_device_desc.hDevice = create_device_desc.hDevice;
     status = pD3DKMTDestroyDevice(&destroy_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     close_adapter_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCloseAdapter(&close_adapter_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 }
 
 static void test_D3DKMTDestroyDevice(void)
@@ -248,11 +246,11 @@ static void test_D3DKMTDestroyDevice(void)
 
     /* Invalid parameters */
     status = pD3DKMTDestroyDevice(NULL);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     memset(&destroy_device_desc, 0, sizeof(destroy_device_desc));
     status = pD3DKMTDestroyDevice(&destroy_device_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 }
 
 static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
@@ -378,27 +376,27 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
 
     if (!pD3DKMTCheckVidPnExclusiveOwnership || pD3DKMTCheckVidPnExclusiveOwnership(NULL) == STATUS_PROCEDURE_NOT_FOUND)
     {
-        skip("D3DKMTCheckVidPnExclusiveOwnership() is unavailable.\n");
+        win_skip("D3DKMTCheckVidPnExclusiveOwnership() is unavailable.\n");
         return;
     }
 
     /* Invalid parameters */
     status = pD3DKMTCheckVidPnExclusiveOwnership(NULL);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     memset(&check_owner_desc, 0, sizeof(check_owner_desc));
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     /* Test cases */
     lstrcpyW(open_adapter_gdi_desc.DeviceName, display1W);
     status = pD3DKMTOpenAdapterFromGdiDisplayName(&open_adapter_gdi_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     memset(&create_device_desc, 0, sizeof(create_device_desc));
     create_device_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCreateDevice(&create_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     check_owner_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     check_owner_desc.VidPnSourceId = open_adapter_gdi_desc.VidPnSourceId;
@@ -424,7 +422,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
                (status == STATUS_INVALID_PARAMETER && tests1[i].owner_type == D3DKMT_VIDPNSOURCEOWNER_EMULATED)
                || (status == STATUS_SUCCESS && tests1[i].owner_type == D3DKMT_VIDPNSOURCEOWNER_EXCLUSIVE
                    && tests1[i - 1].owner_type == D3DKMT_VIDPNSOURCEOWNER_EMULATED),
-           "Got unexpected return code %#lx at test %d.\n", status, i);
+           "Got unexpected return code %#x at test %d.\n", status, i);
 
         status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
         /* If don't sleep, D3DKMTCheckVidPnExclusiveOwnership may get STATUS_GRAPHICS_PRESENT_UNOCCLUDED instead
@@ -443,14 +441,14 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
                || (status == STATUS_GRAPHICS_PRESENT_OCCLUDED                               /* win8 */
                    && tests1[i].owner_type == D3DKMT_VIDPNSOURCEOWNER_EXCLUSIVE
                    && tests1[i - 1].owner_type == D3DKMT_VIDPNSOURCEOWNER_EMULATED),
-           "Got unexpected return code %#lx at test %d.\n", status, i);
+           "Got unexpected return code %#x at test %d.\n", status, i);
     }
 
     /* Set owner and unset owner using different devices */
     memset(&create_device_desc2, 0, sizeof(create_device_desc2));
     create_device_desc2.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCreateDevice(&create_device_desc2);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     /* Set owner with the first device */
     set_owner_desc.hDevice = create_device_desc.hDevice;
@@ -459,9 +457,9 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
     set_owner_desc.pVidPnSourceId = &open_adapter_gdi_desc.VidPnSourceId;
     set_owner_desc.VidPnSourceCount = 1;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
-    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#x.\n", status);
 
     /* Unset owner with the second device */
     set_owner_desc.hDevice = create_device_desc2.hDevice;
@@ -469,10 +467,10 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
     set_owner_desc.pVidPnSourceId = NULL;
     set_owner_desc.VidPnSourceCount = 0;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
     /* No effect */
-    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#x.\n", status);
 
     /* Unset owner with the first device */
     set_owner_desc.hDevice = create_device_desc.hDevice;
@@ -480,10 +478,10 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
     set_owner_desc.pVidPnSourceId = NULL;
     set_owner_desc.VidPnSourceCount = 0;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
     /* Proves that the correct device is needed to unset owner */
-    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#lx.\n",
+    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#x.\n",
        status);
 
     /* Set owner with the first device, set owner again with the second device */
@@ -504,7 +502,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
             ok(status == tests2[i].expected_set_status1
                    || (status == STATUS_INVALID_PARAMETER                                    /* win8 */
                        && tests2[i].set_owner_type1 == D3DKMT_VIDPNSOURCEOWNER_EMULATED),
-               "Got unexpected return code %#lx at test %d.\n", status, i);
+               "Got unexpected return code %#x at test %d.\n", status, i);
         }
 
         if (tests2[i].set_owner_type2 != -1)
@@ -520,7 +518,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
                        && tests2[i].set_owner_type2 == D3DKMT_VIDPNSOURCEOWNER_EMULATED)
                    || (status == STATUS_SUCCESS && tests2[i].set_owner_type1 == D3DKMT_VIDPNSOURCEOWNER_EMULATED
                        && tests2[i].set_owner_type2 == D3DKMT_VIDPNSOURCEOWNER_EXCLUSIVE),
-               "Got unexpected return code %#lx at test %d.\n", status, i);
+               "Got unexpected return code %#x at test %d.\n", status, i);
         }
 
         status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
@@ -538,7 +536,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
                || (status == STATUS_GRAPHICS_PRESENT_OCCLUDED                               /* win8 */
                    && tests2[i].set_owner_type2 == D3DKMT_VIDPNSOURCEOWNER_EXCLUSIVE
                    && tests2[i].set_owner_type1 == D3DKMT_VIDPNSOURCEOWNER_EMULATED),
-           "Got unexpected return code %#lx at test %d.\n", status, i);
+           "Got unexpected return code %#x at test %d.\n", status, i);
 
         /* Unset owner with first device */
         if (tests2[i].set_owner_type1 != -1)
@@ -548,7 +546,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
             set_owner_desc.pVidPnSourceId = NULL;
             set_owner_desc.VidPnSourceCount = 0;
             status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-            ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx at test %d.\n", status, i);
+            ok(status == STATUS_SUCCESS, "Got unexpected return code %#x at test %d.\n", status, i);
         }
 
         /* Unset owner with second device */
@@ -559,7 +557,7 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
             set_owner_desc.pVidPnSourceId = NULL;
             set_owner_desc.VidPnSourceCount = 0;
             status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-            ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx at test %d.\n", status, i);
+            ok(status == STATUS_SUCCESS, "Got unexpected return code %#x at test %d.\n", status, i);
         }
     }
 
@@ -570,11 +568,11 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
     set_owner_desc.pVidPnSourceId = &open_adapter_gdi_desc.VidPnSourceId;
     set_owner_desc.VidPnSourceCount = 1;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     destroy_device_desc.hDevice = create_device_desc.hDevice;
     status = pD3DKMTDestroyDevice(&destroy_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     set_owner_desc.hDevice = create_device_desc2.hDevice;
     owner_type = D3DKMT_VIDPNSOURCEOWNER_EXCLUSIVE;
@@ -584,15 +582,15 @@ static void test_D3DKMTCheckVidPnExclusiveOwnership(void)
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
     /* So ownership is released when device is destroyed. otherwise the return code should be
      * STATUS_GRAPHICS_VIDPN_SOURCE_IN_USE */
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     destroy_device_desc.hDevice = create_device_desc2.hDevice;
     status = pD3DKMTDestroyDevice(&destroy_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     close_adapter_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCloseAdapter(&close_adapter_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 }
 
 static void test_D3DKMTSetVidPnSourceOwner(void)
@@ -602,13 +600,13 @@ static void test_D3DKMTSetVidPnSourceOwner(void)
 
     if (!pD3DKMTSetVidPnSourceOwner || pD3DKMTSetVidPnSourceOwner(&set_owner_desc) == STATUS_PROCEDURE_NOT_FOUND)
     {
-        skip("D3DKMTSetVidPnSourceOwner() is unavailable.\n");
+        win_skip("D3DKMTSetVidPnSourceOwner() is unavailable.\n");
         return;
     }
 
     /* Invalid parameters */
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 }
 
 static void test_D3DKMTCheckOcclusion(void)
@@ -635,31 +633,31 @@ static void test_D3DKMTCheckOcclusion(void)
 
     /* NULL parameter check */
     status = pD3DKMTCheckOcclusion(NULL);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     occlusion_desc.hWnd = NULL;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected return code %#x.\n", status);
 
     hwnd = CreateWindowA("static", "static1", WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0, 0, 200, 200, 0, 0, 0, 0);
     ok(hwnd != NULL, "Failed to create window.\n");
 
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     /* Minimized state doesn't affect D3DKMTCheckOcclusion */
     ShowWindow(hwnd, SW_MINIMIZE);
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     ShowWindow(hwnd, SW_SHOWNORMAL);
 
     /* Invisible state doesn't affect D3DKMTCheckOcclusion */
     ShowWindow(hwnd, SW_HIDE);
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     ShowWindow(hwnd, SW_SHOW);
 
     /* hwnd2 covers hwnd */
@@ -668,11 +666,11 @@ static void test_D3DKMTCheckOcclusion(void)
 
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     occlusion_desc.hWnd = hwnd2;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     /* Composition doesn't affect D3DKMTCheckOcclusion */
     if (pDwmEnableComposition)
@@ -683,22 +681,22 @@ static void test_D3DKMTCheckOcclusion(void)
         occlusion_desc.hWnd = hwnd;
         status = pD3DKMTCheckOcclusion(&occlusion_desc);
         /* This result means that D3DKMTCheckOcclusion doesn't check composition status despite MSDN says it will */
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
         occlusion_desc.hWnd = hwnd2;
         status = pD3DKMTCheckOcclusion(&occlusion_desc);
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
         ShowWindow(hwnd, SW_MINIMIZE);
         occlusion_desc.hWnd = hwnd;
         status = pD3DKMTCheckOcclusion(&occlusion_desc);
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
         ShowWindow(hwnd, SW_SHOWNORMAL);
 
         ShowWindow(hwnd, SW_HIDE);
         occlusion_desc.hWnd = hwnd;
         status = pD3DKMTCheckOcclusion(&occlusion_desc);
-        ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+        ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
         ShowWindow(hwnd, SW_SHOW);
 
         hr = pDwmEnableComposition(DWM_EC_ENABLECOMPOSITION);
@@ -709,19 +707,19 @@ static void test_D3DKMTCheckOcclusion(void)
 
     lstrcpyW(open_adapter_gdi_desc.DeviceName, display1W);
     status = pD3DKMTOpenAdapterFromGdiDisplayName(&open_adapter_gdi_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     memset(&create_device_desc, 0, sizeof(create_device_desc));
     create_device_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCreateDevice(&create_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     check_owner_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     check_owner_desc.VidPnSourceId = open_adapter_gdi_desc.VidPnSourceId;
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
     /* D3DKMTCheckVidPnExclusiveOwnership gets STATUS_GRAPHICS_PRESENT_UNOCCLUDED sometimes and with some delay,
      * it will always return STATUS_SUCCESS. So there are some timing issues here. */
-    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#x.\n", status);
 
     /* Test D3DKMTCheckOcclusion relationship with video present source owner */
     set_owner_desc.hDevice = create_device_desc.hDevice;
@@ -730,7 +728,7 @@ static void test_D3DKMTCheckOcclusion(void)
     set_owner_desc.pVidPnSourceId = &open_adapter_gdi_desc.VidPnSourceId;
     set_owner_desc.VidPnSourceCount = 1;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     for (i = 0; EnumDisplayDevicesW(NULL, i, &display_device, 0); ++i)
     {
@@ -742,31 +740,31 @@ static void test_D3DKMTCheckOcclusion(void)
 
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == expected_occlusion, "Got unexpected return code %#lx.\n", status);
+    ok(status == expected_occlusion, "Got unexpected return code %#x.\n", status);
 
     /* Note hwnd2 is not actually occluded but D3DKMTCheckOcclusion reports STATUS_GRAPHICS_PRESENT_OCCLUDED as well */
     SetWindowPos(hwnd2, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     ShowWindow(hwnd2, SW_SHOW);
     occlusion_desc.hWnd = hwnd2;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == expected_occlusion, "Got unexpected return code %#lx.\n", status);
+    ok(status == expected_occlusion, "Got unexpected return code %#x.\n", status);
 
     /* Now hwnd is HWND_TOPMOST. Still reports STATUS_GRAPHICS_PRESENT_OCCLUDED */
     ok(SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE), "Failed to SetWindowPos.\n");
     ok(GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST, "No WS_EX_TOPMOST style.\n");
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == expected_occlusion, "Got unexpected return code %#lx.\n", status);
+    ok(status == expected_occlusion, "Got unexpected return code %#x.\n", status);
 
     DestroyWindow(hwnd2);
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == expected_occlusion, "Got unexpected return code %#lx.\n", status);
+    ok(status == expected_occlusion, "Got unexpected return code %#x.\n", status);
 
     check_owner_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     check_owner_desc.VidPnSourceId = open_adapter_gdi_desc.VidPnSourceId;
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
-    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_GRAPHICS_PRESENT_OCCLUDED, "Got unexpected return code %#x.\n", status);
 
     /* Unset video present source owner */
     set_owner_desc.hDevice = create_device_desc.hDevice;
@@ -774,116 +772,25 @@ static void test_D3DKMTCheckOcclusion(void)
     set_owner_desc.pVidPnSourceId = NULL;
     set_owner_desc.VidPnSourceCount = 0;
     status = pD3DKMTSetVidPnSourceOwner(&set_owner_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     occlusion_desc.hWnd = hwnd;
     status = pD3DKMTCheckOcclusion(&occlusion_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     check_owner_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     check_owner_desc.VidPnSourceId = open_adapter_gdi_desc.VidPnSourceId;
     status = pD3DKMTCheckVidPnExclusiveOwnership(&check_owner_desc);
-    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS || status == STATUS_GRAPHICS_PRESENT_UNOCCLUDED, "Got unexpected return code %#x.\n", status);
 
     destroy_device_desc.hDevice = create_device_desc.hDevice;
     status = pD3DKMTDestroyDevice(&destroy_device_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
 
     close_adapter_desc.hAdapter = open_adapter_gdi_desc.hAdapter;
     status = pD3DKMTCloseAdapter(&close_adapter_desc);
-    ok(status == STATUS_SUCCESS, "Got unexpected return code %#lx.\n", status);
+    ok(status == STATUS_SUCCESS, "Got unexpected return code %#x.\n", status);
     DestroyWindow(hwnd);
-}
-
-static void test_D3DKMTOpenAdapterFromDeviceName_deviface(const GUID *devinterface_guid,
-        NTSTATUS expected_status, BOOL todo)
-{
-    BYTE iface_detail_buffer[sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W) + 256 * sizeof(WCHAR)];
-    SP_DEVINFO_DATA device_data = {sizeof(device_data)};
-    SP_DEVICE_INTERFACE_DATA iface = {sizeof(iface)};
-    SP_DEVICE_INTERFACE_DETAIL_DATA_W *iface_data;
-    D3DKMT_OPENADAPTERFROMDEVICENAME device_name;
-    D3DKMT_CLOSEADAPTER close_adapter_desc;
-    DEVPROPTYPE type;
-    NTSTATUS status;
-    unsigned int i;
-    HDEVINFO set;
-    LUID luid;
-    BOOL ret;
-
-    set = SetupDiGetClassDevsW(devinterface_guid, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-    ok(set != INVALID_HANDLE_VALUE, "SetupDiGetClassDevs failed, error %lu.\n", GetLastError());
-
-    iface_data = (SP_DEVICE_INTERFACE_DETAIL_DATA_W *)iface_detail_buffer;
-    iface_data->cbSize = sizeof(*iface_data);
-    device_name.pDeviceName = iface_data->DevicePath;
-
-    i = 0;
-    while (SetupDiEnumDeviceInterfaces(set, NULL, devinterface_guid, i, &iface))
-    {
-        ret = SetupDiGetDeviceInterfaceDetailW(set, &iface, iface_data,
-                sizeof(iface_detail_buffer), NULL, &device_data );
-        ok(ret, "Got unexpected ret %d, GetLastError() %lu.\n", ret, GetLastError());
-
-        status = pD3DKMTOpenAdapterFromDeviceName(&device_name);
-        todo_wine_if(todo) ok(status == expected_status, "Got status %#lx, expected %#lx.\n", status, expected_status);
-
-        if (!status)
-        {
-            ret = SetupDiGetDevicePropertyW(set, &device_data, &DEVPROPKEY_GPU_LUID, &type,
-                    (BYTE *)&luid, sizeof(luid), NULL, 0);
-            ok(ret || GetLastError() == ERROR_NOT_FOUND, "Got unexpected ret %d, GetLastError() %lu.\n",
-                    ret, GetLastError());
-
-            if (ret)
-            {
-                ret = RtlEqualLuid( &luid, &device_name.AdapterLuid);
-                todo_wine ok(ret, "Luid does not match.\n");
-            }
-            else
-            {
-                skip("Luid not found.\n");
-            }
-
-            close_adapter_desc.hAdapter = device_name.hAdapter;
-            status = pD3DKMTCloseAdapter(&close_adapter_desc);
-            ok(!status, "Got unexpected status %#lx.\n", status);
-        }
-        ++i;
-    }
-    if (!i)
-        win_skip("No devices found.\n");
-
-    SetupDiDestroyDeviceInfoList( set );
-}
-
-static void test_D3DKMTOpenAdapterFromDeviceName(void)
-{
-    D3DKMT_OPENADAPTERFROMDEVICENAME device_name;
-    NTSTATUS status;
-
-    /* Make sure display devices are initialized. */
-    SendMessageW(GetDesktopWindow(), WM_NULL, 0, 0);
-
-    status = pD3DKMTOpenAdapterFromDeviceName(NULL);
-    if (status == STATUS_PROCEDURE_NOT_FOUND)
-    {
-        win_skip("D3DKMTOpenAdapterFromDeviceName() is not supported.\n");
-        return;
-    }
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected status %#lx.\n", status);
-
-    memset(&device_name, 0, sizeof(device_name));
-    status = pD3DKMTOpenAdapterFromDeviceName(&device_name);
-    ok(status == STATUS_INVALID_PARAMETER, "Got unexpected status %#lx.\n", status);
-
-    winetest_push_context("GUID_DEVINTERFACE_DISPLAY_ADAPTER");
-    test_D3DKMTOpenAdapterFromDeviceName_deviface(&GUID_DEVINTERFACE_DISPLAY_ADAPTER, STATUS_INVALID_PARAMETER, TRUE);
-    winetest_pop_context();
-
-    winetest_push_context("GUID_DISPLAY_DEVICE_ARRIVAL");
-    test_D3DKMTOpenAdapterFromDeviceName_deviface(&GUID_DISPLAY_DEVICE_ARRIVAL, STATUS_SUCCESS, FALSE);
-    winetest_pop_context();
 }
 
 START_TEST(driver)
@@ -896,7 +803,6 @@ START_TEST(driver)
     pD3DKMTCloseAdapter = (void *)GetProcAddress(gdi32, "D3DKMTCloseAdapter");
     pD3DKMTCreateDevice = (void *)GetProcAddress(gdi32, "D3DKMTCreateDevice");
     pD3DKMTDestroyDevice = (void *)GetProcAddress(gdi32, "D3DKMTDestroyDevice");
-    pD3DKMTOpenAdapterFromDeviceName = (void *)GetProcAddress(gdi32, "D3DKMTOpenAdapterFromDeviceName");
     pD3DKMTOpenAdapterFromGdiDisplayName = (void *)GetProcAddress(gdi32, "D3DKMTOpenAdapterFromGdiDisplayName");
     pD3DKMTOpenAdapterFromHdc = (void *)GetProcAddress(gdi32, "D3DKMTOpenAdapterFromHdc");
     pD3DKMTSetVidPnSourceOwner = (void *)GetProcAddress(gdi32, "D3DKMTSetVidPnSourceOwner");
@@ -912,7 +818,6 @@ START_TEST(driver)
     test_D3DKMTCheckVidPnExclusiveOwnership();
     test_D3DKMTSetVidPnSourceOwner();
     test_D3DKMTCheckOcclusion();
-    test_D3DKMTOpenAdapterFromDeviceName();
 
     FreeLibrary(dwmapi);
 }

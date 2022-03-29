@@ -21,7 +21,12 @@
 
 #include "config.h"
 
+#ifdef HAVE_POLL_H
 #include <poll.h>
+#endif
+#ifdef HAVE_SYS_POLL_H
+#include <sys/poll.h>
+#endif
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
 #include <X11/Xlib.h>
@@ -37,6 +42,8 @@
 
 #include "windef.h"
 #include "winbase.h"
+#include "winuser.h"
+#include "wingdi.h"
 
 #include "x11drv.h"
 
@@ -389,9 +396,6 @@ static inline BOOL call_event_handler( Display *display, XEvent *event )
         return FALSE;  /* no handler, ignore it */
     }
 
-#ifdef GenericEvent
-    if (event->type == GenericEvent) hwnd = 0; else
-#endif
     if (XFindContext( display, event->xany.window, winContext, (char **)&hwnd ) != 0)
         hwnd = 0;  /* not for a registered window */
     if (!hwnd && event->xany.window == root_window) hwnd = GetDesktopWindow();
@@ -718,7 +722,7 @@ static void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
 
         if (can_activate_window(hwnd))
         {
-            /* simulate a mouse click on the menu to find out
+            /* simulate a mouse click on the caption to find out
              * whether the window wants to be activated */
             LRESULT ma = SendMessageW( hwnd, WM_MOUSEACTIVATE,
                                        (WPARAM)GetAncestor( hwnd, GA_ROOT ),
@@ -1195,7 +1199,7 @@ static BOOL X11DRV_ConfigureNotify( HWND hwnd, XEvent *xev )
                data->window_rect.bottom - data->window_rect.top, cx, cy );
 
     style = GetWindowLongW( data->hwnd, GWL_STYLE );
-    if ((style & WS_CAPTION) == WS_CAPTION || !is_window_rect_full_screen( &data->whole_rect ))
+    if ((style & WS_CAPTION) == WS_CAPTION)
     {
         read_net_wm_states( event->display, data );
         if ((data->net_wm_state & (1 << NET_WM_STATE_MAXIMIZED)))

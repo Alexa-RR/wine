@@ -32,7 +32,6 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(cryptext);
 
-<<<<<<< HEAD
 static WCHAR *heap_strdupAtoW(const char *str)
 {
     WCHAR *ret;
@@ -62,8 +61,6 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
     return TRUE;
 }
 
-=======
->>>>>>> master
 /***********************************************************************
  * CryptExtAddPFX (CRYPTEXT.@)
  */

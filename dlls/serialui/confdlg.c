@@ -46,6 +46,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(comm);
 
 static HMODULE SERIALUI_hModule;
 
+static const WCHAR comW[] = {'c','o','m',0 };
+
 /***********************************************************************
  * DllMain [Internal] Initializes the internal 'SERIALUI.DLL'.
  *
@@ -61,7 +63,7 @@ static HMODULE SERIALUI_hModule;
 
 BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-    TRACE("%p,%lx,%p\n", hinstDLL, fdwReason, lpvReserved);
+    TRACE("%p,%x,%p\n", hinstDLL, fdwReason, lpvReserved);
 
     switch (fdwReason) {
 	case DLL_PROCESS_ATTACH:
@@ -86,7 +88,7 @@ typedef LPVOID LPDEVICE_INFO;
 typedef LPVOID LPFNADDPROPSHEETPAGE;
 BOOL WINAPI EnumPropPages(LPDEVICE_INFO pdi, LPFNADDPROPSHEETPAGE pfnAdd, LPARAM lParam )
 {
-    FIXME("(%p %p %Ix)\n",pdi,pfnAdd,lParam);
+    FIXME("(%p %p %lx)\n",pdi,pfnAdd,lParam);
     return FALSE;
 }
 
@@ -170,13 +172,13 @@ static BOOL SERIALUI_GetConfItems(HWND hDlg, DWORD id, LPCPARAM2STR table, LPDWO
 
     if( (!hControl) || (!lpdwVal))
     {
-        TRACE("Couldn't get window handle for item %lx\n",id);
+        TRACE("Couldn't get window handle for item %x\n",id);
         return FALSE;
     }
 
     if(!GetWindowTextA(hControl, &lpEntry[0], sizeof(lpEntry)))
     {
-        TRACE("Couldn't get window text for item %lx\n",id);
+        TRACE("Couldn't get window text for item %x\n",id);
         return FALSE;
     }
     /* TRACE("%ld contains %s\n",id, lpEntry); */
@@ -286,7 +288,7 @@ static void SERIALUI_DialogInfoToDCB(HWND hDlg, SERIALUI_DialogInfo *info)
     SERIALUI_GetConfItems( hDlg, IDC_DATA, &SERIALUI_Data2Str, &dwByteSize);
     SERIALUI_GetConfItems( hDlg, IDC_FLOW, &SERIALUI_Flow2Str, &dwFlowControl );
 
-    TRACE("baud=%ld stop=%ld parity=%ld data=%ld flow=%ld\n",
+    TRACE("baud=%d stop=%d parity=%d data=%d flow=%d\n",
           dwBaudRate, dwStopBits, dwParity, dwByteSize, dwFlowControl);
 
     lpdcb->BaudRate = dwBaudRate;
@@ -461,7 +463,13 @@ DWORD WINAPI drvCommConfigDialogA(LPCSTR lpszName, HWND hWndParent, LPCOMMCONFIG
     return r;
 }
 
-static const WCHAR lpszCommKey[] = L"System\\CurrentControlSet\\Services\\Class\\Ports";
+static const WCHAR lpszCommKey[] = {
+    'S','y','s','t','e','m','\\',
+    'C','u','r','r','e','n','t','C','o','n','t','r','o','l','S','e','t','\\',
+    'S','e','r','v','i','c','e','s','\\',
+    'C','l','a','s','s','\\','P','o','r','t','s',0
+};
+static const WCHAR lpszDCB[]     = {'D','C','B',0};
 
 /***********************************************************************
  * drvSetDefaultCommConfigW (SERIALUI.@)
@@ -476,8 +484,9 @@ BOOL WINAPI drvSetDefaultCommConfigW(
     HKEY hKeyReg=0, hKeyPort=0;
     WCHAR szKeyName[100];
     DWORD r,dwDCBSize;
+    static const WCHAR fmt[] = {'%','s','\\','%','s',0 };
 
-    TRACE("%p %p %lx\n",lpszDevice,lpCommConfig,dwSize);
+    TRACE("%p %p %x\n",lpszDevice,lpCommConfig,dwSize);
 
     if(!lpCommConfig)
         return FALSE;
@@ -489,13 +498,14 @@ BOOL WINAPI drvSetDefaultCommConfigW(
     if(r != ERROR_SUCCESS)
         return FALSE;
 
-    swprintf(szKeyName, ARRAY_SIZE(szKeyName), L"%s\\%s", lpszCommKey, lpszDevice);
+    swprintf(szKeyName, ARRAY_SIZE(szKeyName), fmt, lpszCommKey, lpszDevice);
     r = RegCreateKeyW(hKeyReg, szKeyName, &hKeyPort);
     if(r == ERROR_SUCCESS)
     {
         dwDCBSize = sizeof (DCB);
-        r = RegSetValueExW(hKeyPort, L"DCB", 0, REG_BINARY, (BYTE *)&lpCommConfig->dcb, dwDCBSize);
-        TRACE("write key r=%ld\n",r);
+        r = RegSetValueExW( hKeyPort, lpszDCB, 0, REG_BINARY,
+                            (LPBYTE)&lpCommConfig->dcb,dwDCBSize);
+        TRACE("write key r=%d\n",r);
         RegCloseKey(hKeyPort);
     }
 
@@ -529,8 +539,9 @@ DWORD WINAPI drvGetDefaultCommConfigW(
     HKEY hKeyReg, hKeyPort;
     WCHAR szKeyName[100];
     DWORD r,dwSize,dwType;
+    static const WCHAR fmt[] = {'%','s','\\','%','s',0 };
 
-    TRACE("(%s, %p, %p) *lpdwSize: %lu\n", debugstr_w(lpszDevice), lpCommConfig, lpdwSize, lpdwSize ? *lpdwSize : 0);
+    TRACE("(%s, %p, %p) *lpdwSize: %u\n", debugstr_w(lpszDevice), lpCommConfig, lpdwSize, lpdwSize ? *lpdwSize : 0);
 
     if ((!lpszDevice) || (!lpCommConfig) || (!lpdwSize)) {
         return ERROR_INVALID_PARAMETER;
@@ -542,11 +553,11 @@ DWORD WINAPI drvGetDefaultCommConfigW(
     }
 
     /* only "com1" - "com9" is allowed */
-    r = ARRAY_SIZE(L"com");
+    r = ARRAY_SIZE(comW);       /* len of "com\0" */
     lstrcpynW(szKeyName, lpszDevice, r);    /* simulate a lstrcmpnW */
     r--;
 
-    if (lstrcmpiW(szKeyName, L"com") ||
+    if( lstrcmpiW(szKeyName, comW) ||
         (lpszDevice[r] < '1') || (lpszDevice[r] > '9') || lpszDevice[r+1]) {
         return ERROR_BADKEY;
     }
@@ -560,13 +571,14 @@ DWORD WINAPI drvGetDefaultCommConfigW(
     r = RegConnectRegistryW(NULL, HKEY_LOCAL_MACHINE, &hKeyReg);
     if(r != ERROR_SUCCESS) return r;
 
-    swprintf(szKeyName, ARRAY_SIZE(szKeyName), L"%s\\%s", lpszCommKey, lpszDevice);
+    swprintf(szKeyName, ARRAY_SIZE(szKeyName), fmt, lpszCommKey, lpszDevice);
     r = RegOpenKeyW(hKeyReg, szKeyName, &hKeyPort);
     if(r == ERROR_SUCCESS)
     {
         dwSize = sizeof (DCB);
         dwType = 0;
-        r = RegQueryValueExW(hKeyPort, L"DCB", NULL, &dwType, (BYTE *)&lpCommConfig->dcb, &dwSize);
+        r = RegQueryValueExW( hKeyPort, lpszDCB, NULL,
+                             &dwType, (LPBYTE)&lpCommConfig->dcb, &dwSize);
 
         RegCloseKey(hKeyPort);
         if ((r!=ERROR_SUCCESS) || (dwType != REG_BINARY) || (dwSize != sizeof(DCB))) {

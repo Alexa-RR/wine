@@ -18,13 +18,9 @@
 
 #define NONAMELESSUNION
 
-<<<<<<< HEAD
 
 #include "wine/unicode.h"
-=======
->>>>>>> master
 #include "objbase.h"
-
 #include "dinput_private.h"
 #include "device_private.h"
 #include "resource.h"
@@ -124,7 +120,7 @@ static void init_listview_columns(HWND dialog)
     LoadStringW(DINPUT_instance, IDS_OBJECTCOLUMN, column, ARRAY_SIZE(column));
     listColumn.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
     listColumn.pszText = column;
-    listColumn.cchTextMax = wcslen( listColumn.pszText );
+    listColumn.cchTextMax = lstrlenW(listColumn.pszText);
     listColumn.cx = width;
 
     SendDlgItemMessageW (dialog, IDC_DEVICEOBJECTSLIST, LVM_INSERTCOLUMNW, 0, (LPARAM) &listColumn);
@@ -132,7 +128,7 @@ static void init_listview_columns(HWND dialog)
     LoadStringW(DINPUT_instance, IDS_ACTIONCOLUMN, column, ARRAY_SIZE(column));
     listColumn.cx = width;
     listColumn.pszText = column;
-    listColumn.cchTextMax = wcslen( listColumn.pszText );
+    listColumn.cchTextMax = lstrlenW(listColumn.pszText);
 
     SendDlgItemMessageW(dialog, IDC_DEVICEOBJECTSLIST, LVM_INSERTCOLUMNW, 1, (LPARAM) &listColumn);
 }
@@ -159,7 +155,8 @@ static int lv_get_item_data(HWND dialog, int index)
 
 static void lv_set_action(HWND dialog, int item, int action, LPDIACTIONFORMATW lpdiaf)
 {
-    const WCHAR *action_text = L"-";
+    static const WCHAR no_action[] = {'-','\0'};
+    const WCHAR *action_text = no_action;
     LVITEMW lvItem;
 
     if (item < 0) return;
@@ -180,7 +177,7 @@ static void lv_set_action(HWND dialog, int item, int action, LPDIACTIONFORMATW l
     lvItem.mask = LVIF_TEXT;
     lvItem.iSubItem = 1;
     lvItem.pszText = (WCHAR *)action_text;
-    lvItem.cchTextMax = wcslen( lvItem.pszText );
+    lvItem.cchTextMax = lstrlenW(lvItem.pszText);
 
     /* Text */
     SendDlgItemMessageW(dialog, IDC_DEVICEOBJECTSLIST, LVM_SETITEMW, 0, (LPARAM) &lvItem);
@@ -220,16 +217,6 @@ static void init_devices(HWND dialog, ConfigureDevicesData *data)
 {
     int i;
 
-<<<<<<< HEAD
-=======
-    /* Count devices */
-    data->ndevices = 0;
-    IDirectInput8_EnumDevicesBySemantics(lpDI, NULL, lpdiaf, count_devices, (LPVOID) data, 0);
-
-    /* Allocate devices */
-    data->devices = malloc( sizeof(DeviceData) * data->ndevices );
-
->>>>>>> master
     /* Collect and insert */
     data->devices_data.ndevices = 0;
     IDirectInput8_EnumDevicesBySemantics(data->lpDI, NULL, data->original_lpdiaf, collect_devices, (LPVOID) data, 0);
@@ -255,15 +242,7 @@ static void destroy_data(HWND dialog)
         heap_free(devices_data->devices[i].user_afs);
     }
 
-<<<<<<< HEAD
     HeapFree(GetProcessHeap(), 0, devices_data->devices);
-=======
-    free( devices_data->devices );
-
-    /* Free the backup LPDIACTIONFORMATW  */
-    free( data->original_lpdiaf->rgoAction );
-    free( data->original_lpdiaf );
->>>>>>> master
 }
 
 static void fill_device_object_list(HWND dialog)
@@ -286,7 +265,7 @@ static void fill_device_object_list(HWND dialog)
         item.iItem = i;
         item.iSubItem = 0;
         item.pszText = device->ddo[i].tszName;
-        item.cchTextMax = wcslen( item.pszText );
+        item.cchTextMax = lstrlenW(item.pszText);
 
         /* Add the item */
         SendDlgItemMessageW(dialog, IDC_DEVICEOBJECTSLIST, LVM_INSERTITEMW, 0, (LPARAM) &item);
@@ -435,15 +414,6 @@ static INT_PTR CALLBACK ConfigureDevicesDlgProc(HWND dialog, UINT uMsg, WPARAM w
 
             init_listview_columns(dialog);
 
-<<<<<<< HEAD
-=======
-            /* Create a backup action format for CANCEL and RESET operations */
-            data->original_lpdiaf = malloc( sizeof(*data->original_lpdiaf) );
-            data->original_lpdiaf->dwNumActions = data->lpdiaf->dwNumActions;
-            data->original_lpdiaf->rgoAction = malloc( sizeof(DIACTIONW) * data->lpdiaf->dwNumActions );
-            copy_actions(data->original_lpdiaf, data->lpdiaf);
-
->>>>>>> master
             /* Select the first device and show its actions */
             SendDlgItemMessageW(dialog, IDC_CONTROLLERCOMBO, CB_SETCURSEL, 0, 0);
             SendDlgItemMessageW(dialog, IDC_PLAYERCOMBO, CB_SETCURSEL, 0, 0);

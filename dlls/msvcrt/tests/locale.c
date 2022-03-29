@@ -45,8 +45,6 @@ static void test_setlocale(void)
         "LC_MONETARY=Greek_Greece.1253;LC_NUMERIC=Polish_Poland.1250;LC_TIME=C";
 
     char *ret, buf[100];
-    char *ptr;
-    int len;
 
     ret = setlocale(20, "C");
     ok(ret == NULL, "ret = %s\n", ret);
@@ -614,27 +612,6 @@ static void test_setlocale(void)
         ok(!strcmp(ret, buf), "ret = %s, expected %s\n", ret, buf);
     }
 
-    GetLocaleInfoA(GetUserDefaultLCID(), LOCALE_IDEFAULTCODEPAGE, buf, sizeof(buf));
-    if(IsValidCodePage(atoi(buf))) {
-        ret = setlocale(LC_ALL, ".OCP");
-        ok(ret != NULL, "ret == NULL\n");
-        ptr = strchr(ret, '.');
-        ok(ptr && !strcmp(ptr + 1, buf), "ret %s, buf %s.\n", ret, buf);
-    }
-
-    len = GetLocaleInfoA(GetUserDefaultLCID(), LOCALE_IDEFAULTANSICODEPAGE, buf, sizeof(buf)) - 1;
-    if(buf[0] == '0' && !buf[1])
-        len = sprintf(buf, "%d", GetACP());
-    ret = setlocale(LC_ALL, ".ACP");
-    ok(ret != NULL, "ret == NULL\n");
-    ptr = strchr(ret, '.');
-    ok(ptr && !strncmp(ptr + 1, buf, len), "ret %s, buf %s.\n", ret, buf);
-
-    ret = setlocale(LC_ALL, ".1250");
-    ok(ret != NULL, "ret == NULL\n");
-    ptr = strchr(ret, '.');
-    ok(ptr && !strcmp(ptr, ".1250"), "ret %s, buf %s.\n", ret, buf);
-
     ret = setlocale(LC_ALL, "English_United States.UTF8");
     ok(ret == NULL, "ret != NULL\n");
 
@@ -644,7 +621,13 @@ static void test_setlocale(void)
 
 static void test_crtGetStringTypeW(void)
 {
-    const wchar_t *str[] = { L"0", L"A", L" ", L"\0", L"\x04d2" };
+    static const wchar_t str0[] = { '0', '\0' };
+    static const wchar_t strA[] = { 'A', '\0' };
+    static const wchar_t str_space[] = { ' ', '\0' };
+    static const wchar_t str_null[] = { '\0', '\0' };
+    static const wchar_t str_rand[] = { 1234, '\0' };
+
+    const wchar_t *str[] = { str0, strA, str_space, str_null, str_rand };
 
     WORD out_crt, out;
     BOOL ret_crt, ret;
@@ -729,14 +712,10 @@ static void test__Gettnames(void)
     {
         size = GetLocaleInfoA(MAKELCID(LANG_ENGLISH, SORT_DEFAULT),
                               time_data[i], buf, sizeof(buf));
-        ok(size, "GetLocaleInfo failed: %lx\n", GetLastError());
+        ok(size, "GetLocaleInfo failed: %x\n", GetLastError());
         ok(!strcmp(ret->str[i], buf), "ret->str[%i] = %s, expected %s\n", i, ret->str[i], buf);
     }
 
-    ok(ret->wstr[0] != NULL, "ret->wstr[0] = NULL\n");
-    ok(ret->str[42] + strlen(ret->str[42])+1 != (char*)ret->wstr[0],
-            "ret->str[42] = %p len = %Id, ret->wstr[0] = %p\n",
-            ret->str[42], strlen(ret->str[42]), ret->wstr[0]);
     free(ret);
 
     if(!setlocale(LC_TIME, "german"))
@@ -747,7 +726,7 @@ static void test__Gettnames(void)
     {
         size = GetLocaleInfoA(MAKELCID(LANG_GERMAN, SORT_DEFAULT),
                               time_data[i], buf, sizeof(buf));
-        ok(size, "GetLocaleInfo failed: %lx\n", GetLastError());
+        ok(size, "GetLocaleInfo failed: %x\n", GetLastError());
         ok(!strcmp(ret->str[i], buf), "ret->str[%i] = %s, expected %s\n", i, ret->str[i], buf);
     }
     free(ret);

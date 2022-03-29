@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 #include "wine/asm.h"
 
 #ifdef __ASM_OBSOLETE
@@ -28,11 +29,12 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifdef HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
 
 #include "wine/debug.h"
+#include "wine/library.h"
 
 struct __wine_debug_functions
 {
@@ -276,7 +278,7 @@ static char *get_temp_buffer( size_t size )
     char *ret;
     int idx;
 
-    idx = pos++ % ARRAY_SIZE(list);
+    idx = interlocked_xchg_add( &pos, 1 ) % ARRAY_SIZE(list);
     if ((ret = realloc( list[idx], size ))) list[idx] = ret;
     return ret;
 }

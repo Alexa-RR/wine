@@ -395,6 +395,8 @@ static const struct {
     { VK_VOLUME_UP | 0x100,     "Volume Up" },
 };
 
+HKL CDECL macdrv_GetKeyboardLayout(DWORD);
+
 static BOOL char_matches_string(WCHAR wchar, UniChar *string, BOOL ignore_diacritics)
 {
     BOOL ret;
@@ -927,11 +929,7 @@ static void macdrv_send_keyboard_input(HWND hwnd, WORD vkey, WORD scan, DWORD fl
     input.ki.time           = time;
     input.ki.dwExtraInfo    = 0;
 
-<<<<<<< HEAD
     __wine_send_input(hwnd, &input, SEND_HWMSG_RAWINPUT|SEND_HWMSG_WINDOW);
-=======
-    __wine_send_input(hwnd, &input, NULL);
->>>>>>> master
 }
 
 
@@ -944,7 +942,7 @@ static BOOL get_async_key_state(BYTE state[256])
 
     SERVER_START_REQ(get_key_state)
     {
-        req->async = 1;
+        req->tid = 0;
         req->key = -1;
         wine_server_set_reply(req, state, 256);
         ret = !wine_server_call(req);
@@ -1056,8 +1054,6 @@ void macdrv_keyboard_changed(const macdrv_event *event)
 
     macdrv_compute_keyboard_layout(thread_data);
 
-    ActivateKeyboardLayout(thread_data->active_keyboard_layout, 0);
-
     SendMessageW(GetActiveWindow(), WM_CANCELMODE, 0, 0);
 }
 
@@ -1165,16 +1161,22 @@ void macdrv_process_text_input(UINT vkey, UINT scan, UINT repeat, const BYTE *ke
 /***********************************************************************
  *              ActivateKeyboardLayout (MACDRV.@)
  */
-BOOL CDECL macdrv_ActivateKeyboardLayout(HKL hkl, UINT flags)
+HKL CDECL macdrv_ActivateKeyboardLayout(HKL hkl, UINT flags)
 {
-    BOOL ret = FALSE;
+    HKL oldHkl = 0;
     struct macdrv_thread_data *thread_data = macdrv_init_thread_data();
     struct layout *layout;
 
     TRACE("hkl %p flags %04x\n", hkl, flags);
 
-    if (hkl == thread_data->active_keyboard_layout)
-        return TRUE;
+    if (flags) FIXME("flags %x not supported\n",flags);
+
+    if (hkl == (HKL)HKL_NEXT || hkl == (HKL)HKL_PREV)
+    {
+        SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
+        FIXME("HKL_NEXT and HKL_PREV not supported\n");
+        return 0;
+    }
 
     EnterCriticalSection(&layout_list_section);
     update_layout_list();
@@ -1185,7 +1187,7 @@ BOOL CDECL macdrv_ActivateKeyboardLayout(HKL hkl, UINT flags)
         {
             if (macdrv_select_input_source(layout->input_source))
             {
-                ret = TRUE;
+                oldHkl = thread_data->active_keyboard_layout;
                 if (thread_data->keyboard_layout_uchr)
                     CFRelease(thread_data->keyboard_layout_uchr);
 
@@ -1201,7 +1203,7 @@ BOOL CDECL macdrv_ActivateKeyboardLayout(HKL hkl, UINT flags)
     }
     LeaveCriticalSection(&layout_list_section);
 
-    return ret;
+    return oldHkl;
 }
 
 
@@ -1240,7 +1242,7 @@ INT CDECL macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
                                     0, &deadKeyState, size - 1, &len, (UniChar*)buffer);
             if (status != noErr)
                 len = 0;
-            if (len && buffer[0] > 32)
+            if (len && isgraphW(buffer[0]))
                 buffer[len] = 0;
 
             vkey = thread_data->keyc2vkey[keyc];
@@ -1301,6 +1303,18 @@ INT CDECL macdrv_GetKeyNameText(LONG lparam, LPWSTR buffer, INT size)
 
 
 /***********************************************************************
+ *              GetKeyboardLayout (MACDRV.@)
+ */
+HKL CDECL macdrv_GetKeyboardLayout(DWORD thread_id)
+{
+    if (thread_id && thread_id != GetCurrentThreadId())
+        FIXME("couldn't return keyboard layout for thread %04x\n", thread_id);
+
+    return macdrv_init_thread_data()->active_keyboard_layout;
+}
+
+
+/***********************************************************************
  *     GetKeyboardLayoutList (MACDRV.@)
  */
 UINT CDECL macdrv_GetKeyboardLayoutList(INT size, HKL *list)
@@ -1329,6 +1343,21 @@ UINT CDECL macdrv_GetKeyboardLayoutList(INT size, HKL *list)
 
     TRACE("returning %d\n", count);
     return count;
+}
+
+/***********************************************************************
+ *              GetKeyboardLayoutName (MACDRV.@)
+ */
+BOOL CDECL macdrv_GetKeyboardLayoutName(LPWSTR name)
+{
+    static const WCHAR formatW[] = {'%','0','8','x',0};
+    DWORD layout;
+
+    layout = HandleToUlong(macdrv_GetKeyboardLayout(0));
+    if (HIWORD(layout) == LOWORD(layout)) layout = LOWORD(layout);
+    sprintfW(name, formatW, layout);
+    TRACE("returning %s\n", debugstr_w(name));
+    return TRUE;
 }
 
 

@@ -59,7 +59,8 @@ typedef struct
     IPPART_INFO	Part[4];
 } IPADDRESS_INFO;
 
-static const WCHAR IP_SUBCLASS_PROP[] = L"CCIP32SubclassInfo";
+static const WCHAR IP_SUBCLASS_PROP[] = 
+    { 'C', 'C', 'I', 'P', '3', '2', 'S', 'u', 'b', 'c', 'l', 'a', 's', 's', 'I', 'n', 'f', 'o', 0 };
 
 #define POS_DEFAULT	0
 #define POS_LEFT	1
@@ -71,6 +72,8 @@ IPADDRESS_SubclassProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
 static void IPADDRESS_UpdateText (const IPADDRESS_INFO *infoPtr)
 {
+    static const WCHAR zero[] = {'0', 0};
+    static const WCHAR dot[]  = {'.', 0};
     WCHAR field[4];
     WCHAR ip[16];
     INT i;
@@ -82,9 +85,9 @@ static void IPADDRESS_UpdateText (const IPADDRESS_INFO *infoPtr)
             lstrcatW(ip, field);
         else
             /* empty edit treated as zero */
-            lstrcatW(ip, L"0");
+            lstrcatW(ip, zero);
         if (i != 3)
-            lstrcatW(ip, L".");
+            lstrcatW(ip, dot);
     }
 
     SetWindowTextW(infoPtr->Self, ip);
@@ -130,12 +133,14 @@ static int IPADDRESS_GetPartIndex(const IPADDRESS_INFO *infoPtr, HWND hwnd)
     for (i = 0; i < 4; i++)
         if (infoPtr->Part[i].EditHwnd == hwnd) return i;
 
+    ERR("We subclassed the wrong window! (hwnd=%p)\n", hwnd);
     return -1;
 }
 
 
 static LRESULT IPADDRESS_Draw (const IPADDRESS_INFO *infoPtr, HDC hdc)
 {
+    static const WCHAR dotW[] = { '.', 0 };
     RECT rect, rcPart;
     COLORREF bgCol, fgCol;
     HTHEME theme;
@@ -145,7 +150,7 @@ static LRESULT IPADDRESS_Draw (const IPADDRESS_INFO *infoPtr, HDC hdc)
 
     GetClientRect (infoPtr->Self, &rect);
 
-    theme = GetWindowTheme (infoPtr->Self);
+    theme = OpenThemeData(infoPtr->Self, WC_EDITW);
 
     if (theme) {
         DWORD dwStyle = GetWindowLongW (infoPtr->Self, GWL_STYLE);
@@ -188,10 +193,13 @@ static LRESULT IPADDRESS_Draw (const IPADDRESS_INFO *infoPtr, HDC hdc)
         rect.right = rcPart.left;
 
         if (theme)
-            DrawThemeText(theme, hdc, EP_EDITTEXT, state, L".", 1, DT_SINGLELINE | DT_CENTER | DT_BOTTOM, 0, &rect);
+            DrawThemeText(theme, hdc, EP_EDITTEXT, state, dotW, 1, DT_SINGLELINE | DT_CENTER | DT_BOTTOM, 0, &rect);
         else
-            DrawTextW(hdc, L".", 1, &rect, DT_SINGLELINE | DT_CENTER | DT_BOTTOM);
+            DrawTextW(hdc, dotW, 1, &rect, DT_SINGLELINE | DT_CENTER | DT_BOTTOM);
     }
+
+    if (theme)
+        CloseThemeData(theme);
 
     return 0;
 }
@@ -252,7 +260,6 @@ static LRESULT IPADDRESS_Create (HWND hwnd, const CREATESTRUCTA *lpCreate)
     }
 
     IPADDRESS_UpdateText (infoPtr);
-    OpenThemeData (infoPtr->Self, WC_EDITW);
 
     return 0;
 }
@@ -260,7 +267,6 @@ static LRESULT IPADDRESS_Create (HWND hwnd, const CREATESTRUCTA *lpCreate)
 
 static LRESULT IPADDRESS_Destroy (IPADDRESS_INFO *infoPtr)
 {
-    HTHEME theme;
     int i;
 
     TRACE("\n");
@@ -271,8 +277,6 @@ static LRESULT IPADDRESS_Destroy (IPADDRESS_INFO *infoPtr)
     }
 
     SetWindowLongPtrW (infoPtr->Self, 0, 0);
-    theme = GetWindowTheme (infoPtr->Self);
-    CloseThemeData (theme);
     heap_free (infoPtr);
     return 0;
 }
@@ -354,22 +358,22 @@ static BOOL IPADDRESS_SetRange (IPADDRESS_INFO *infoPtr, int index, WORD range)
 }
 
 
-static LRESULT IPADDRESS_ClearAddress (const IPADDRESS_INFO *infoPtr)
+static void IPADDRESS_ClearAddress (const IPADDRESS_INFO *infoPtr)
 {
+    static const WCHAR nil[] = { 0 };
     int i;
 
     TRACE("\n");
 
     for (i = 0; i < 4; i++)
-        SetWindowTextW (infoPtr->Part[i].EditHwnd, L"");
-
-    return 1;
+        SetWindowTextW (infoPtr->Part[i].EditHwnd, nil);
 }
 
 
 static LRESULT IPADDRESS_SetAddress (const IPADDRESS_INFO *infoPtr, DWORD ip_address)
 {
     WCHAR buf[20];
+    static const WCHAR fmt[] = { '%', 'd', 0 };
     int i;
 
     TRACE("\n");
@@ -378,7 +382,7 @@ static LRESULT IPADDRESS_SetAddress (const IPADDRESS_INFO *infoPtr, DWORD ip_add
 	const IPPART_INFO* part = &infoPtr->Part[i];
         int value = ip_address & 0xff;
 	if ( (value >= part->LowerLimit) && (value <= part->UpperLimit) ) {
-	    wsprintfW (buf, L"%d", value);
+	    wsprintfW (buf, fmt, value);
 	    SetWindowTextW (part->EditHwnd, buf);
 	    IPADDRESS_Notify (infoPtr, EN_CHANGE);
         }
@@ -389,21 +393,19 @@ static LRESULT IPADDRESS_SetAddress (const IPADDRESS_INFO *infoPtr, DWORD ip_add
 }
 
 
-static LRESULT IPADDRESS_SetFocusToField (const IPADDRESS_INFO *infoPtr, INT index)
+static void IPADDRESS_SetFocusToField (const IPADDRESS_INFO *infoPtr, INT index)
 {
-    TRACE("%d\n", index);
+    TRACE("(index=%d)\n", index);
 
     if (index > 3 || index < 0) index=0;
 
-    SendMessageW (infoPtr->Part[index].EditHwnd, EM_SETSEL, 0, -1);
     SetFocus (infoPtr->Part[index].EditHwnd);
-
-    return 1;
 }
 
 
 static BOOL IPADDRESS_ConstrainField (const IPADDRESS_INFO *infoPtr, int currentfield)
 {
+    static const WCHAR fmt[] = { '%', 'd', 0 };
     const IPPART_INFO *part;
     int curValue, newValue;
     WCHAR field[10];
@@ -426,7 +428,7 @@ static BOOL IPADDRESS_ConstrainField (const IPADDRESS_INFO *infoPtr, int current
 
     if (newValue == curValue) return FALSE;
 
-    wsprintfW (field, L"%d", newValue);
+    wsprintfW (field, fmt, newValue);
     TRACE("  field=%s\n", debugstr_w(field));
     return SetWindowTextW (part->EditHwnd, field);
 }
@@ -457,14 +459,6 @@ static BOOL IPADDRESS_GotoNextField (const IPADDRESS_INFO *infoPtr, int cur, int
     return FALSE;
 }
 
-static LRESULT IPADDRESS_ThemeChanged (const IPADDRESS_INFO *infoPtr)
-{
-    HTHEME theme = GetWindowTheme (infoPtr->Self);
-    CloseThemeData (theme);
-    theme = OpenThemeData (theme, WC_EDITW);
-    InvalidateRect (infoPtr->Self, NULL, TRUE);
-    return 0;
-}
 
 /*
  * period: move and select the text in the next field to the right if
@@ -509,13 +503,9 @@ IPADDRESS_SubclassProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     INT index, len = 0, startsel, endsel;
     IPPART_INFO *part;
 
-    TRACE("hwnd %p, msg 0x%x, wparam %#Ix, lparam %#Ix\n", hwnd, uMsg, wParam, lParam);
+    TRACE("(hwnd=%p msg=0x%x wparam=0x%lx lparam=0x%lx)\n", hwnd, uMsg, wParam, lParam);
 
-    if ((index = IPADDRESS_GetPartIndex(infoPtr, hwnd)) < 0)
-    {
-        ERR("We subclassed the wrong window! (hwnd=%p)\n", hwnd);
-        return 0;
-    }
+    if ( (index = IPADDRESS_GetPartIndex(infoPtr, hwnd)) < 0) return 0;
     part = &infoPtr->Part[index];
 
     if (uMsg == WM_CHAR || uMsg == WM_KEYDOWN) {
@@ -592,7 +582,7 @@ IPADDRESS_WindowProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     IPADDRESS_INFO *infoPtr = (IPADDRESS_INFO *)GetWindowLongPtrW (hwnd, 0);
 
-    TRACE("hwnd %p, msg 0x%x, wparam %#Ix, lparam %#Ix\n", hwnd, uMsg, wParam, lParam);
+    TRACE("(hwnd=%p msg=0x%x wparam=0x%lx lparam=0x%lx)\n", hwnd, uMsg, wParam, lParam);
 
     if (!infoPtr && (uMsg != WM_CREATE))
         return DefWindowProcW (hwnd, uMsg, wParam, lParam);
@@ -627,11 +617,9 @@ IPADDRESS_WindowProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             COMCTL32_RefreshSysColors();
             return 0;
 
-        case WM_THEMECHANGED:
-            return IPADDRESS_ThemeChanged (infoPtr);
-
         case IPM_CLEARADDRESS:
-            return IPADDRESS_ClearAddress (infoPtr);
+            IPADDRESS_ClearAddress (infoPtr);
+	    break;
 
         case IPM_SETADDRESS:
             return IPADDRESS_SetAddress (infoPtr, (DWORD)lParam);
@@ -642,19 +630,16 @@ IPADDRESS_WindowProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case IPM_SETRANGE:
 	    return IPADDRESS_SetRange (infoPtr, (int)wParam, (WORD)lParam);
 
-        case IPM_SETFOCUS:
-            return IPADDRESS_SetFocusToField (infoPtr, (int)wParam);
+	case IPM_SETFOCUS:
+	    IPADDRESS_SetFocusToField (infoPtr, (int)wParam);
+	    break;
 
 	case IPM_ISBLANK:
 	    return IPADDRESS_IsBlank (infoPtr);
 
-        case WM_SETFOCUS:
-            IPADDRESS_SetFocusToField (infoPtr, 0);
-            break;
-
 	default:
 	    if ((uMsg >= WM_USER) && (uMsg < WM_APP) && !COMCTL32_IsReflectedMessage(uMsg))
-		ERR("unknown msg %04x, wp %Ix, lp %Ix\n", uMsg, wParam, lParam);
+		ERR("unknown msg %04x wp=%08lx lp=%08lx\n", uMsg, wParam, lParam);
 	    return DefWindowProcW (hwnd, uMsg, wParam, lParam);
     }
     return 0;

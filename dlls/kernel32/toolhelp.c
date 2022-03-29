@@ -19,9 +19,14 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <ctype.h>
 #include <assert.h>
 #include "ntstatus.h"
@@ -33,7 +38,6 @@
 #include "winnls.h"
 #include "winternl.h"
 
-#include "kernel_private.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(toolhelp);
@@ -69,11 +73,12 @@ static WCHAR *fetch_string( HANDLE hProcess, UNICODE_STRING* us)
     return local;
 }
 
-static BOOL fetch_module( DWORD process, DWORD flags, LDR_DATA_TABLE_ENTRY **ldr_mod, ULONG *num )
+static BOOL fetch_module( DWORD process, DWORD flags, LDR_MODULE** ldr_mod, ULONG* num )
 {
     HANDLE                      hProcess;
     PROCESS_BASIC_INFORMATION   pbi;
     PPEB_LDR_DATA               pLdrData;
+    NTSTATUS                    status;
     PLIST_ENTRY                 head, curr;
     BOOL                        ret = FALSE;
 
@@ -89,8 +94,9 @@ static BOOL fetch_module( DWORD process, DWORD flags, LDR_DATA_TABLE_ENTRY **ldr
     else
         hProcess = GetCurrentProcess();
 
-    if (set_ntstatus( NtQueryInformationProcess( hProcess, ProcessBasicInformation,
-                                                 &pbi, sizeof(pbi), NULL )))
+    status = NtQueryInformationProcess( hProcess, ProcessBasicInformation,
+                                        &pbi, sizeof(pbi), NULL );
+    if (!status)
     {
         if (ReadProcessMemory( hProcess, &pbi.PebBaseAddress->LdrData,
                                &pLdrData, sizeof(pLdrData), NULL ) &&
@@ -103,19 +109,19 @@ static BOOL fetch_module( DWORD process, DWORD flags, LDR_DATA_TABLE_ENTRY **ldr
             while (curr != head)
             {
                 if (!*num)
-                    *ldr_mod = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(LDR_DATA_TABLE_ENTRY) );
+                    *ldr_mod = HeapAlloc( GetProcessHeap(), 0, sizeof(LDR_MODULE) );
                 else
-                    *ldr_mod = HeapReAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, *ldr_mod,
-                                            (*num + 1) * sizeof(LDR_DATA_TABLE_ENTRY) );
+                    *ldr_mod = HeapReAlloc( GetProcessHeap(), 0, *ldr_mod,
+                                            (*num + 1) * sizeof(LDR_MODULE) );
                 if (!*ldr_mod) break;
                 if (!ReadProcessMemory( hProcess,
-                                        CONTAINING_RECORD(curr, LDR_DATA_TABLE_ENTRY,
-                                                          InLoadOrderLinks),
+                                        CONTAINING_RECORD(curr, LDR_MODULE,
+                                                          InLoadOrderModuleList),
                                         &(*ldr_mod)[*num],
-                                        sizeof(LDR_DATA_TABLE_ENTRY), NULL))
+                                        sizeof(LDR_MODULE), NULL))
                     break;
-                curr = (*ldr_mod)[*num].InLoadOrderLinks.Flink;
-                /* if we cannot fetch the strings, then just ignore this LDR_DATA_TABLE_ENTRY
+                curr = (*ldr_mod)[*num].InLoadOrderModuleList.Flink;
+                /* if we cannot fetch the strings, then just ignore this LDR_MODULE
                  * and continue loading the other ones in the list
                  */
                 if (!fetch_string( hProcess, &(*ldr_mod)[*num].BaseDllName )) continue;
@@ -127,13 +133,14 @@ static BOOL fetch_module( DWORD process, DWORD flags, LDR_DATA_TABLE_ENTRY **ldr
             ret = TRUE;
         }
     }
+    else SetLastError( RtlNtStatusToDosError( status ) );
 
     if (process) CloseHandle( hProcess );
     return ret;
 }
 
 static void fill_module( struct snapshot* snap, ULONG* offset, ULONG process,
-                         LDR_DATA_TABLE_ENTRY* ldr_mod, ULONG num )
+                         LDR_MODULE* ldr_mod, ULONG num )
 {
     MODULEENTRY32W*     mod;
     ULONG               i;
@@ -153,9 +160,9 @@ static void fill_module( struct snapshot* snap, ULONG* offset, ULONG process,
         mod->th32ProcessID = process ? process : GetCurrentProcessId();
         mod->GlblcntUsage = 0xFFFF; /* FIXME */
         mod->ProccntUsage = 0xFFFF; /* FIXME */
-        mod->modBaseAddr = ldr_mod[i].DllBase;
+        mod->modBaseAddr = ldr_mod[i].BaseAddress;
         mod->modBaseSize = ldr_mod[i].SizeOfImage;
-        mod->hModule = ldr_mod[i].DllBase;
+        mod->hModule = ldr_mod[i].BaseAddress;
 
         l = min(ldr_mod[i].BaseDllName.Length, sizeof(mod->szModule) - sizeof(WCHAR));
         memcpy(mod->szModule, ldr_mod[i].BaseDllName.Buffer, l);
@@ -286,14 +293,14 @@ static void fill_thread( struct snapshot* snap, ULONG* offset, LPVOID info, ULON
 HANDLE WINAPI CreateToolhelp32Snapshot( DWORD flags, DWORD process )
 {
     SYSTEM_PROCESS_INFORMATION* spi = NULL;
-    LDR_DATA_TABLE_ENTRY *mod = NULL;
+    LDR_MODULE*         mod = NULL;
     ULONG               num_pcs, num_thd, num_mod;
     HANDLE              hSnapShot = 0;
 
-    TRACE("%lx,%lx\n", flags, process );
+    TRACE("%x,%x\n", flags, process );
     if (!(flags & (TH32CS_SNAPPROCESS|TH32CS_SNAPTHREAD|TH32CS_SNAPMODULE)))
     {
-        FIXME("flags %lx not implemented\n", flags );
+        FIXME("flags %x not implemented\n", flags );
         SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
         return INVALID_HANDLE_VALUE;
     }
@@ -349,7 +356,7 @@ static BOOL next_thread( HANDLE hSnapShot, LPTHREADENTRY32 lpte, BOOL first )
     if (lpte->dwSize < sizeof(THREADENTRY32))
     {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
-        WARN("Result buffer too small (%ld)\n", lpte->dwSize);
+        WARN("Result buffer too small (%d)\n", lpte->dwSize);
         return FALSE;
     }
     if ((snap = MapViewOfFile( hSnapShot, FILE_MAP_ALL_ACCESS, 0, 0, 0 )))
@@ -404,7 +411,7 @@ static BOOL process_next( HANDLE hSnapShot, LPPROCESSENTRY32W lppe,
     if (lppe->dwSize < sz)
     {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
-        WARN("Result buffer too small (%ld)\n", lppe->dwSize);
+        WARN("Result buffer too small (%d)\n", lppe->dwSize);
         return FALSE;
     }
     if ((snap = MapViewOfFile( hSnapShot, FILE_MAP_ALL_ACCESS, 0, 0, 0 )))
@@ -494,7 +501,7 @@ static BOOL module_nextW( HANDLE hSnapShot, LPMODULEENTRY32W lpme, BOOL first )
     if (lpme->dwSize < sizeof (MODULEENTRY32W))
     {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
-        WARN("Result buffer too small (was: %ld)\n", lpme->dwSize);
+        WARN("Result buffer too small (was: %d)\n", lpme->dwSize);
         return FALSE;
     }
     if ((snap = MapViewOfFile( hSnapShot, FILE_MAP_ALL_ACCESS, 0, 0, 0 )))
@@ -546,7 +553,7 @@ static BOOL module_nextA( HANDLE handle, LPMODULEENTRY32 lpme, BOOL first )
     if (lpme->dwSize < sizeof(MODULEENTRY32))
     {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
-        WARN("Result buffer too small (was: %ld)\n", lpme->dwSize);
+        WARN("Result buffer too small (was: %d)\n", lpme->dwSize);
         return FALSE;
     }
 

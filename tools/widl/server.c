@@ -19,9 +19,13 @@
  */
 
 #include "config.h"
+#include "wine/port.h"
 
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
 #include <string.h>
 #include <ctype.h>
 
@@ -303,7 +307,7 @@ static void write_routinetable(type_t *iface)
     {
         var_t *func = stmt->u.var;
         if (is_local( func->attrs )) continue;
-        print_server( "(void *)%s%s,\n", prefix_server, get_name(func));
+        print_server( "(SERVER_ROUTINE)%s%s,\n", prefix_server, get_name(func));
     }
     indent--;
     print_server( "};\n\n" );
@@ -399,7 +403,7 @@ static void write_stubdescriptor(type_t *iface, int expr_eval_routines)
 static void write_serverinterfacedecl(type_t *iface)
 {
     unsigned int ver = get_attrv(iface->attrs, ATTR_VERSION);
-    struct uuid *uuid = get_attrp(iface->attrs, ATTR_UUID);
+    UUID *uuid = get_attrp(iface->attrs, ATTR_UUID);
     const str_list_t *endpoints = get_attrp(iface->attrs, ATTR_ENDPOINT);
 
     if (endpoints) write_endpoints( server, iface->name, endpoints );

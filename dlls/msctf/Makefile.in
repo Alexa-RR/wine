@@ -1,7 +1,7 @@
 MODULE    = msctf.dll
 IMPORTS   = uuid ole32 oleaut32 user32 advapi32
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	categorymgr.c \

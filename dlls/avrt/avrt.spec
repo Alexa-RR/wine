@@ -7,8 +7,8 @@
 @ stub AvRtJoinThreadOrderingGroup
 @ stub AvRtLeaveThreadOrderingGroup
 @ stub AvRtWaitOnThreadOrderingGroup
-@ stdcall AvSetMmMaxThreadCharacteristicsA(str str ptr)
-@ stdcall AvSetMmMaxThreadCharacteristicsW(wstr wstr ptr)
+@ stub AvSetMmMaxThreadCharacteristicsA
+@ stub AvSetMmMaxThreadCharacteristicsW
 @ stdcall AvSetMmThreadCharacteristicsA(str ptr)
 @ stdcall AvSetMmThreadCharacteristicsW(wstr ptr)
 @ stdcall AvSetMmThreadPriority(ptr long)

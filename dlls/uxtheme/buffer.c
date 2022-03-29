@@ -54,6 +54,8 @@ static void free_paintbuffer(struct paintbuffer *buffer)
 
 static struct paintbuffer *get_buffer_obj(HPAINTBUFFER handle)
 {
+    if (!handle)
+        return NULL;
     return handle;
 }
 

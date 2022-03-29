@@ -76,7 +76,7 @@ ME_StreamOutFlush(ME_OutStream *pStream)
     nWritten = pStream->pos;
     stream->dwError = stream->pfnCallback(stream->dwCookie, (LPBYTE)pStream->buffer,
                                           pStream->pos, &nWritten);
-    TRACE("error=%lu written=%lu\n", stream->dwError, nWritten);
+    TRACE("error=%u written=%u\n", stream->dwError, nWritten);
     if (nWritten == 0 || stream->dwError)
       return FALSE;
     /* Don't resend partial chunks if nWritten < pStream->pos */
@@ -92,7 +92,7 @@ static LONG
 ME_StreamOutFree(ME_OutStream *pStream)
 {
   LONG written = pStream->written;
-  TRACE("total length = %lu\n", written);
+  TRACE("total length = %u\n", written);
 
   heap_free(pStream);
   return written;
@@ -125,11 +125,11 @@ ME_StreamOutPrint(ME_OutStream *pStream, const char *format, ...)
 {
   char string[STREAMOUT_BUFFER_SIZE]; /* This is going to be enough */
   int len;
-  va_list valist;
+  __ms_va_list valist;
 
-  va_start(valist, format);
+  __ms_va_start(valist, format);
   len = vsnprintf(string, sizeof(string), format, valist);
-  va_end(valist);
+  __ms_va_end(valist);
 
   return ME_StreamOutMove(pStream, string, len);
 }
@@ -311,46 +311,50 @@ static BOOL find_color_in_colortbl( ME_OutStream *stream, COLORREF color, unsign
     return i < stream->nFontTblLen;
 }
 
-static BOOL stream_out_font_and_colour_tbls( ME_OutStream *pStream, ME_Run *first, ME_Run *last )
+static BOOL
+ME_StreamOutRTFFontAndColorTbl(ME_OutStream *pStream, ME_DisplayItem *pFirstRun,
+                               ME_DisplayItem *pLastRun)
 {
-  ME_Run *run = first;
+  ME_DisplayItem *item = pFirstRun;
   ME_FontTableItem *table = pStream->fonttbl;
   unsigned int i;
-  ME_Cell *cell = NULL;
+  ME_DisplayItem *pCell = NULL;
   ME_Paragraph *prev_para = NULL;
 
-  do
-  {
-    CHARFORMAT2W *fmt = &run->style->fmt;
+  do {
+    CHARFORMAT2W *fmt = &item->member.run.style->fmt;
 
-    add_font_to_fonttbl( pStream, run->style );
+    add_font_to_fonttbl( pStream, item->member.run.style );
 
     if (fmt->dwMask & CFM_COLOR && !(fmt->dwEffects & CFE_AUTOCOLOR))
       add_color_to_colortbl( pStream, fmt->crTextColor );
     if (fmt->dwMask & CFM_BACKCOLOR && !(fmt->dwEffects & CFE_AUTOBACKCOLOR))
       add_color_to_colortbl( pStream, fmt->crBackColor );
 
-    if (run->para != prev_para)
+    if (item->member.run.para != prev_para)
     {
       /* check for any para numbering text */
-      if (run->para->fmt.wNumbering)
-        add_font_to_fonttbl( pStream, run->para->para_num.style );
+      if (item->member.run.para->fmt.wNumbering)
+        add_font_to_fonttbl( pStream, item->member.run.para->para_num.style );
 
-      if ((cell = para_cell( run->para )))
+      if ((pCell = item->member.para.pCell))
       {
-        ME_Border* borders[4] = { &cell->border.top, &cell->border.left,
-                                  &cell->border.bottom, &cell->border.right };
+        ME_Border* borders[4] = { &pCell->member.cell.border.top,
+                                  &pCell->member.cell.border.left,
+                                  &pCell->member.cell.border.bottom,
+                                  &pCell->member.cell.border.right };
         for (i = 0; i < 4; i++)
           if (borders[i]->width > 0)
             add_color_to_colortbl( pStream, borders[i]->colorRef );
       }
 
-      prev_para = run->para;
+      prev_para = item->member.run.para;
     }
 
-    if (run == last) break;
-    run = run_next_all_paras( run );
-  } while (run);
+    if (item == pLastRun)
+      break;
+    item = ME_FindItemFwd(item, diRun);
+  } while (item);
 
   if (!ME_StreamOutPrint(pStream, "{\\fonttbl"))
     return FALSE;
@@ -384,29 +388,31 @@ static BOOL stream_out_font_and_colour_tbls( ME_OutStream *pStream, ME_Run *firs
   return TRUE;
 }
 
-static BOOL stream_out_table_props( ME_TextEditor *editor, ME_OutStream *pStream,
-                                    ME_Paragraph *para )
+static BOOL
+ME_StreamOutRTFTableProps(ME_TextEditor *editor, ME_OutStream *pStream,
+                          ME_DisplayItem *para)
 {
-  ME_Cell *cell;
+  ME_DisplayItem *cell;
   char props[STREAMOUT_BUFFER_SIZE] = "";
   int i;
   const char sideChar[4] = {'t','l','b','r'};
 
   if (!ME_StreamOutPrint(pStream, "\\trowd"))
     return FALSE;
-  if (!editor->bEmulateVersion10) /* v4.1 */
-  {
-    PARAFORMAT2 *pFmt = &table_row_end( para )->fmt;
-    cell = table_row_first_cell( para );
-    assert( cell );
+  if (!editor->bEmulateVersion10) { /* v4.1 */
+    PARAFORMAT2 *pFmt = &ME_GetTableRowEnd(para)->member.para.fmt;
+    para = ME_GetTableRowStart(para);
+    cell = para->member.para.next_para->member.para.pCell;
+    assert(cell);
     if (pFmt->dxOffset)
-      sprintf(props + strlen(props), "\\trgaph%ld", pFmt->dxOffset);
+      sprintf(props + strlen(props), "\\trgaph%d", pFmt->dxOffset);
     if (pFmt->dxStartIndent)
-      sprintf(props + strlen(props), "\\trleft%ld", pFmt->dxStartIndent);
-    do
-    {
-      ME_Border* borders[4] = { &cell->border.top, &cell->border.left,
-                                &cell->border.bottom, &cell->border.right };
+      sprintf(props + strlen(props), "\\trleft%d", pFmt->dxStartIndent);
+    do {
+      ME_Border* borders[4] = { &cell->member.cell.border.top,
+                                &cell->member.cell.border.left,
+                                &cell->member.cell.border.bottom,
+                                &cell->member.cell.border.right };
       for (i = 0; i < 4; i++)
       {
         if (borders[i]->width)
@@ -420,23 +426,21 @@ static BOOL stream_out_table_props( ME_TextEditor *editor, ME_OutStream *pStream
             sprintf(props + strlen(props), "\\brdrcf%u", idx);
         }
       }
-      sprintf( props + strlen(props), "\\cellx%d", cell->nRightBoundary );
-      cell = cell_next( cell );
-    } while (cell_next( cell ));
-  }
-  else /* v1.0 - 3.0 */
-  {
-    const ME_Border* borders[4] = { &para->border.top,
-                                    &para->border.left,
-                                    &para->border.bottom,
-                                    &para->border.right };
-    PARAFORMAT2 *pFmt = &para->fmt;
+      sprintf(props + strlen(props), "\\cellx%d", cell->member.cell.nRightBoundary);
+      cell = cell->member.cell.next_cell;
+    } while (cell->member.cell.next_cell);
+  } else { /* v1.0 - 3.0 */
+    const ME_Border* borders[4] = { &para->member.para.border.top,
+                                    &para->member.para.border.left,
+                                    &para->member.para.border.bottom,
+                                    &para->member.para.border.right };
+    PARAFORMAT2 *pFmt = &para->member.para.fmt;
 
-    assert( !(para->nFlags & (MEPF_ROWSTART | MEPF_ROWEND | MEPF_CELL)) );
+    assert(!(para->member.para.nFlags & (MEPF_ROWSTART|MEPF_ROWEND|MEPF_CELL)));
     if (pFmt->dxOffset)
-      sprintf(props + strlen(props), "\\trgaph%ld", pFmt->dxOffset);
+      sprintf(props + strlen(props), "\\trgaph%d", pFmt->dxOffset);
     if (pFmt->dxStartIndent)
-      sprintf(props + strlen(props), "\\trleft%ld", pFmt->dxStartIndent);
+      sprintf(props + strlen(props), "\\trleft%d", pFmt->dxStartIndent);
     for (i = 0; i < 4; i++)
     {
       if (borders[i]->width)
@@ -452,7 +456,7 @@ static BOOL stream_out_table_props( ME_TextEditor *editor, ME_OutStream *pStream
     }
     for (i = 0; i < pFmt->cTabCount; i++)
     {
-      sprintf(props + strlen(props), "\\cellx%ld", pFmt->rgxTabs[i] & 0x00FFFFFF);
+      sprintf(props + strlen(props), "\\cellx%d", pFmt->rgxTabs[i] & 0x00FFFFFF);
     }
   }
   if (!ME_StreamOutPrint(pStream, props))
@@ -531,46 +535,54 @@ static BOOL stream_out_para_num( ME_OutStream *stream, ME_Paragraph *para, BOOL 
     return TRUE;
 }
 
-static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
-                                   ME_Paragraph *para )
+static BOOL
+ME_StreamOutRTFParaProps(ME_TextEditor *editor, ME_OutStream *pStream,
+                         ME_DisplayItem *para)
 {
-  PARAFORMAT2 *fmt = &para->fmt;
+  PARAFORMAT2 *fmt = &para->member.para.fmt;
   char props[STREAMOUT_BUFFER_SIZE] = "";
   int i;
-  ME_Paragraph *prev_para = para_prev( para );
+  ME_Paragraph *prev_para = NULL;
 
-  if (!editor->bEmulateVersion10) /* v4.1 */
-  {
-    if (para->nFlags & MEPF_ROWSTART)
-    {
+  if (para->member.para.prev_para->type == diParagraph)
+      prev_para = &para->member.para.prev_para->member.para;
+
+  if (!editor->bEmulateVersion10) { /* v4.1 */
+    if (para->member.para.nFlags & MEPF_ROWSTART) {
       pStream->nNestingLevel++;
-      if (pStream->nNestingLevel == 1)
-         if (!stream_out_table_props( editor, pStream, para )) return FALSE;
-      return TRUE;
-    }
-    else if (para->nFlags & MEPF_ROWEND)
-    {
-      pStream->nNestingLevel--;
-      if (pStream->nNestingLevel >= 1)
-      {
-        if (!ME_StreamOutPrint(pStream, "{\\*\\nesttableprops")) return FALSE;
-        if (!stream_out_table_props( editor, pStream, para )) return FALSE;
-        if (!ME_StreamOutPrint(pStream, "\\nestrow}{\\nonesttables\\par}\r\n")) return FALSE;
+      if (pStream->nNestingLevel == 1) {
+        if (!ME_StreamOutRTFTableProps(editor, pStream, para))
+          return FALSE;
       }
-      else if (!ME_StreamOutPrint(pStream, "\\row\r\n")) return FALSE;
+      return TRUE;
+    } else if (para->member.para.nFlags & MEPF_ROWEND) {
+      pStream->nNestingLevel--;
+      if (pStream->nNestingLevel >= 1) {
+        if (!ME_StreamOutPrint(pStream, "{\\*\\nesttableprops"))
+          return FALSE;
+        if (!ME_StreamOutRTFTableProps(editor, pStream, para))
+          return FALSE;
+        if (!ME_StreamOutPrint(pStream, "\\nestrow}{\\nonesttables\\par}\r\n"))
+          return FALSE;
+      } else {
+        if (!ME_StreamOutPrint(pStream, "\\row\r\n"))
+          return FALSE;
+      }
       return TRUE;
     }
-  }
-  else /* v1.0 - 3.0 */
-  {
-    if (para->fmt.dwMask & PFM_TABLE && para->fmt.wEffects & PFE_TABLE)
-      if (!stream_out_table_props( editor, pStream, para )) return FALSE;
+  } else { /* v1.0 - 3.0 */
+    if (para->member.para.fmt.dwMask & PFM_TABLE &&
+        para->member.para.fmt.wEffects & PFE_TABLE)
+    {
+      if (!ME_StreamOutRTFTableProps(editor, pStream, para))
+        return FALSE;
+    }
   }
 
   if (prev_para && !memcmp( fmt, &prev_para->fmt, sizeof(*fmt) ))
   {
     if (fmt->wNumbering)
-      return stream_out_para_num( pStream, para, FALSE );
+      return stream_out_para_num( pStream, &para->member.para, FALSE );
     return TRUE;
   }
 
@@ -578,15 +590,14 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
     return FALSE;
 
   if (fmt->wNumbering)
-    if (!stream_out_para_num( pStream, para, TRUE )) return FALSE;
+    if (!stream_out_para_num( pStream, &para->member.para, TRUE )) return FALSE;
 
-  if (!editor->bEmulateVersion10) /* v4.1 */
-  {
-    if (pStream->nNestingLevel > 0) strcat(props, "\\intbl");
-    if (pStream->nNestingLevel > 1) sprintf(props + strlen(props), "\\itap%d", pStream->nNestingLevel);
-  }
-  else /* v1.0 - 3.0 */
-  {
+  if (!editor->bEmulateVersion10) { /* v4.1 */
+    if (pStream->nNestingLevel > 0)
+      strcat(props, "\\intbl");
+    if (pStream->nNestingLevel > 1)
+      sprintf(props + strlen(props), "\\itap%d", pStream->nNestingLevel);
+  } else { /* v1.0 - 3.0 */
     if (fmt->dwMask & PFM_TABLE && fmt->wEffects & PFE_TABLE)
       strcat(props, "\\intbl");
   }
@@ -596,10 +607,8 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
    * set very different from the documentation.
    * (Tested with RichEdit 5.50.25.0601) */
   
-  if (fmt->dwMask & PFM_ALIGNMENT)
-  {
-    switch (fmt->wAlignment)
-    {
+  if (fmt->dwMask & PFM_ALIGNMENT) {
+    switch (fmt->wAlignment) {
       case PFA_LEFT:
         /* Default alignment: not emitted */
         break;
@@ -615,12 +624,10 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
     }
   }
   
-  if (fmt->dwMask & PFM_LINESPACING)
-  {
+  if (fmt->dwMask & PFM_LINESPACING) {
     /* FIXME: MSDN says that the bLineSpacingRule field is controlled by the
      * PFM_SPACEAFTER flag. Is that true? I don't believe so. */
-    switch (fmt->bLineSpacingRule)
-    {
+    switch (fmt->bLineSpacingRule) {
       case 0: /* Single spacing */
         strcat(props, "\\sl-240\\slmult1");
         break;
@@ -631,13 +638,13 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
         strcat(props, "\\sl-480\\slmult1");
         break;
       case 3:
-        sprintf(props + strlen(props), "\\sl%ld\\slmult0", fmt->dyLineSpacing);
+        sprintf(props + strlen(props), "\\sl%d\\slmult0", fmt->dyLineSpacing);
         break;
       case 4:
-        sprintf(props + strlen(props), "\\sl-%ld\\slmult0", fmt->dyLineSpacing);
+        sprintf(props + strlen(props), "\\sl-%d\\slmult0", fmt->dyLineSpacing);
         break;
       case 5:
-        sprintf(props + strlen(props), "\\sl-%ld\\slmult1", fmt->dyLineSpacing * 240 / 20);
+        sprintf(props + strlen(props), "\\sl-%d\\slmult1", fmt->dyLineSpacing * 240 / 20);
         break;
     }
   }
@@ -663,18 +670,16 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
         fmt->dwMask & PFM_TABLE && fmt->wEffects & PFE_TABLE))
   {
     if (fmt->dxOffset)
-      sprintf(props + strlen(props), "\\li%ld", fmt->dxOffset);
+      sprintf(props + strlen(props), "\\li%d", fmt->dxOffset);
     if (fmt->dxStartIndent)
-      sprintf(props + strlen(props), "\\fi%ld", fmt->dxStartIndent);
+      sprintf(props + strlen(props), "\\fi%d", fmt->dxStartIndent);
     if (fmt->dxRightIndent)
-      sprintf(props + strlen(props), "\\ri%ld", fmt->dxRightIndent);
+      sprintf(props + strlen(props), "\\ri%d", fmt->dxRightIndent);
     if (fmt->dwMask & PFM_TABSTOPS) {
       static const char * const leader[6] = { "", "\\tldot", "\\tlhyph", "\\tlul", "\\tlth", "\\tleq" };
 
-      for (i = 0; i < fmt->cTabCount; i++)
-      {
-        switch ((fmt->rgxTabs[i] >> 24) & 0xf)
-        {
+      for (i = 0; i < fmt->cTabCount; i++) {
+        switch ((fmt->rgxTabs[i] >> 24) & 0xF) {
           case 1:
             strcat(props, "\\tqc");
             break;
@@ -690,19 +695,18 @@ static BOOL stream_out_para_props( ME_TextEditor *editor, ME_OutStream *pStream,
         }
         if (fmt->rgxTabs[i] >> 28 <= 5)
           strcat(props, leader[fmt->rgxTabs[i] >> 28]);
-        sprintf(props+strlen(props), "\\tx%ld", fmt->rgxTabs[i]&0x00FFFFFF);
+        sprintf(props+strlen(props), "\\tx%d", fmt->rgxTabs[i]&0x00FFFFFF);
       }
     }
   }
   if (fmt->dySpaceAfter)
-    sprintf(props + strlen(props), "\\sa%ld", fmt->dySpaceAfter);
+    sprintf(props + strlen(props), "\\sa%d", fmt->dySpaceAfter);
   if (fmt->dySpaceBefore)
-    sprintf(props + strlen(props), "\\sb%ld", fmt->dySpaceBefore);
+    sprintf(props + strlen(props), "\\sb%d", fmt->dySpaceBefore);
   if (fmt->sStyle != -1)
     sprintf(props + strlen(props), "\\s%d", fmt->sStyle);
   
-  if (fmt->dwMask & PFM_SHADING)
-  {
+  if (fmt->dwMask & PFM_SHADING) {
     static const char * const style[16] = { "", "\\bgdkhoriz", "\\bgdkvert", "\\bgdkfdiag",
                                      "\\bgdkbdiag", "\\bgdkcross", "\\bgdkdcross",
                                      "\\bghoriz", "\\bgvert", "\\bgfdiag",
@@ -791,12 +795,12 @@ ME_StreamOutRTFCharProps(ME_OutStream *pStream, CHARFORMAT2W *fmt)
   if (old_fmt->yOffset != fmt->yOffset)
   {
     if (fmt->yOffset >= 0)
-      sprintf(props + strlen(props), "\\up%ld", fmt->yOffset);
+      sprintf(props + strlen(props), "\\up%d", fmt->yOffset);
     else
-      sprintf(props + strlen(props), "\\dn%ld", -fmt->yOffset);
+      sprintf(props + strlen(props), "\\dn%d", -fmt->yOffset);
   }
   if (old_fmt->yHeight != fmt->yHeight)
-    sprintf(props + strlen(props), "\\fs%ld", fmt->yHeight / 10);
+    sprintf(props + strlen(props), "\\fs%d", fmt->yHeight / 10);
   if (old_fmt->sSpacing != fmt->sSpacing)
     sprintf(props + strlen(props), "\\expnd%u\\expndtw%u", fmt->sSpacing / 5, fmt->sSpacing);
   if ((old_fmt->dwEffects ^ fmt->dwEffects) & (CFM_SUBSCRIPT | CFM_SUPERSCRIPT))
@@ -939,13 +943,11 @@ static BOOL stream_out_graphics( ME_TextEditor *editor, ME_OutStream *stream,
     UINT size;
     SIZE goal, pic;
     ME_Context c;
-    HDC hdc;
 
     hr = IOleObject_QueryInterface( run->reobj->obj.poleobj, &IID_IDataObject, (void **)&data );
     if (FAILED(hr)) return FALSE;
 
-    hdc = ITextHost_TxGetDC( editor->texthost );
-    ME_InitContext( &c, editor, hdc );
+    ME_InitContext( &c, editor, ITextHost_TxGetDC( editor->texthost ) );
     hr = IDataObject_QueryGetData( data, &fmt );
     if (hr != S_OK) goto done;
 
@@ -987,7 +989,6 @@ static BOOL stream_out_graphics( ME_TextEditor *editor, ME_OutStream *stream,
 
 done:
     ME_DestroyContext( &c );
-    ITextHost_TxReleaseDC( editor->texthost, hdc );
     HeapFree( GetProcessHeap(), 0, emf_bits );
     ReleaseStgMedium( &med );
     IDataObject_Release( data );
@@ -998,7 +999,7 @@ static BOOL ME_StreamOutRTF(ME_TextEditor *editor, ME_OutStream *pStream,
                             const ME_Cursor *start, int nChars, int dwFormat)
 {
   ME_Cursor cursor = *start;
-  ME_Paragraph *prev_para = NULL;
+  ME_DisplayItem *prev_para = NULL;
   ME_Cursor endCur = cursor;
 
   ME_MoveCursorChars(editor, &endCur, nChars, TRUE);
@@ -1006,7 +1007,7 @@ static BOOL ME_StreamOutRTF(ME_TextEditor *editor, ME_OutStream *pStream,
   if (!ME_StreamOutRTFHeader(pStream, dwFormat))
     return FALSE;
 
-  if (!stream_out_font_and_colour_tbls( pStream, cursor.run, endCur.run ))
+  if (!ME_StreamOutRTFFontAndColorTbl(pStream, cursor.pRun, endCur.pRun))
     return FALSE;
 
   /* TODO: stylesheet table */
@@ -1022,95 +1023,77 @@ static BOOL ME_StreamOutRTF(ME_TextEditor *editor, ME_OutStream *pStream,
 
   /* TODO: section formatting properties */
 
-  do
-  {
-    if (cursor.para != prev_para)
+  do {
+    if (cursor.pPara != prev_para)
     {
-      prev_para = cursor.para;
-      if (!stream_out_para_props( editor, pStream, cursor.para ))
+      prev_para = cursor.pPara;
+      if (!ME_StreamOutRTFParaProps(editor, pStream, cursor.pPara))
         return FALSE;
     }
 
-    if (cursor.run == endCur.run && !endCur.nOffset)
+    if (cursor.pRun == endCur.pRun && !endCur.nOffset)
       break;
-
-    TRACE("flags %xh\n", cursor.run->nFlags);
+    TRACE("flags %xh\n", cursor.pRun->member.run.nFlags);
     /* TODO: emit embedded objects */
-    if (cursor.para->nFlags & (MEPF_ROWSTART | MEPF_ROWEND))
+    if (cursor.pPara->member.para.nFlags & (MEPF_ROWSTART|MEPF_ROWEND))
       continue;
-    if (cursor.run->nFlags & MERF_GRAPHICS)
-    {
-      if (!stream_out_graphics( editor, pStream, cursor.run ))
+    if (cursor.pRun->member.run.nFlags & MERF_GRAPHICS) {
+      if (!stream_out_graphics(editor, pStream, &cursor.pRun->member.run))
         return FALSE;
-    }
-    else if (cursor.run->nFlags & MERF_TAB)
-    {
+    } else if (cursor.pRun->member.run.nFlags & MERF_TAB) {
       if (editor->bEmulateVersion10 && /* v1.0 - 3.0 */
-          para_in_table( cursor.para ))
+          cursor.pPara->member.para.fmt.dwMask & PFM_TABLE &&
+          cursor.pPara->member.para.fmt.wEffects & PFE_TABLE)
       {
         if (!ME_StreamOutPrint(pStream, "\\cell "))
           return FALSE;
-      }
-      else
-      {
+      } else {
         if (!ME_StreamOutPrint(pStream, "\\tab "))
           return FALSE;
       }
-    }
-    else if (cursor.run->nFlags & MERF_ENDCELL)
-    {
-      if (pStream->nNestingLevel > 1)
-      {
+    } else if (cursor.pRun->member.run.nFlags & MERF_ENDCELL) {
+      if (pStream->nNestingLevel > 1) {
         if (!ME_StreamOutPrint(pStream, "\\nestcell "))
           return FALSE;
-      }
-      else
-      {
+      } else {
         if (!ME_StreamOutPrint(pStream, "\\cell "))
           return FALSE;
       }
       nChars--;
-    }
-    else if (cursor.run->nFlags & MERF_ENDPARA)
-    {
-      if (!ME_StreamOutRTFCharProps( pStream, &cursor.run->style->fmt ))
+    } else if (cursor.pRun->member.run.nFlags & MERF_ENDPARA) {
+      if (!ME_StreamOutRTFCharProps(pStream, &cursor.pRun->member.run.style->fmt))
         return FALSE;
 
-      if (para_in_table( cursor.para ) &&
-          !(cursor.para->nFlags & (MEPF_ROWSTART | MEPF_ROWEND | MEPF_CELL)))
+      if (cursor.pPara->member.para.fmt.dwMask & PFM_TABLE &&
+          cursor.pPara->member.para.fmt.wEffects & PFE_TABLE &&
+          !(cursor.pPara->member.para.nFlags & (MEPF_ROWSTART|MEPF_ROWEND|MEPF_CELL)))
       {
         if (!ME_StreamOutPrint(pStream, "\\row\r\n"))
           return FALSE;
-      }
-      else
-      {
+      } else {
         if (!ME_StreamOutPrint(pStream, "\\par\r\n"))
           return FALSE;
       }
       /* Skip as many characters as required by current line break */
-      nChars = max(0, nChars - cursor.run->len);
-    }
-    else if (cursor.run->nFlags & MERF_ENDROW)
-    {
+      nChars = max(0, nChars - cursor.pRun->member.run.len);
+    } else if (cursor.pRun->member.run.nFlags & MERF_ENDROW) {
       if (!ME_StreamOutPrint(pStream, "\\line\r\n"))
         return FALSE;
       nChars--;
-    }
-    else
-    {
+    } else {
       int nEnd;
 
-      TRACE("style %p\n", cursor.run->style);
-      if (!ME_StreamOutRTFCharProps( pStream, &cursor.run->style->fmt ))
+      TRACE("style %p\n", cursor.pRun->member.run.style);
+      if (!ME_StreamOutRTFCharProps(pStream, &cursor.pRun->member.run.style->fmt))
         return FALSE;
 
-      nEnd = (cursor.run == endCur.run) ? endCur.nOffset : cursor.run->len;
-      if (!ME_StreamOutRTFText(pStream, get_text( cursor.run, cursor.nOffset ),
+      nEnd = (cursor.pRun == endCur.pRun) ? endCur.nOffset : cursor.pRun->member.run.len;
+      if (!ME_StreamOutRTFText(pStream, get_text( &cursor.pRun->member.run, cursor.nOffset ),
                                nEnd - cursor.nOffset))
         return FALSE;
       cursor.nOffset = 0;
     }
-  } while (cursor.run != endCur.run && cursor_next_run( &cursor, TRUE ));
+  } while (cursor.pRun != endCur.pRun && ME_NextRun(&cursor.pPara, &cursor.pRun, TRUE));
 
   if (!ME_StreamOutMove(pStream, "}\0", 2))
     return FALSE;
@@ -1128,7 +1111,7 @@ static BOOL ME_StreamOutText(ME_TextEditor *editor, ME_OutStream *pStream,
   int nBufLen = 0;
   BOOL success = TRUE;
 
-  if (!cursor.run)
+  if (!cursor.pRun)
     return FALSE;
 
   if (dwFormat & SF_USECODEPAGE)
@@ -1136,31 +1119,32 @@ static BOOL ME_StreamOutText(ME_TextEditor *editor, ME_OutStream *pStream,
 
   /* TODO: Handle SF_TEXTIZED */
 
-  while (success && nChars && cursor.run)
-  {
-    nLen = min(nChars, cursor.run->len - cursor.nOffset);
+  while (success && nChars && cursor.pRun) {
+    nLen = min(nChars, cursor.pRun->member.run.len - cursor.nOffset);
 
-    if (!editor->bEmulateVersion10 && cursor.run->nFlags & MERF_ENDPARA)
+    if (!editor->bEmulateVersion10 && cursor.pRun->member.run.nFlags & MERF_ENDPARA)
     {
+      static const WCHAR szEOL[] = { '\r', '\n' };
+
       /* richedit 2.0 - all line breaks are \r\n */
       if (dwFormat & SF_UNICODE)
-        success = ME_StreamOutMove(pStream, (const char *)L"\r\n", 2 * sizeof(WCHAR));
+        success = ME_StreamOutMove(pStream, (const char *)szEOL, sizeof(szEOL));
       else
         success = ME_StreamOutMove(pStream, "\r\n", 2);
     } else {
       if (dwFormat & SF_UNICODE)
-        success = ME_StreamOutMove(pStream, (const char *)(get_text( cursor.run, cursor.nOffset )),
+        success = ME_StreamOutMove(pStream, (const char *)(get_text( &cursor.pRun->member.run, cursor.nOffset )),
                                    sizeof(WCHAR) * nLen);
       else {
         int nSize;
 
-        nSize = WideCharToMultiByte(nCodePage, 0, get_text( cursor.run, cursor.nOffset ),
+        nSize = WideCharToMultiByte(nCodePage, 0, get_text( &cursor.pRun->member.run, cursor.nOffset ),
                                     nLen, NULL, 0, NULL, NULL);
         if (nSize > nBufLen) {
           buffer = heap_realloc(buffer, nSize);
           nBufLen = nSize;
         }
-        WideCharToMultiByte(nCodePage, 0, get_text( cursor.run, cursor.nOffset ),
+        WideCharToMultiByte(nCodePage, 0, get_text( &cursor.pRun->member.run, cursor.nOffset ),
                             nLen, buffer, nSize, NULL, NULL);
         success = ME_StreamOutMove(pStream, buffer, nSize);
       }
@@ -1168,7 +1152,7 @@ static BOOL ME_StreamOutText(ME_TextEditor *editor, ME_OutStream *pStream,
 
     nChars -= nLen;
     cursor.nOffset = 0;
-    cursor.run = run_next_all_paras( cursor.run );
+    cursor.pRun = ME_FindItemFwd(cursor.pRun, diRun);
   }
 
   heap_free(buffer);
@@ -1198,7 +1182,7 @@ ME_StreamOut(ME_TextEditor *editor, DWORD dwFormat, EDITSTREAM *stream)
   int nChars;
 
   if (dwFormat & SFF_SELECTION) {
-    LONG nStart, nTo;
+    int nStart, nTo;
     start = editor->pCursors[ME_GetSelectionOfs(editor, &nStart, &nTo)];
     nChars = nTo - nStart;
   } else {

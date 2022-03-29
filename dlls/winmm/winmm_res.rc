@@ -25,7 +25,11 @@
 #include "windef.h"
 #include "mmddk.h"
 
-#define MCI_DWORD_PTR 13 /* MCI_INTEGER64 */
+#ifdef MCI_INTEGER64
+#define MCI_DWORD_PTR MCI_INTEGER64
+#else
+#define MCI_DWORD_PTR MCI_INTEGER
+#endif
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 

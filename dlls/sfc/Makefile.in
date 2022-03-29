@@ -1,4 +1,7 @@
 MODULE    = sfc.dll
 IMPORTLIB = sfc
+IMPORTS   = sfc_os
 
-EXTRADLLFLAGS = -Wb,--data-only -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
+
+C_SRCS = sfc_main.c

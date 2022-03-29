@@ -20,6 +20,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -39,8 +41,10 @@ void stack_info(int len)
 
     if(len <= 0)
         len = 24;
-    init_lvalue(&lvalue, TRUE, 0);
+
+    lvalue.cookie = 0;
     lvalue.type.id = dbg_itype_segptr;
+    lvalue.type.module = 0;
 
     /* FIXME: we assume stack grows the same way as on i386 */
     if (!memory_get_current_stack(&lvalue.addr))
@@ -62,27 +66,6 @@ void stack_info(int len)
     }
 }
 
-static BOOL stack_set_local_scope(void)
-{
-    struct dbg_frame* frm = stack_get_thread_frame(dbg_curr_thread, dbg_curr_thread->curr_frame);
-
-    if (!frm) return FALSE;
-    /* if we're not the first frame, linear_pc is the return address
-     * after the call instruction (at least on most processors I know of).
-     * However, there are cases where this address is outside of the
-     * current function or inline site.
-     * This happens when the called function is marked <NO RETURN>, in which
-     * case the compiler can omit the epilog (gcc 4 does it).
-     * This happens also for inline sites, where the epilog (of the inline
-     * site) isn't present.
-     * Therefore, we decrement linear_pc in order to ensure that
-     * the considered address is really inside the current function or inline site.
-     */
-    return SymSetScopeFromInlineContext(dbg_curr_process->handle,
-                                        (dbg_curr_thread->curr_frame) ? frm->linear_pc - 1 : frm->linear_pc,
-                                        frm->inline_ctx);
-}
-
 static BOOL stack_set_frame_internal(int newframe)
 {
     if (newframe >= dbg_curr_thread->num_frames)
@@ -92,18 +75,48 @@ static BOOL stack_set_frame_internal(int newframe)
 
     if (dbg_curr_thread->curr_frame != newframe)
     {
+        IMAGEHLP_STACK_FRAME    ihsf;
+
         dbg_curr_thread->curr_frame = newframe;
-        stack_set_local_scope();
+        stack_get_current_frame(&ihsf);
+        SymSetContext(dbg_curr_process->handle, &ihsf, NULL);
     }
     return TRUE;
 }
 
+static BOOL stack_get_frame(int nf, IMAGEHLP_STACK_FRAME* ihsf)
+{
+    memset(ihsf, 0, sizeof(*ihsf));
+    ihsf->InstructionOffset = dbg_curr_thread->frames[nf].linear_pc;
+    /* if we're not the first frame, InstructionOffset is the return address
+     * after the call instruction (at least on most processors I know of).
+     * However, there are cases where this address is outside of the current function.
+     * This happens when the called function is marked <NO RETURN>, in which
+     * case the compiler can omit the epilog (gcc 4 does it)
+     * Therefore, we decrement InstructionOffset in order to ensure that
+     * the considered address is really inside the current function.
+     */
+    if (nf) ihsf->InstructionOffset--;
+    ihsf->FrameOffset = dbg_curr_thread->frames[nf].linear_frame;
+    ihsf->StackOffset = dbg_curr_thread->frames[nf].linear_stack;
+    return TRUE;
+}
+
+BOOL stack_get_current_frame(IMAGEHLP_STACK_FRAME* ihsf)
+{
+    /*
+     * If we don't have a valid backtrace, then just return.
+     */
+    if (dbg_curr_thread->frames == NULL) return FALSE;
+    return stack_get_frame(dbg_curr_thread->curr_frame, ihsf);
+}
+
 BOOL stack_get_register_frame(const struct dbg_internal_var* div, DWORD_PTR** pval)
 {
-    struct dbg_frame* currfrm = stack_get_curr_frame();
-    if (currfrm == NULL) return FALSE;
-    if (currfrm->is_ctx_valid)
-        *pval = (DWORD_PTR*)((char*)&currfrm->context + (DWORD_PTR)div->pval);
+    if (dbg_curr_thread->frames == NULL) return FALSE;
+    if (dbg_curr_thread->frames[dbg_curr_thread->curr_frame].is_ctx_valid)
+        *pval = (DWORD_PTR*)((char*)&dbg_curr_thread->frames[dbg_curr_thread->curr_frame].context +
+                             (DWORD_PTR)div->pval);
     else
     {
         enum be_cpu_addr        kind;
@@ -114,13 +127,13 @@ BOOL stack_get_register_frame(const struct dbg_internal_var* div, DWORD_PTR** pv
         switch (kind)
         {
         case be_cpu_addr_pc:
-            *pval = &currfrm->linear_pc;
+            *pval = &dbg_curr_thread->frames[dbg_curr_thread->curr_frame].linear_pc;
             break;
         case be_cpu_addr_stack:
-            *pval = &currfrm->linear_stack;
+            *pval = &dbg_curr_thread->frames[dbg_curr_thread->curr_frame].linear_stack;
             break;
         case be_cpu_addr_frame:
-            *pval = &currfrm->linear_frame;
+            *pval = &dbg_curr_thread->frames[dbg_curr_thread->curr_frame].linear_frame;
             break;
         }
     }
@@ -132,7 +145,7 @@ BOOL stack_set_frame(int newframe)
     ADDRESS64   addr;
     if (!stack_set_frame_internal(newframe)) return FALSE;
     addr.Mode = AddrModeFlat;
-    addr.Offset = (DWORD_PTR)memory_to_linear_addr(&stack_get_curr_frame()->addr_pc);
+    addr.Offset = (DWORD_PTR)memory_to_linear_addr(&dbg_curr_thread->frames[dbg_curr_thread->curr_frame].addr_pc);
     source_list_from_addr(&addr, 0);
     return TRUE;
 }
@@ -144,11 +157,12 @@ BOOL stack_set_frame(int newframe)
  */
 BOOL stack_get_current_symbol(SYMBOL_INFO* symbol)
 {
+    IMAGEHLP_STACK_FRAME        ihsf;
     DWORD64                     disp;
-    struct dbg_frame*           frm = stack_get_curr_frame();
 
-    if (frm == NULL) return FALSE;
-    return SymFromInlineContext(dbg_curr_process->handle, frm->linear_pc, frm->inline_ctx, &disp, symbol);
+    if (!stack_get_current_frame(&ihsf)) return FALSE;
+    return SymFromAddr(dbg_curr_process->handle, ihsf.InstructionOffset,
+                       &disp, symbol);
 }
 
 static BOOL CALLBACK stack_read_mem(HANDLE hProc, DWORD64 addr, 
@@ -172,23 +186,21 @@ static BOOL CALLBACK stack_read_mem(HANDLE hProc, DWORD64 addr,
  */
 unsigned stack_fetch_frames(const dbg_ctx_t* _ctx)
 {
-    STACKFRAME_EX sf;
-    unsigned      nf = 0;
+    STACKFRAME64 sf;
+    unsigned     nf = 0;
     /* as native stackwalk can modify the context passed to it, simply copy
      * it to avoid any damage
      */
-    dbg_ctx_t     ctx = *_ctx;
-    BOOL          ret;
+    dbg_ctx_t ctx = *_ctx;
+    BOOL         ret;
 
     HeapFree(GetProcessHeap(), 0, dbg_curr_thread->frames);
     dbg_curr_thread->frames = NULL;
 
     memset(&sf, 0, sizeof(sf));
-    sf.StackFrameSize = sizeof(sf);
     dbg_curr_process->be_cpu->get_addr(dbg_curr_thread->handle, &ctx, be_cpu_addr_frame, &sf.AddrFrame);
     dbg_curr_process->be_cpu->get_addr(dbg_curr_thread->handle, &ctx, be_cpu_addr_pc, &sf.AddrPC);
     dbg_curr_process->be_cpu->get_addr(dbg_curr_thread->handle, &ctx, be_cpu_addr_stack, &sf.AddrStack);
-    sf.InlineFrameContext = INLINE_FRAME_CONTEXT_INIT;
 
     /* don't confuse StackWalk by passing in inconsistent addresses */
     if ((sf.AddrPC.Mode == AddrModeFlat) && (sf.AddrFrame.Mode != AddrModeFlat))
@@ -197,9 +209,9 @@ unsigned stack_fetch_frames(const dbg_ctx_t* _ctx)
         sf.AddrFrame.Mode = AddrModeFlat;
     }
 
-    while ((ret = StackWalkEx(dbg_curr_process->be_cpu->machine, dbg_curr_process->handle,
+    while ((ret = StackWalk64(dbg_curr_process->be_cpu->machine, dbg_curr_process->handle,
                               dbg_curr_thread->handle, &sf, &ctx, stack_read_mem,
-                              SymFunctionTableAccess64, SymGetModuleBase64, NULL, SYM_STKWALK_DEFAULT)) ||
+                              SymFunctionTableAccess64, SymGetModuleBase64, NULL)) ||
            nf == 0) /* we always register first frame information */
     {
         dbg_curr_thread->frames = dbg_heap_realloc(dbg_curr_thread->frames,
@@ -212,7 +224,6 @@ unsigned stack_fetch_frames(const dbg_ctx_t* _ctx)
         dbg_curr_thread->frames[nf].addr_stack   = sf.AddrStack;
         dbg_curr_thread->frames[nf].linear_stack = (DWORD_PTR)memory_to_linear_addr(&sf.AddrStack);
         dbg_curr_thread->frames[nf].context      = ctx;
-        dbg_curr_thread->frames[nf].inline_ctx   = sf.InlineFrameContext;
         /* FIXME: can this heuristic be improved: we declare first context always valid, and next ones
          * if it has been modified by the call to StackWalk...
          */
@@ -251,47 +262,49 @@ static BOOL WINAPI sym_enum_cb(PSYMBOL_INFO sym_info, ULONG size, PVOID user)
     return TRUE;
 }
 
-static void stack_print_addr_and_args(void)
+static void stack_print_addr_and_args(int nf)
 {
     char                        buffer[sizeof(SYMBOL_INFO) + 256];
     SYMBOL_INFO*                si = (SYMBOL_INFO*)buffer;
+    IMAGEHLP_STACK_FRAME        ihsf;
     IMAGEHLP_LINE64             il;
     IMAGEHLP_MODULE             im;
     DWORD64                     disp64;
-    struct dbg_frame*           frm = stack_get_curr_frame();
 
-    if (!frm) return;
-    print_bare_address(&frm->addr_pc);
+    print_bare_address(&dbg_curr_thread->frames[nf].addr_pc);
+
+    stack_get_frame(nf, &ihsf);
 
     /* grab module where symbol is. If we don't have a module, we cannot print more */
     im.SizeOfStruct = sizeof(im);
-    if (!SymGetModuleInfo(dbg_curr_process->handle, frm->linear_pc, &im))
+    if (!SymGetModuleInfo(dbg_curr_process->handle, ihsf.InstructionOffset, &im))
         return;
 
     si->SizeOfStruct = sizeof(*si);
     si->MaxNameLen   = 256;
-    if (SymFromInlineContext(dbg_curr_process->handle, frm->linear_pc, frm->inline_ctx, &disp64, si))
+    if (SymFromAddr(dbg_curr_process->handle, ihsf.InstructionOffset, &disp64, si))
     {
         struct sym_enum se;
         DWORD           disp;
 
         dbg_printf(" %s", si->Name);
-        if (disp64) dbg_printf("+0x%I64x", disp64);
+        if (disp64) dbg_printf("+0x%lx", (DWORD_PTR)disp64);
 
-        stack_set_local_scope();
+        SymSetContext(dbg_curr_process->handle, &ihsf, NULL);
         se.first = TRUE;
-        se.frame = frm->linear_frame;
+        se.frame = ihsf.FrameOffset;
         dbg_printf("(");
         SymEnumSymbols(dbg_curr_process->handle, 0, NULL, sym_enum_cb, &se);
         dbg_printf(")");
 
         il.SizeOfStruct = sizeof(il);
-        if (SymGetLineFromInlineContext(dbg_curr_process->handle, frm->linear_pc, frm->inline_ctx,
-                                        0, &disp, &il))
-            dbg_printf(" [%s:%lu]", il.FileName, il.LineNumber);
+        if (SymGetLineFromAddr64(dbg_curr_process->handle,
+				 ihsf.InstructionOffset, &disp, &il))
+            dbg_printf(" [%s:%u]", il.FileName, il.LineNumber);
         dbg_printf(" in %s", im.ModuleName);
     }
-    else dbg_printf(" in %s (+0x%Ix)", im.ModuleName, frm->linear_pc - im.BaseOfImage);
+    else dbg_printf(" in %s (+0x%lx)", 
+                    im.ModuleName, (DWORD_PTR)(ihsf.InstructionOffset - im.BaseOfImage));
 }
 
 /******************************************************************
@@ -302,6 +315,7 @@ static void stack_print_addr_and_args(void)
 static void backtrace(void)
 {
     unsigned                    cf = dbg_curr_thread->curr_frame;
+    IMAGEHLP_STACK_FRAME        ihsf;
 
     dbg_printf("Backtrace:\n");
     for (dbg_curr_thread->curr_frame = 0;
@@ -311,7 +325,7 @@ static void backtrace(void)
         dbg_printf("%s%d ", 
                    (cf == dbg_curr_thread->curr_frame ? "=>" : "  "),
                    dbg_curr_thread->curr_frame);
-        stack_print_addr_and_args();
+        stack_print_addr_and_args(dbg_curr_thread->curr_frame);
         dbg_printf(" (");
         print_bare_address(&dbg_curr_thread->frames[dbg_curr_thread->curr_frame].addr_frame);
         dbg_printf(")\n");
@@ -319,7 +333,8 @@ static void backtrace(void)
     /* reset context to current stack frame */
     dbg_curr_thread->curr_frame = cf;
     if (!dbg_curr_thread->frames) return;
-    stack_set_local_scope();
+    stack_get_frame(dbg_curr_thread->curr_frame, &ihsf);
+    SymSetContext(dbg_curr_process->handle, &ihsf, NULL);
 }
 
 /******************************************************************
@@ -333,7 +348,7 @@ static void backtrace_tid(struct dbg_process* pcs, DWORD tid)
     struct dbg_thread*  thread = dbg_curr_thread;
 
     if (!(dbg_curr_thread = dbg_get_thread(pcs, tid)))
-        dbg_printf("Unknown thread id (%04lx) in process (%04lx)\n", tid, pcs->pid);
+        dbg_printf("Unknown thread id (%04x) in process (%04x)\n", tid, pcs->pid);
     else
     {
         dbg_ctx_t ctx = {{0}};
@@ -343,7 +358,7 @@ static void backtrace_tid(struct dbg_process* pcs, DWORD tid)
         {
             if (!pcs->be_cpu->get_context(dbg_curr_thread->handle, &ctx))
             {
-                dbg_printf("Can't get context for thread %04lx in current process\n",
+                dbg_printf("Can't get context for thread %04x in current process\n",
                            tid);
             }
             else
@@ -353,7 +368,7 @@ static void backtrace_tid(struct dbg_process* pcs, DWORD tid)
             }
             ResumeThread(dbg_curr_thread->handle);
         }
-        else dbg_printf("Can't suspend thread %04lx in current process\n", tid);
+        else dbg_printf("Can't suspend thread %04x in current process\n", tid);
     }
     dbg_curr_thread = thread;
     dbg_curr_tid = thread ? thread->tid : 0;
@@ -399,7 +414,7 @@ static void backtrace_all(void)
             {
                 if (!dbg_attach_debuggee(entry.th32OwnerProcessID))
                 {
-                    dbg_printf("\nwarning: could not attach to %04lx\n",
+                    dbg_printf("\nwarning: could not attach to %04x\n",
                                entry.th32OwnerProcessID);
                     continue;
                 }
@@ -407,8 +422,9 @@ static void backtrace_all(void)
                 dbg_active_wait_for_first_exception();
             }
 
-            dbg_printf("\nBacktracing for thread %04lx in process %04lx (%ls):\n",
-                       entry.th32ThreadID, dbg_curr_pid, dbg_curr_process->imageName);
+            dbg_printf("\nBacktracing for thread %04x in process %04lx (%s):\n",
+                       entry.th32ThreadID, dbg_curr_pid,
+                       dbg_W2A(dbg_curr_process->imageName, -1));
             backtrace_tid(dbg_curr_process, entry.th32ThreadID);
         }
         while (Thread32Next(snapshot, &entry));

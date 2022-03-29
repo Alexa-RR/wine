@@ -21,17 +21,17 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#include <assert.h>
+#define _ISOC99_SOURCE
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 #include <limits.h>
-#include <locale.h>
-#include <float.h>
+#include <errno.h>
 #include "msvcrt.h"
-#include "bnum.h"
 #include "winnls.h"
-#include "wine/asm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
@@ -40,11 +40,11 @@ WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
  *		_mbsdup (MSVCRT.@)
  *		_strdup (MSVCRT.@)
  */
-char* CDECL _strdup(const char* str)
+char* CDECL MSVCRT__strdup(const char* str)
 {
     if(str)
     {
-      char * ret = malloc(strlen(str)+1);
+      char * ret = MSVCRT_malloc(strlen(str)+1);
       if (ret) strcpy( ret, str );
       return ret;
     }
@@ -54,15 +54,15 @@ char* CDECL _strdup(const char* str)
 /*********************************************************************
  *		_strlwr_s_l (MSVCRT.@)
  */
-int CDECL _strlwr_s_l(char *str, size_t len, _locale_t locale)
+int CDECL MSVCRT__strlwr_s_l(char *str, MSVCRT_size_t len, MSVCRT__locale_t locale)
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
     char *ptr = str;
 
     if (!str || !len)
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     while (len && *ptr)
@@ -74,8 +74,8 @@ int CDECL _strlwr_s_l(char *str, size_t len, _locale_t locale)
     if (!len)
     {
         str[0] = '\0';
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if(!locale)
@@ -83,7 +83,7 @@ int CDECL _strlwr_s_l(char *str, size_t len, _locale_t locale)
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_CTYPE])
+    if(!locinfo->lc_handle[MSVCRT_LC_CTYPE])
     {
         while (*str)
         {
@@ -96,7 +96,7 @@ int CDECL _strlwr_s_l(char *str, size_t len, _locale_t locale)
     {
         while (*str)
         {
-            *str = _tolower_l((unsigned char)*str, locale);
+            *str = MSVCRT__tolower_l((unsigned char)*str, locale);
             str++;
         }
     }
@@ -107,41 +107,41 @@ int CDECL _strlwr_s_l(char *str, size_t len, _locale_t locale)
 /*********************************************************************
  *		_strlwr_s (MSVCRT.@)
  */
-int CDECL _strlwr_s(char *str, size_t len)
+int CDECL MSVCRT__strlwr_s(char *str, MSVCRT_size_t len)
 {
-    return _strlwr_s_l(str, len, NULL);
+    return MSVCRT__strlwr_s_l(str, len, NULL);
 }
 
 /*********************************************************************
  *		_strlwr_l (MSVCRT.@)
  */
-char* CDECL _strlwr_l(char *str, _locale_t locale)
+char* CDECL _strlwr_l(char *str, MSVCRT__locale_t locale)
 {
-    _strlwr_s_l(str, -1, locale);
+    MSVCRT__strlwr_s_l(str, -1, locale);
     return str;
 }
 
 /*********************************************************************
  *		_strlwr (MSVCRT.@)
  */
-char* CDECL _strlwr(char *str)
+char* CDECL MSVCRT__strlwr(char *str)
 {
-    _strlwr_s_l(str, -1, NULL);
+    MSVCRT__strlwr_s_l(str, -1, NULL);
     return str;
 }
 
 /*********************************************************************
  *              _strupr_s_l (MSVCRT.@)
  */
-int CDECL _strupr_s_l(char *str, size_t len, _locale_t locale)
+int CDECL MSVCRT__strupr_s_l(char *str, MSVCRT_size_t len, MSVCRT__locale_t locale)
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
     char *ptr = str;
 
     if (!str || !len)
     {
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     while (len && *ptr)
@@ -153,8 +153,8 @@ int CDECL _strupr_s_l(char *str, size_t len, _locale_t locale)
     if (!len)
     {
         str[0] = '\0';
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if(!locale)
@@ -162,7 +162,7 @@ int CDECL _strupr_s_l(char *str, size_t len, _locale_t locale)
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_CTYPE])
+    if(!locinfo->lc_handle[MSVCRT_LC_CTYPE])
     {
         while (*str)
         {
@@ -175,7 +175,7 @@ int CDECL _strupr_s_l(char *str, size_t len, _locale_t locale)
     {
         while (*str)
         {
-            *str = _toupper_l((unsigned char)*str, locale);
+            *str = MSVCRT__toupper_l((unsigned char)*str, locale);
             str++;
         }
     }
@@ -186,39 +186,39 @@ int CDECL _strupr_s_l(char *str, size_t len, _locale_t locale)
 /*********************************************************************
  *              _strupr_s (MSVCRT.@)
  */
-int CDECL _strupr_s(char *str, size_t len)
+int CDECL MSVCRT__strupr_s(char *str, MSVCRT_size_t len)
 {
-    return _strupr_s_l(str, len, NULL);
+    return MSVCRT__strupr_s_l(str, len, NULL);
 }
 
 /*********************************************************************
  *              _strupr_l (MSVCRT.@)
  */
-char* CDECL _strupr_l(char *str, _locale_t locale)
+char* CDECL MSVCRT__strupr_l(char *str, MSVCRT__locale_t locale)
 {
-    _strupr_s_l(str, -1, locale);
+    MSVCRT__strupr_s_l(str, -1, locale);
     return str;
 }
 
 /*********************************************************************
  *              _strupr (MSVCRT.@)
  */
-char* CDECL _strupr(char *str)
+char* CDECL MSVCRT__strupr(char *str)
 {
-    _strupr_s_l(str, -1, NULL);
+    MSVCRT__strupr_s_l(str, -1, NULL);
     return str;
 }
 
 /*********************************************************************
  *              _strnset_s (MSVCRT.@)
  */
-int CDECL _strnset_s(char *str, size_t size, int c, size_t count)
+int CDECL MSVCRT__strnset_s(char *str, MSVCRT_size_t size, int c, MSVCRT_size_t count)
 {
-    size_t i;
+    MSVCRT_size_t i;
 
     if(!str && !size && !count) return 0;
-    if(!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if(!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
+    if(!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if(!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
 
     for(i=0; i<size-1 && i<count; i++) {
         if(!str[i]) return 0;
@@ -228,15 +228,15 @@ int CDECL _strnset_s(char *str, size_t size, int c, size_t count)
         if(!str[i]) return 0;
 
     str[0] = 0;
-    _invalid_parameter(NULL, NULL, NULL, 0, 0);
-    *_errno() = EINVAL;
-    return EINVAL;
+    MSVCRT__invalid_parameter(NULL, NULL, NULL, 0, 0);
+    *MSVCRT__errno() = MSVCRT_EINVAL;
+    return MSVCRT_EINVAL;
 }
 
 /*********************************************************************
  *		_strnset (MSVCRT.@)
  */
-char* CDECL _strnset(char* str, int value, size_t len)
+char* CDECL MSVCRT__strnset(char* str, int value, MSVCRT_size_t len)
 {
   if (len > 0 && str)
     while (*str && len--)
@@ -247,7 +247,7 @@ char* CDECL _strnset(char* str, int value, size_t len)
 /*********************************************************************
  *		_strrev (MSVCRT.@)
  */
-char* CDECL _strrev(char* str)
+char* CDECL MSVCRT__strrev(char* str)
 {
   char * p1;
   char * p2;
@@ -278,7 +278,7 @@ char* CDECL _strset(char* str, int value)
 /*********************************************************************
  *		strtok  (MSVCRT.@)
  */
-char * CDECL strtok( char *str, const char *delim )
+char * CDECL MSVCRT_strtok( char *str, const char *delim )
 {
     thread_data_t *data = msvcrt_get_thread_data();
     char *ret;
@@ -287,11 +287,7 @@ char * CDECL strtok( char *str, const char *delim )
         if (!(str = data->strtok_next)) return NULL;
 
     while (*str && strchr( delim, *str )) str++;
-    if (!*str)
-    {
-        data->strtok_next = str;
-        return NULL;
-    }
+    if (!*str) return NULL;
     ret = str++;
     while (*str && !strchr( delim, *str )) str++;
     if (*str) *str++ = 0;
@@ -302,7 +298,7 @@ char * CDECL strtok( char *str, const char *delim )
 /*********************************************************************
  *		strtok_s  (MSVCRT.@)
  */
-char * CDECL strtok_s(char *str, const char *delim, char **ctx)
+char * CDECL MSVCRT_strtok_s(char *str, const char *delim, char **ctx)
 {
     if (!MSVCRT_CHECK_PMT(delim != NULL)) return NULL;
     if (!MSVCRT_CHECK_PMT(ctx != NULL)) return NULL;
@@ -331,7 +327,7 @@ char * CDECL strtok_s(char *str, const char *delim, char **ctx)
 /*********************************************************************
  *		_swab (MSVCRT.@)
  */
-void CDECL _swab(char* src, char* dst, int len)
+void CDECL MSVCRT__swab(char* src, char* dst, int len)
 {
   if (len > 1)
   {
@@ -347,255 +343,103 @@ void CDECL _swab(char* src, char* dst, int len)
   }
 }
 
-static struct fpnum fpnum(int sign, int exp, ULONGLONG m, enum fpmod mod)
-{
-    struct fpnum ret;
+enum round {
+    ROUND_ZERO, /* only used when dropped part contains only zeros */
+    ROUND_DOWN,
+    ROUND_EVEN,
+    ROUND_UP
+};
 
-    ret.sign = sign;
-    ret.exp = exp;
-    ret.m = m;
-    ret.mod = mod;
-    return ret;
-}
-
-int fpnum_double(struct fpnum *fp, double *d)
+static double make_double(int sign, int exp, ULONGLONG m, enum round round, int *err)
 {
+#define EXP_BITS 11
+#define MANT_BITS 53
     ULONGLONG bits = 0;
 
-    if (fp->mod == FP_VAL_INFINITY)
-    {
-        *d = fp->sign * INFINITY;
-        return 0;
-    }
-
-    if (fp->mod == FP_VAL_NAN)
-    {
-        bits = ~0;
-        if (fp->sign == 1)
-            bits &= ~((ULONGLONG)1 << (MANT_BITS + EXP_BITS - 1));
-        *d = *(double*)&bits;
-        return 0;
-    }
-
-    TRACE("%c %#I64x *2^%d (round %d)\n", fp->sign == -1 ? '-' : '+',
-            fp->m, fp->exp, fp->mod);
-    if (!fp->m)
-    {
-        *d = fp->sign * 0.0;
-        return 0;
-    }
+    TRACE("%c %s *2^%d (round %d)\n", sign == -1 ? '-' : '+', wine_dbgstr_longlong(m), exp, round);
+    if (!m) return sign * 0.0;
 
     /* make sure that we don't overflow modifying exponent */
-    if (fp->exp > 1<<EXP_BITS)
+    if (exp > 1<<EXP_BITS)
     {
-        *d = fp->sign * INFINITY;
-        return ERANGE;
+        if (err) *err = MSVCRT_ERANGE;
+        return sign * INFINITY;
     }
-    if (fp->exp < -(1<<EXP_BITS))
+    if (exp < -(1<<EXP_BITS))
     {
-        *d = fp->sign * 0.0;
-        return ERANGE;
+        if (err) *err = MSVCRT_ERANGE;
+        return sign * 0.0;
     }
-    fp->exp += MANT_BITS - 1;
+    exp += MANT_BITS - 1;
 
     /* normalize mantissa */
-    while(fp->m < (ULONGLONG)1 << (MANT_BITS-1))
+    while(m < (ULONGLONG)1 << (MANT_BITS-1))
     {
-        fp->m <<= 1;
-        fp->exp--;
+        m <<= 1;
+        exp--;
     }
-    while(fp->m >= (ULONGLONG)1 << MANT_BITS)
+    while(m >= (ULONGLONG)1 << MANT_BITS)
     {
-        if (fp->m & 1 || fp->mod != FP_ROUND_ZERO)
+        if (m & 1 || round != ROUND_ZERO)
         {
-            if (!(fp->m & 1)) fp->mod = FP_ROUND_DOWN;
-            else if(fp->mod == FP_ROUND_ZERO) fp->mod = FP_ROUND_EVEN;
-            else fp->mod = FP_ROUND_UP;
+            if (!(m & 1)) round = ROUND_DOWN;
+            else if(round == ROUND_ZERO) round = ROUND_EVEN;
+            else round = ROUND_UP;
         }
-        fp->m >>= 1;
-        fp->exp++;
+        m >>= 1;
+        exp++;
     }
-    fp->exp += (1 << (EXP_BITS-1)) - 1;
+
+    /* handle subnormal that falls into regular range due to rounding */
+    exp += (1 << (EXP_BITS-1)) - 1;
+    if (!exp && (round == ROUND_UP || (round == ROUND_EVEN && m & 1)))
+    {
+        if (m + 1 >= (ULONGLONG)1 << MANT_BITS)
+        {
+            m++;
+            m >>= 1;
+            exp++;
+            round = ROUND_DOWN;
+        }
+    }
 
     /* handle subnormals */
-    if (fp->exp <= 0)
+    if (exp <= 0)
+        m >>= 1;
+    while(m && exp<0)
     {
-        if (fp->m & 1 && fp->mod == FP_ROUND_ZERO) fp->mod = FP_ROUND_EVEN;
-        else if (fp->m & 1) fp->mod = FP_ROUND_UP;
-        else if (fp->mod != FP_ROUND_ZERO) fp->mod = FP_ROUND_DOWN;
-        fp->m >>= 1;
-    }
-    while(fp->m && fp->exp<0)
-    {
-        if (fp->m & 1 && fp->mod == FP_ROUND_ZERO) fp->mod = FP_ROUND_EVEN;
-        else if (fp->m & 1) fp->mod = FP_ROUND_UP;
-        else if (fp->mod != FP_ROUND_ZERO) fp->mod = FP_ROUND_DOWN;
-        fp->m >>= 1;
-        fp->exp++;
+        m >>= 1;
+        exp++;
     }
 
     /* round mantissa */
-    if (fp->mod == FP_ROUND_UP || (fp->mod == FP_ROUND_EVEN && fp->m & 1))
+    if (round == ROUND_UP || (round == ROUND_EVEN && m & 1))
     {
-        fp->m++;
-
-        /* handle subnormal that falls into regular range due to rounding */
-        if (fp->m == (ULONGLONG)1 << (MANT_BITS - 1))
+        m++;
+        if (m >= (ULONGLONG)1 << MANT_BITS)
         {
-            fp->exp++;
-        }
-        else if (fp->m >= (ULONGLONG)1 << MANT_BITS)
-        {
-            fp->exp++;
-            fp->m >>= 1;
+            exp++;
+            m >>= 1;
         }
     }
 
-    if (fp->exp >= (1<<EXP_BITS)-1)
+    if (exp >= 1<<EXP_BITS)
     {
-        *d = fp->sign * INFINITY;
-        return ERANGE;
+        if (err) *err = MSVCRT_ERANGE;
+        return sign * INFINITY;
     }
-    if (!fp->m || fp->exp < 0)
+    if (!m || exp < 0)
     {
-        *d = fp->sign * 0.0;
-        return ERANGE;
-    }
-
-    if (fp->sign == -1)
-        bits |= (ULONGLONG)1 << (MANT_BITS + EXP_BITS - 1);
-    bits |= (ULONGLONG)fp->exp << (MANT_BITS - 1);
-    bits |= fp->m & (((ULONGLONG)1 << (MANT_BITS - 1)) - 1);
-
-    TRACE("returning %#I64x\n", bits);
-    *d = *(double*)&bits;
-    return 0;
-}
-
-#define LDBL_EXP_BITS 15
-#define LDBL_MANT_BITS 64
-int fpnum_ldouble(struct fpnum *fp, MSVCRT__LDOUBLE *d)
-{
-    if (fp->mod == FP_VAL_INFINITY)
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0x80000000;
-        d->x80[2] = (1 << LDBL_EXP_BITS) - 1;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return 0;
+        if (err) *err = MSVCRT_ERANGE;
+        return sign * 0.0;
     }
 
-    if (fp->mod == FP_VAL_NAN)
-    {
-        d->x80[0] = ~0;
-        d->x80[1] = ~0;
-        d->x80[2] = (1 << LDBL_EXP_BITS) - 1;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return 0;
-    }
+    if (sign == -1) bits |= (ULONGLONG)1 << (MANT_BITS + EXP_BITS - 1);
+    bits |= (ULONGLONG)exp << (MANT_BITS - 1);
+    bits |= m & (((ULONGLONG)1 << (MANT_BITS - 1)) - 1);
 
-    TRACE("%c %#I64x *2^%d (round %d)\n", fp->sign == -1 ? '-' : '+',
-            fp->m, fp->exp, fp->mod);
-    if (!fp->m)
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0;
-        d->x80[2] = 0;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return 0;
-    }
-
-    /* make sure that we don't overflow modifying exponent */
-    if (fp->exp > 1<<LDBL_EXP_BITS)
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0x80000000;
-        d->x80[2] = (1 << LDBL_EXP_BITS) - 1;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return ERANGE;
-    }
-    if (fp->exp < -(1<<LDBL_EXP_BITS))
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0;
-        d->x80[2] = 0;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return ERANGE;
-    }
-    fp->exp += LDBL_MANT_BITS - 1;
-
-    /* normalize mantissa */
-    while(fp->m < (ULONGLONG)1 << (LDBL_MANT_BITS-1))
-    {
-        fp->m <<= 1;
-        fp->exp--;
-    }
-    fp->exp += (1 << (LDBL_EXP_BITS-1)) - 1;
-
-    /* handle subnormals */
-    if (fp->exp <= 0)
-    {
-        if (fp->m & 1 && fp->mod == FP_ROUND_ZERO) fp->mod = FP_ROUND_EVEN;
-        else if (fp->m & 1) fp->mod = FP_ROUND_UP;
-        else if (fp->mod != FP_ROUND_ZERO) fp->mod = FP_ROUND_DOWN;
-        fp->m >>= 1;
-    }
-    while(fp->m && fp->exp<0)
-    {
-        if (fp->m & 1 && fp->mod == FP_ROUND_ZERO) fp->mod = FP_ROUND_EVEN;
-        else if (fp->m & 1) fp->mod = FP_ROUND_UP;
-        else if (fp->mod != FP_ROUND_ZERO) fp->mod = FP_ROUND_DOWN;
-        fp->m >>= 1;
-        fp->exp++;
-    }
-
-    /* round mantissa */
-    if (fp->mod == FP_ROUND_UP || (fp->mod == FP_ROUND_EVEN && fp->m & 1))
-    {
-        if (fp->m == UI64_MAX)
-        {
-            fp->m = (ULONGLONG)1 << (LDBL_MANT_BITS - 1);
-            fp->exp++;
-        }
-        else
-        {
-            fp->m++;
-
-            /* handle subnormal that falls into regular range due to rounding */
-            if ((fp->m ^ (fp->m - 1)) & ((ULONGLONG)1 << (LDBL_MANT_BITS - 1))) fp->exp++;
-        }
-    }
-
-    if (fp->exp >= (1<<LDBL_EXP_BITS)-1)
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0x80000000;
-        d->x80[2] = (1 << LDBL_EXP_BITS) - 1;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return ERANGE;
-    }
-    if (!fp->m || fp->exp < 0)
-    {
-        d->x80[0] = 0;
-        d->x80[1] = 0;
-        d->x80[2] = 0;
-        if (fp->sign == -1)
-            d->x80[2] |= 1 << LDBL_EXP_BITS;
-        return ERANGE;
-    }
-
-    d->x80[0] = fp->m;
-    d->x80[1] = fp->m >> 32;
-    d->x80[2] = fp->exp;
-    if (fp->sign == -1)
-        d->x80[2] |= 1 << LDBL_EXP_BITS;
-    return 0;
+    TRACE("returning %s\n", wine_dbgstr_longlong(bits));
+    return *((double*)&bits);
 }
 
 #if _MSVCR_VER >= 140
@@ -611,17 +455,17 @@ static inline int hex2int(char c)
     return -1;
 }
 
-static struct fpnum fpnum_parse16(wchar_t get(void *ctx), void unget(void *ctx),
-        void *ctx, int sign, pthreadlocinfo locinfo)
+static double strtod16(MSVCRT_wchar_t get(void *ctx), void unget(void *ctx),
+        void *ctx, int sign, MSVCRT_pthreadlocinfo locinfo, int *err)
 {
     BOOL found_digit = FALSE, found_dp = FALSE;
-    enum fpmod round = FP_ROUND_ZERO;
-    wchar_t nch;
+    enum round round = ROUND_ZERO;
+    MSVCRT_wchar_t nch;
     ULONGLONG m = 0;
     int val, exp = 0;
 
     nch = get(ctx);
-    while(m < UI64_MAX/16)
+    while(m < MSVCRT_UI64_MAX/16)
     {
         val = hex2int(nch);
         if (val == -1) break;
@@ -637,11 +481,11 @@ static struct fpnum fpnum_parse16(wchar_t get(void *ctx), void unget(void *ctx),
         nch = get(ctx);
         exp += 4;
 
-        if (val || round != FP_ROUND_ZERO)
+        if (val || round != ROUND_ZERO)
         {
-            if (val < 8) round = FP_ROUND_DOWN;
-            else if (val == 8 && round == FP_ROUND_ZERO) round = FP_ROUND_EVEN;
-            else round = FP_ROUND_UP;
+            if (val < 8) round = ROUND_DOWN;
+            else if (val == 8 && round == ROUND_ZERO) round = ROUND_EVEN;
+            else round = ROUND_UP;
         }
     }
 
@@ -652,12 +496,12 @@ static struct fpnum fpnum_parse16(wchar_t get(void *ctx), void unget(void *ctx),
     }
     else if (!found_digit)
     {
-        if(nch!=WEOF) unget(ctx);
+        if(nch!=MSVCRT_WEOF) unget(ctx);
         unget(ctx);
-        return fpnum(0, 0, 0, 0);
+        return 0.0;
     }
 
-    while(m <= UI64_MAX/16)
+    while(m <= MSVCRT_UI64_MAX/16)
     {
         val = hex2int(nch);
         if (val == -1) break;
@@ -673,20 +517,20 @@ static struct fpnum fpnum_parse16(wchar_t get(void *ctx), void unget(void *ctx),
         if (val == -1) break;
         nch = get(ctx);
 
-        if (val || round != FP_ROUND_ZERO)
+        if (val || round != ROUND_ZERO)
         {
-            if (val < 8) round = FP_ROUND_DOWN;
-            else if (val == 8 && round == FP_ROUND_ZERO) round = FP_ROUND_EVEN;
-            else round = FP_ROUND_UP;
+            if (val < 8) round = ROUND_DOWN;
+            else if (val == 8 && round == ROUND_ZERO) round = ROUND_EVEN;
+            else round = ROUND_UP;
         }
     }
 
     if (!found_digit)
     {
-        if (nch != WEOF) unget(ctx);
+        if (nch != MSVCRT_WEOF) unget(ctx);
         if (found_dp) unget(ctx);
         unget(ctx);
-        return fpnum(0, 0, 0, 0);
+        return 0.0;
     }
 
     if(nch=='p' || nch=='P') {
@@ -704,58 +548,132 @@ static struct fpnum fpnum_parse16(wchar_t get(void *ctx), void unget(void *ctx),
         }
         if(nch>='0' && nch<='9') {
             while(nch>='0' && nch<='9') {
-                if(e>INT_MAX/10 || e*10>INT_MAX-nch+'0')
+                if(e>INT_MAX/10 || (e=e*10+nch-'0')<0)
                     e = INT_MAX;
-                else
-                    e = e*10+nch-'0';
                 nch = get(ctx);
             }
-            if((nch!=WEOF) && (nch < '0' || nch > '9')) unget(ctx);
+            if((nch!=MSVCRT_WEOF) && (nch < '0' || nch > '9')) unget(ctx);
             e *= s;
 
-            if(e<0 && exp<INT_MIN-e) exp = INT_MIN;
-            else if(e>0 && exp>INT_MAX-e) exp = INT_MAX;
+            if(exp<0 && e<0 && exp+e>=0) exp = INT_MIN;
+            else if(exp>0 && e>0 && exp+e<0) exp = INT_MAX;
             else exp += e;
         } else {
-            if(nch != WEOF) unget(ctx);
+            if(nch != MSVCRT_WEOF) unget(ctx);
             if(found_sign) unget(ctx);
             unget(ctx);
         }
     }
 
-    return fpnum(sign, exp, m, round);
+    return make_double(sign, exp, m, round, err);
 }
 #endif
 
-/* Converts first 3 limbs to ULONGLONG */
-/* Return FALSE on overflow */
-static inline BOOL bnum_to_mant(struct bnum *b, ULONGLONG *m)
+struct u128 {
+   ULONGLONG u[2];
+};
+
+static inline struct u128 u128_lshift(struct u128 *u)
 {
-    if(UI64_MAX / LIMB_MAX / LIMB_MAX < b->data[bnum_idx(b, b->e-1)]) return FALSE;
-    *m = (ULONGLONG)b->data[bnum_idx(b, b->e-1)] * LIMB_MAX * LIMB_MAX;
-    if(b->b == b->e-1) return TRUE;
-    if(UI64_MAX - *m < (ULONGLONG)b->data[bnum_idx(b, b->e-2)] * LIMB_MAX) return FALSE;
-    *m += (ULONGLONG)b->data[bnum_idx(b, b->e-2)] * LIMB_MAX;
-    if(b->b == b->e-2) return TRUE;
-    if(UI64_MAX - *m < b->data[bnum_idx(b, b->e-3)]) return FALSE;
-    *m += b->data[bnum_idx(b, b->e-3)];
-    return TRUE;
+    struct u128 r;
+
+    r.u[0] = u->u[0] << 1;
+    r.u[1] = (u->u[1] << 1) + (u->u[0] >> (sizeof(u->u[0])*8-1));
+    return r;
 }
 
-static struct fpnum fpnum_parse_bnum(wchar_t (*get)(void *ctx), void (*unget)(void *ctx),
-        void *ctx, pthreadlocinfo locinfo, BOOL ldouble, struct bnum *b)
+static inline struct u128 u128_rshift(struct u128 *u)
+{
+    struct u128 r;
+
+    r.u[0] = (u->u[0] >> 1) + ((u->u[1] & 1) << (sizeof(u->u[1])*8-1));
+    r.u[1] = u->u[1] >> 1;
+    return r;
+}
+
+static inline void u128_mul10(struct u128 *u)
+{
+    struct u128 tmp;
+
+    tmp = u128_lshift(u);
+    *u = u128_lshift(&tmp);
+    *u = u128_lshift(u);
+
+    u->u[0] += tmp.u[0];
+    u->u[1] += tmp.u[1];
+    if (u->u[0] < tmp.u[0]) u->u[1]++;
+}
+
+static inline void u128_div10(struct u128 *u)
+{
+    ULONGLONG h, l, r;
+
+    r = u->u[1] % 10;
+    u->u[1] /= 10;
+
+    h = (r << 32) + (u->u[0] >> 32);
+    r = h % 10;
+    h /= 10;
+
+    l = (r << 32) + (u->u[0] & 0xffffffff);
+    l /= 10;
+    u->u[0] = (h << 32) + l;
+}
+
+static double convert_e10_to_e2(int sign, int e10, ULONGLONG m, int *err)
+{
+    int e2 = 0;
+    struct u128 u128;
+
+    u128.u[0] = m;
+    u128.u[1] = 0;
+
+    while(e10 > 0)
+    {
+        u128_mul10(&u128);
+        e10--;
+
+        while(u128.u[1] > MSVCRT_UI64_MAX/16)
+        {
+            u128 = u128_rshift(&u128);
+            e2++;
+        }
+    }
+
+    while(e10 < 0)
+    {
+        while(!(u128.u[1] & (1 << (sizeof(u128.u[1])-1))))
+        {
+            u128 = u128_lshift(&u128);
+            e2--;
+        }
+
+        u128_div10(&u128);
+        e10++;
+    }
+
+    while(u128.u[1])
+    {
+        u128 = u128_rshift(&u128);
+        e2++;
+    }
+
+    return make_double(sign, e2, u128.u[0], ROUND_DOWN, err);
+}
+
+double parse_double(MSVCRT_wchar_t (*get)(void *ctx), void (*unget)(void *ctx),
+        void *ctx, MSVCRT_pthreadlocinfo locinfo, int *err)
 {
 #if _MSVCR_VER >= 140
-    const wchar_t _infinity[] = L"infinity";
-    const wchar_t _nan[] = L"nan";
-    const wchar_t *str_match = NULL;
+    MSVCRT_wchar_t _infinity[] = { 'i', 'n', 'f', 'i', 'n', 'i', 't', 'y', 0 };
+    MSVCRT_wchar_t _nan[] = { 'n', 'a', 'n', 0 };
+    MSVCRT_wchar_t *str_match = NULL;
     int matched=0;
 #endif
     BOOL found_digit = FALSE, found_dp = FALSE, found_sign = FALSE;
-    int e2 = 0, dp=0, sign=1, off, limb_digits = 0, i;
-    enum fpmod round = FP_ROUND_ZERO;
-    wchar_t nch;
-    ULONGLONG m;
+    unsigned __int64 d=0, hlp;
+    MSVCRT_wchar_t nch;
+    int exp=0, sign=1;
 
     nch = get(ctx);
     if(nch == '-') {
@@ -768,12 +686,12 @@ static struct fpnum fpnum_parse_bnum(wchar_t (*get)(void *ctx), void (*unget)(vo
     }
 
 #if _MSVCR_VER >= 140
-    if(nch == _infinity[0] || nch == _toupper(_infinity[0]))
+    if(nch == _infinity[0] || nch == MSVCRT__toupper(_infinity[0]))
         str_match = _infinity;
-    if(nch == _nan[0] || nch == _toupper(_nan[0]))
+    if(nch == _nan[0] || nch == MSVCRT__toupper(_nan[0]))
         str_match = _nan;
-    while(str_match && nch != WEOF &&
-            (nch == str_match[matched] || nch == _toupper(str_match[matched]))) {
+    while(str_match && nch != MSVCRT_WEOF &&
+            (nch == str_match[matched] || nch == MSVCRT__toupper(str_match[matched]))) {
         nch = get(ctx);
         matched++;
     }
@@ -781,58 +699,41 @@ static struct fpnum fpnum_parse_bnum(wchar_t (*get)(void *ctx), void (*unget)(vo
         int keep = 0;
         if(matched >= 8) keep = 8;
         else if(matched >= 3) keep = 3;
-        if(nch != WEOF) unget(ctx);
+        if(nch != MSVCRT_WEOF) unget(ctx);
         for (; matched > keep; matched--) {
             unget(ctx);
         }
         if(keep) {
-            if (str_match == _infinity)
-                return fpnum(sign, 0, 0, FP_VAL_INFINITY);
-            if (str_match == _nan)
-                return fpnum(sign, 0, 0, FP_VAL_NAN);
+            if (str_match == _infinity) return sign*INFINITY;
+            if (str_match == _nan) return sign*NAN;
         } else if(found_sign) {
             unget(ctx);
         }
 
-        return fpnum(0, 0, 0, 0);
+        return make_double(sign, exp, d, ROUND_ZERO, err);
     }
 
     if(nch == '0') {
         found_digit = TRUE;
         nch = get(ctx);
         if(nch == 'x' || nch == 'X')
-            return fpnum_parse16(get, unget, ctx, sign, locinfo);
+            return strtod16(get, unget, ctx, sign, locinfo, err);
     }
 #endif
 
-    while(nch == '0') {
-        found_digit = TRUE;
-        nch = get(ctx);
-    }
-
-    b->b = 0;
-    b->e = 1;
-    b->data[0] = 0;
     while(nch>='0' && nch<='9') {
         found_digit = TRUE;
-        if(limb_digits == LIMB_DIGITS) {
-            if(bnum_idx(b, b->b-1) == bnum_idx(b, b->e)) break;
-            else {
-                b->b--;
-                b->data[bnum_idx(b, b->b)] = 0;
-                limb_digits = 0;
-            }
-        }
-
-        b->data[bnum_idx(b, b->b)] = b->data[bnum_idx(b, b->b)] * 10 + nch - '0';
-        limb_digits++;
+        hlp = d * 10 + nch - '0';
         nch = get(ctx);
-        dp++;
+        if(d>MSVCRT_UI64_MAX/10 || hlp<d) {
+            exp++;
+            break;
+        } else
+            d = hlp;
     }
     while(nch>='0' && nch<='9') {
-        if(nch != '0') b->data[bnum_idx(b, b->b)] |= 1;
+        exp++;
         nch = get(ctx);
-        dp++;
     }
 
     if(nch == *locinfo->lconv->decimal_point) {
@@ -840,40 +741,23 @@ static struct fpnum fpnum_parse_bnum(wchar_t (*get)(void *ctx), void (*unget)(vo
         nch = get(ctx);
     }
 
-    /* skip leading '0' */
-    if(nch=='0' && !limb_digits && !b->b) {
-        found_digit = TRUE;
-        while(nch == '0') {
-            nch = get(ctx);
-            dp--;
-        }
-    }
-
     while(nch>='0' && nch<='9') {
         found_digit = TRUE;
-        if(limb_digits == LIMB_DIGITS) {
-            if(bnum_idx(b, b->b-1) == bnum_idx(b, b->e)) break;
-            else {
-                b->b--;
-                b->data[bnum_idx(b, b->b)] = 0;
-                limb_digits = 0;
-            }
-        }
-
-        b->data[bnum_idx(b, b->b)] = b->data[bnum_idx(b, b->b)] * 10 + nch - '0';
-        limb_digits++;
+        hlp = d * 10 + nch - '0';
         nch = get(ctx);
+        if(d>MSVCRT_UI64_MAX/10 || hlp<d)
+            break;
+        d = hlp;
+        exp--;
     }
-    while(nch>='0' && nch<='9') {
-        if(nch != '0') b->data[bnum_idx(b, b->b)] |= 1;
+    while(nch>='0' && nch<='9')
         nch = get(ctx);
-    }
 
     if(!found_digit) {
-        if(nch != WEOF) unget(ctx);
+        if(nch != MSVCRT_WEOF) unget(ctx);
         if(found_dp) unget(ctx);
         if(found_sign) unget(ctx);
-        return fpnum(0, 0, 0, 0);
+        return 0.0;
     }
 
     if(nch=='e' || nch=='E' || nch=='d' || nch=='D') {
@@ -893,109 +777,41 @@ static struct fpnum fpnum_parse_bnum(wchar_t (*get)(void *ctx), void (*unget)(vo
 
         if(nch>='0' && nch<='9') {
             while(nch>='0' && nch<='9') {
-                if(e>INT_MAX/10 || e*10>INT_MAX-nch+'0')
+                if(e>INT_MAX/10 || (e=e*10+nch-'0')<0)
                     e = INT_MAX;
-                else
-                    e = e*10+nch-'0';
                 nch = get(ctx);
             }
-            if(nch != WEOF) unget(ctx);
+            if(nch != MSVCRT_WEOF) unget(ctx);
             e *= s;
 
-            if(e<0 && dp<INT_MIN-e) dp = INT_MIN;
-            else if(e>0 && dp>INT_MAX-e) dp = INT_MAX;
-            else dp += e;
+            if(exp<0 && e<0 && exp+e>=0) exp = INT_MIN;
+            else if(exp>0 && e>0 && exp+e<0) exp = INT_MAX;
+            else exp += e;
         } else {
-            if(nch != WEOF) unget(ctx);
+            if(nch != MSVCRT_WEOF) unget(ctx);
             if(found_sign) unget(ctx);
             unget(ctx);
         }
-    } else if(nch != WEOF) {
+    } else if(nch != MSVCRT_WEOF) {
         unget(ctx);
     }
 
-    if(!b->data[bnum_idx(b, b->e-1)])
-        return fpnum(sign, 0, 0, 0);
-
-    /* Fill last limb with 0 if needed */
-    if(b->b+1 != b->e) {
-        for(; limb_digits != LIMB_DIGITS; limb_digits++)
-            b->data[bnum_idx(b, b->b)] *= 10;
-    }
-    for(; bnum_idx(b, b->b) < bnum_idx(b, b->e); b->b++) {
-        if(b->data[bnum_idx(b, b->b)]) break;
-    }
-
-    /* move decimal point to limb boundary */
-    if(limb_digits==dp && b->b==b->e-1)
-        return fpnum(sign, 0, b->data[bnum_idx(b, b->e-1)], FP_ROUND_ZERO);
-    off = (dp - limb_digits) % LIMB_DIGITS;
-    if(off < 0) off += LIMB_DIGITS;
-    if(off) bnum_mult(b, p10s[off]);
-
-    if(dp-1 > (ldouble ? DBL80_MAX_10_EXP : DBL_MAX_10_EXP))
-        return fpnum(sign, INT_MAX, 1, FP_ROUND_ZERO);
+    if(!err) err = MSVCRT__errno();
+    if(!d) return make_double(sign, exp, d, ROUND_ZERO, err);
+    if(exp > MSVCRT_DBL_MAX_10_EXP)
+        return make_double(sign, INT_MAX, d, ROUND_ZERO, err);
     /* Count part of exponent stored in denormalized mantissa. */
     /* Increase exponent range to handle subnormals. */
-    if(dp-1 < (ldouble ? DBL80_MIN_10_EXP : DBL_MIN_10_EXP-DBL_DIG-18))
-        return fpnum(sign, INT_MIN, 1, FP_ROUND_ZERO);
+    if(exp < MSVCRT_DBL_MIN_10_EXP-MSVCRT_DBL_DIG-18)
+        return make_double(sign, INT_MIN, d, ROUND_ZERO, err);
 
-    while(dp > 3*LIMB_DIGITS) {
-        if(bnum_rshift(b, 9)) dp -= LIMB_DIGITS;
-        e2 += 9;
-    }
-    while(dp <= 2*LIMB_DIGITS) {
-        if(bnum_lshift(b, 29)) dp += LIMB_DIGITS;
-        e2 -= 29;
-    }
-    /* Make sure most significant mantissa bit will be set */
-    while(b->data[bnum_idx(b, b->e-1)] <= 9) {
-        bnum_lshift(b, 1);
-        e2--;
-    }
-    while(!bnum_to_mant(b, &m)) {
-        bnum_rshift(b, 1);
-        e2++;
-    }
-
-    if(b->e-4 >= b->b && b->data[bnum_idx(b, b->e-4)]) {
-        if(b->data[bnum_idx(b, b->e-4)] > LIMB_MAX/2) round = FP_ROUND_UP;
-        else if(b->data[bnum_idx(b, b->e-4)] == LIMB_MAX/2) round = FP_ROUND_EVEN;
-        else round = FP_ROUND_DOWN;
-    }
-    if(round == FP_ROUND_ZERO || round == FP_ROUND_EVEN) {
-        for(i=b->e-5; i>=b->b; i--) {
-            if(!b->data[bnum_idx(b, b->b)]) continue;
-            if(round == FP_ROUND_EVEN) round = FP_ROUND_UP;
-            else round = FP_ROUND_DOWN;
-        }
-    }
-
-    return fpnum(sign, e2, m, round);
+    return convert_e10_to_e2(sign, exp, d, err);
 }
 
-struct fpnum fpnum_parse(wchar_t (*get)(void *ctx), void (*unget)(void *ctx),
-       void *ctx, pthreadlocinfo locinfo, BOOL ldouble)
-{
-    if(!ldouble) {
-        BYTE bnum_data[FIELD_OFFSET(struct bnum, data[BNUM_PREC64])];
-        struct bnum *b = (struct bnum*)bnum_data;
-
-        b->size = BNUM_PREC64;
-        return fpnum_parse_bnum(get, unget, ctx, locinfo, ldouble, b);
-    } else {
-        BYTE bnum_data[FIELD_OFFSET(struct bnum, data[BNUM_PREC80])];
-        struct bnum *b = (struct bnum*)bnum_data;
-
-        b->size = BNUM_PREC80;
-        return fpnum_parse_bnum(get, unget, ctx, locinfo, ldouble, b);
-    }
-}
-
-static wchar_t strtod_str_get(void *ctx)
+static MSVCRT_wchar_t strtod_str_get(void *ctx)
 {
     const char **p = ctx;
-    if (!**p) return WEOF;
+    if (!**p) return MSVCRT_WEOF;
     return *(*p)++;
 }
 
@@ -1005,19 +821,13 @@ static void strtod_str_unget(void *ctx)
     (*p)--;
 }
 
-static inline double strtod_helper(const char *str, char **end, _locale_t locale, int *perr)
+static inline double strtod_helper(const char *str, char **end, MSVCRT__locale_t locale, int *err)
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
     const char *beg, *p;
-    struct fpnum fp;
     double ret;
-    int err;
 
-    if (perr) *perr = 0;
-#if _MSVCR_VER == 0
-    else *_errno() = 0;
-#endif
-
+    if (err) *err = 0;
     if (!MSVCRT_CHECK_PMT(str != NULL)) {
         if (end) *end = NULL;
         return 0;
@@ -1029,23 +839,19 @@ static inline double strtod_helper(const char *str, char **end, _locale_t locale
         locinfo = locale->locinfo;
 
     p = str;
-    while(_isspace_l((unsigned char)*p, locale))
+    while(MSVCRT__isspace_l((unsigned char)*p, locale))
         p++;
     beg = p;
 
-    fp = fpnum_parse(strtod_str_get, strtod_str_unget, &p, locinfo, FALSE);
+    ret = parse_double(strtod_str_get, strtod_str_unget, &p, locinfo, err);
     if (end) *end = (p == beg ? (char*)str : (char*)p);
-
-    err = fpnum_double(&fp, &ret);
-    if (perr) *perr = err;
-    else if(err) *_errno() = err;
     return ret;
 }
 
 /*********************************************************************
- *		_strtod_l  (MSVCRT.@)
+ *		strtod_l  (MSVCRT.@)
  */
-double CDECL _strtod_l(const char *str, char **end, _locale_t locale)
+double CDECL MSVCRT_strtod_l(const char *str, char **end, MSVCRT__locale_t locale)
 {
     return strtod_helper(str, end, locale, NULL);
 }
@@ -1053,9 +859,9 @@ double CDECL _strtod_l(const char *str, char **end, _locale_t locale)
 /*********************************************************************
  *		strtod  (MSVCRT.@)
  */
-double CDECL strtod( const char *str, char **end )
+double CDECL MSVCRT_strtod( const char *str, char **end )
 {
-    return _strtod_l( str, end, NULL );
+    return MSVCRT_strtod_l( str, end, NULL );
 }
 
 #if _MSVCR_VER>=120
@@ -1063,23 +869,17 @@ double CDECL strtod( const char *str, char **end )
 /*********************************************************************
  *		strtof_l  (MSVCR120.@)
  */
-float CDECL _strtof_l( const char *str, char **end, _locale_t locale )
+float CDECL MSVCRT__strtof_l( const char *str, char **end, MSVCRT__locale_t locale )
 {
-    double ret = _strtod_l(str, end, locale);
-    if (ret && isfinite(ret)) {
-        float f = ret;
-        if (!f || !isfinite(f))
-            *_errno() = ERANGE;
-    }
-    return ret;
+    return MSVCRT_strtod_l(str, end, locale);
 }
 
 /*********************************************************************
  *		strtof  (MSVCR120.@)
  */
-float CDECL strtof( const char *str, char **end )
+float CDECL MSVCRT_strtof( const char *str, char **end )
 {
-    return _strtof_l(str, end, NULL);
+    return MSVCRT__strtof_l(str, end, NULL);
 }
 
 #endif /* _MSVCR_VER>=120 */
@@ -1087,23 +887,23 @@ float CDECL strtof( const char *str, char **end )
 /*********************************************************************
  *		atof  (MSVCRT.@)
  */
-double CDECL atof( const char *str )
+double CDECL MSVCRT_atof( const char *str )
 {
-    return _strtod_l(str, NULL, NULL);
+    return MSVCRT_strtod_l(str, NULL, NULL);
 }
 
 /*********************************************************************
  *		_atof_l  (MSVCRT.@)
  */
-double CDECL _atof_l( const char *str, _locale_t locale)
+double CDECL MSVCRT__atof_l( const char *str, MSVCRT__locale_t locale)
 {
-    return _strtod_l(str, NULL, locale);
+    return MSVCRT_strtod_l(str, NULL, locale);
 }
 
 /*********************************************************************
  *		_atoflt_l  (MSVCRT.@)
  */
-int CDECL _atoflt_l(_CRT_FLOAT *value, char *str, _locale_t locale)
+int CDECL MSVCRT__atoflt_l( MSVCRT__CRT_FLOAT *value, char *str, MSVCRT__locale_t locale)
 {
     double d;
     int err;
@@ -1111,154 +911,154 @@ int CDECL _atoflt_l(_CRT_FLOAT *value, char *str, _locale_t locale)
     d = strtod_helper(str, NULL, locale, &err);
     value->f = d;
     if(isinf(value->f))
-        return _OVERFLOW;
-    if((d!=0 || err) && value->f>-FLT_MIN && value->f<FLT_MIN)
-        return _UNDERFLOW;
+        return MSVCRT__OVERFLOW;
+    if((d!=0 || err) && value->f>-MSVCRT_FLT_MIN && value->f<MSVCRT_FLT_MIN)
+        return MSVCRT__UNDERFLOW;
     return 0;
 }
 
 /*********************************************************************
  * _atoflt  (MSVCR100.@)
  */
-int CDECL _atoflt(_CRT_FLOAT *value, char *str)
+int CDECL MSVCRT__atoflt(MSVCRT__CRT_FLOAT *value, char *str)
 {
-    return _atoflt_l(value, str, NULL);
+    return MSVCRT__atoflt_l(value, str, NULL);
 }
 
 /*********************************************************************
  *              _atodbl_l  (MSVCRT.@)
  */
-int CDECL _atodbl_l(_CRT_DOUBLE *value, char *str, _locale_t locale)
+int CDECL MSVCRT__atodbl_l(MSVCRT__CRT_DOUBLE *value, char *str, MSVCRT__locale_t locale)
 {
     int err;
 
     value->x = strtod_helper(str, NULL, locale, &err);
     if(isinf(value->x))
-        return _OVERFLOW;
-    if((value->x!=0 || err) && value->x>-DBL_MIN && value->x<DBL_MIN)
-        return _UNDERFLOW;
+        return MSVCRT__OVERFLOW;
+    if((value->x!=0 || err) && value->x>-MSVCRT_DBL_MIN && value->x<MSVCRT_DBL_MIN)
+        return MSVCRT__UNDERFLOW;
     return 0;
 }
 
 /*********************************************************************
  *              _atodbl  (MSVCRT.@)
  */
-int CDECL _atodbl(_CRT_DOUBLE *value, char *str)
+int CDECL MSVCRT__atodbl(MSVCRT__CRT_DOUBLE *value, char *str)
 {
-    return _atodbl_l(value, str, NULL);
+    return MSVCRT__atodbl_l(value, str, NULL);
 }
 
 /*********************************************************************
  *		_strcoll_l (MSVCRT.@)
  */
-int CDECL _strcoll_l( const char* str1, const char* str2, _locale_t locale )
+int CDECL MSVCRT_strcoll_l( const char* str1, const char* str2, MSVCRT__locale_t locale )
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
 
     if(!locale)
         locinfo = get_locinfo();
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_COLLATE])
-        return strcmp(str1, str2);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], 0, str1, -1, str2, -1)-CSTR_EQUAL;
+    if(!locinfo->lc_handle[MSVCRT_LC_COLLATE])
+        return MSVCRT_strcmp(str1, str2);
+    return CompareStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE], 0, str1, -1, str2, -1)-CSTR_EQUAL;
 }
 
 /*********************************************************************
  *		strcoll (MSVCRT.@)
  */
-int CDECL strcoll( const char* str1, const char* str2 )
+int CDECL MSVCRT_strcoll( const char* str1, const char* str2 )
 {
-    return _strcoll_l(str1, str2, NULL);
+    return MSVCRT_strcoll_l(str1, str2, NULL);
 }
 
 /*********************************************************************
  *		_stricoll_l (MSVCRT.@)
  */
-int CDECL _stricoll_l( const char* str1, const char* str2, _locale_t locale )
+int CDECL MSVCRT__stricoll_l( const char* str1, const char* str2, MSVCRT__locale_t locale )
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
 
     if(!locale)
         locinfo = get_locinfo();
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_COLLATE])
-        return _stricmp(str1, str2);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], NORM_IGNORECASE,
+    if(!locinfo->lc_handle[MSVCRT_LC_COLLATE])
+        return MSVCRT__stricmp(str1, str2);
+    return CompareStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE], NORM_IGNORECASE,
             str1, -1, str2, -1)-CSTR_EQUAL;
 }
 
 /*********************************************************************
  *		_stricoll (MSVCRT.@)
  */
-int CDECL _stricoll( const char* str1, const char* str2 )
+int CDECL MSVCRT__stricoll( const char* str1, const char* str2 )
 {
-    return _stricoll_l(str1, str2, NULL);
+    return MSVCRT__stricoll_l(str1, str2, NULL);
 }
 
 /*********************************************************************
  *              _strncoll_l (MSVCRT.@)
  */
-int CDECL _strncoll_l( const char* str1, const char* str2, size_t count, _locale_t locale )
+int CDECL MSVCRT__strncoll_l( const char* str1, const char* str2, MSVCRT_size_t count, MSVCRT__locale_t locale )
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
 
     if(!locale)
         locinfo = get_locinfo();
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_COLLATE])
-        return strncmp(str1, str2, count);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], 0,
-              str1, strnlen(str1, count),
-              str2, strnlen(str2, count))-CSTR_EQUAL;
+    if(!locinfo->lc_handle[MSVCRT_LC_COLLATE])
+        return MSVCRT_strncmp(str1, str2, count);
+    return CompareStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE], 0,
+              str1, MSVCRT_strnlen(str1, count),
+              str2, MSVCRT_strnlen(str2, count))-CSTR_EQUAL;
 }
 
 /*********************************************************************
  *              _strncoll (MSVCRT.@)
  */
-int CDECL _strncoll( const char* str1, const char* str2, size_t count )
+int CDECL MSVCRT__strncoll( const char* str1, const char* str2, MSVCRT_size_t count )
 {
-    return _strncoll_l(str1, str2, count, NULL);
+    return MSVCRT__strncoll_l(str1, str2, count, NULL);
 }
 
 /*********************************************************************
  *              _strnicoll_l (MSVCRT.@)
  */
-int CDECL _strnicoll_l( const char* str1, const char* str2, size_t count, _locale_t locale )
+int CDECL MSVCRT__strnicoll_l( const char* str1, const char* str2, MSVCRT_size_t count, MSVCRT__locale_t locale )
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
 
     if(!locale)
         locinfo = get_locinfo();
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_COLLATE])
-        return _strnicmp(str1, str2, count);
-    return CompareStringA(locinfo->lc_handle[LC_COLLATE], NORM_IGNORECASE,
-            str1, strnlen(str1, count),
-            str2, strnlen(str2, count))-CSTR_EQUAL;
+    if(!locinfo->lc_handle[MSVCRT_LC_COLLATE])
+        return MSVCRT__strnicmp(str1, str2, count);
+    return CompareStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE], NORM_IGNORECASE,
+            str1, MSVCRT_strnlen(str1, count),
+            str2, MSVCRT_strnlen(str2, count))-CSTR_EQUAL;
 }
 
 /*********************************************************************
  *              _strnicoll (MSVCRT.@)
  */
-int CDECL _strnicoll( const char* str1, const char* str2, size_t count )
+int CDECL MSVCRT__strnicoll( const char* str1, const char* str2, MSVCRT_size_t count )
 {
-    return _strnicoll_l(str1, str2, count, NULL);
+    return MSVCRT__strnicoll_l(str1, str2, count, NULL);
 }
 
 /*********************************************************************
  *                  strncpy (MSVCRT.@)
  */
-char* __cdecl strncpy(char *dst, const char *src, size_t len)
+char* __cdecl MSVCRT_strncpy(char *dst, const char *src, MSVCRT_size_t len)
 {
-    size_t i;
+    MSVCRT_size_t i;
 
     for(i=0; i<len; i++)
         if((dst[i] = src[i]) == '\0') break;
@@ -1271,7 +1071,7 @@ char* __cdecl strncpy(char *dst, const char *src, size_t len)
 /*********************************************************************
  *      strcpy (MSVCRT.@)
  */
-char* CDECL strcpy(char *dst, const char *src)
+char* CDECL MSVCRT_strcpy(char *dst, const char *src)
 {
     char *ret = dst;
     while ((*dst++ = *src++));
@@ -1281,15 +1081,15 @@ char* CDECL strcpy(char *dst, const char *src)
 /*********************************************************************
  *      strcpy_s (MSVCRT.@)
  */
-int CDECL strcpy_s( char* dst, size_t elem, const char* src )
+int CDECL MSVCRT_strcpy_s( char* dst, MSVCRT_size_t elem, const char* src )
 {
-    size_t i;
-    if(!elem) return EINVAL;
-    if(!dst) return EINVAL;
+    MSVCRT_size_t i;
+    if(!elem) return MSVCRT_EINVAL;
+    if(!dst) return MSVCRT_EINVAL;
     if(!src)
     {
         dst[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     for(i = 0; i < elem; i++)
@@ -1297,21 +1097,21 @@ int CDECL strcpy_s( char* dst, size_t elem, const char* src )
         if((dst[i] = src[i]) == '\0') return 0;
     }
     dst[0] = '\0';
-    return ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
  *      strcat_s (MSVCRT.@)
  */
-int CDECL strcat_s( char* dst, size_t elem, const char* src )
+int CDECL MSVCRT_strcat_s( char* dst, MSVCRT_size_t elem, const char* src )
 {
-    size_t i, j;
-    if(!dst) return EINVAL;
-    if(elem == 0) return EINVAL;
+    MSVCRT_size_t i, j;
+    if(!dst) return MSVCRT_EINVAL;
+    if(elem == 0) return MSVCRT_EINVAL;
     if(!src)
     {
         dst[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     for(i = 0; i < elem; i++)
@@ -1326,33 +1126,22 @@ int CDECL strcat_s( char* dst, size_t elem, const char* src )
     }
     /* Set the first element to 0, not the first element after the skipped part */
     dst[0] = '\0';
-    return ERANGE;
-}
-
-/*********************************************************************
- *      strcat (MSVCRT.@)
- */
-char* __cdecl strcat( char *dst, const char *src )
-{
-    char *d = dst;
-    while (*d) d++;
-    while ((*d++ = *src++));
-    return dst;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
  *      strncat_s (MSVCRT.@)
  */
-int CDECL strncat_s( char* dst, size_t elem, const char* src, size_t count )
+int CDECL MSVCRT_strncat_s( char* dst, MSVCRT_size_t elem, const char* src, MSVCRT_size_t count )
 {
-    size_t i, j;
+    MSVCRT_size_t i, j;
 
-    if (!MSVCRT_CHECK_PMT(dst != 0)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(elem != 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(dst != 0)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(elem != 0)) return MSVCRT_EINVAL;
     if (!MSVCRT_CHECK_PMT(src != 0))
     {
         dst[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     for(i = 0; i < elem; i++)
@@ -1361,10 +1150,10 @@ int CDECL strncat_s( char* dst, size_t elem, const char* src, size_t count )
         {
             for(j = 0; (j + i) < elem; j++)
             {
-                if(count == _TRUNCATE && j + i == elem - 1)
+                if(count == MSVCRT__TRUNCATE && j + i == elem - 1)
                 {
                     dst[j + i] = '\0';
-                    return STRUNCATE;
+                    return MSVCRT_STRUNCATE;
                 }
                 if(j == count || (dst[j + i] = src[j]) == '\0')
                 {
@@ -1376,28 +1165,24 @@ int CDECL strncat_s( char* dst, size_t elem, const char* src, size_t count )
     }
     /* Set the first element to 0, not the first element after the skipped part */
     dst[0] = '\0';
-    return ERANGE;
+    return MSVCRT_ERANGE;
 }
 
 /*********************************************************************
  *      strncat (MSVCRT.@)
  */
-char* __cdecl strncat(char *dst, const char *src, size_t len)
+char* __cdecl MSVCRT_strncat(char *dst, const char *src, MSVCRT_size_t len)
 {
-    char *d = dst;
-    while (*d) d++;
-    for ( ; len && *src; d++, src++, len--) *d = *src;
-    *d = 0;
-    return dst;
+    return strncat(dst, src, len);
 }
 
 /*********************************************************************
  *		_strxfrm_l (MSVCRT.@)
  */
-size_t CDECL _strxfrm_l( char *dest, const char *src,
-        size_t len, _locale_t locale )
+MSVCRT_size_t CDECL MSVCRT__strxfrm_l( char *dest, const char *src,
+        MSVCRT_size_t len, MSVCRT__locale_t locale )
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
     int ret;
 
     if(!MSVCRT_CHECK_PMT(src)) return INT_MAX;
@@ -1413,116 +1198,85 @@ size_t CDECL _strxfrm_l( char *dest, const char *src,
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_COLLATE]) {
-        strncpy(dest, src, len);
+    if(!locinfo->lc_handle[MSVCRT_LC_COLLATE]) {
+        MSVCRT_strncpy(dest, src, len);
         return strlen(src);
     }
 
-    ret = LCMapStringA(locinfo->lc_handle[LC_COLLATE],
+    ret = LCMapStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE],
             LCMAP_SORTKEY, src, -1, NULL, 0);
     if(!ret) {
         if(len) dest[0] = 0;
-        *_errno() = EILSEQ;
+        *MSVCRT__errno() = MSVCRT_EILSEQ;
         return INT_MAX;
     }
     if(!len) return ret-1;
 
     if(ret > len) {
         dest[0] = 0;
-        *_errno() = ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
         return ret-1;
     }
 
-    return LCMapStringA(locinfo->lc_handle[LC_COLLATE],
+    return LCMapStringA(locinfo->lc_handle[MSVCRT_LC_COLLATE],
             LCMAP_SORTKEY, src, -1, dest, len) - 1;
 }
 
 /*********************************************************************
  *		strxfrm (MSVCRT.@)
  */
-size_t CDECL strxfrm( char *dest, const char *src, size_t len )
+MSVCRT_size_t CDECL MSVCRT_strxfrm( char *dest, const char *src, MSVCRT_size_t len )
 {
-    return _strxfrm_l(dest, src, len, NULL);
-}
-
-/********************************************************************
- *		__STRINGTOLD_L (MSVCR80.@)
- */
-int CDECL __STRINGTOLD_L( MSVCRT__LDOUBLE *value, char **endptr,
-        const char *str, int flags, _locale_t locale )
-{
-    pthreadlocinfo locinfo;
-    const char *beg, *p;
-    int err, ret = 0;
-    struct fpnum fp;
-
-    if (flags) FIXME("flags not supported: %x\n", flags);
-
-    if (!locale)
-        locinfo = get_locinfo();
-    else
-        locinfo = locale->locinfo;
-
-    p = str;
-    while (_isspace_l((unsigned char)*p, locale))
-        p++;
-    beg = p;
-
-    fp = fpnum_parse(strtod_str_get, strtod_str_unget, &p, locinfo, TRUE);
-    if (endptr) *endptr = (p == beg ? (char*)str : (char*)p);
-    if (p == beg) ret = 4;
-
-    err = fpnum_ldouble(&fp, value);
-    if (err) ret = (value->x80[2] & 0x7fff ? 2 : 1);
-    return ret;
-}
-
-/********************************************************************
- *              __STRINGTOLD (MSVCRT.@)
- */
-int CDECL __STRINGTOLD( MSVCRT__LDOUBLE *value, char **endptr, const char *str, int flags )
-{
-    return __STRINGTOLD_L( value, endptr, str, flags, NULL );
-}
-
-/********************************************************************
- *              _atoldbl_l (MSVCRT.@)
- */
-int CDECL _atoldbl_l( MSVCRT__LDOUBLE *value, char *str, _locale_t locale )
-{
-    char *endptr;
-    switch(__STRINGTOLD_L( value, &endptr, str, 0, locale ))
-    {
-    case 1: return _UNDERFLOW;
-    case 2: return _OVERFLOW;
-    default: return 0;
-    }
+    return MSVCRT__strxfrm_l(dest, src, len, NULL);
 }
 
 /********************************************************************
  *		_atoldbl (MSVCRT.@)
  */
-int CDECL _atoldbl(_LDOUBLE *value, char *str)
+int CDECL MSVCRT__atoldbl(MSVCRT__LDOUBLE *value, const char *str)
 {
-    return _atoldbl_l( (MSVCRT__LDOUBLE*)value, str, NULL );
+  /* FIXME needs error checking for huge/small values */
+#ifdef HAVE_STRTOLD
+  long double ld;
+  TRACE("str %s value %p\n",str,value);
+  ld = strtold(str,0);
+  memcpy(value, &ld, 10);
+#else
+  FIXME("stub, str %s value %p\n",str,value);
+#endif
+  return 0;
+}
+
+/********************************************************************
+ *		__STRINGTOLD (MSVCRT.@)
+ */
+int CDECL __STRINGTOLD( MSVCRT__LDOUBLE *value, char **endptr, const char *str, int flags )
+{
+#ifdef HAVE_STRTOLD
+    long double ld;
+    FIXME("%p %p %s %x partial stub\n", value, endptr, str, flags );
+    ld = strtold(str,0);
+    memcpy(value, &ld, 10);
+#else
+    FIXME("%p %p %s %x stub\n", value, endptr, str, flags );
+#endif
+    return 0;
 }
 
 /*********************************************************************
  *              strlen (MSVCRT.@)
  */
-size_t __cdecl strlen(const char *str)
+MSVCRT_size_t __cdecl MSVCRT_strlen(const char *str)
 {
-    const char *s = str;
-    while (*s) s++;
-    return s - str;
+    return strlen(str);
 }
 
 /******************************************************************
  *              strnlen (MSVCRT.@)
  */
-size_t CDECL strnlen(const char *s, size_t maxlen)
+MSVCRT_size_t CDECL MSVCRT_strnlen(const char *s, MSVCRT_size_t maxlen)
 {
-    size_t i;
+    MSVCRT_size_t i;
 
     for(i=0; i<maxlen; i++)
         if(!s[i]) break;
@@ -1535,7 +1289,7 @@ size_t CDECL strnlen(const char *s, size_t maxlen)
  *
  * FIXME: locale parameter is ignored
  */
-__int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)
+__int64 CDECL MSVCRT_strtoi64_l(const char *nptr, char **endptr, int base, MSVCRT__locale_t locale)
 {
     const char *p = nptr;
     BOOL negative = FALSE;
@@ -1548,7 +1302,7 @@ __int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t l
     if (!MSVCRT_CHECK_PMT(base == 0 || base >= 2)) return 0;
     if (!MSVCRT_CHECK_PMT(base <= 36)) return 0;
 
-    while(_isspace_l((unsigned char)*nptr, locale)) nptr++;
+    while(MSVCRT__isspace_l((unsigned char)*nptr, locale)) nptr++;
 
     if(*nptr == '-') {
         negative = TRUE;
@@ -1556,7 +1310,7 @@ __int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t l
     } else if(*nptr == '+')
         nptr++;
 
-    if((base==0 || base==16) && *nptr=='0' && _tolower_l(*(nptr+1), locale)=='x') {
+    if((base==0 || base==16) && *nptr=='0' && MSVCRT__tolower_l(*(nptr+1), locale)=='x') {
         base = 16;
         nptr += 2;
     }
@@ -1569,7 +1323,7 @@ __int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t l
     }
 
     while(*nptr) {
-        char cur = _tolower_l(*nptr, locale);
+        char cur = MSVCRT__tolower_l(*nptr, locale);
         int v;
 
         if(cur>='0' && cur<='9') {
@@ -1588,12 +1342,12 @@ __int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t l
 
         nptr++;
 
-        if(!negative && (ret>I64_MAX/base || ret*base>I64_MAX-v)) {
-            ret = I64_MAX;
-            *_errno() = ERANGE;
-        } else if(negative && (ret<I64_MIN/base || ret*base<I64_MIN-v)) {
-            ret = I64_MIN;
-            *_errno() = ERANGE;
+        if(!negative && (ret>MSVCRT_I64_MAX/base || ret*base>MSVCRT_I64_MAX-v)) {
+            ret = MSVCRT_I64_MAX;
+            *MSVCRT__errno() = MSVCRT_ERANGE;
+        } else if(negative && (ret<MSVCRT_I64_MIN/base || ret*base<MSVCRT_I64_MIN-v)) {
+            ret = MSVCRT_I64_MIN;
+            *MSVCRT__errno() = MSVCRT_ERANGE;
         } else
             ret = ret*base + v;
     }
@@ -1607,24 +1361,24 @@ __int64 CDECL _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t l
 /*********************************************************************
  *  _strtoi64 (MSVCRT.@)
  */
-__int64 CDECL _strtoi64(const char *nptr, char **endptr, int base)
+__int64 CDECL MSVCRT_strtoi64(const char *nptr, char **endptr, int base)
 {
-    return _strtoi64_l(nptr, endptr, base, NULL);
+    return MSVCRT_strtoi64_l(nptr, endptr, base, NULL);
 }
 
 /*********************************************************************
  *  _atoi_l (MSVCRT.@)
  */
-int __cdecl _atoi_l(const char *str, _locale_t locale)
+int __cdecl MSVCRT__atoi_l(const char *str, MSVCRT__locale_t locale)
 {
-    __int64 ret = _strtoi64_l(str, NULL, 10, locale);
+    __int64 ret = MSVCRT_strtoi64_l(str, NULL, 10, locale);
 
     if(ret > INT_MAX) {
         ret = INT_MAX;
-        *_errno() = ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
     } else if(ret < INT_MIN) {
         ret = INT_MIN;
-        *_errno() = ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
     }
     return ret;
 }
@@ -1633,7 +1387,7 @@ int __cdecl _atoi_l(const char *str, _locale_t locale)
  *  atoi (MSVCRT.@)
  */
 #if _MSVCR_VER == 0
-int __cdecl atoi(const char *str)
+int __cdecl MSVCRT_atoi(const char *str)
 {
     BOOL minus = FALSE;
     int ret = 0;
@@ -1641,7 +1395,7 @@ int __cdecl atoi(const char *str)
     if(!str)
         return 0;
 
-    while(_isspace_l((unsigned char)*str, NULL)) str++;
+    while(MSVCRT__isspace_l((unsigned char)*str, NULL)) str++;
 
     if(*str == '+') {
         str++;
@@ -1658,41 +1412,41 @@ int __cdecl atoi(const char *str)
     return minus ? -ret : ret;
 }
 #else
-int CDECL atoi(const char *str)
+int CDECL MSVCRT_atoi(const char *str)
 {
-    return _atoi_l(str, NULL);
+    return MSVCRT__atoi_l(str, NULL);
 }
 #endif
 
 /******************************************************************
  *      _atoi64_l (MSVCRT.@)
  */
-__int64 CDECL _atoi64_l(const char *str, _locale_t locale)
+__int64 CDECL MSVCRT__atoi64_l(const char *str, MSVCRT__locale_t locale)
 {
-    return _strtoi64_l(str, NULL, 10, locale);
+    return MSVCRT_strtoi64_l(str, NULL, 10, locale);
 }
 
 /******************************************************************
  *      _atoi64 (MSVCRT.@)
  */
-__int64 CDECL _atoi64(const char *str)
+__int64 CDECL MSVCRT__atoi64(const char *str)
 {
-    return _strtoi64_l(str, NULL, 10, NULL);
+    return MSVCRT_strtoi64_l(str, NULL, 10, NULL);
 }
 
 /******************************************************************
  *      _atol_l (MSVCRT.@)
  */
-__msvcrt_long CDECL _atol_l(const char *str, _locale_t locale)
+MSVCRT_long CDECL MSVCRT__atol_l(const char *str, MSVCRT__locale_t locale)
 {
-    __int64 ret = _strtoi64_l(str, NULL, 10, locale);
+    __int64 ret = MSVCRT_strtoi64_l(str, NULL, 10, locale);
 
-    if(ret > LONG_MAX) {
-        ret = LONG_MAX;
-        *_errno() = ERANGE;
-    } else if(ret < LONG_MIN) {
-        ret = LONG_MIN;
-        *_errno() = ERANGE;
+    if(ret > MSVCRT_LONG_MAX) {
+        ret = MSVCRT_LONG_MAX;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
+    } else if(ret < MSVCRT_LONG_MIN) {
+        ret = MSVCRT_LONG_MIN;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
     }
     return ret;
 }
@@ -1700,12 +1454,12 @@ __msvcrt_long CDECL _atol_l(const char *str, _locale_t locale)
 /******************************************************************
  *      atol (MSVCRT.@)
  */
-__msvcrt_long CDECL atol(const char *str)
+MSVCRT_long CDECL MSVCRT_atol(const char *str)
 {
 #if _MSVCR_VER == 0
-    return atoi(str);
+    return MSVCRT_atoi(str);
 #else
-    return _atol_l(str, NULL);
+    return MSVCRT__atol_l(str, NULL);
 #endif
 }
 
@@ -1714,35 +1468,35 @@ __msvcrt_long CDECL atol(const char *str)
 /******************************************************************
  *      _atoll_l (MSVCR120.@)
  */
-__int64 CDECL _atoll_l(const char* str, _locale_t locale)
+MSVCRT_longlong CDECL MSVCRT__atoll_l(const char* str, MSVCRT__locale_t locale)
 {
-    return _strtoi64_l(str, NULL, 10, locale);
+    return MSVCRT_strtoi64_l(str, NULL, 10, locale);
 }
 
 /******************************************************************
  *      atoll (MSVCR120.@)
  */
-__int64 CDECL atoll(const char* str)
+MSVCRT_longlong CDECL MSVCRT_atoll(const char* str)
 {
-    return _atoll_l(str, NULL);
+    return MSVCRT__atoll_l(str, NULL);
 }
 
-#endif /* _MSVCR_VER>=120 */
+#endif /* if _MSVCR_VER>=120 */
 
 /******************************************************************
  *		_strtol_l (MSVCRT.@)
  */
-__msvcrt_long CDECL _strtol_l(const char* nptr,
-        char** end, int base, _locale_t locale)
+MSVCRT_long CDECL MSVCRT__strtol_l(const char* nptr,
+        char** end, int base, MSVCRT__locale_t locale)
 {
-    __int64 ret = _strtoi64_l(nptr, end, base, locale);
+    __int64 ret = MSVCRT_strtoi64_l(nptr, end, base, locale);
 
-    if(ret > LONG_MAX) {
-        ret = LONG_MAX;
-        *_errno() = ERANGE;
-    } else if(ret < LONG_MIN) {
-        ret = LONG_MIN;
-        *_errno() = ERANGE;
+    if(ret > MSVCRT_LONG_MAX) {
+        ret = MSVCRT_LONG_MAX;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
+    } else if(ret < MSVCRT_LONG_MIN) {
+        ret = MSVCRT_LONG_MIN;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
     }
 
     return ret;
@@ -1751,24 +1505,24 @@ __msvcrt_long CDECL _strtol_l(const char* nptr,
 /******************************************************************
  *		strtol (MSVCRT.@)
  */
-__msvcrt_long CDECL strtol(const char* nptr, char** end, int base)
+MSVCRT_long CDECL MSVCRT_strtol(const char* nptr, char** end, int base)
 {
-    return _strtol_l(nptr, end, base, NULL);
+    return MSVCRT__strtol_l(nptr, end, base, NULL);
 }
 
 /******************************************************************
  *		_strtoul_l (MSVCRT.@)
  */
-__msvcrt_ulong CDECL _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)
+MSVCRT_ulong CDECL MSVCRT_strtoul_l(const char* nptr, char** end, int base, MSVCRT__locale_t locale)
 {
-    __int64 ret = _strtoi64_l(nptr, end, base, locale);
+    __int64 ret = MSVCRT_strtoi64_l(nptr, end, base, locale);
 
-    if(ret > ULONG_MAX) {
-        ret = ULONG_MAX;
-        *_errno() = ERANGE;
-    }else if(ret < -(__int64)ULONG_MAX) {
+    if(ret > MSVCRT_ULONG_MAX) {
+        ret = MSVCRT_ULONG_MAX;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
+    }else if(ret < -(__int64)MSVCRT_ULONG_MAX) {
         ret = 1;
-        *_errno() = ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
     }
 
     return ret;
@@ -1777,9 +1531,9 @@ __msvcrt_ulong CDECL _strtoul_l(const char* nptr, char** end, int base, _locale_
 /******************************************************************
  *		strtoul (MSVCRT.@)
  */
-__msvcrt_ulong CDECL strtoul(const char* nptr, char** end, int base)
+MSVCRT_ulong CDECL MSVCRT_strtoul(const char* nptr, char** end, int base)
 {
-    return _strtoul_l(nptr, end, base, NULL);
+    return MSVCRT_strtoul_l(nptr, end, base, NULL);
 }
 
 /*********************************************************************
@@ -1787,7 +1541,7 @@ __msvcrt_ulong CDECL strtoul(const char* nptr, char** end, int base)
  *
  * FIXME: locale parameter is ignored
  */
-unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _locale_t locale)
+unsigned __int64 CDECL MSVCRT_strtoui64_l(const char *nptr, char **endptr, int base, MSVCRT__locale_t locale)
 {
     const char *p = nptr;
     BOOL negative = FALSE;
@@ -1800,7 +1554,7 @@ unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _
     if (!MSVCRT_CHECK_PMT(base == 0 || base >= 2)) return 0;
     if (!MSVCRT_CHECK_PMT(base <= 36)) return 0;
 
-    while(_isspace_l((unsigned char)*nptr, locale)) nptr++;
+    while(MSVCRT__isspace_l((unsigned char)*nptr, locale)) nptr++;
 
     if(*nptr == '-') {
         negative = TRUE;
@@ -1808,7 +1562,7 @@ unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _
     } else if(*nptr == '+')
         nptr++;
 
-    if((base==0 || base==16) && *nptr=='0' && _tolower_l(*(nptr+1), locale)=='x') {
+    if((base==0 || base==16) && *nptr=='0' && MSVCRT__tolower_l(*(nptr+1), locale)=='x') {
         base = 16;
         nptr += 2;
     }
@@ -1821,7 +1575,7 @@ unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _
     }
 
     while(*nptr) {
-        char cur = _tolower_l(*nptr, locale);
+        char cur = MSVCRT__tolower_l(*nptr, locale);
         int v;
 
         if(cur>='0' && cur<='9') {
@@ -1837,9 +1591,9 @@ unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _
 
         nptr++;
 
-        if(ret>UI64_MAX/base || ret*base>UI64_MAX-v) {
-            ret = UI64_MAX;
-            *_errno() = ERANGE;
+        if(ret>MSVCRT_UI64_MAX/base || ret*base>MSVCRT_UI64_MAX-v) {
+            ret = MSVCRT_UI64_MAX;
+            *MSVCRT__errno() = MSVCRT_ERANGE;
         } else
             ret = ret*base + v;
     }
@@ -1853,14 +1607,14 @@ unsigned __int64 CDECL _strtoui64_l(const char *nptr, char **endptr, int base, _
 /*********************************************************************
  *  _strtoui64 (MSVCRT.@)
  */
-unsigned __int64 CDECL _strtoui64(const char *nptr, char **endptr, int base)
+unsigned __int64 CDECL MSVCRT_strtoui64(const char *nptr, char **endptr, int base)
 {
-    return _strtoui64_l(nptr, endptr, base, NULL);
+    return MSVCRT_strtoui64_l(nptr, endptr, base, NULL);
 }
 
-static int ltoa_helper(__msvcrt_long value, char *str, size_t size, int radix)
+static int ltoa_helper(MSVCRT_long value, char *str, MSVCRT_size_t size, int radix)
 {
-    __msvcrt_ulong val;
+    MSVCRT_ulong val;
     unsigned int digit;
     BOOL is_negative;
     char buffer[33], *pos;
@@ -1914,21 +1668,48 @@ static int ltoa_helper(__msvcrt_long value, char *str, size_t size, int radix)
             *p++ = *pos--;
 
         str[0] = '\0';
-        MSVCRT_INVALID_PMT("str[size] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
     }
 
     memcpy(str, pos, len);
     return 0;
 }
 
-static int ltow_helper(__msvcrt_long value, wchar_t *str, size_t size, int radix)
+/*********************************************************************
+ *  _ltoa_s (MSVCRT.@)
+ */
+int CDECL MSVCRT__ltoa_s(MSVCRT_long value, char *str, MSVCRT_size_t size, int radix)
 {
-    __msvcrt_ulong val;
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
+    {
+        str[0] = '\0';
+        return MSVCRT_EINVAL;
+    }
+
+    return ltoa_helper(value, str, size, radix);
+}
+
+/*********************************************************************
+ *  _ltow_s (MSVCRT.@)
+ */
+int CDECL MSVCRT__ltow_s(MSVCRT_long value, MSVCRT_wchar_t *str, MSVCRT_size_t size, int radix)
+{
+    MSVCRT_ulong val;
     unsigned int digit;
     BOOL is_negative;
-    wchar_t buffer[33], *pos;
+    MSVCRT_wchar_t buffer[33], *pos;
     size_t len;
+
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
+    {
+        str[0] = '\0';
+        return MSVCRT_EINVAL;
+    }
 
     if (value < 0 && radix == 10)
     {
@@ -1963,7 +1744,7 @@ static int ltow_helper(__msvcrt_long value, wchar_t *str, size_t size, int radix
     if (len > size)
     {
         size_t i;
-        wchar_t *p = str;
+        MSVCRT_wchar_t *p = str;
 
         /* Copy the temporary buffer backwards up to the available number of
          * characters. Don't copy the negative sign if present. */
@@ -1978,289 +1759,53 @@ static int ltow_helper(__msvcrt_long value, wchar_t *str, size_t size, int radix
             *p++ = *pos--;
 
         str[0] = '\0';
-        MSVCRT_INVALID_PMT("str[size] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
     }
 
-    memcpy(str, pos, len * sizeof(wchar_t));
+    memcpy(str, pos, len * sizeof(MSVCRT_wchar_t));
     return 0;
-}
-
-/*********************************************************************
- *  _ltoa_s (MSVCRT.@)
- */
-int CDECL _ltoa_s(__msvcrt_long value, char *str, size_t size, int radix)
-{
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
-    {
-        str[0] = '\0';
-        return EINVAL;
-    }
-
-    return ltoa_helper(value, str, size, radix);
-}
-
-/*********************************************************************
- *  _ltow_s (MSVCRT.@)
- */
-int CDECL _ltow_s(__msvcrt_long value, wchar_t *str, size_t size, int radix)
-{
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
-    {
-        str[0] = '\0';
-        return EINVAL;
-    }
-
-    return ltow_helper(value, str, size, radix);
 }
 
 /*********************************************************************
  *  _itoa_s (MSVCRT.@)
  */
-int CDECL _itoa_s(int value, char *str, size_t size, int radix)
+int CDECL MSVCRT__itoa_s(int value, char *str, MSVCRT_size_t size, int radix)
 {
-    return _ltoa_s(value, str, size, radix);
+    return MSVCRT__ltoa_s(value, str, size, radix);
 }
 
 /*********************************************************************
  *  _itoa (MSVCRT.@)
  */
-char* CDECL _itoa(int value, char *str, int radix)
+char* CDECL MSVCRT__itoa(int value, char *str, int radix)
 {
-    return ltoa_helper(value, str, SIZE_MAX, radix) ? NULL : str;
-}
-
-/*********************************************************************
- *  _ltoa (MSVCRT.@)
- */
-char* CDECL _ltoa(__msvcrt_long value, char *str, int radix)
-{
-    return ltoa_helper(value, str, SIZE_MAX, radix) ? NULL : str;
+    return ltoa_helper(value, str, MSVCRT_SIZE_MAX, radix) ? NULL : str;
 }
 
 /*********************************************************************
  *  _itow_s (MSVCRT.@)
  */
-int CDECL _itow_s(int value, wchar_t *str, size_t size, int radix)
+int CDECL MSVCRT__itow_s(int value, MSVCRT_wchar_t *str, MSVCRT_size_t size, int radix)
 {
-    return _ltow_s(value, str, size, radix);
-}
-
-/*********************************************************************
- *  _itow (MSVCRT.@)
- */
-wchar_t* CDECL _itow(int value, wchar_t *str, int radix)
-{
-    return ltow_helper(value, str, SIZE_MAX, radix) ? NULL : str;
-}
-
-/*********************************************************************
- *  _ltow (MSVCRT.@)
- */
-wchar_t* CDECL _ltow(__msvcrt_long value, wchar_t *str, int radix)
-{
-    return ltow_helper(value, str, SIZE_MAX, radix) ? NULL : str;
-}
-
-/*********************************************************************
- *  _ultoa (MSVCRT.@)
- */
-char* CDECL _ultoa(__msvcrt_ulong value, char *str, int radix)
-{
-    char buffer[33], *pos;
-
-    pos = &buffer[32];
-    *pos = '\0';
-
-    do {
-	int digit = value % radix;
-	value /= radix;
-
-	if (digit < 10)
-	    *--pos = '0' + digit;
-        else
-	    *--pos = 'a' + digit - 10;
-    } while (value != 0);
-
-    memcpy(str, pos, buffer + 33 - pos);
-    return str;
-}
-
-/*********************************************************************
- *  _ui64toa (MSVCRT.@)
- */
-char* CDECL _ui64toa(unsigned __int64 value, char *str, int radix)
-{
-    char buffer[65], *pos;
-
-    pos = &buffer[64];
-    *pos = '\0';
-
-    do {
-	int digit = value % radix;
-	value /= radix;
-
-	if (digit < 10)
-	    *--pos = '0' + digit;
-        else
-	    *--pos = 'a' + digit - 10;
-    } while (value != 0);
-
-    memcpy(str, pos, buffer + 65 - pos);
-    return str;
-}
-
-/*********************************************************************
- *  _ultow (MSVCRT.@)
- */
-wchar_t* CDECL _ultow(__msvcrt_ulong value, wchar_t *str, int radix)
-{
-    wchar_t buffer[33], *pos;
-
-    pos = &buffer[32];
-    *pos = '\0';
-
-    do {
-	int digit = value % radix;
-	value /= radix;
-
-	if (digit < 10)
-	    *--pos = '0' + digit;
-        else
-	    *--pos = 'a' + digit - 10;
-    } while (value != 0);
-
-    memcpy(str, pos, (buffer + 33 - pos) * sizeof(wchar_t));
-    return str;
-}
-
-/*********************************************************************
- *  _ui64tow (MSVCRT.@)
- */
-wchar_t* CDECL _ui64tow(unsigned __int64 value, wchar_t *str, int radix)
-{
-    wchar_t buffer[65], *pos;
-
-    pos = &buffer[64];
-    *pos = '\0';
-
-    do {
-	int digit = value % radix;
-	value /= radix;
-
-	if (digit < 10)
-	    *--pos = '0' + digit;
-        else
-	    *--pos = 'a' + digit - 10;
-    } while (value != 0);
-
-    memcpy(str, pos, (buffer + 65 - pos) * sizeof(wchar_t));
-    return str;
-}
-
-/*********************************************************************
- *  _i64toa (MSVCRT.@)
- */
-char* CDECL _i64toa(__int64 value, char *str, int radix)
-{
-    unsigned __int64 val;
-    BOOL is_negative;
-    char buffer[65], *pos;
-
-    if (value < 0 && radix == 10)
-    {
-        is_negative = TRUE;
-        val = -value;
-    }
-    else
-    {
-        is_negative = FALSE;
-        val = value;
-    }
-
-    pos = buffer + 64;
-    *pos = '\0';
-
-    do
-    {
-        int digit = val % radix;
-        val /= radix;
-
-        if (digit < 10)
-            *--pos = '0' + digit;
-        else
-            *--pos = 'a' + digit - 10;
-    }
-    while (val != 0);
-
-    if (is_negative)
-        *--pos = '-';
-
-    memcpy(str, pos, buffer + 65 - pos);
-    return str;
-}
-
-/*********************************************************************
- *  _i64tow (MSVCRT.@)
- */
-wchar_t* CDECL _i64tow(__int64 value, wchar_t *str, int radix)
-{
-    unsigned __int64 val;
-    BOOL is_negative;
-    wchar_t buffer[65], *pos;
-
-    if (value < 0 && radix == 10)
-    {
-        is_negative = TRUE;
-        val = -value;
-    }
-    else
-    {
-        is_negative = FALSE;
-        val = value;
-    }
-
-    pos = buffer + 64;
-    *pos = '\0';
-
-    do
-    {
-        int digit = val % radix;
-        val /= radix;
-
-        if (digit < 10)
-            *--pos = '0' + digit;
-        else
-            *--pos = 'a' + digit - 10;
-    }
-    while (val != 0);
-
-    if (is_negative)
-        *--pos = '-';
-
-    memcpy(str, pos, (buffer + 65 - pos) * sizeof(wchar_t));
-    return str;
+    return MSVCRT__ltow_s(value, str, size, radix);
 }
 
 /*********************************************************************
  *  _ui64toa_s (MSVCRT.@)
  */
-int CDECL _ui64toa_s(unsigned __int64 value, char *str,
-        size_t size, int radix)
+int CDECL MSVCRT__ui64toa_s(unsigned __int64 value, char *str,
+        MSVCRT_size_t size, int radix)
 {
     char buffer[65], *pos;
     int digit;
 
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
     if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
     {
         str[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     pos = buffer+64;
@@ -2277,8 +1822,8 @@ int CDECL _ui64toa_s(unsigned __int64 value, char *str,
     }while(value != 0);
 
     if(buffer-pos+65 > size) {
-        MSVCRT_INVALID_PMT("str[size] is too small", EINVAL);
-        return EINVAL;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_EINVAL);
+        return MSVCRT_EINVAL;
     }
 
     memcpy(str, pos, buffer-pos+65);
@@ -2288,18 +1833,18 @@ int CDECL _ui64toa_s(unsigned __int64 value, char *str,
 /*********************************************************************
  *      _ui64tow_s  (MSVCRT.@)
  */
-int CDECL _ui64tow_s( unsigned __int64 value, wchar_t *str,
-                             size_t size, int radix )
+int CDECL MSVCRT__ui64tow_s( unsigned __int64 value, MSVCRT_wchar_t *str,
+                             MSVCRT_size_t size, int radix )
 {
-    wchar_t buffer[65], *pos;
+    MSVCRT_wchar_t buffer[65], *pos;
     int digit;
 
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
     if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
     {
         str[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     pos = &buffer[64];
@@ -2315,20 +1860,20 @@ int CDECL _ui64tow_s( unsigned __int64 value, wchar_t *str,
     } while (value != 0);
 
     if(buffer-pos+65 > size) {
-        MSVCRT_INVALID_PMT("str[size] is too small", EINVAL);
-        return EINVAL;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_EINVAL);
+        return MSVCRT_EINVAL;
     }
 
-    memcpy(str, pos, (buffer-pos+65)*sizeof(wchar_t));
+    memcpy(str, pos, (buffer-pos+65)*sizeof(MSVCRT_wchar_t));
     return 0;
 }
 
 /*********************************************************************
  *  _ultoa_s (MSVCRT.@)
  */
-int CDECL _ultoa_s(__msvcrt_ulong value, char *str, size_t size, int radix)
+int CDECL MSVCRT__ultoa_s(MSVCRT_ulong value, char *str, MSVCRT_size_t size, int radix)
 {
-    __msvcrt_ulong digit;
+    MSVCRT_ulong digit;
     char buffer[33], *pos;
     size_t len;
 
@@ -2337,8 +1882,8 @@ int CDECL _ultoa_s(__msvcrt_ulong value, char *str, size_t size, int radix)
         if (str && size)
             str[0] = '\0';
 
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     pos = buffer + 32;
@@ -2369,8 +1914,8 @@ int CDECL _ultoa_s(__msvcrt_ulong value, char *str, size_t size, int radix)
             *p++ = *pos--;
 
         str[0] = '\0';
-        *_errno() = ERANGE;
-        return ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
+        return MSVCRT_ERANGE;
     }
 
     memcpy(str, pos, len);
@@ -2380,9 +1925,9 @@ int CDECL _ultoa_s(__msvcrt_ulong value, char *str, size_t size, int radix)
 /*********************************************************************
  *  _ultow_s (MSVCRT.@)
  */
-int CDECL _ultow_s(__msvcrt_ulong value, wchar_t *str, size_t size, int radix)
+int CDECL MSVCRT__ultow_s(MSVCRT_ulong value, MSVCRT_wchar_t *str, MSVCRT_size_t size, int radix)
 {
-    __msvcrt_ulong digit;
+    MSVCRT_ulong digit;
     WCHAR buffer[33], *pos;
     size_t len;
 
@@ -2391,8 +1936,8 @@ int CDECL _ultow_s(__msvcrt_ulong value, wchar_t *str, size_t size, int radix)
         if (str && size)
             str[0] = '\0';
 
-        *_errno() = EINVAL;
-        return EINVAL;
+        *MSVCRT__errno() = MSVCRT_EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     pos = buffer + 32;
@@ -2423,18 +1968,18 @@ int CDECL _ultow_s(__msvcrt_ulong value, wchar_t *str, size_t size, int radix)
             *p++ = *pos--;
 
         str[0] = '\0';
-        *_errno() = ERANGE;
-        return ERANGE;
+        *MSVCRT__errno() = MSVCRT_ERANGE;
+        return MSVCRT_ERANGE;
     }
 
-    memcpy(str, pos, len * sizeof(wchar_t));
+    memcpy(str, pos, len * sizeof(MSVCRT_wchar_t));
     return 0;
 }
 
 /*********************************************************************
  *  _i64toa_s (MSVCRT.@)
  */
-int CDECL _i64toa_s(__int64 value, char *str, size_t size, int radix)
+int CDECL MSVCRT__i64toa_s(__int64 value, char *str, MSVCRT_size_t size, int radix)
 {
     unsigned __int64 val;
     unsigned int digit;
@@ -2442,12 +1987,12 @@ int CDECL _i64toa_s(__int64 value, char *str, size_t size, int radix)
     char buffer[65], *pos;
     size_t len;
 
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
     if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
     {
         str[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (value < 0 && radix == 10)
@@ -2498,8 +2043,8 @@ int CDECL _i64toa_s(__int64 value, char *str, size_t size, int radix)
             *p++ = *pos--;
 
         str[0] = '\0';
-        MSVCRT_INVALID_PMT("str[size] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
     }
 
     memcpy(str, pos, len);
@@ -2509,20 +2054,20 @@ int CDECL _i64toa_s(__int64 value, char *str, size_t size, int radix)
 /*********************************************************************
  *  _i64tow_s (MSVCRT.@)
  */
-int CDECL _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)
+int CDECL MSVCRT__i64tow_s(__int64 value, MSVCRT_wchar_t *str, MSVCRT_size_t size, int radix)
 {
     unsigned __int64 val;
     unsigned int digit;
     BOOL is_negative;
-    wchar_t buffer[65], *pos;
+    MSVCRT_wchar_t buffer[65], *pos;
     size_t len;
 
-    if (!MSVCRT_CHECK_PMT(str != NULL)) return EINVAL;
-    if (!MSVCRT_CHECK_PMT(size > 0)) return EINVAL;
+    if (!MSVCRT_CHECK_PMT(str != NULL)) return MSVCRT_EINVAL;
+    if (!MSVCRT_CHECK_PMT(size > 0)) return MSVCRT_EINVAL;
     if (!MSVCRT_CHECK_PMT(radix >= 2 && radix <= 36))
     {
         str[0] = '\0';
-        return EINVAL;
+        return MSVCRT_EINVAL;
     }
 
     if (value < 0 && radix == 10)
@@ -2558,7 +2103,7 @@ int CDECL _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)
     if (len > size)
     {
         size_t i;
-        wchar_t *p = str;
+        MSVCRT_wchar_t *p = str;
 
         /* Copy the temporary buffer backwards up to the available number of
          * characters. Don't copy the negative sign if present. */
@@ -2573,11 +2118,11 @@ int CDECL _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)
             *p++ = *pos--;
 
         str[0] = '\0';
-        MSVCRT_INVALID_PMT("str[size] is too small", ERANGE);
-        return ERANGE;
+        MSVCRT_INVALID_PMT("str[size] is too small", MSVCRT_ERANGE);
+        return MSVCRT_ERANGE;
     }
 
-    memcpy(str, pos, len * sizeof(wchar_t));
+    memcpy(str, pos, len * sizeof(MSVCRT_wchar_t));
     return 0;
 }
 
@@ -2605,31 +2150,22 @@ struct _I10_OUTPUT_DATA {
  *      Native sets last byte of data->str to '0' or '9', I don't know what
  *      it means. Current implementation sets it always to '0'.
  */
-int CDECL I10_OUTPUT(MSVCRT__LDOUBLE ld80, int prec, int flag, struct _I10_OUTPUT_DATA *data)
+int CDECL MSVCRT_I10_OUTPUT(MSVCRT__LDOUBLE ld80, int prec, int flag, struct _I10_OUTPUT_DATA *data)
 {
-    struct fpnum num;
+    static const char inf_str[] = "1#INF";
+    static const char nan_str[] = "1#QNAN";
+
+    /* MS' long double type wants 12 bytes for Intel's 80 bit FP format.
+     * Some UNIX have sizeof(long double) == 16, yet only 80 bit are used.
+     * Assume long double uses 80 bit FP, never seen 128 bit FP. */
+    long double ld = 0;
     double d;
     char format[8];
     char buf[I10_OUTPUT_MAX_PREC+9]; /* 9 = strlen("0.e+0000") + '\0' */
     char *p;
 
-    if ((ld80.x80[2] & 0x7fff) == 0x7fff)
-    {
-        if (ld80.x80[0] == 0 && ld80.x80[1] == 0x80000000)
-            strcpy( data->str, "1#INF" );
-        else
-            strcpy( data->str, (ld80.x80[1] & 0x40000000) ? "1#QNAN" : "1#SNAN" );
-        data->pos = 1;
-        data->sign = (ld80.x80[2] & 0x8000) ? '-' : ' ';
-        data->len = strlen(data->str);
-        return 0;
-    }
-
-    num.sign = (ld80.x80[2] & 0x8000) ? -1 : 1;
-    num.exp  = (ld80.x80[2] & 0x7fff) - 0x3fff - 63;
-    num.m    = ld80.x80[0] | ((ULONGLONG)ld80.x80[1] << 32);
-    num.mod  = FP_ROUND_EVEN;
-    fpnum_double( &num, &d );
+    memcpy(&ld, &ld80, 10);
+    d = ld;
     TRACE("(%lf %d %x %p)\n", d, prec, flag, data);
 
     if(d<0) {
@@ -2638,8 +2174,24 @@ int CDECL I10_OUTPUT(MSVCRT__LDOUBLE ld80, int prec, int flag, struct _I10_OUTPU
     } else
         data->sign = ' ';
 
+    if(isinf(d)) {
+        data->pos = 1;
+        data->len = 5;
+        memcpy(data->str, inf_str, sizeof(inf_str));
+
+        return 0;
+    }
+
+    if(isnan(d)) {
+        data->pos = 1;
+        data->len = 6;
+        memcpy(data->str, nan_str, sizeof(nan_str));
+
+        return 0;
+    }
+
     if(flag&1) {
-        int exp = 1 + floor(log10(d));
+        int exp = 1+floor(log10(d));
 
         prec += exp;
         if(exp < 0)
@@ -2678,510 +2230,63 @@ int CDECL I10_OUTPUT(MSVCRT__LDOUBLE ld80, int prec, int flag, struct _I10_OUTPU
 /*********************************************************************
  *                  memcmp (MSVCRT.@)
  */
-int __cdecl memcmp(const void *ptr1, const void *ptr2, size_t n)
+int __cdecl MSVCRT_memcmp(const void *ptr1, const void *ptr2, MSVCRT_size_t n)
 {
-    const unsigned char *p1, *p2;
-
-    for (p1 = ptr1, p2 = ptr2; n; n--, p1++, p2++)
-    {
-        if (*p1 < *p2) return -1;
-        if (*p1 > *p2) return 1;
-    }
-    return 0;
+    return memcmp(ptr1, ptr2, n);
 }
-
-#if defined(__i386__) || defined(__x86_64__)
-
-#ifdef __i386__
-
-#define DEST_REG "%edi"
-#define SRC_REG "%esi"
-#define LEN_REG "%ecx"
-#define TMP_REG "%edx"
-
-#define MEMMOVE_INIT \
-    "pushl " SRC_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t") \
-    "pushl " DEST_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset 4\n\t") \
-    "movl 12(%esp), " DEST_REG "\n\t" \
-    "movl 16(%esp), " SRC_REG "\n\t" \
-    "movl 20(%esp), " LEN_REG "\n\t"
-
-#define MEMMOVE_CLEANUP \
-    "movl 12(%esp), %eax\n\t" \
-    "popl " DEST_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset -4\n\t") \
-    "popl " SRC_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset -4\n\t")
-
-#else
-
-#define DEST_REG "%rdi"
-#define SRC_REG "%rsi"
-#define LEN_REG "%r8"
-#define TMP_REG "%r9"
-
-#define MEMMOVE_INIT \
-    "pushq " SRC_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset 8\n\t") \
-    "pushq " DEST_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset 8\n\t") \
-    "movq %rcx, " DEST_REG "\n\t" \
-    "movq %rdx, " SRC_REG "\n\t"
-
-#define MEMMOVE_CLEANUP \
-    "movq %rcx, %rax\n\t" \
-    "popq " DEST_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset -8\n\t") \
-    "popq " SRC_REG "\n\t" \
-    __ASM_CFI(".cfi_adjust_cfa_offset -8\n\t")
-#endif
-
-void * __cdecl sse2_memmove(void *dst, const void *src, size_t n);
-__ASM_GLOBAL_FUNC( sse2_memmove,
-        MEMMOVE_INIT
-        "mov " DEST_REG ", " TMP_REG "\n\t" /* check copying direction */
-        "sub " SRC_REG ", " TMP_REG "\n\t"
-        "cmp " LEN_REG ", " TMP_REG "\n\t"
-        "jb copy_bwd\n\t"
-        /* copy forwards */
-        "cmp $4, " LEN_REG "\n\t" /* 4-bytes align */
-        "jb copy_fwd3\n\t"
-        "mov " DEST_REG ", " TMP_REG "\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsb\n\t"
-        "dec " LEN_REG "\n\t"
-        "inc " TMP_REG "\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsw\n\t"
-        "sub $2, " LEN_REG "\n\t"
-        "inc " TMP_REG "\n\t"
-        "1:\n\t" /* 16-bytes align */
-        "cmp $16, " LEN_REG "\n\t"
-        "jb copy_fwd15\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsl\n\t"
-        "sub $4, " LEN_REG "\n\t"
-        "inc " TMP_REG "\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsl\n\t"
-        "movsl\n\t"
-        "sub $8, " LEN_REG "\n\t"
-        "1:\n\t"
-        "cmp $64, " LEN_REG "\n\t"
-        "jb copy_fwd63\n\t"
-        "1:\n\t" /* copy 64-bytes blocks in loop, dest 16-bytes aligned */
-        "movdqu 0x00(" SRC_REG "), %xmm0\n\t"
-        "movdqu 0x10(" SRC_REG "), %xmm1\n\t"
-        "movdqu 0x20(" SRC_REG "), %xmm2\n\t"
-        "movdqu 0x30(" SRC_REG "), %xmm3\n\t"
-        "movdqa %xmm0, 0x00(" DEST_REG ")\n\t"
-        "movdqa %xmm1, 0x10(" DEST_REG ")\n\t"
-        "movdqa %xmm2, 0x20(" DEST_REG ")\n\t"
-        "movdqa %xmm3, 0x30(" DEST_REG ")\n\t"
-        "add $64, " SRC_REG "\n\t"
-        "add $64, " DEST_REG "\n\t"
-        "sub $64, " LEN_REG "\n\t"
-        "cmp $64, " LEN_REG "\n\t"
-        "jae 1b\n\t"
-        "copy_fwd63:\n\t" /* copy last 63 bytes, dest 16-bytes aligned */
-        "mov " LEN_REG ", " TMP_REG "\n\t"
-        "and $15, " LEN_REG "\n\t"
-        "shr $5, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movdqu 0(" SRC_REG "), %xmm0\n\t"
-        "movdqa %xmm0, 0(" DEST_REG ")\n\t"
-        "add $16, " SRC_REG "\n\t"
-        "add $16, " DEST_REG "\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc copy_fwd15\n\t"
-        "movdqu 0x00(" SRC_REG "), %xmm0\n\t"
-        "movdqu 0x10(" SRC_REG "), %xmm1\n\t"
-        "movdqa %xmm0, 0x00(" DEST_REG ")\n\t"
-        "movdqa %xmm1, 0x10(" DEST_REG ")\n\t"
-        "add $32, " SRC_REG "\n\t"
-        "add $32, " DEST_REG "\n\t"
-        "copy_fwd15:\n\t" /* copy last 15 bytes, dest 4-bytes aligned */
-        "mov " LEN_REG ", " TMP_REG "\n\t"
-        "and $3, " LEN_REG "\n\t"
-        "shr $3, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsl\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc copy_fwd3\n\t"
-        "movsl\n\t"
-        "movsl\n\t"
-        "copy_fwd3:\n\t" /* copy last 3 bytes */
-        "shr $1, " LEN_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsb\n\t"
-        "1:\n\t"
-        "shr $1, " LEN_REG "\n\t"
-        "jnc 1f\n\t"
-        "movsw\n\t"
-        "1:\n\t"
-        MEMMOVE_CLEANUP
-        "ret\n\t"
-        "copy_bwd:\n\t"
-        "lea (" DEST_REG ", " LEN_REG "), " DEST_REG "\n\t"
-        "lea (" SRC_REG ", " LEN_REG "), " SRC_REG "\n\t"
-        "cmp $4, " LEN_REG "\n\t" /* 4-bytes align */
-        "jb copy_bwd3\n\t"
-        "mov " DEST_REG ", " TMP_REG "\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "dec " SRC_REG "\n\t"
-        "dec " DEST_REG "\n\t"
-        "movb (" SRC_REG "), %al\n\t"
-        "movb %al, (" DEST_REG ")\n\t"
-        "dec " LEN_REG "\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "sub $2, " SRC_REG "\n\t"
-        "sub $2, " DEST_REG "\n\t"
-        "movw (" SRC_REG "), %ax\n\t"
-        "movw %ax, (" DEST_REG ")\n\t"
-        "sub $2, " LEN_REG "\n\t"
-        "1:\n\t" /* 16-bytes align */
-        "cmp $16, " LEN_REG "\n\t"
-        "jb copy_bwd15\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "sub $4, " SRC_REG "\n\t"
-        "sub $4, " DEST_REG "\n\t"
-        "movl (" SRC_REG "), %eax\n\t"
-        "movl %eax, (" DEST_REG ")\n\t"
-        "sub $4, " LEN_REG "\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "sub $8, " SRC_REG "\n\t"
-        "sub $8, " DEST_REG "\n\t"
-        "movl 4(" SRC_REG "), %eax\n\t"
-        "movl %eax, 4(" DEST_REG ")\n\t"
-        "movl (" SRC_REG "), %eax\n\t"
-        "movl %eax, (" DEST_REG ")\n\t"
-        "sub $8, " LEN_REG "\n\t"
-        "1:\n\t"
-        "cmp $64, " LEN_REG "\n\t"
-        "jb copy_bwd63\n\t"
-        "1:\n\t" /* copy 64-bytes blocks in loop, dest 16-bytes aligned */
-        "sub $64, " SRC_REG "\n\t"
-        "sub $64, " DEST_REG "\n\t"
-        "movdqu 0x00(" SRC_REG "), %xmm0\n\t"
-        "movdqu 0x10(" SRC_REG "), %xmm1\n\t"
-        "movdqu 0x20(" SRC_REG "), %xmm2\n\t"
-        "movdqu 0x30(" SRC_REG "), %xmm3\n\t"
-        "movdqa %xmm0, 0x00(" DEST_REG ")\n\t"
-        "movdqa %xmm1, 0x10(" DEST_REG ")\n\t"
-        "movdqa %xmm2, 0x20(" DEST_REG ")\n\t"
-        "movdqa %xmm3, 0x30(" DEST_REG ")\n\t"
-        "sub $64, " LEN_REG "\n\t"
-        "cmp $64, " LEN_REG "\n\t"
-        "jae 1b\n\t"
-        "copy_bwd63:\n\t" /* copy last 63 bytes, dest 16-bytes aligned */
-        "mov " LEN_REG ", " TMP_REG "\n\t"
-        "and $15, " LEN_REG "\n\t"
-        "shr $5, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "sub $16, " SRC_REG "\n\t"
-        "sub $16, " DEST_REG "\n\t"
-        "movdqu (" SRC_REG "), %xmm0\n\t"
-        "movdqa %xmm0, (" DEST_REG ")\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc copy_bwd15\n\t"
-        "sub $32, " SRC_REG "\n\t"
-        "sub $32, " DEST_REG "\n\t"
-        "movdqu 0x00(" SRC_REG "), %xmm0\n\t"
-        "movdqu 0x10(" SRC_REG "), %xmm1\n\t"
-        "movdqa %xmm0, 0x00(" DEST_REG ")\n\t"
-        "movdqa %xmm1, 0x10(" DEST_REG ")\n\t"
-        "copy_bwd15:\n\t" /* copy last 15 bytes, dest 4-bytes aligned */
-        "mov " LEN_REG ", " TMP_REG "\n\t"
-        "and $3, " LEN_REG "\n\t"
-        "shr $3, " TMP_REG "\n\t"
-        "jnc 1f\n\t"
-        "sub $4, " SRC_REG "\n\t"
-        "sub $4, " DEST_REG "\n\t"
-        "movl (" SRC_REG "), %eax\n\t"
-        "movl %eax, (" DEST_REG ")\n\t"
-        "1:\n\t"
-        "shr $1, " TMP_REG "\n\t"
-        "jnc copy_bwd3\n\t"
-        "sub $8, " SRC_REG "\n\t"
-        "sub $8, " DEST_REG "\n\t"
-        "movl 4(" SRC_REG "), %eax\n\t"
-        "movl %eax, 4(" DEST_REG ")\n\t"
-        "movl (" SRC_REG "), %eax\n\t"
-        "movl %eax, (" DEST_REG ")\n\t"
-        "copy_bwd3:\n\t" /* copy last 3 bytes */
-        "shr $1, " LEN_REG "\n\t"
-        "jnc 1f\n\t"
-        "dec " SRC_REG "\n\t"
-        "dec " DEST_REG "\n\t"
-        "movb (" SRC_REG "), %al\n\t"
-        "movb %al, (" DEST_REG ")\n\t"
-        "1:\n\t"
-        "shr $1, " LEN_REG "\n\t"
-        "jnc 1f\n\t"
-        "movw -2(" SRC_REG "), %ax\n\t"
-        "movw %ax, -2(" DEST_REG ")\n\t"
-        "1:\n\t"
-        MEMMOVE_CLEANUP
-        "ret" )
-
-#endif
-
-/*********************************************************************
- *                  memmove (MSVCRT.@)
- */
-#ifdef WORDS_BIGENDIAN
-# define MERGE(w1, sh1, w2, sh2) ((w1 << sh1) | (w2 >> sh2))
-#else
-# define MERGE(w1, sh1, w2, sh2) ((w1 >> sh1) | (w2 << sh2))
-#endif
-void * __cdecl memmove(void *dst, const void *src, size_t n)
-{
-#ifdef __x86_64__
-    return sse2_memmove(dst, src, n);
-#else
-    unsigned char *d = dst;
-    const unsigned char *s = src;
-    int sh1;
-
-#ifdef __i386__
-    if (sse2_supported)
-        return sse2_memmove(dst, src, n);
-#endif
-
-    if (!n) return dst;
-
-    if ((size_t)dst - (size_t)src >= n)
-    {
-        for (; (size_t)d % sizeof(size_t) && n; n--) *d++ = *s++;
-
-        sh1 = 8 * ((size_t)s % sizeof(size_t));
-        if (!sh1)
-        {
-            while (n >= sizeof(size_t))
-            {
-                *(size_t*)d = *(size_t*)s;
-                s += sizeof(size_t);
-                d += sizeof(size_t);
-                n -= sizeof(size_t);
-            }
-        }
-        else if (n >= 2 * sizeof(size_t))
-        {
-            int sh2 = 8 * sizeof(size_t) - sh1;
-            size_t x, y;
-
-            s -= sh1 / 8;
-            x = *(size_t*)s;
-            do
-            {
-                s += sizeof(size_t);
-                y = *(size_t*)s;
-                *(size_t*)d = MERGE(x, sh1, y, sh2);
-                d += sizeof(size_t);
-
-                s += sizeof(size_t);
-                x = *(size_t*)s;
-                *(size_t*)d = MERGE(y, sh1, x, sh2);
-                d += sizeof(size_t);
-
-                n -= 2 * sizeof(size_t);
-            } while (n >= 2 * sizeof(size_t));
-            s += sh1 / 8;
-        }
-        while (n--) *d++ = *s++;
-        return dst;
-    }
-    else
-    {
-        d += n;
-        s += n;
-
-        for (; (size_t)d % sizeof(size_t) && n; n--) *--d = *--s;
-
-        sh1 = 8 * ((size_t)s % sizeof(size_t));
-        if (!sh1)
-        {
-            while (n >= sizeof(size_t))
-            {
-                s -= sizeof(size_t);
-                d -= sizeof(size_t);
-                *(size_t*)d = *(size_t*)s;
-                n -= sizeof(size_t);
-            }
-        }
-        else if (n >= 2 * sizeof(size_t))
-        {
-            int sh2 = 8 * sizeof(size_t) - sh1;
-            size_t x, y;
-
-            s -= sh1 / 8;
-            x = *(size_t*)s;
-            do
-            {
-                s -= sizeof(size_t);
-                y = *(size_t*)s;
-                d -= sizeof(size_t);
-                *(size_t*)d = MERGE(y, sh1, x, sh2);
-
-                s -= sizeof(size_t);
-                x = *(size_t*)s;
-                d -= sizeof(size_t);
-                *(size_t*)d = MERGE(x, sh1, y, sh2);
-
-                n -= 2 * sizeof(size_t);
-            } while (n >= 2 * sizeof(size_t));
-            s += sh1 / 8;
-        }
-        while (n--) *--d = *--s;
-    }
-    return dst;
-#endif
-}
-#undef MERGE
 
 /*********************************************************************
  *                  memcpy   (MSVCRT.@)
  */
-void * __cdecl memcpy(void *dst, const void *src, size_t n)
+void * __cdecl MSVCRT_memcpy(void *dst, const void *src, MSVCRT_size_t n)
 {
     return memmove(dst, src, n);
 }
 
 /*********************************************************************
- *                  _memccpy   (MSVCRT.@)
+ *                  memmove (MSVCRT.@)
  */
-void * __cdecl _memccpy(void *dst, const void *src, int c, size_t n)
+void * __cdecl MSVCRT_memmove(void *dst, const void *src, MSVCRT_size_t n)
 {
-    unsigned char *d = dst;
-    const unsigned char *s = src;
-    while (n--) if ((*d++ = *s++) == (unsigned char)c) return d;
-    return NULL;
-}
-
-
-static inline void memset_aligned_32(unsigned char *d, uint64_t v, size_t n)
-{
-    unsigned char *end = d + n;
-    while (d < end)
-    {
-        *(uint64_t *)(d + 0) = v;
-        *(uint64_t *)(d + 8) = v;
-        *(uint64_t *)(d + 16) = v;
-        *(uint64_t *)(d + 24) = v;
-        d += 32;
-    }
+    return memmove(dst, src, n);
 }
 
 /*********************************************************************
  *		    memset (MSVCRT.@)
  */
-void *__cdecl memset(void *dst, int c, size_t n)
+void* __cdecl MSVCRT_memset(void *dst, int c, MSVCRT_size_t n)
 {
-    typedef uint64_t DECLSPEC_ALIGN(1) unaligned_ui64;
-    typedef uint32_t DECLSPEC_ALIGN(1) unaligned_ui32;
-    typedef uint16_t DECLSPEC_ALIGN(1) unaligned_ui16;
-
-    uint64_t v = 0x101010101010101ull * (unsigned char)c;
-    unsigned char *d = (unsigned char *)dst;
-    size_t a = 0x20 - ((uintptr_t)d & 0x1f);
-
-    if (n >= 16)
-    {
-        *(unaligned_ui64 *)(d + 0) = v;
-        *(unaligned_ui64 *)(d + 8) = v;
-        *(unaligned_ui64 *)(d + n - 16) = v;
-        *(unaligned_ui64 *)(d + n - 8) = v;
-        if (n <= 32) return dst;
-        *(unaligned_ui64 *)(d + 16) = v;
-        *(unaligned_ui64 *)(d + 24) = v;
-        *(unaligned_ui64 *)(d + n - 32) = v;
-        *(unaligned_ui64 *)(d + n - 24) = v;
-        if (n <= 64) return dst;
-
-        n = (n - a) & ~0x1f;
-        memset_aligned_32(d + a, v, n);
-        return dst;
-    }
-    if (n >= 8)
-    {
-        *(unaligned_ui64 *)d = v;
-        *(unaligned_ui64 *)(d + n - 8) = v;
-        return dst;
-    }
-    if (n >= 4)
-    {
-        *(unaligned_ui32 *)d = v;
-        *(unaligned_ui32 *)(d + n - 4) = v;
-        return dst;
-    }
-    if (n >= 2)
-    {
-        *(unaligned_ui16 *)d = v;
-        *(unaligned_ui16 *)(d + n - 2) = v;
-        return dst;
-    }
-    if (n >= 1)
-    {
-        *(uint8_t *)d = v;
-        return dst;
-    }
-    return dst;
+    return memset(dst, c, n);
 }
 
 /*********************************************************************
  *		    strchr (MSVCRT.@)
  */
-char* __cdecl strchr(const char *str, int c)
+char* __cdecl MSVCRT_strchr(const char *str, int c)
 {
-    do
-    {
-        if (*str == (char)c) return (char*)str;
-    } while (*str++);
-    return NULL;
+    return strchr(str, c);
 }
 
 /*********************************************************************
  *                  strrchr (MSVCRT.@)
  */
-char* __cdecl strrchr(const char *str, int c)
+char* __cdecl MSVCRT_strrchr(const char *str, int c)
 {
-    char *ret = NULL;
-    do { if (*str == (char)c) ret = (char*)str; } while (*str++);
-    return ret;
+    return strrchr(str, c);
 }
 
 /*********************************************************************
  *                  memchr   (MSVCRT.@)
  */
-void* __cdecl memchr(const void *ptr, int c, size_t n)
+void* __cdecl MSVCRT_memchr(const void *ptr, int c, MSVCRT_size_t n)
 {
-    const unsigned char *p = ptr;
-
-    for (p = ptr; n; n--, p++) if (*p == (unsigned char)c) return (void *)(ULONG_PTR)p;
-    return NULL;
+    return memchr(ptr, c, n);
 }
 
 /*********************************************************************
  *                  strcmp (MSVCRT.@)
  */
-int __cdecl strcmp(const char *str1, const char *str2)
+int __cdecl MSVCRT_strcmp(const char *str1, const char *str2)
 {
     while (*str1 && *str1 == *str2) { str1++; str2++; }
     if ((unsigned char)*str1 > (unsigned char)*str2) return 1;
@@ -3192,7 +2297,7 @@ int __cdecl strcmp(const char *str1, const char *str2)
 /*********************************************************************
  *                  strncmp   (MSVCRT.@)
  */
-int __cdecl strncmp(const char *str1, const char *str2, size_t len)
+int __cdecl MSVCRT_strncmp(const char *str1, const char *str2, MSVCRT_size_t len)
 {
     if (!len) return 0;
     while (--len && *str1 && *str1 == *str2) { str1++; str2++; }
@@ -3202,14 +2307,14 @@ int __cdecl strncmp(const char *str1, const char *str2, size_t len)
 /*********************************************************************
  *                  _strnicmp_l   (MSVCRT.@)
  */
-int __cdecl _strnicmp_l(const char *s1, const char *s2,
-        size_t count, _locale_t locale)
+int __cdecl MSVCRT__strnicmp_l(const char *s1, const char *s2,
+        MSVCRT_size_t count, MSVCRT__locale_t locale)
 {
-    pthreadlocinfo locinfo;
+    MSVCRT_pthreadlocinfo locinfo;
     int c1, c2;
 
     if(s1==NULL || s2==NULL)
-        return _NLSCMPERROR;
+        return MSVCRT__NLSCMPERROR;
 
     if(!count)
         return 0;
@@ -3219,7 +2324,7 @@ int __cdecl _strnicmp_l(const char *s1, const char *s2,
     else
         locinfo = locale->locinfo;
 
-    if(!locinfo->lc_handle[LC_CTYPE])
+    if(!locinfo->lc_handle[MSVCRT_LC_CTYPE])
     {
         do {
             if ((c1 = *s1++) >= 'A' && c1 <= 'Z')
@@ -3232,8 +2337,8 @@ int __cdecl _strnicmp_l(const char *s1, const char *s2,
     }
 
     do {
-        c1 = _tolower_l((unsigned char)*s1++, locale);
-        c2 = _tolower_l((unsigned char)*s2++, locale);
+        c1 = MSVCRT__tolower_l((unsigned char)*s1++, locale);
+        c2 = MSVCRT__tolower_l((unsigned char)*s2++, locale);
     }while(--count && c1 && c1==c2);
 
     return c1-c2;
@@ -3242,36 +2347,36 @@ int __cdecl _strnicmp_l(const char *s1, const char *s2,
 /*********************************************************************
  *                  _stricmp_l   (MSVCRT.@)
  */
-int __cdecl _stricmp_l(const char *s1, const char *s2, _locale_t locale)
+int __cdecl MSVCRT__stricmp_l(const char *s1, const char *s2, MSVCRT__locale_t locale)
 {
-    return _strnicmp_l(s1, s2, -1, locale);
+    return MSVCRT__strnicmp_l(s1, s2, -1, locale);
 }
 
 /*********************************************************************
  *                  _strnicmp   (MSVCRT.@)
  */
-int __cdecl _strnicmp(const char *s1, const char *s2, size_t count)
+int __cdecl MSVCRT__strnicmp(const char *s1, const char *s2, MSVCRT_size_t count)
 {
-    return _strnicmp_l(s1, s2, count, NULL);
+    return MSVCRT__strnicmp_l(s1, s2, count, NULL);
 }
 
 /*********************************************************************
  *                  _stricmp   (MSVCRT.@)
  */
-int __cdecl _stricmp(const char *s1, const char *s2)
+int __cdecl MSVCRT__stricmp(const char *s1, const char *s2)
 {
-    return _strnicmp_l(s1, s2, -1, NULL);
+    return MSVCRT__strnicmp_l(s1, s2, -1, NULL);
 }
 
 /*********************************************************************
  *                  strstr   (MSVCRT.@)
  */
-char* __cdecl strstr(const char *haystack, const char *needle)
+char* __cdecl MSVCRT_strstr(const char *haystack, const char *needle)
 {
-    size_t i, j, len, needle_len, lps_len;
+    MSVCRT_size_t i, j, len, needle_len, lps_len;
     BYTE lps[256];
 
-    needle_len = strlen(needle);
+    needle_len = MSVCRT_strlen(needle);
     if (!needle_len) return (char*)haystack;
     lps_len = needle_len > ARRAY_SIZE(lps) ? ARRAY_SIZE(lps) : needle_len;
 
@@ -3297,7 +2402,7 @@ char* __cdecl strstr(const char *haystack, const char *needle)
         if (j == needle_len) return (char*)haystack + i - j;
         else if (j)
         {
-            if (j == ARRAY_SIZE(lps) && !strncmp(haystack + i, needle + j, needle_len - j))
+            if (j == ARRAY_SIZE(lps) && !MSVCRT_strncmp(haystack + i, needle + j, needle_len - j))
                 return (char*)haystack + i - j;
             j = lps[j-1];
         }
@@ -3309,9 +2414,8 @@ char* __cdecl strstr(const char *haystack, const char *needle)
 /*********************************************************************
  *                  _memicmp_l   (MSVCRT.@)
  */
-int __cdecl _memicmp_l(const void *v1, const void *v2, size_t len, _locale_t locale)
+int __cdecl MSVCRT__memicmp_l(const char *s1, const char *s2, MSVCRT_size_t len, MSVCRT__locale_t locale)
 {
-    const char *s1 = v1, *s2 = v2;
     int ret = 0;
 
 #if _MSVCR_VER == 0 || _MSVCR_VER >= 80
@@ -3319,13 +2423,13 @@ int __cdecl _memicmp_l(const void *v1, const void *v2, size_t len, _locale_t loc
     {
         if (len)
             MSVCRT_INVALID_PMT(NULL, EINVAL);
-        return len ? _NLSCMPERROR : 0;
+        return len ? MSVCRT__NLSCMPERROR : 0;
     }
 #endif
 
     while (len--)
     {
-        if ((ret = _tolower_l(*s1, locale) - _tolower_l(*s2, locale)))
+        if ((ret = MSVCRT__tolower_l(*s1, locale) - MSVCRT__tolower_l(*s2, locale)))
             break;
         s1++;
         s2++;
@@ -3336,15 +2440,15 @@ int __cdecl _memicmp_l(const void *v1, const void *v2, size_t len, _locale_t loc
 /*********************************************************************
  *                  _memicmp   (MSVCRT.@)
  */
-int __cdecl _memicmp(const void *s1, const void *s2, size_t len)
+int __cdecl MSVCRT__memicmp(const char *s1, const char *s2, MSVCRT_size_t len)
 {
-    return _memicmp_l(s1, s2, len, NULL);
+    return MSVCRT__memicmp_l(s1, s2, len, NULL);
 }
 
 /*********************************************************************
  *                  strcspn   (MSVCRT.@)
  */
-size_t __cdecl strcspn(const char *str, const char *reject)
+MSVCRT_size_t __cdecl MSVCRT_strcspn(const char *str, const char *reject)
 {
     BOOL rejects[256];
     const char *p;
@@ -3364,30 +2468,19 @@ size_t __cdecl strcspn(const char *str, const char *reject)
 }
 
 /*********************************************************************
- *                  strspn   (MSVCRT.@)
- */
-size_t __cdecl strspn(const char *str, const char *accept)
-{
-    const char *ptr;
-    for (ptr = str; *ptr; ptr++) if (!strchr( accept, *ptr )) break;
-    return ptr - str;
-}
-
-/*********************************************************************
  *                  strpbrk   (MSVCRT.@)
  */
-char* __cdecl strpbrk(const char *str, const char *accept)
+char* __cdecl MSVCRT_strpbrk(const char *str, const char *accept)
 {
-    for (; *str; str++) if (strchr( accept, *str )) return (char*)str;
-    return NULL;
+    return strpbrk(str, accept);
 }
 
 /*********************************************************************
  *                  __strncnt   (MSVCRT.@)
  */
-size_t __cdecl __strncnt(const char *str, size_t size)
+MSVCRT_size_t __cdecl MSVCRT___strncnt(const char *str, MSVCRT_size_t size)
 {
-    size_t ret = 0;
+    MSVCRT_size_t ret = 0;
 
 #if _MSVCR_VER >= 140
     while (*str++ && size--)

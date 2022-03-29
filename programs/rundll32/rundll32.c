@@ -83,12 +83,20 @@ static void call_entry_point( void *func, HWND hwnd, HINSTANCE inst, void *cmdli
 }
 #endif
 
+/*
+ * Control_RunDLL needs to have a window. So lets make us a very
+ * simple window class.
+ */
+static const WCHAR szTitle[] = {'r','u','n','d','l','l','3','2',0};
+static const WCHAR szWindowClass[] = {'c','l','a','s','s','_','r','u','n','d','l','l','3','2',0};
+static const WCHAR kernel32[] = {'k','e','r','n','e','l','3','2','.','d','l','l',0};
+static const WCHAR shell32[] = {'s','h','e','l','l','3','2','.','d','l','l',0};
+
+static HINSTANCE16 (WINAPI *pLoadLibrary16)(LPCSTR libname);
+static FARPROC16 (WINAPI *pGetProcAddress16)(HMODULE16 hModule, LPCSTR name);
 static void (WINAPI *pRunDLL_CallEntry16)( FARPROC proc, HWND hwnd, HINSTANCE inst,
                                            LPCSTR cmdline, INT cmdshow );
 
-/*
- * Control_RunDLL needs to have a window. So lets make us a very simple window class.
- */
 static ATOM register_class(void)
 {
     WNDCLASSEXW wcex;
@@ -104,17 +112,14 @@ static ATOM register_class(void)
     wcex.hCursor        = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
     wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
     wcex.lpszMenuName   = NULL;
-    wcex.lpszClassName  = L"class_rundll32";
+    wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = NULL;
 
     return RegisterClassExW(&wcex);
 }
 
-#ifdef __i386__
-
 static HINSTANCE16 load_dll16( LPCWSTR dll )
 {
-    HINSTANCE16 (WINAPI *pLoadLibrary16)(LPCSTR libname);
     HINSTANCE16 ret = 0;
     DWORD len = WideCharToMultiByte( CP_ACP, 0, dll, -1, NULL, 0, NULL, NULL );
     char *dllA = HeapAlloc( GetProcessHeap(), 0, len );
@@ -122,7 +127,7 @@ static HINSTANCE16 load_dll16( LPCWSTR dll )
     if (dllA)
     {
         WideCharToMultiByte( CP_ACP, 0, dll, -1, dllA, len, NULL, NULL );
-        pLoadLibrary16 = (void *)GetProcAddress( GetModuleHandleW(L"kernel32.dll"), (LPCSTR)35 );
+        pLoadLibrary16 = (void *)GetProcAddress( GetModuleHandleW(kernel32), (LPCSTR)35 );
         if (pLoadLibrary16) ret = pLoadLibrary16( dllA );
         HeapFree( GetProcessHeap(), 0, dllA );
     }
@@ -131,7 +136,6 @@ static HINSTANCE16 load_dll16( LPCWSTR dll )
 
 static FARPROC16 get_entry_point16( HINSTANCE16 inst, LPCWSTR entry )
 {
-    FARPROC16 (WINAPI *pGetProcAddress16)(HMODULE16 hModule, LPCSTR name);
     FARPROC16 ret = 0;
     DWORD len = WideCharToMultiByte( CP_ACP, 0, entry, -1, NULL, 0, NULL, NULL );
     char *entryA = HeapAlloc( GetProcessHeap(), 0, len );
@@ -139,13 +143,12 @@ static FARPROC16 get_entry_point16( HINSTANCE16 inst, LPCWSTR entry )
     if (entryA)
     {
         WideCharToMultiByte( CP_ACP, 0, entry, -1, entryA, len, NULL, NULL );
-        pGetProcAddress16 = (void *)GetProcAddress( GetModuleHandleW(L"kernel32.dll"), (LPCSTR)37 );
+        pGetProcAddress16 = (void *)GetProcAddress( GetModuleHandleW(kernel32), (LPCSTR)37 );
         if (pGetProcAddress16) ret = pGetProcAddress16( inst, entryA );
         HeapFree( GetProcessHeap(), 0, entryA );
     }
     return ret;
 }
-#endif
 
 static void *get_entry_point32( HMODULE module, LPCWSTR entry, BOOL *unicode )
 {
@@ -275,8 +278,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE hOldInstance, LPWSTR szCmdLine
 {
     HWND hWnd;
     LPWSTR szDllName,szEntryPoint;
-    void *entry_point = NULL;
-    BOOL unicode = FALSE, win16 = FALSE;
+    void *entry_point;
+    BOOL unicode = FALSE, win16;
     STARTUPINFOW info;
     HMODULE hDll;
 
@@ -286,7 +289,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE hOldInstance, LPWSTR szCmdLine
 
     /* Initialize the rundll32 class */
     register_class();
-    hWnd = CreateWindowW(L"class_rundll32", L"rundll32", WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+    hWnd = CreateWindowW(szWindowClass, szTitle,
+          WS_OVERLAPPEDWINDOW|WS_VISIBLE,
           CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, NULL, NULL);
 
     /* Get the dll name and API EntryPoint */
@@ -303,8 +307,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE hOldInstance, LPWSTR szCmdLine
 
     /* Load the library */
     hDll=LoadLibraryW(szDllName);
-    if (hDll) entry_point = get_entry_point32( hDll, szEntryPoint, &unicode );
-#ifdef __i386__
+    if (hDll)
+    {
+        win16 = FALSE;
+        entry_point = get_entry_point32( hDll, szEntryPoint, &unicode );
+    }
     else
     {
         HINSTANCE16 dll = load_dll16( szDllName );
@@ -315,9 +322,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE hOldInstance, LPWSTR szCmdLine
             goto CLEANUP;
         }
         win16 = TRUE;
+        unicode = FALSE;
         entry_point = get_entry_point16( dll, szEntryPoint );
     }
-#endif
 
     if (!entry_point)
     {
@@ -352,7 +359,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE hOldInstance, LPWSTR szCmdLine
 
         if (win16)
         {
-            HMODULE shell = LoadLibraryW( L"shell32.dll" );
+            HMODULE shell = LoadLibraryW( shell32 );
             if (shell) pRunDLL_CallEntry16 = (void *)GetProcAddress( shell, (LPCSTR)122 );
             if (pRunDLL_CallEntry16)
                 pRunDLL_CallEntry16( entry_point, hWnd, instance, cmdline, info.wShowWindow );

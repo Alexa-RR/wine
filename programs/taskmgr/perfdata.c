@@ -30,6 +30,10 @@
 #include "taskmgr.h"
 #include "perfdata.h"
 
+static PROCNTQSI                       pNtQuerySystemInformation = NULL;
+static PROCGGR                         pGetGuiResources = NULL;
+static PROCGPIC                        pGetProcessIoCounters = NULL;
+static PROCISW64                       pIsWow64Process = NULL;
 static CRITICAL_SECTION                PerfDataCriticalSection;
 static PPERFDATA                       pPerfDataOld = NULL;    /* Older perf data (saved to establish delta values) */
 static PPERFDATA                       pPerfData = NULL;    /* Most recent copy of perf data */
@@ -47,21 +51,27 @@ static SYSTEM_CACHE_INFORMATION        SystemCacheInfo;
 static SYSTEM_HANDLE_INFORMATION       SystemHandleInfo;
 static PSYSTEM_PROCESSOR_PERFORMANCE_INFORMATION SystemProcessorTimeInfo = NULL;
 
-static size_t size_diff(size_t x, size_t y)
-{
-    return x > y ? x - y : y - x;
-}
-
 BOOL PerfDataInitialize(void)
 {
     LONG    status;
+    static const WCHAR wszNtdll[] = {'n','t','d','l','l','.','d','l','l',0};
+    static const WCHAR wszUser32[] = {'u','s','e','r','3','2','.','d','l','l',0};
+    static const WCHAR wszKernel32[] = {'k','e','r','n','e','l','3','2','.','d','l','l',0};
 
+    pNtQuerySystemInformation = (PROCNTQSI)GetProcAddress(GetModuleHandleW(wszNtdll), "NtQuerySystemInformation");
+    pGetGuiResources = (PROCGGR)GetProcAddress(GetModuleHandleW(wszUser32), "GetGuiResources");
+    pGetProcessIoCounters = (PROCGPIC)GetProcAddress(GetModuleHandleW(wszKernel32), "GetProcessIoCounters");
+    pIsWow64Process = (PROCISW64)GetProcAddress(GetModuleHandleW(wszKernel32), "IsWow64Process");
+    
     InitializeCriticalSection(&PerfDataCriticalSection);
+
+    if (!pNtQuerySystemInformation)
+        return FALSE;
 
     /*
      * Get number of processors in the system
      */
-    status = NtQuerySystemInformation(SystemBasicInformation, &SystemBasicInfo, sizeof(SystemBasicInfo), NULL);
+    status = pNtQuerySystemInformation(SystemBasicInformation, &SystemBasicInfo, sizeof(SystemBasicInfo), NULL);
     if (status != NO_ERROR)
         return FALSE;
     
@@ -90,25 +100,24 @@ void PerfDataRefresh(void)
 
 
     /* Get new system time */
-    status = NtQuerySystemInformation(SystemTimeOfDayInformation, &SysTimeInfo, sizeof(SysTimeInfo), 0);
+    status = pNtQuerySystemInformation(SystemTimeOfDayInformation, &SysTimeInfo, sizeof(SysTimeInfo), 0);
     if (status != NO_ERROR)
         return;
 
     /* Get new CPU's idle time */
-    status = NtQuerySystemInformation(SystemPerformanceInformation, &SysPerfInfo, sizeof(SysPerfInfo), NULL);
+    status = pNtQuerySystemInformation(SystemPerformanceInformation, &SysPerfInfo, sizeof(SysPerfInfo), NULL);
     if (status != NO_ERROR)
         return;
 
     /* Get system cache information */
-    status = NtQuerySystemInformation(SystemFileCacheInformation, &SysCacheInfo, sizeof(SysCacheInfo), NULL);
+    status = pNtQuerySystemInformation(SystemCacheInformation, &SysCacheInfo, sizeof(SysCacheInfo), NULL);
     if (status != NO_ERROR)
         return;
 
     /* Get processor time information */
     SysProcessorTimeInfo = HeapAlloc(GetProcessHeap(), 0,
-            sizeof(*SysProcessorTimeInfo) * SystemBasicInfo.NumberOfProcessors);
-    status = NtQuerySystemInformation(SystemProcessorPerformanceInformation, SysProcessorTimeInfo,
-            sizeof(*SysProcessorTimeInfo) * SystemBasicInfo.NumberOfProcessors, &ulSize);
+                                sizeof(*SysProcessorTimeInfo) * SystemBasicInfo.NumberOfProcessors);
+    status = pNtQuerySystemInformation(SystemProcessorPerformanceInformation, SysProcessorTimeInfo, sizeof(*SysProcessorTimeInfo) * SystemBasicInfo.NumberOfProcessors, &ulSize);
     if (status != NO_ERROR) {
         HeapFree(GetProcessHeap(), 0, SysProcessorTimeInfo);
         return;
@@ -124,7 +133,7 @@ void PerfDataRefresh(void)
         BufferSize += 0x10000;
         SysHandleInfoData = HeapAlloc(GetProcessHeap(), 0, BufferSize);
 
-        status = NtQuerySystemInformation(SystemHandleInformation, SysHandleInfoData, BufferSize, &ulSize);
+        status = pNtQuerySystemInformation(SystemHandleInformation, SysHandleInfoData, BufferSize, &ulSize);
 
         if (status == 0xC0000004 /*STATUS_INFO_LENGTH_MISMATCH*/) {
             HeapFree(GetProcessHeap(), 0, SysHandleInfoData);
@@ -142,7 +151,7 @@ void PerfDataRefresh(void)
         BufferSize += 0x10000;
         pBuffer = HeapAlloc(GetProcessHeap(), 0, BufferSize);
 
-        status = NtQuerySystemInformation(SystemProcessInformation, pBuffer, BufferSize, &ulSize);
+        status = pNtQuerySystemInformation(SystemProcessInformation, pBuffer, BufferSize, &ulSize);
 
         if (status == 0xC0000004 /*STATUS_INFO_LENGTH_MISMATCH*/) {
             HeapFree(GetProcessHeap(), 0, pBuffer);
@@ -185,7 +194,7 @@ void PerfDataRefresh(void)
         /*  CurrentValue = NewValue - OldValue */
         dbIdleTime = Li2Double(SysPerfInfo.IdleTime) - Li2Double(liOldIdleTime);
         dbKernelTime = CurrentKernelTime - OldKernelTime;
-        dbSystemTime = Li2Double(SysTimeInfo.SystemTime) - Li2Double(liOldSystemTime);
+        dbSystemTime = Li2Double(SysTimeInfo.liKeSystemTime) - Li2Double(liOldSystemTime);
 
         /*  CurrentCpuIdle = IdleTime / SystemTime */
         dbIdleTime = dbIdleTime / dbSystemTime;
@@ -198,7 +207,7 @@ void PerfDataRefresh(void)
 
     /* Store new CPU's idle and system time */
     liOldIdleTime = SysPerfInfo.IdleTime;
-    liOldSystemTime = SysTimeInfo.SystemTime;
+    liOldSystemTime = SysTimeInfo.liKeSystemTime;
     OldKernelTime = CurrentKernelTime;
 
     /* Determine the process count
@@ -257,12 +266,12 @@ void PerfDataRefresh(void)
         pPerfData[Idx].vmCounters.WorkingSetSize = pSPI->vmCounters.WorkingSetSize;
         pPerfData[Idx].vmCounters.PeakWorkingSetSize = pSPI->vmCounters.PeakWorkingSetSize;
         if (pPDOld)
-            pPerfData[Idx].WorkingSetSizeDelta = size_diff(pSPI->vmCounters.WorkingSetSize, pPDOld->vmCounters.WorkingSetSize);
+            pPerfData[Idx].WorkingSetSizeDelta = labs(pSPI->vmCounters.WorkingSetSize - pPDOld->vmCounters.WorkingSetSize);
         else
             pPerfData[Idx].WorkingSetSizeDelta = 0;
         pPerfData[Idx].vmCounters.PageFaultCount = pSPI->vmCounters.PageFaultCount;
         if (pPDOld)
-            pPerfData[Idx].PageFaultCountDelta = size_diff(pSPI->vmCounters.PageFaultCount, pPDOld->vmCounters.PageFaultCount);
+            pPerfData[Idx].PageFaultCountDelta = labs(pSPI->vmCounters.PageFaultCount - pPDOld->vmCounters.PageFaultCount);
         else
             pPerfData[Idx].PageFaultCountDelta = 0;
         pPerfData[Idx].vmCounters.VirtualSize = pSPI->vmCounters.VirtualSize;
@@ -283,10 +292,14 @@ void PerfDataRefresh(void)
                 RevertToSelf();
                 CloseHandle(hProcessToken);
             }
-            pPerfData[Idx].USERObjectCount = GetGuiResources(hProcess, GR_USEROBJECTS);
-            pPerfData[Idx].GDIObjectCount = GetGuiResources(hProcess, GR_GDIOBJECTS);
-            GetProcessIoCounters(hProcess, &pPerfData[Idx].IOCounters);
-            IsWow64Process(hProcess, &pPerfData[Idx].Wow64Process);
+            if (pGetGuiResources) {
+                pPerfData[Idx].USERObjectCount = pGetGuiResources(hProcess, GR_USEROBJECTS);
+                pPerfData[Idx].GDIObjectCount = pGetGuiResources(hProcess, GR_GDIOBJECTS);
+            }
+            if (pGetProcessIoCounters)
+                pGetProcessIoCounters(hProcess, &pPerfData[Idx].IOCounters);
+            if (pIsWow64Process)
+                pIsWow64Process(hProcess, &pPerfData[Idx].Wow64Process);
             CloseHandle(hProcess);
         }
         pPerfData[Idx].UserTime.QuadPart = pSPI->UserTime.QuadPart;
@@ -328,7 +341,7 @@ BOOL PerfDataGetImageName(ULONG Index, LPWSTR lpImageName, int nMaxCount)
     EnterCriticalSection(&PerfDataCriticalSection);
 
     if (Index < ProcessCount) {
-        lstrcpynW(lpImageName, pPerfData[Index].ImageName, nMaxCount);
+        wcsncpy(lpImageName, pPerfData[Index].ImageName, nMaxCount);
         if (pPerfData[Index].Wow64Process &&
             nMaxCount - lstrlenW(lpImageName) > 4 /* =lstrlenW(proc32W) */)
             lstrcatW(lpImageName, proc32W);
@@ -363,7 +376,7 @@ BOOL PerfDataGetUserName(ULONG Index, LPWSTR lpUserName, int nMaxCount)
     EnterCriticalSection(&PerfDataCriticalSection);
 
     if (Index < ProcessCount) {
-        lstrcpynW(lpUserName, pPerfData[Index].UserName, nMaxCount);
+        wcsncpy(lpUserName, pPerfData[Index].UserName, nMaxCount);
         bSuccessful = TRUE;
     } else {
         bSuccessful = FALSE;

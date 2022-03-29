@@ -19,8 +19,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
-#ifndef _BASETSD_H_
-#define _BASETSD_H_
+#ifndef __WINE_BASETSD_H
+#define __WINE_BASETSD_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,6 +108,7 @@ typedef /* [public] */ signed __int3264   INT_PTR, *PINT_PTR;
 typedef /* [public] */ signed __int3264   LONG_PTR, *PLONG_PTR;
 typedef /* [public] */ unsigned __int3264 UINT_PTR, *PUINT_PTR;
 typedef /* [public] */ unsigned __int3264 ULONG_PTR, *PULONG_PTR;
+typedef ULONG_PTR                   DWORD_PTR, *PDWORD_PTR;
 
 #elif defined(_WIN64)
 
@@ -117,20 +118,17 @@ typedef signed __int64   INT_PTR, *PINT_PTR;
 typedef signed __int64   LONG_PTR, *PLONG_PTR;
 typedef unsigned __int64 UINT_PTR, *PUINT_PTR;
 typedef unsigned __int64 ULONG_PTR, *PULONG_PTR;
+typedef ULONG_PTR        DWORD_PTR, *PDWORD_PTR;
 
 #else
 
 #define __int3264 __int32
 
-#ifdef WINE_NO_LONG_TYPES
 typedef long          INT_PTR, *PINT_PTR;
 typedef unsigned long UINT_PTR, *PUINT_PTR;
-#else
-typedef int           INT_PTR, *PINT_PTR;
-typedef unsigned int  UINT_PTR, *PUINT_PTR;
-#endif
 typedef long          LONG_PTR, *PLONG_PTR;
 typedef unsigned long ULONG_PTR, *PULONG_PTR;
+typedef ULONG_PTR     DWORD_PTR, *PDWORD_PTR;
 
 #endif
 
@@ -153,53 +151,15 @@ typedef unsigned int UHALF_PTR, *PUHALF_PTR;
 
 #if !defined(__midl) && !defined(__WIDL__)
 
-#if !defined(__LP64__) && !defined(WINE_NO_LONG_TYPES)
-
-static inline unsigned long HandleToULong(const void *h)
+static inline ULONG32 HandleToULong(const void *h)
 {
-    return (unsigned long)(ULONG_PTR)h;
+    return (ULONG32)(ULONG_PTR)h;
 }
 
-static inline long HandleToLong(const void *h)
+static inline LONG32 HandleToLong(const void *h)
 {
-    return (long)(LONG_PTR)h;
+    return (LONG32)(LONG_PTR)h;
 }
-
-static inline unsigned long PtrToUlong(const void *p)
-{
-    return (unsigned long)(ULONG_PTR)p;
-}
-
-static inline long PtrToLong(const void *p)
-{
-    return (long)(LONG_PTR)p;
-}
-
-
-#else
-
-static inline unsigned HandleToULong(const void *h)
-{
-    return (unsigned)(ULONG_PTR)h;
-}
-
-static inline int HandleToLong(const void *h)
-{
-    return (int)(LONG_PTR)h;
-}
-
-static inline unsigned PtrToUlong(const void *p)
-{
-    return (unsigned)(ULONG_PTR)p;
-}
-
-static inline int PtrToLong(const void *p)
-{
-    return (int)(LONG_PTR)p;
-}
-
-
-#endif /* !defined(__LP64__) && !defined(WINE_NO_LONG_TYPES) */
 
 static inline void *ULongToHandle(ULONG32 ul)
 {
@@ -209,6 +169,16 @@ static inline void *ULongToHandle(ULONG32 ul)
 static inline void *LongToHandle(LONG32 l)
 {
     return (void *)(LONG_PTR)l;
+}
+
+static inline ULONG32 PtrToUlong(const void *p)
+{
+    return (ULONG32)(ULONG_PTR)p;
+}
+
+static inline LONG32 PtrToLong(const void *p)
+{
+    return (LONG32)(LONG_PTR)p;
 }
 
 static inline UINT32 PtrToUint(const void *p)
@@ -292,10 +262,8 @@ typedef unsigned short UHALF_PTR, *PUHALF_PTR;
 
 typedef LONG_PTR SSIZE_T, *PSSIZE_T;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
-typedef ULONG_PTR DWORD_PTR, *PDWORD_PTR;
-typedef ULONG_PTR KAFFINITY, *PKAFFINITY;
 
-#define MINLONGLONG             ((LONGLONG)~MAXLONGLONG)
+typedef ULONG_PTR KAFFINITY, *PKAFFINITY;
 
 /* Some Wine-specific definitions */
 
@@ -303,28 +271,44 @@ typedef ULONG_PTR KAFFINITY, *PKAFFINITY;
 /* These are hardcoded to avoid dependencies on config.h in Winelib apps. */
 #if defined(__i386__)
 # undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# define ALLOW_UNALIGNED_ACCESS
 #elif defined(__x86_64__)
 # undef  WORDS_BIGENDIAN
-#elif defined(__powerpc64__) && defined(__BIG_ENDIAN__)
-# define WORDS_BIGENDIAN
-#elif defined(__powerpc64__)
-# undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# define ALLOW_UNALIGNED_ACCESS
 #elif defined(__powerpc__)
 # define WORDS_BIGENDIAN
+# define BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__ALPHA__)
 # undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__ARMEB__)
 # define WORDS_BIGENDIAN
+# define BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__ARMEL__) || defined(__arm__)
 # undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__AARCH64EB__)
 # define WORDS_BIGENDIAN
+# define BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__AARCH64EL__) || defined(__aarch64__)
 # undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__MIPSEB__)
 # define WORDS_BIGENDIAN
+# define BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif defined(__MIPSEL__)
 # undef  WORDS_BIGENDIAN
+# undef  BITFIELDS_BIGENDIAN
+# undef  ALLOW_UNALIGNED_ACCESS
 #elif !defined(RC_INVOKED) && !defined(__WIDL__) && !defined(__midl)
 # error Unknown CPU architecture!
 #endif
@@ -333,4 +317,4 @@ typedef ULONG_PTR KAFFINITY, *PKAFFINITY;
 } /* extern "C" */
 #endif /* defined(__cplusplus) */
 
-#endif /* !defined(_BASETSD_H_) */
+#endif /* !defined(__WINE_BASETSD_H) */

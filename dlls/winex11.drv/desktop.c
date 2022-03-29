@@ -2,7 +2,6 @@
  * X11DRV desktop window handling
  *
  * Copyright 2001 Alexandre Julliard
- * Copyright 2020 Zhiyi Zhang for CodeWeavers
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,9 +22,6 @@
 #include <X11/cursorfont.h>
 #include <X11/Xlib.h>
 
-#define NONAMELESSSTRUCT
-#define NONAMELESSUNION
-
 #include "x11drv.h"
 
 /* avoid conflict with field names in included win32 headers */
@@ -34,6 +30,10 @@
 #include "wine/heap.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(x11drv);
+
+/* data for resolution changing */
+static struct x11drv_mode_info *dd_modes;
+static unsigned int dd_mode_count;
 
 static unsigned int max_width;
 static unsigned int max_height;
@@ -86,108 +86,66 @@ BOOL is_virtual_desktop(void)
     return root_window != DefaultRootWindow( gdi_display );
 }
 
-/* Virtual desktop display settings handler */
-static BOOL X11DRV_desktop_get_id( const WCHAR *device_name, ULONG_PTR *id )
-{
-    WCHAR primary_adapter[CCHDEVICENAME];
-
-    if (!get_primary_adapter( primary_adapter ) || lstrcmpiW( primary_adapter, device_name ))
-        return FALSE;
-
-    *id = 0;
-    return TRUE;
-}
-
-static void add_desktop_mode( DEVMODEW *mode, DWORD depth, DWORD width, DWORD height )
-{
-    mode->dmSize = sizeof(*mode);
-    mode->dmFields = DM_DISPLAYORIENTATION | DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT |
-                     DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY;
-    mode->u1.s2.dmDisplayOrientation = DMDO_DEFAULT;
-    mode->dmBitsPerPel = depth;
-    mode->dmPelsWidth = width;
-    mode->dmPelsHeight = height;
-    mode->u2.dmDisplayFlags = 0;
-    mode->dmDisplayFrequency = 60;
-}
-
-static BOOL X11DRV_desktop_get_modes( ULONG_PTR id, DWORD flags, DEVMODEW **new_modes, UINT *mode_count )
-{
-    UINT depth_idx, size_idx, mode_idx = 0;
-    UINT screen_width, screen_height;
-    RECT primary_rect;
-    DEVMODEW *modes;
-
-    primary_rect = get_primary_monitor_rect();
-    screen_width = primary_rect.right - primary_rect.left;
-    screen_height = primary_rect.bottom - primary_rect.top;
-
-    /* Allocate memory for modes in different color depths */
-    if (!(modes = heap_calloc( (ARRAY_SIZE(screen_sizes) + 2) * DEPTH_COUNT, sizeof(*modes))) )
-    {
-        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
-        return FALSE;
-    }
-
-    for (depth_idx = 0; depth_idx < DEPTH_COUNT; ++depth_idx)
-    {
-        for (size_idx = 0; size_idx < ARRAY_SIZE(screen_sizes); ++size_idx)
-        {
-            if (screen_sizes[size_idx].width > max_width ||
-                screen_sizes[size_idx].height > max_height)
-                continue;
-
-            if (screen_sizes[size_idx].width == max_width &&
-                screen_sizes[size_idx].height == max_height)
-                continue;
-
-            if (screen_sizes[size_idx].width == screen_width &&
-                screen_sizes[size_idx].height == screen_height)
-                continue;
-
-            add_desktop_mode( &modes[mode_idx++], depths[depth_idx], screen_sizes[size_idx].width,
-                              screen_sizes[size_idx].height );
-        }
-
-        add_desktop_mode( &modes[mode_idx++], depths[depth_idx], screen_width, screen_height );
-        if (max_width != screen_width || max_height != screen_height)
-            add_desktop_mode( &modes[mode_idx++], depths[depth_idx], max_width, max_height );
-    }
-
-    *new_modes = modes;
-    *mode_count = mode_idx;
-    return TRUE;
-}
-
-static void X11DRV_desktop_free_modes( DEVMODEW *modes )
-{
-    heap_free( modes );
-}
-
-static BOOL X11DRV_desktop_get_current_mode( ULONG_PTR id, DEVMODEW *mode )
+/* create the mode structures */
+static void make_modes(void)
 {
     RECT primary_rect = get_primary_monitor_rect();
+    unsigned int i;
+    unsigned int screen_width = primary_rect.right - primary_rect.left;
+    unsigned int screen_height = primary_rect.bottom - primary_rect.top;
 
-    mode->dmFields = DM_DISPLAYORIENTATION | DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT |
-                     DM_DISPLAYFLAGS | DM_DISPLAYFREQUENCY | DM_POSITION;
-    mode->u1.s2.dmDisplayOrientation = DMDO_DEFAULT;
-    mode->dmBitsPerPel = screen_bpp;
-    mode->dmPelsWidth = primary_rect.right - primary_rect.left;
-    mode->dmPelsHeight = primary_rect.bottom - primary_rect.top;
-    mode->u2.dmDisplayFlags = 0;
-    mode->dmDisplayFrequency = 60;
-    mode->u1.s2.dmPosition.x = 0;
-    mode->u1.s2.dmPosition.y = 0;
-    return TRUE;
+    /* original specified desktop size */
+    X11DRV_Settings_AddOneMode(screen_width, screen_height, 0, 60);
+    for (i=0; i<ARRAY_SIZE(screen_sizes); i++)
+    {
+        if ( (screen_sizes[i].width <= max_width) && (screen_sizes[i].height <= max_height) )
+        {
+            if ( ( (screen_sizes[i].width != max_width) || (screen_sizes[i].height != max_height) ) &&
+                 ( (screen_sizes[i].width != screen_width) || (screen_sizes[i].height != screen_height) ) )
+            {
+                /* only add them if they are smaller than the root window and unique */
+                X11DRV_Settings_AddOneMode(screen_sizes[i].width, screen_sizes[i].height, 0, 60);
+            }
+        }
+    }
+    if ((max_width != screen_width) && (max_height != screen_height))
+    {
+        /* root window size (if different from desktop window) */
+        X11DRV_Settings_AddOneMode(max_width, max_height, 0, 60);
+    }
 }
 
-static LONG X11DRV_desktop_set_current_mode( ULONG_PTR id, DEVMODEW *mode )
+static int X11DRV_desktop_GetCurrentMode(void)
 {
-    if (mode->dmFields & DM_BITSPERPEL && mode->dmBitsPerPel != screen_bpp)
-        WARN("Cannot change screen color depth from %dbits to %dbits!\n", screen_bpp, mode->dmBitsPerPel);
+    unsigned int i;
+    DWORD dwBpp = screen_bpp;
+    RECT primary_rect = get_primary_monitor_rect();
 
-    desktop_width = mode->dmPelsWidth;
-    desktop_height = mode->dmPelsHeight;
+    for (i=0; i<dd_mode_count; i++)
+    {
+        if ( (primary_rect.right - primary_rect.left == dd_modes[i].width) &&
+             (primary_rect.bottom - primary_rect.top == dd_modes[i].height) &&
+             (dwBpp == dd_modes[i].bpp))
+            return i;
+    }
+    ERR("In unknown mode, returning default\n");
+    return 0;
+}
+
+static LONG X11DRV_desktop_SetCurrentMode(int mode)
+{
+    DWORD dwBpp = screen_bpp;
+    if (dwBpp != dd_modes[mode].bpp)
+    {
+        FIXME("Cannot change screen BPP from %d to %d\n", dwBpp, dd_modes[mode].bpp);
+        /* Ignore the depth mismatch
+         *
+         * Some (older) applications require a specific bit depth, this will allow them
+         * to run. X11drv performs a color depth conversion if needed.
+         */
+    }
+    TRACE("Resizing Wine desktop window to %dx%d\n", dd_modes[mode].width, dd_modes[mode].height);
+    X11DRV_resize_desktop(dd_modes[mode].width, dd_modes[mode].height);
     return DISP_CHANGE_SUCCESSFUL;
 }
 
@@ -204,34 +162,29 @@ static void query_desktop_work_area( RECT *rc_work )
     TRACE( "found tray %p %s work area %s\n", hwnd, wine_dbgstr_rect( &rect ), wine_dbgstr_rect( rc_work ) );
 }
 
-static BOOL X11DRV_desktop_get_gpus( struct gdi_gpu **new_gpus, int *count )
+static BOOL X11DRV_desktop_get_gpus( struct x11drv_gpu **new_gpus, int *count )
 {
     static const WCHAR wine_adapterW[] = {'W','i','n','e',' ','A','d','a','p','t','e','r',0};
-    struct gdi_gpu *gpu;
+    struct x11drv_gpu *gpu;
 
     gpu = heap_calloc( 1, sizeof(*gpu) );
     if (!gpu) return FALSE;
 
-    if (!get_host_primary_gpu( gpu ))
-    {
-        WARN( "Failed to get host primary gpu.\n" );
-        lstrcpyW( gpu->name, wine_adapterW );
-    }
-
+    lstrcpyW( gpu->name, wine_adapterW );
     *new_gpus = gpu;
     *count = 1;
     return TRUE;
 }
 
-static void X11DRV_desktop_free_gpus( struct gdi_gpu *gpus )
+static void X11DRV_desktop_free_gpus( struct x11drv_gpu *gpus )
 {
     heap_free( gpus );
 }
 
 /* TODO: Support multi-head virtual desktop */
-static BOOL X11DRV_desktop_get_adapters( ULONG_PTR gpu_id, struct gdi_adapter **new_adapters, int *count )
+static BOOL X11DRV_desktop_get_adapters( ULONG_PTR gpu_id, struct x11drv_adapter **new_adapters, int *count )
 {
-    struct gdi_adapter *adapter;
+    struct x11drv_adapter *adapter;
 
     adapter = heap_calloc( 1, sizeof(*adapter) );
     if (!adapter) return FALSE;
@@ -245,17 +198,17 @@ static BOOL X11DRV_desktop_get_adapters( ULONG_PTR gpu_id, struct gdi_adapter **
     return TRUE;
 }
 
-static void X11DRV_desktop_free_adapters( struct gdi_adapter *adapters )
+static void X11DRV_desktop_free_adapters( struct x11drv_adapter *adapters )
 {
     heap_free( adapters );
 }
 
-static BOOL X11DRV_desktop_get_monitors( ULONG_PTR adapter_id, struct gdi_monitor **new_monitors, int *count )
+static BOOL X11DRV_desktop_get_monitors( ULONG_PTR adapter_id, struct x11drv_monitor **new_monitors, int *count )
 {
     static const WCHAR generic_nonpnp_monitorW[] = {
         'G','e','n','e','r','i','c',' ',
         'N','o','n','-','P','n','P',' ','M','o','n','i','t','o','r',0};
-    struct gdi_monitor *monitor;
+    struct x11drv_monitor *monitor;
 
     monitor = heap_calloc( 1, sizeof(*monitor) );
     if (!monitor) return FALSE;
@@ -265,8 +218,6 @@ static BOOL X11DRV_desktop_get_monitors( ULONG_PTR adapter_id, struct gdi_monito
     SetRect( &monitor->rc_work, 0, 0, desktop_width, desktop_height );
     query_desktop_work_area( &monitor->rc_work );
     monitor->state_flags = DISPLAY_DEVICE_ATTACHED;
-    monitor->edid_len = 0;
-    monitor->edid = NULL;
     if (desktop_width && desktop_height)
         monitor->state_flags |= DISPLAY_DEVICE_ACTIVE;
 
@@ -275,7 +226,7 @@ static BOOL X11DRV_desktop_get_monitors( ULONG_PTR adapter_id, struct gdi_monito
     return TRUE;
 }
 
-static void X11DRV_desktop_free_monitors( struct gdi_monitor *monitors, int count )
+static void X11DRV_desktop_free_monitors( struct x11drv_monitor *monitors )
 {
     heap_free( monitors );
 }
@@ -288,7 +239,6 @@ static void X11DRV_desktop_free_monitors( struct gdi_monitor *monitors, int coun
 void X11DRV_init_desktop( Window win, unsigned int width, unsigned int height )
 {
     RECT primary_rect = get_host_primary_monitor_rect();
-    struct x11drv_settings_handler settings_handler;
 
     root_window = win;
     managed_mode = FALSE;  /* no managed windows in desktop mode */
@@ -309,15 +259,14 @@ void X11DRV_init_desktop( Window win, unsigned int width, unsigned int height )
     TRACE("Display device functions are now handled by: Virtual Desktop\n");
     X11DRV_DisplayDevices_Init( TRUE );
 
-    /* Initialize virtual desktop display settings handler */
-    settings_handler.name = "Virtual Desktop";
-    settings_handler.priority = 1000;
-    settings_handler.get_id = X11DRV_desktop_get_id;
-    settings_handler.get_modes = X11DRV_desktop_get_modes;
-    settings_handler.free_modes = X11DRV_desktop_free_modes;
-    settings_handler.get_current_mode = X11DRV_desktop_get_current_mode;
-    settings_handler.set_current_mode = X11DRV_desktop_set_current_mode;
-    X11DRV_Settings_SetHandler( &settings_handler );
+    /* initialize the available resolutions */
+    dd_modes = X11DRV_Settings_SetHandlers("desktop", 
+                                           X11DRV_desktop_GetCurrentMode, 
+                                           X11DRV_desktop_SetCurrentMode, 
+                                           ARRAY_SIZE(screen_sizes)+2, 1);
+    make_modes();
+    X11DRV_Settings_AddDepthModes();
+    dd_mode_count = X11DRV_Settings_GetModeCount();
 }
 
 
@@ -372,6 +321,29 @@ BOOL CDECL X11DRV_create_desktop( UINT width, UINT height )
     return TRUE;
 }
 
+static BOOL CALLBACK update_windows_on_desktop_resize( HWND hwnd, LPARAM lparam )
+{
+    struct x11drv_win_data *data;
+    UINT mask = (UINT)lparam;
+
+    if (!(data = get_win_data( hwnd ))) return TRUE;
+
+    /* update the full screen state */
+    update_net_wm_states( data );
+
+    if (mask && data->whole_window)
+    {
+        POINT pos = virtual_screen_to_root( data->whole_rect.left, data->whole_rect.top );
+        XWindowChanges changes;
+        changes.x = pos.x;
+        changes.y = pos.y;
+        XReconfigureWMWindow( data->display, data->whole_window, data->vis.screen, mask, &changes );
+    }
+    release_win_data( data );
+    if (hwnd == GetForegroundWindow()) clip_fullscreen_window( hwnd, TRUE );
+    return TRUE;
+}
+
 BOOL is_desktop_fullscreen(void)
 {
     RECT primary_rect = get_primary_monitor_rect();
@@ -415,34 +387,36 @@ static void update_desktop_fullscreen( unsigned int width, unsigned int height)
 /***********************************************************************
  *		X11DRV_resize_desktop
  */
-void X11DRV_resize_desktop( BOOL send_display_change )
+void X11DRV_resize_desktop( unsigned int width, unsigned int height )
 {
-    RECT primary_rect, virtual_rect;
+    RECT old_virtual_rect, new_virtual_rect;
     HWND hwnd = GetDesktopWindow();
-    INT width, height;
+    UINT mask = 0;
 
-    virtual_rect = get_virtual_screen_rect();
-    primary_rect = get_primary_monitor_rect();
-    width = primary_rect.right;
-    height = primary_rect.bottom;
+    old_virtual_rect = get_virtual_screen_rect();
+    desktop_width = width;
+    desktop_height = height;
+    X11DRV_DisplayDevices_Init( TRUE );
+    new_virtual_rect = get_virtual_screen_rect();
+
+    if (old_virtual_rect.left != new_virtual_rect.left) mask |= CWX;
+    if (old_virtual_rect.top != new_virtual_rect.top) mask |= CWY;
 
     if (GetWindowThreadProcessId( hwnd, NULL ) != GetCurrentThreadId())
     {
-        SendMessageW( hwnd, WM_X11DRV_RESIZE_DESKTOP, 0, (LPARAM)send_display_change );
+        SendMessageW( hwnd, WM_X11DRV_RESIZE_DESKTOP, 0, MAKELPARAM( width, height ) );
     }
     else
     {
         TRACE( "desktop %p change to (%dx%d)\n", hwnd, width, height );
         update_desktop_fullscreen( width, height );
-        SetWindowPos( hwnd, 0, virtual_rect.left, virtual_rect.top,
-                      virtual_rect.right - virtual_rect.left, virtual_rect.bottom - virtual_rect.top,
+        SetWindowPos( hwnd, 0, new_virtual_rect.left, new_virtual_rect.top,
+                      new_virtual_rect.right - new_virtual_rect.left, new_virtual_rect.bottom - new_virtual_rect.top,
                       SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE );
         ungrab_clipping_window();
-
-        if (send_display_change)
-        {
-            SendMessageTimeoutW( HWND_BROADCAST, WM_DISPLAYCHANGE, screen_bpp, MAKELPARAM( width, height ),
-                                 SMTO_ABORTIFHUNG, 2000, NULL );
-        }
+        SendMessageTimeoutW( HWND_BROADCAST, WM_DISPLAYCHANGE, screen_bpp,
+                             MAKELPARAM( width, height ), SMTO_ABORTIFHUNG, 2000, NULL );
     }
+
+    EnumWindows( update_windows_on_desktop_resize, (LPARAM)mask );
 }

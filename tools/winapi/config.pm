@@ -19,7 +19,6 @@
 package config;
 
 use strict;
-use warnings 'all';
 
 use setup qw($current_dir $wine_dir $winapi_dir);
 

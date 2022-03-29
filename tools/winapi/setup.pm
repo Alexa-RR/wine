@@ -19,7 +19,6 @@
 package setup;
 
 use strict;
-use warnings 'all';
 
 BEGIN {
     use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
@@ -54,7 +53,7 @@ BEGIN {
 
 	if($wine_dir =~ /^\./) {
 	    $current_dir = ".";
-	    my $pwd; chomp($pwd = $cwd);
+	    my $pwd; chomp($pwd = `pwd`);
 	    foreach my $n (1..((length($wine_dir) + 1) / 3)) {
 		$pwd =~ s/\/([^\/]*)$//;
 		$current_dir = "$1/$current_dir";

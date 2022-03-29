@@ -90,7 +90,7 @@
 @ stub BthpTranspose16Bits
 @ stub BthpTranspose32Bits
 @ stub BthpTransposeAndExtendBytes
-@ stdcall -private DllCanUnloadNow()
+@ stub DllCanUnloadNow
 @ stub FindNextOpenVCOMPort
 @ stub InstallIncomingComPort
 @ stub ShouldForceAuthentication

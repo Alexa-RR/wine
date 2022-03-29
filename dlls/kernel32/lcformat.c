@@ -22,6 +22,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -29,7 +32,7 @@
 
 #include "windef.h"
 #include "winbase.h"
-#include "winnls.h"
+#include "wine/unicode.h"
 #include "wine/debug.h"
 #include "winternl.h"
 
@@ -127,7 +130,7 @@ static WCHAR* NLS_GetLocaleString(LCID lcid, DWORD dwFlags)
 
   szBuff[0] = '\0';
   GetLocaleInfoW(lcid, dwFlags, szBuff, ARRAY_SIZE(szBuff));
-  dwLen = lstrlenW(szBuff) + 1;
+  dwLen = strlenW(szBuff) + 1;
   str = HeapAlloc(GetProcessHeap(), 0, dwLen * sizeof(WCHAR));
   if (str)
     memcpy(str, szBuff, dwLen * sizeof(WCHAR));
@@ -135,7 +138,7 @@ static WCHAR* NLS_GetLocaleString(LCID lcid, DWORD dwFlags)
 }
 
 #define GET_LOCALE_NUMBER(num, type) num = NLS_GetLocaleNumber(lcid, type|dwFlags); \
-  TRACE( #type ": %ld (%08lx)\n", (DWORD)num, (DWORD)num)
+  TRACE( #type ": %d (%08x)\n", (DWORD)num, (DWORD)num)
 
 #define GET_LOCALE_STRING(str, type) str = NLS_GetLocaleString(lcid, type|dwFlags); \
   TRACE( #type ": %s\n", debugstr_w(str))
@@ -185,7 +188,7 @@ static const NLS_FORMAT_NODE *NLS_GetFormats(LCID lcid, DWORD dwFlags)
 
   dwFlags &= LOCALE_NOUSEROVERRIDE;
 
-  TRACE("(0x%04lx,0x%08lx)\n", lcid, dwFlags);
+  TRACE("(0x%04x,0x%08x)\n", lcid, dwFlags);
 
   /* See if we have already cached the locales number format */
   while (node && (node->lcid != lcid || node->dwFlags != dwFlags) && node->next)
@@ -262,7 +265,7 @@ static const NLS_FORMAT_NODE *NLS_GetFormats(LCID lcid, DWORD dwFlags)
     /* Save some memory if month genitive name is the same or not present */
     for (i = 0; i < 12; i++)
     {
-      if (wcscmp(GetLongMonth(new_node, i), GetGenitiveMonth(new_node, i)) == 0)
+      if (strcmpW(GetLongMonth(new_node, i), GetGenitiveMonth(new_node, i)) == 0)
       {
         HeapFree(GetProcessHeap(), 0, GetGenitiveMonth(new_node, i));
         GetGenitiveMonth(new_node, i) = NULL;
@@ -315,9 +318,9 @@ static const NLS_FORMAT_NODE *NLS_GetFormats(LCID lcid, DWORD dwFlags)
 /**************************************************************************
  * NLS_IsUnicodeOnlyLcid <internal>
  *
- * Determine if a locale is Unicode only, and thus invalid in ANSI calls.
+ * Determine if a locale is Unicode only, and thus invalid in ASCII calls.
  */
-static BOOL NLS_IsUnicodeOnlyLcid(LCID lcid)
+BOOL NLS_IsUnicodeOnlyLcid(LCID lcid)
 {
   lcid = ConvertDefaultLocale(lcid);
 
@@ -333,7 +336,7 @@ static BOOL NLS_IsUnicodeOnlyLcid(LCID lcid)
   case LANG_MARATHI:
   case LANG_PUNJABI:
   case LANG_SANSKRIT:
-    TRACE("lcid 0x%08lx: langid 0x%04x is Unicode Only\n", lcid, PRIMARYLANGID(lcid));
+    TRACE("lcid 0x%08x: langid 0x%4x is Unicode Only\n", lcid, PRIMARYLANGID(lcid));
     return TRUE;
   default:
     return FALSE;
@@ -672,11 +675,12 @@ static INT NLS_GetDateTimeFormatW(LCID lcid, DWORD dwFlags,
 
       if (szAdd == buff && buff[0] == '\0')
       {
+        static const WCHAR fmtW[] = {'%','.','*','d',0};
         /* We have a numeric value to add */
-        swprintf(buff, ARRAY_SIZE(buff), L"%.*d", count, dwVal);
+        snprintfW(buff, ARRAY_SIZE(buff), fmtW, count, dwVal);
       }
 
-      dwLen = szAdd ? lstrlenW(szAdd) : 0;
+      dwLen = szAdd ? strlenW(szAdd) : 0;
 
       if (cchOut && dwLen)
       {
@@ -737,7 +741,7 @@ invalid_flags:
 /******************************************************************************
  * NLS_GetDateTimeFormatA <internal>
  *
- * ANSI wrapper for GetDateFormatA/GetTimeFormatA.
+ * ASCII wrapper for GetDateFormatA/GetTimeFormatA.
  */
 static INT NLS_GetDateTimeFormatA(LCID lcid, DWORD dwFlags,
                                   const SYSTEMTIME* lpTime,
@@ -745,12 +749,12 @@ static INT NLS_GetDateTimeFormatA(LCID lcid, DWORD dwFlags,
 {
   DWORD cp = CP_ACP;
   WCHAR szFormat[128], szOut[128];
-  INT iRet, cchOutW;
+  INT iRet;
 
-  TRACE("(0x%04lx,0x%08lx,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime,
+  TRACE("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime,
         debugstr_a(lpFormat), lpStr, cchOut);
 
-  if ((cchOut && !lpStr) || NLS_IsUnicodeOnlyLcid(lcid))
+  if (NLS_IsUnicodeOnlyLcid(lcid))
   {
     SetLastError(ERROR_INVALID_PARAMETER);
     return 0;
@@ -771,12 +775,21 @@ static INT NLS_GetDateTimeFormatA(LCID lcid, DWORD dwFlags,
   if (lpFormat)
     MultiByteToWideChar(cp, 0, lpFormat, -1, szFormat, ARRAY_SIZE(szFormat));
 
-  /* If cchOut == 0 we need the full string to get the accurate ANSI size */
-  cchOutW = (cchOut && cchOut <= ARRAY_SIZE(szOut)) ? cchOut : ARRAY_SIZE(szOut);
+  if (cchOut > (int) ARRAY_SIZE(szOut))
+    cchOut = ARRAY_SIZE(szOut);
+
+  szOut[0] = '\0';
+
   iRet = NLS_GetDateTimeFormatW(lcid, dwFlags, lpTime, lpFormat ? szFormat : NULL,
-                                szOut, cchOutW);
-  if (iRet)
-      iRet = WideCharToMultiByte(cp, 0, szOut, -1, lpStr, cchOut, NULL, NULL);
+                                lpStr ? szOut : NULL, cchOut);
+
+  if (lpStr)
+  {
+    if (szOut[0])
+      WideCharToMultiByte(cp, 0, szOut, iRet ? -1 : cchOut, lpStr, cchOut, 0, 0);
+    else if (cchOut && iRet)
+      *lpStr = '\0';
+  }
   return iRet;
 }
 
@@ -816,7 +829,7 @@ static INT NLS_GetDateTimeFormatA(LCID lcid, DWORD dwFlags,
  *|  gg     Era string, for example 'AD'.
  *  - To output any literal character that could be misidentified as a token,
  *    enclose it in single quotes.
- *  - The ANSI version of this function fails if lcid is Unicode only.
+ *  - The Ascii version of this function fails if lcid is Unicode only.
  *
  * RETURNS
  *  Success: The number of character written to lpDateStr, or that would
@@ -826,7 +839,7 @@ static INT NLS_GetDateTimeFormatA(LCID lcid, DWORD dwFlags,
 INT WINAPI GetDateFormatA( LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
                            LPCSTR lpFormat, LPSTR lpDateStr, INT cchOut)
 {
-  TRACE("(0x%04lx,0x%08lx,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
+  TRACE("(0x%04x,0x%08x,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
         debugstr_a(lpFormat), lpDateStr, cchOut);
 
   return NLS_GetDateTimeFormatA(lcid, dwFlags | DATE_DATEVARSONLY, lpTime,
@@ -858,7 +871,7 @@ INT WINAPI GetDateFormatEx(LPCWSTR localename, DWORD flags,
                            const SYSTEMTIME* date, LPCWSTR format,
                            LPWSTR outbuf, INT bufsize, LPCWSTR calendar)
 {
-  TRACE("(%s,0x%08lx,%p,%s,%p,%d,%s)\n", debugstr_w(localename), flags,
+  TRACE("(%s,0x%08x,%p,%s,%p,%d,%s)\n", debugstr_w(localename), flags,
         date, debugstr_w(format), outbuf, bufsize, debugstr_w(calendar));
 
   /* Parameter is currently reserved and Windows errors if set */
@@ -881,7 +894,7 @@ INT WINAPI GetDateFormatEx(LPCWSTR localename, DWORD flags,
 INT WINAPI GetDateFormatW(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
                           LPCWSTR lpFormat, LPWSTR lpDateStr, INT cchOut)
 {
-  TRACE("(0x%04lx,0x%08lx,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime,
+  TRACE("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime,
         debugstr_w(lpFormat), lpDateStr, cchOut);
 
   return NLS_GetDateTimeFormatW(lcid, dwFlags|DATE_DATEVARSONLY, lpTime,
@@ -922,7 +935,7 @@ INT WINAPI GetDateFormatW(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
  *|  tt     Long time marker (e.g. "AM", "PM")
  *  - To output any literal character that could be misidentified as a token,
  *    enclose it in single quotes.
- *  - The ANSI version of this function fails if lcid is Unicode only.
+ *  - The Ascii version of this function fails if lcid is Unicode only.
  *
  * RETURNS
  *  Success: The number of character written to lpTimeStr, or that would
@@ -932,7 +945,7 @@ INT WINAPI GetDateFormatW(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
 INT WINAPI GetTimeFormatA(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
                           LPCSTR lpFormat, LPSTR lpTimeStr, INT cchOut)
 {
-  TRACE("(0x%04lx,0x%08lx,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
+  TRACE("(0x%04x,0x%08x,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
         debugstr_a(lpFormat), lpTimeStr, cchOut);
 
   return NLS_GetDateTimeFormatA(lcid, dwFlags|TIME_TIMEVARSONLY, lpTime,
@@ -963,7 +976,7 @@ INT WINAPI GetTimeFormatEx(LPCWSTR localename, DWORD flags,
                            const SYSTEMTIME* time, LPCWSTR format,
                            LPWSTR outbuf, INT bufsize)
 {
-  TRACE("(%s,0x%08lx,%p,%s,%p,%d)\n", debugstr_w(localename), flags, time,
+  TRACE("(%s,0x%08x,%p,%s,%p,%d)\n", debugstr_w(localename), flags, time,
         debugstr_w(format), outbuf, bufsize);
 
   return NLS_GetDateTimeFormatW(LocaleNameToLCID(localename, 0),
@@ -979,7 +992,7 @@ INT WINAPI GetTimeFormatEx(LPCWSTR localename, DWORD flags,
 INT WINAPI GetTimeFormatW(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
                           LPCWSTR lpFormat, LPWSTR lpTimeStr, INT cchOut)
 {
-  TRACE("(0x%04lx,0x%08lx,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
+  TRACE("(0x%04x,0x%08x,%p,%s,%p,%d)\n",lcid, dwFlags, lpTime,
         debugstr_w(lpFormat), lpTimeStr, cchOut);
 
   return NLS_GetDateTimeFormatW(lcid, dwFlags|TIME_TIMEVARSONLY, lpTime,
@@ -1006,7 +1019,7 @@ INT WINAPI GetTimeFormatW(LCID lcid, DWORD dwFlags, const SYSTEMTIME* lpTime,
  *  - This function rounds the number string if the number of decimals exceeds the
  *    locales normal number of decimal places.
  *  - If cchOut is 0, this function does not write to lpNumberStr.
- *  - The ANSI version of this function fails if lcid is Unicode only.
+ *  - The Ascii version of this function fails if lcid is Unicode only.
  *
  * RETURNS
  *  Success: The number of character written to lpNumberStr, or that would
@@ -1023,7 +1036,7 @@ INT WINAPI GetNumberFormatA(LCID lcid, DWORD dwFlags,
   const NUMBERFMTW *pfmt = NULL;
   INT iRet;
 
-  TRACE("(0x%04lx,0x%08lx,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue),
+  TRACE("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue),
         lpFormat, lpNumberStr, cchOut);
 
   if (NLS_IsUnicodeOnlyLcid(lcid))
@@ -1105,7 +1118,7 @@ INT WINAPI GetNumberFormatW(LCID lcid, DWORD dwFlags,
   DWORD dwState = 0, dwDecimals = 0, dwGroupCount = 0, dwCurrentGroupCount = 0;
   INT iRet;
 
-  TRACE("(0x%04lx,0x%08lx,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_w(lpszValue),
+  TRACE("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_w(lpszValue),
         lpFormat, lpNumberStr, cchOut);
 
   if (!lpszValue || cchOut < 0 || (cchOut > 0 && !lpNumberStr) ||
@@ -1130,7 +1143,7 @@ INT WINAPI GetNumberFormatW(LCID lcid, DWORD dwFlags,
                    szNegBuff, ARRAY_SIZE(szNegBuff));
     lpszNegStart = lpszNeg = szNegBuff;
   }
-  lpszNeg = lpszNeg + lstrlenW(lpszNeg) - 1;
+  lpszNeg = lpszNeg + strlenW(lpszNeg) - 1;
 
   dwFlags &= (LOCALE_NOUSEROVERRIDE|LOCALE_USE_CP_ACP);
 
@@ -1205,7 +1218,7 @@ INT WINAPI GetNumberFormatW(LCID lcid, DWORD dwFlags,
   }
   else
   {
-    LPWSTR lpszDec = lpFormat->lpDecimalSep + lstrlenW(lpFormat->lpDecimalSep) - 1;
+    LPWSTR lpszDec = lpFormat->lpDecimalSep + strlenW(lpFormat->lpDecimalSep) - 1;
 
     if (dwDecimals <= lpFormat->NumDigits)
     {
@@ -1275,7 +1288,7 @@ INT WINAPI GetNumberFormatW(LCID lcid, DWORD dwFlags,
     dwCurrentGroupCount++;
     if (szSrc >= lpszValue && dwCurrentGroupCount == dwGroupCount && *szSrc != '-')
     {
-      LPWSTR lpszGrp = lpFormat->lpThousandSep + lstrlenW(lpFormat->lpThousandSep) - 1;
+      LPWSTR lpszGrp = lpFormat->lpThousandSep + strlenW(lpFormat->lpThousandSep) - 1;
 
       while (lpszGrp >= lpFormat->lpThousandSep)
         *szOut-- = *lpszGrp--; /* Write grouping char */
@@ -1311,7 +1324,7 @@ INT WINAPI GetNumberFormatW(LCID lcid, DWORD dwFlags,
   }
   szOut++;
 
-  iRet = lstrlenW(szOut) + 1;
+  iRet = strlenW(szOut) + 1;
   if (cchOut)
   {
     if (iRet <= cchOut)
@@ -1340,7 +1353,7 @@ INT WINAPI GetNumberFormatEx(LPCWSTR name, DWORD flags,
 {
   LCID lcid;
 
-  TRACE("(%s,0x%08lx,%s,%p,%p,%d)\n", debugstr_w(name), flags,
+  TRACE("(%s,0x%08x,%s,%p,%p,%d)\n", debugstr_w(name), flags,
         debugstr_w(value), format, number, numout);
 
   lcid = LocaleNameToLCID(name, 0);
@@ -1370,7 +1383,7 @@ INT WINAPI GetNumberFormatEx(LPCWSTR name, DWORD flags,
  *  - This function rounds the currency if the number of decimals exceeds the
  *    locales number of currency decimal places.
  *  - If cchOut is 0, this function does not write to lpCurrencyStr.
- *  - The ANSI version of this function fails if lcid is Unicode only.
+ *  - The Ascii version of this function fails if lcid is Unicode only.
  *
  * RETURNS
  *  Success: The number of character written to lpNumberStr, or that would
@@ -1387,7 +1400,7 @@ INT WINAPI GetCurrencyFormatA(LCID lcid, DWORD dwFlags,
   const CURRENCYFMTW *pfmt = NULL;
   INT iRet;
 
-  TRACE("(0x%04lx,0x%08lx,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue),
+  TRACE("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue),
         lpFormat, lpCurrencyStr, cchOut);
 
   if (NLS_IsUnicodeOnlyLcid(lcid))
@@ -1495,7 +1508,7 @@ INT WINAPI GetCurrencyFormatW(LCID lcid, DWORD dwFlags,
   DWORD dwState = 0, dwDecimals = 0, dwGroupCount = 0, dwCurrentGroupCount = 0, dwFmt;
   INT iRet;
 
-  TRACE("(0x%04lx,0x%08lx,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_w(lpszValue),
+  TRACE("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_w(lpszValue),
         lpFormat, lpCurrencyStr, cchOut);
 
   if (!lpszValue || cchOut < 0 || (cchOut > 0 && !lpCurrencyStr) ||
@@ -1525,9 +1538,9 @@ INT WINAPI GetCurrencyFormatW(LCID lcid, DWORD dwFlags,
   }
   dwFlags &= (LOCALE_NOUSEROVERRIDE|LOCALE_USE_CP_ACP);
 
-  lpszNeg = lpszNeg + lstrlenW(lpszNeg) - 1;
+  lpszNeg = lpszNeg + strlenW(lpszNeg) - 1;
   lpszCyStart = lpFormat->lpCurrencySymbol;
-  lpszCy = lpszCyStart + lstrlenW(lpszCyStart) - 1;
+  lpszCy = lpszCyStart + strlenW(lpszCyStart) - 1;
 
   /* Format the currency backwards into a temporary buffer */
 
@@ -1614,7 +1627,7 @@ INT WINAPI GetCurrencyFormatW(LCID lcid, DWORD dwFlags,
   }
   else
   {
-    LPWSTR lpszDec = lpFormat->lpDecimalSep + lstrlenW(lpFormat->lpDecimalSep) - 1;
+    LPWSTR lpszDec = lpFormat->lpDecimalSep + strlenW(lpFormat->lpDecimalSep) - 1;
 
     if (dwDecimals <= lpFormat->NumDigits)
     {
@@ -1683,7 +1696,7 @@ INT WINAPI GetCurrencyFormatW(LCID lcid, DWORD dwFlags,
     dwCurrentGroupCount++;
     if (szSrc >= lpszValue && dwCurrentGroupCount == dwGroupCount && *szSrc != '-')
     {
-      LPWSTR lpszGrp = lpFormat->lpThousandSep + lstrlenW(lpFormat->lpThousandSep) - 1;
+      LPWSTR lpszGrp = lpFormat->lpThousandSep + strlenW(lpFormat->lpThousandSep) - 1;
 
       while (lpszGrp >= lpFormat->lpThousandSep)
         *szOut-- = *lpszGrp--; /* Write grouping char */
@@ -1723,7 +1736,7 @@ INT WINAPI GetCurrencyFormatW(LCID lcid, DWORD dwFlags,
     *szOut-- = '(';
   szOut++;
 
-  iRet = lstrlenW(szOut) + 1;
+  iRet = strlenW(szOut) + 1;
   if (cchOut)
   {
     if (iRet <= cchOut)
@@ -1749,42 +1762,8 @@ error:
 int WINAPI GetCurrencyFormatEx(LPCWSTR localename, DWORD flags, LPCWSTR value,
                                 const CURRENCYFMTW *format, LPWSTR str, int len)
 {
-    TRACE("(%s,0x%08lx,%s,%p,%p,%d)\n", debugstr_w(localename), flags,
+    TRACE("(%s,0x%08x,%s,%p,%p,%d)\n", debugstr_w(localename), flags,
             debugstr_w(value), format, str, len);
 
     return GetCurrencyFormatW( LocaleNameToLCID(localename, 0), flags, value, format, str, len);
-}
-
-/*********************************************************************
- *            GetCalendarInfoA (KERNEL32.@)
- */
-int WINAPI GetCalendarInfoA( LCID lcid, CALID id, CALTYPE type, LPSTR data, int size, DWORD *val )
-{
-    int ret, sizeW = size;
-    LPWSTR dataW = NULL;
-
-    if (NLS_IsUnicodeOnlyLcid(lcid))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-    if (!size && !(type & CAL_RETURN_NUMBER)) sizeW = GetCalendarInfoW( lcid, id, type, NULL, 0, NULL );
-    if (!(dataW = HeapAlloc(GetProcessHeap(), 0, sizeW * sizeof(WCHAR)))) return 0;
-
-    ret = GetCalendarInfoW( lcid, id, type, dataW, sizeW, val );
-    if(ret && dataW && data)
-        ret = WideCharToMultiByte( CP_ACP, 0, dataW, -1, data, size, NULL, NULL );
-    else if (type & CAL_RETURN_NUMBER)
-        ret *= sizeof(WCHAR);
-    HeapFree( GetProcessHeap(), 0, dataW );
-    return ret;
-}
-
-/*********************************************************************
- *            SetCalendarInfoA (KERNEL32.@)
- */
-int WINAPI SetCalendarInfoA( LCID lcid, CALID id, CALTYPE type, LPCSTR data)
-{
-    FIXME("(%08lx,%08lx,%08lx,%s): stub\n", lcid, id, type, debugstr_a(data));
-    return 0;
 }

@@ -1,7 +1,6 @@
 MODULE    = d3dx10_42.dll
-IMPORTLIB = d3dx10_42
 
-EXTRADLLFLAGS = -Wb,--prefer-native
+EXTRADLLFLAGS = -mno-cygwin
 
 C_SRCS = \
 	d3dx10_42_main.c
